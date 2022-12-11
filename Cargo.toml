@@ -26,6 +26,10 @@ name = "mwps"
 path = "src/lib.rs"
 crate-type = ["lib", "cdylib"]
 
+[[bin]]
+name = "mwps"
+path = "src/main.rs"
+
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 # profiling: see scripts/NOTES.md
@@ -41,6 +45,15 @@ python_binding = ["pyo3"]  # bind to Python
 
 [dependencies]
 pyo3 = { version =  "0.17.2", features = ["extension-module", "multiple-pymethods", "abi3-py37"], optional = true }
+serde = { version = "1.0.117", features = ["derive", "rc"] }
+serde_json = "1.0.59"
+chrono = "0.4.19"
+urlencoding = "2.1.0"
+clap = { version = "3.2.22", features = ["cargo", "derive"] }
+pbr = "1.0.4"
+rand_xoshiro = "0.6.0"
+derivative = "2.2.0"
+parking_lot = { version = "0.12.1", features = ["hardware-lock-elision"] }
 
 [package.metadata.docs.rs]
 rustdoc-args = [ "--html-in-header", "katex-header.html" ]

@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no">
+    <title>MWPS</title>
+    <link rel="icon" href="icon.svg">
+<link href="https://fonts.googleapis.com/css?family=Roboto:100,300,400,500,700,900|Material+Icons" rel="stylesheet" type="text/css">
+<link href="https://cdn.jsdelivr.net/npm/animate.css@^4.0.0/animate.min.css" rel="stylesheet" type="text/css">
+<link href="https://cdn.jsdelivr.net/npm/quasar@2.6.6/dist/quasar.prod.css" rel="stylesheet" type="text/css">
+<style>
+body, html {
+    margin: 0;
+    overflow: hidden;
+    height: 100%;
+}
+:root {
+    --s: 1;  /* scale */
+    --control-visibility: hidden;
+}
+.control-bar {
+    position: fixed;
+    width: calc(600px * var(--s));
+    background-color: rgb(250, 250, 250);
+    height: 100%;
+    right: 0;
+    overflow-y: hidden;
+    overflow-x: hidden;
+    visibility: var(--control-visibility);
+}
+.control-bar-inner {
+    width: 600px;
+    height: calc(100% / var(--s));
+    transform: scale(var(--s));
+    transform-origin: 0 0;
+    font-size: 18px;
+}
+canvas {
+    display: block;
+}
+.slider {
+    margin-top: 0;
+    margin-left: 35px;
+    width: 530px;
+}
+.selector {
+    margin-top: 20px;
+    margin-left: 25px;
+    width: 550px;
+}
+h1 {
+    margin: 20px auto 0 auto;
+    text-align: center;
+    font-size: 40px;
+    line-height: 40px;
+}
+h3 {
+    margin: 0;
+    font-size: 25px;
+    line-height: 25px;
+    font-weight: bold;
+}
+h5 {
+    margin: 0;
+    font-size: 20px;
+    line-height: 20px;
+    font-weight: bold;
+}
+.flex-center-div {
+    width: 600px;
+    margin-top: 10px;
+    display: flex;
+    justify-content: center;
+    flex-direction: row;
+}
+.select-info-div-center {
+    width: 580px;
+    padding: 10px;
+    margin: 10px;
+    display: flex;
+    justify-content: center;
+    flex-direction: row;
+}
+.select-info-div {
+    width: 580px;
+    padding: 10px;
+    margin: 10px;
+}
+.edge-visualizer {
+    display: inline-block;
+    height: 40px;
+    background-color: black;
+    margin: 0 10px 0 10px;
+}
+.grown, .unexplored {
+    margin: 0;
+    padding: 0;
+    display: inline-block;
+    height: 100%;
+    text-align: center;
+    font-size: 18px;
+    line-height: 40px;
+    transition: width 0.5s;
+}
+.grown {
+    background-color: #E8630A;
+}
+.unexplored {
+    background-color: grey;
+}
+</style>
+</head>
+<body>
+<script src="https://cdn.jsdelivr.net/npm/vue@3.2.33/dist/vue.global.prod.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/quasar@2.6.6/dist/quasar.umd.prod.js"></script>
+
+
+<div class="control-bar" id="app">
+    <q-scroll-area class="control-bar-inner" :vertical-thumb-style="vertical_thumb_style" :horizontal-thumb-style="horizontal_thumb_style"
+            :vertical-bar-style="vertical_bar_style" :horizontal-bar-style="horizontal_bar_style">
+        <div class="flex-center-div"><h1>MWPS</h1></div>
+        <q-banner inline-actions class="text-white bg-yellow-10" v-if="!is_browser_supported" style="margin-top: 20px;">
+            Please use Chrome or Firefox browser (It has known issue in Safari)
+            <template v-slot:action>
+                <q-btn flat color="white" label="Dismiss" @click="is_browser_supported = true" />
+            </template>
+        </q-banner>
+        <q-banner inline-actions class="text-white bg-red" v-if="error_message != null" style="margin-top: 20px;">
+            {{ error_message }}
+        </q-banner>
+        <q-banner inline-actions class="text-black bg-yellow" v-if="warning_message != null" style="margin-top: 20px;">
+            {{ warning_message }}
+        </q-banner>
+        <div class="selector">
+            <q-select filled v-model="snapshot_select_label" :options="snapshot_labels" options-dense behavior="menu" rounded>
+                <template v-slot:before>
+                    <q-btn round flat icon="arrow_circle_left" :disabled="snapshot_select == 0" @click="snapshot_select -= 1" size="xl"/>
+                </template>
+                <template v-slot:after>
+                    <q-btn round flat icon="arrow_circle_right" :disabled="snapshot_select == snapshot_num-1" @click="snapshot_select += 1" size="xl"/>
+                </template>
+            </q-select>
+        </div>
+        <div class="slider">
+            <q-slider v-model="snapshot_select" :min="0" :max="snapshot_num-1" :step="1" snap
+                thumb-size="25px" track-size="8px"></q-slider>
+        </div>
+        <div class="flex-center-div">
+            <q-btn-toggle v-model="use_perspective_camera" no-caps rounded unelevated toggle-color="primary" color="white" text-color="primary"
+                :options="[ { label: 'orthogonal', value: false }, { label: 'perspective', value: true } ]" size="lg"
+            ></q-btn-toggle>
+            <span style="margin: 0 15px 0 15px; line-height: 52px; font-size: 25px;">camera</span>
+            <q-btn-dropdown color="warning" label="reset" no-caps size="lg" rounded>
+                <q-list>
+                    <q-item clickable v-close-popup @click="reset_camera('top')">
+                        <q-item-section>
+                        <q-item-label>from top</q-item-label>
+                        </q-item-section>
+                    </q-item>
+                    <q-item clickable v-close-popup @click="reset_camera('front')">
+                        <q-item-section>
+                        <q-item-label>from front</q-item-label>
+                        </q-item-section>
+                        </q-item>
+                    <q-item clickable v-close-popup @click="reset_camera('left')">
+                        <q-item-section>
+                        <q-item-label>from left</q-item-label>
+                        </q-item-section>
+                    </q-item>
+                </q-list>
+            </q-btn-dropdown>
+        </div>
+        <div class="flex-center-div">
+            <div><q-toggle v-model="show_config" label="render configs" size="md"/></div>
+            <div><q-toggle v-model="show_stats" label="performance stats" size="md"/></div>
+            <div><q-toggle v-model="lock_view" label="lock view" size="md"/></div>
+            <!-- <q-toggle v-model="show_hover_effect" label="hover effect" size="md"/> -->
+        </div>
+        <div class="flex-center-div">
+            <span style="margin: 0 5px 0 5px; line-height: 40px; font-size: 20px;">export image:</span>
+            <q-select rounded outlined v-model="export_scale_selected" :options="export_resolution_options" label="resolution" style="width: 200px;"
+                emit-value behavior="menu" map-options dense></q-select>
+            <q-btn push color="brown-5" rounded label="preview" style="margin-left: 10px;" no-caps @click="preview_image"></q-btn>
+            <q-btn push color="brown-5" rounded label="download" style="margin-left: 10px;" no-caps @click="download_image"></q-btn>
+        </div>
+    </q-scroll-area>
+</div>
+
+<script type="importmap">
+{
+    "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.139.2/build/three.module.js",
+        "./node_modules/three/examples/jsm/controls/OrbitControls.js": "https://cdn.jsdelivr.net/npm/three@0.139.2/examples/jsm/controls/OrbitControls.js",
+        "./node_modules/three/examples/jsm/geometries/ConvexGeometry.js": "https://cdn.jsdelivr.net/npm/three@0.139.2/examples/jsm/geometries/ConvexGeometry.js",
+        "./node_modules/three/examples/jsm/libs/stats.module.js": "https://cdn.jsdelivr.net/npm/three@0.139.2/examples/jsm/libs/stats.module.js",
+        "./node_modules/three/examples/jsm/libs/lil-gui.module.min.js": "https://cdn.jsdelivr.net/npm/three@0.139.2/examples/jsm/libs/lil-gui.module.min.js"
+    }
+}
+</script>
+<script src="https://unpkg.com/es-module-shims@1.3.6/dist/es-module-shims.js"></script>
+
+<script type="module" src="./index.js"></script>
+<!-- <script>
+// always fetch the latest script and avoid caching
+var index_script = document.createElement('script');
+index_script.setAttribute('src','./index.js?v=' + Math.random());
+index_script.setAttribute('type','module');
+document.body.appendChild(index_script);
+</script> -->
+
+</body>
+</html>
