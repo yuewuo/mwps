@@ -152,7 +152,7 @@ const zero_vector = new THREE.Vector3( 0, 0, 0 )
 const unit_up_vector = new THREE.Vector3( 0, 1, 0 )
 
 // create common geometries
-const segment = parseInt(urlParams.get('segment') || 128)  // higher segment will consume more GPU resources
+const segment = parseInt(urlParams.get('segment') || 32)  // higher segment will consume more GPU resources
 const vertex_radius = parseFloat(urlParams.get('vertex_radius') || 0.15)
 export const vertex_radius_scale = ref(1)
 const scaled_vertex_radius = computed(() => {
@@ -164,8 +164,18 @@ const edge_radius_scale = ref(1)
 const scaled_edge_radius = computed(() => {
     return edge_radius * edge_radius_scale.value
 })
-const edge_geometry = new THREE.CylinderGeometry( edge_radius, edge_radius, 1, segment, 1, true )
-edge_geometry.translate(0, 0.5, 0)
+const singular_edge_geometry = new THREE.CylinderGeometry( vertex_radius * 2, vertex_radius * 2, 0.01, segment, 1, false )
+singular_edge_geometry.translate(0, -vertex_radius, 0)
+const normal_edge_geometry = new THREE.CylinderGeometry( edge_radius, edge_radius, 1, segment, 1, true )
+normal_edge_geometry.translate(0, 0.5, 0)
+const edge_geometries = [
+    singular_edge_geometry,
+    normal_edge_geometry,
+]
+function get_edge_geometry(edge_degree) {
+    if (edge_degree-1 < edge_geometries.length) return edge_geometries[edge_degree-1]
+    return edge_geometries[edge_geometries.length-1]
+}
 
 // create common materials
 export const defect_vertex_material = new THREE.MeshStandardMaterial({
@@ -239,8 +249,10 @@ watch(vertex_radius_scale, (newVal, oldVal) => {
     vertex_geometry.scale(newVal, newVal, newVal)
 })
 watch(edge_radius_scale, (newVal, oldVal) => {
-    edge_geometry.scale(1/oldVal, 1, 1/oldVal)
-    edge_geometry.scale(newVal, 1, newVal)
+    for (let edge_geometry of edge_geometries) {
+        edge_geometry.scale(1/oldVal, 1, 1/oldVal)
+        edge_geometry.scale(newVal, 1, newVal)
+    }
 })
 watch([scaled_edge_radius, scaled_vertex_outline_radius], async () => {
     await refresh_snapshot_data()
@@ -263,9 +275,9 @@ export function compute_vector3(data_position) {
     return vector
 }
 export function load_position(mesh_position, data_position) {
-    mesh_position.z = data_position.x
-    mesh_position.x = data_position.y
-    mesh_position.y = data_position.t * t_scale
+    mesh_position.z = data_position.i
+    mesh_position.x = data_position.j
+    mesh_position.y = data_position.t
 }
 
 export const active_mwps_data = shallowRef(null)
@@ -273,9 +285,191 @@ export const active_snapshot_idx = ref(0)
 export async function refresh_snapshot_data() {
     // console.log("refresh_snapshot_data")
     if (active_mwps_data.value != null) {  // no mwps data provided
-
-
-
+        const mwps_data = active_mwps_data.value
+        const snapshot_idx = active_snapshot_idx.value
+        const snapshot = mwps_data.snapshots[snapshot_idx][1]
+        // clear hover and select
+        current_hover.value = null
+        let current_selected_value = JSON.parse(JSON.stringify(current_selected.value))
+        current_selected.value = null
+        await Vue.nextTick()
+        await Vue.nextTick()
+        // update vertex cache
+        vertex_caches = []
+        window.is_vertices_2d_plane = true
+        for (let position of mwps_data.positions) {
+            vertex_caches.push({
+                position: {
+                    center: compute_vector3(position),
+                }
+            })
+        }
+        // draw vertices
+        for (let [i, vertex] of snapshot.vertices.entries()) {
+            if (vertex == null) {
+                if (i < vertex_meshes.length) {  // hide
+                    vertex_meshes[i].visible = false
+                }
+                continue
+            }
+            let position = mwps_data.positions[i]
+            while (vertex_meshes.length <= i) {
+                const vertex_mesh = new THREE.Mesh( vertex_geometry, normal_vertex_material )
+                vertex_mesh.visible = false
+                vertex_mesh.userData = {
+                    type: "vertex",
+                    vertex_index: vertex_meshes.length,
+                }
+                scene.add( vertex_mesh )
+                vertex_meshes.push(vertex_mesh)
+            }
+            const vertex_mesh = vertex_meshes[i]
+            load_position(vertex_mesh.position, position)
+            if (vertex.mi != null && vertex.me == 0) {
+                vertex_mesh.material = disabled_mirror_vertex_material
+            } else if (vertex.s) {
+                vertex_mesh.material = defect_vertex_material
+            } else if (vertex.v) {
+                vertex_mesh.material = virtual_vertex_material
+            } else {
+                vertex_mesh.material = normal_vertex_material
+            }
+            vertex_mesh.visible = true
+        }
+        for (let i = snapshot.vertices.length; i < vertex_meshes.length; ++i) {
+            vertex_meshes[i].visible = false
+        }
+        // draw edges
+        let subgraph_set = {}
+        if (snapshot.subgraph != null) {
+            for (let edge_index of snapshot.subgraph) {
+                subgraph_set[edge_index] = true
+            }
+        }
+        let edge_offset = 0
+        if (scaled_edge_radius.value < scaled_vertex_outline_radius.value) {
+            edge_offset = Math.sqrt(Math.pow(scaled_vertex_outline_radius.value, 2) - Math.pow(scaled_edge_radius.value, 2))
+        }
+        edge_caches = []  // clear cache
+        for (let [i, edge] of snapshot.edges.entries()) {
+            // calculate the center point of all vertices
+            let sum_position = new THREE.Vector3( 0, 0, 0 )
+            for (let j=0; j<edge.v.length; ++j) {
+                const vertex_index = edge.v[j]
+                const vertex_position = mwps_data.positions[vertex_index]
+                sum_position = sum_position.add(compute_vector3(vertex_position))
+            }
+            const center_position = sum_position.multiplyScalar(1 / edge.v.length)
+            let local_edge_cache = []
+            edge_caches.push(local_edge_cache)
+            while (edge_vec_meshes.length <= i) {
+                edge_vec_meshes.push([])
+            }
+            let edge_vec_mesh = edge_vec_meshes[i]
+            for (let j=0; j<edge_vec_mesh.length; ++j) {
+                scene.remove( edge_vec_mesh[j] )
+            }
+            edge_vec_mesh.splice(0, edge_vec_mesh.length) // clear
+            for (let j=0; j<edge.v.length; ++j) {
+                const edge_mesh = new THREE.Mesh( get_edge_geometry(edge.v.length), edge_material )
+                edge_mesh.userData = {
+                    type: "edge",
+                    edge_index: i,
+                }
+                edge_mesh.visible = false
+                scene.add( edge_mesh )
+                edge_vec_mesh.push(edge_mesh)
+            }
+            for (let j=0; j<edge.v.length; ++j) {
+                const vertex_index = edge.v[j]
+                const vertex_position = mwps_data.positions[vertex_index]
+                const relative = center_position.clone().add(compute_vector3(vertex_position).multiplyScalar(-1))
+                const direction = relative.clone().normalize()
+                // console.log(direction)
+                const quaternion = new THREE.Quaternion()
+                quaternion.setFromUnitVectors(unit_up_vector, direction)
+                let start = edge_offset
+                const distance = relative.length()
+                let edge_length = distance - edge_offset
+                if (edge_length < 0) {  // edge length should be non-negative
+                    start = distance
+                    edge_length = 0
+                }
+                const end = start + edge_length
+                let start_position = compute_vector3(vertex_position).add(relative.clone().multiplyScalar(start / distance))
+                let end_position = compute_vector3(vertex_position).add(relative.clone().multiplyScalar(end / distance))
+                if (edge.v.length == 1) {
+                    start_position = compute_vector3(vertex_position)
+                    end_position = compute_vector3(vertex_position)
+                }
+                local_edge_cache.push({
+                    position: {
+                        start: start_position,
+                        end: end_position,
+                    }
+                })
+                const edge_mesh = edge_vec_mesh[j]
+                edge_mesh.position.copy(start_position)
+                if (edge.v.length != 1) {
+                    edge_mesh.scale.set(1, edge_length, 1)
+                    edge_mesh.setRotationFromQuaternion(quaternion)
+                }
+                edge_mesh.visible = true
+                if (edge.v.length != 1 && edge_length == 0) {
+                    edge_mesh.visible = false
+                }
+                if (edge.v.length == 1) {
+                    console.log(edge_mesh)
+                }
+                edge_mesh.material = edge_material  // TODO:
+                if (snapshot.subgraph != null) {
+                    edge_mesh.material = edge_material  // do not display grown edges
+                }
+                if (subgraph_set[i]) {
+                    edge_mesh.material = subgraph_edge_material
+                }
+            }
+        }
+        for (let i = snapshot.edges.length; i < edge_vec_meshes.length; ++i) {
+            for (let edge_mesh of edge_vec_meshes[i]) {
+                edge_mesh.visible = false
+            }
+        }
+        // draw vertex outlines
+        for (let [i, vertex] of snapshot.vertices.entries()) {
+            if (vertex == null) {
+                if (i < vertex_outline_meshes.length) {  // hide
+                    vertex_outline_meshes[i].visible = false
+                }
+                continue
+            }
+            let position = mwps_data.positions[i]
+            while (vertex_outline_meshes.length <= i) {
+                const vertex_outline_mesh = new THREE.Mesh( vertex_geometry, normal_vertex_outline_material )
+                vertex_outline_mesh.visible = false
+                update_mesh_outline(vertex_outline_mesh)
+                scene.add( vertex_outline_mesh )
+                vertex_outline_meshes.push(vertex_outline_mesh)
+            }
+            const vertex_outline_mesh = vertex_outline_meshes[i]
+            load_position(vertex_outline_mesh.position, position)
+            if (vertex.s) {
+                vertex_outline_mesh.material = defect_vertex_outline_material
+            } else if (vertex.v) {
+                vertex_outline_mesh.material = virtual_vertex_outline_material
+            } else {
+                vertex_outline_mesh.material = normal_vertex_outline_material
+            }
+            vertex_outline_mesh.visible = true
+        }
+        for (let i = snapshot.vertices.length; i < vertex_meshes.length; ++i) {
+            vertex_outline_meshes[i].visible = false
+        }
+        // reset select
+        await Vue.nextTick()
+        if (is_user_data_valid(current_selected_value)) {
+            current_selected.value = current_selected_value
+        }
     }
 }
 watch([active_mwps_data], refresh_snapshot_data)  // call refresh_snapshot_data
@@ -379,48 +573,20 @@ function is_user_data_valid(user_data) {
     return false
 }
 function set_material_with_user_data(user_data, material) {  // return the previous material
-    if (user_data.type == "qubit") {
-        const { i, j } = user_data
-        const mesh = qubit_meshes[i][j]
-        let previous_material = mesh.material
-        mesh.material = material
+    if (user_data.type == "vertex") {
+        let vertex_index = user_data.vertex_index
+        let vertex_mesh = vertex_meshes[vertex_index]
+        let previous_material = vertex_mesh.material
+        vertex_mesh.material = material
         return previous_material
     }
-    if (user_data.type == "idle_gate") {
-        const { t, i, j } = user_data
-        const mesh = idle_gate_meshes[t][i][j]
-        let previous_material = mesh.material
-        mesh.material = material
-        return previous_material
-    }
-    if (user_data.type == "noise_model_node_pauli") {
-        const { t, i, j } = user_data
-        const mesh = noise_model_pauli_meshes[t][i][j]
-        let previous_material = mesh.material
-        mesh.material = material
-        return previous_material
-    }
-    if (user_data.type == "noise_model_node_erasure") {
-        const { t, i, j } = user_data
-        const mesh = noise_model_erasure_meshes[t][i][j]
-        let previous_material = mesh.material
-        mesh.material = material
-        return previous_material
-    }
-    if (user_data.type == "defect") {
-        const { defect_idx, t, i, j } = user_data
-        const mesh = defect_measurement_meshes[defect_idx]
-        let previous_material = mesh.material
-        mesh.material = material
-        return previous_material
-    }
-    if (user_data.type == "correction") {
-        const { idx, t, i, j } = user_data
-        const vec_mesh = correction_vec_meshes[idx]
-        let previous_material = vec_mesh.map(x => x.material)
-        let expanded_material = material
-        if (!Array.isArray(material)) expanded_material = Array(vec_mesh.length).fill(material)
-        Object.entries(expanded_material).map(([idx, material]) => { vec_mesh[idx].material = material })
+    if (user_data.type == "edge") {
+        let edge_index = user_data.edge_index
+        let edge_vec_mesh = edge_vec_meshes[edge_index]
+        let previous_material = edge_vec_mesh[0].material
+        for (let mesh of edge_vec_mesh) {
+            mesh.material = material
+        }
         return previous_material
     }
     console.error(`unknown type ${user_data.type}`)

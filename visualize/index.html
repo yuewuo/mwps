@@ -184,6 +184,74 @@ h5 {
             <q-btn push color="brown-5" rounded label="preview" style="margin-left: 10px;" no-caps @click="preview_image"></q-btn>
             <q-btn push color="brown-5" rounded label="download" style="margin-left: 10px;" no-caps @click="download_image"></q-btn>
         </div>
+        <q-card bordered class="select-info-div" v-if="current_selected != null && current_selected.type == 'vertex'">
+            <q-card-section class="bg-cyan text-white">
+                <div class="text-h6">Vertex {{ current_selected.vertex_index }} {{ selected_vertex_attributes }}</div>
+            </q-card-section>
+            <q-separator inset></q-separator>
+            <q-card-section>
+                <div v-for="edge of selected_vertex_neighbor_edges" style="margin-top: 15px;">
+                    <q-btn color="teal" no-caps size="12px" rounded padding="none md" @mouseenter="mouseenter('edge', edge.edge_index)" @mouseleave="mouseleave()"
+                            @click="jump_to('edge', edge.edge_index)">
+                        <div class="text-center">
+                            Edge</span><br>{{ edge.edge_index }}
+                        </div>
+                    </q-btn>
+                    <div class="edge-visualizer" style="width: 205px;" @mouseenter="mouseenter('edge', edge.edge_index)" @mouseleave="mouseleave()">
+                        <div class="grown" :style="{ width: `calc(100% * ${edge.weight == 0 ? 0.5 : 0.01 + 0.98 * edge.grown / edge.weight})` }">
+                            {{ edge.grown == 0 ? "|" : edge.grown }}
+                        </div>
+                        <div class="unexplored" :style="{ width: `calc(100% * ${edge.weight == 0 ? 0 : 0.01 + 0.98 * edge.unexplored / edge.weight})` }">
+                            {{ edge.unexplored == 0 ? "|" : edge.unexplored }}
+                        </div>
+                    </div>
+                    <q-circular-progress show-value :value="edge.grown / edge.weight * 100" style="margin-right: 5px;"
+                            size="40px" font-size="18px" :thickness="0.15" color="red" track-color="grey-3">
+                        {{ edge.weight }}
+                    </q-circular-progress>
+                    <q-btn color="cyan" no-caps size="12px" rounded padding="none md" @mouseenter="mouseenter('vertex', vertex_index)" @mouseleave="mouseleave()"
+                            @click="jump_to('vertex', vertex_index)" style="margin: 2px;" v-for="vertex_index of edge.vertices">
+                        <div class="text-center">
+                            V</span><br>{{ vertex_index }}
+                        </div>
+                    </q-btn>
+                </div>
+            </q-card-section>
+        </q-card>
+        <q-card bordered class="select-info-div" v-if="current_selected != null && current_selected.type == 'edge'">
+            <q-card-section class="bg-teal text-white">
+                <div class="text-h6">Edge {{ current_selected.edge_index }} {{ selected_edge_attributes }}</div>
+            </q-card-section>
+            <q-separator inset></q-separator>
+            <q-card-section>
+                <div style="margin-top: 15px;" v-if="selected_edge != null">
+                    <q-btn color="teal" no-caps size="12px" rounded padding="none md" @mouseenter="mouseenter('edge', selected_edge.edge_index)" @mouseleave="mouseleave()"
+                            @click="jump_to('edge', selected_edge.edge_index)">
+                        <div class="text-center">
+                            Edge</span><br>{{ selected_edge.edge_index }}
+                        </div>
+                    </q-btn>
+                    <div class="edge-visualizer" style="width: 205px;" @mouseenter="mouseenter('edge', selected_edge.edge_index)" @mouseleave="mouseleave()">
+                        <div class="grown" :style="{ width: `calc(100% * ${selected_edge.weight == 0 ? 0.5 : 0.01 + 0.98 * selected_edge.grown / selected_edge.weight})` }">
+                            {{ selected_edge.grown == 0 ? "|" : selected_edge.grown }}
+                        </div>
+                        <div class="unexplored" :style="{ width: `calc(100% * ${selected_edge.weight == 0 ? 0 : 0.01 + 0.98 * selected_edge.unexplored / selected_edge.weight})` }">
+                            {{ selected_edge.unexplored == 0 ? "|" : selected_edge.unexplored }}
+                        </div>
+                    </div>
+                    <q-circular-progress show-value :value="selected_edge.grown / selected_edge.weight * 100" style="margin-right: 5px;"
+                            size="40px" font-size="18px" :thickness="0.15" color="red" track-color="grey-3">
+                        {{ selected_edge.weight }}
+                    </q-circular-progress>
+                    <q-btn color="cyan" no-caps size="12px" rounded padding="none md" @mouseenter="mouseenter('vertex', vertex_index)" @mouseleave="mouseleave()"
+                            @click="jump_to('vertex', vertex_index)" style="margin: 2px;" v-for="vertex_index of selected_edge.vertices">
+                        <div class="text-center">
+                            V</span><br>{{ vertex_index }}
+                        </div>
+                    </q-btn>
+                </div>
+            </q-card-section>
+        </q-card>
     </q-scroll-area>
 </div>
 

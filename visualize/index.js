@@ -200,14 +200,14 @@ const App = {
                     if (edge == null) {
                         continue
                     }
-                    for (let v_idx of edge.vertices) {
+                    for (let v_idx of edge.v) {
                         if (v_idx == vertex_index) {
                             neighbor_edges.push({
                                 edge_index: edge_index,
                                 grown: edge.g,
                                 unexplored: edge.w - edge.g,
                                 weight: edge.w,
-                                vertex_index: vertex_index,
+                                vertices: [...edge.v],
                             })
                             break
                         }
@@ -223,7 +223,7 @@ const App = {
                     grown: edge.g,
                     unexplored: edge.w - edge.g,
                     weight: edge.w,
-                    vertices: [...edge.vertices],
+                    vertices: [...edge.v],
                 }
                 this.selected_edge_attributes = ""
             }
@@ -341,6 +341,9 @@ const App = {
                 height: `9px`,
                 opacity: 0.2
             }
+        },
+        snapshot() {
+            return mwps_data.snapshots[this.snapshot_select][1]
         },
     },
 }
