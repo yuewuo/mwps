@@ -10,7 +10,7 @@
 
 use super::visualize::*;
 use super::util::*;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use crate::serde_json;
 use crate::rand_xoshiro::rand_core::SeedableRng;
 use crate::derivative::Derivative;
@@ -118,6 +118,33 @@ pub trait ExampleCode {
             let half_weight: Weight = ((max_half_weight as f64) * weight / max_weight).round() as Weight;
             edge.half_weight = if half_weight == 0 { 1 } else { half_weight };  // weight is required to be even
         }
+    }
+
+    /// remove duplicate edges by keeping one with largest probability
+    fn remove_duplicate_edges(&mut self) {
+        let (_vertices, edges) = self.vertices_edges();
+        let mut remove_edges = HashSet::new();
+        let mut existing_edges = HashMap::<Vec<VertexIndex>, EdgeIndex>::with_capacity(edges.len() * 2);
+        for (edge_idx, edge) in edges.iter().enumerate() {
+            let mut vertices = edge.vertices.clone();
+            vertices.sort();
+            if existing_edges.contains_key(&vertices) {
+                let previous_idx = existing_edges[&vertices];
+                if edge.p > edges[previous_idx].p {
+                    remove_edges.insert(previous_idx);
+                } else {
+                    remove_edges.insert(edge_idx);
+                }
+            }
+            existing_edges.insert(vertices, edge_idx as EdgeIndex);
+        }
+        let mut dedup_edges = Vec::with_capacity(edges.len());
+        for (edge_idx, edge) in edges.drain(..).enumerate() {
+            if !remove_edges.contains(&edge_idx) {
+                dedup_edges.push(edge);
+            }
+        }
+        *edges = dedup_edges;
     }
 
     /// sanity check to avoid duplicate edges that are hard to debug
@@ -528,6 +555,220 @@ impl CodeCapacityPlanarCode {
 
 }
 
+/// code capacity noise model is a single measurement round with perfect stabilizer measurements;
+/// e.g. this is the decoding hypergraph of a rotated tailored surface code that have all the stabilizers and including degree-4 hyperedges;
+/// the noise is biased to Z errors, with X and Y-typed stabilizers
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "python_binding", cfg_eval)]
+#[cfg_attr(feature = "python_binding", pyclass)]
+pub struct CodeCapacityTailoredCode {
+    /// vertices in the code
+    #[cfg_attr(feature = "python_binding", pyo3(get, set))]
+    pub vertices: Vec<CodeVertex>,
+    /// nearest-neighbor edges in the decoding graph
+    #[cfg_attr(feature = "python_binding", pyo3(get, set))]
+    pub edges: Vec<CodeEdge>,
+}
+
+impl ExampleCode for CodeCapacityTailoredCode {
+    fn vertices_edges(&mut self) -> (&mut Vec<CodeVertex>, &mut Vec<CodeEdge>) { (&mut self.vertices, &mut self.edges) }
+    fn immutable_vertices_edges(&self) -> (&Vec<CodeVertex>, &Vec<CodeEdge>) { (&self.vertices, &self.edges) }
+}
+
+#[cfg(feature="python_binding")]
+bind_trait_example_code!{CodeCapacityTailoredCode}
+
+#[cfg_attr(feature = "python_binding", cfg_eval)]
+#[cfg_attr(feature = "python_binding", pymethods)]
+impl CodeCapacityTailoredCode {
+
+    #[cfg_attr(feature = "python_binding", new)]
+    #[cfg_attr(feature = "python_binding", args(max_half_weight = "500"))]
+    pub fn new(d: VertexNum, pxy: f64, pz: f64, max_half_weight: Weight) -> Self {
+        let mut code = Self::create_code(d, pxy, pz);
+        code.compute_weights(max_half_weight);
+        code
+    }
+
+    #[cfg_attr(feature = "python_binding", staticmethod)]
+    pub fn create_code(d: VertexNum, pxy: f64, pz: f64) -> Self {
+        assert!(d >= 3 && d % 2 == 1, "d must be odd integer >= 3");
+        // generate all the existing stabilizers
+        let boundary_stab_num = (d - 1) / 2;
+        let vertex_num = (d - 1) * (d - 1) + 4 * boundary_stab_num;  // `d` rows
+        let mut positions = Vec::new();
+        let mut stabilizers = HashMap::<(usize, usize), VertexIndex>::new();
+        for i in 0..boundary_stab_num {
+            stabilizers.insert((0, 4 + 4 * i), positions.len());
+            positions.push(VisualizePosition::new(0., (2 + 2 * i) as f64, 0.))
+        }
+        for i in 0..boundary_stab_num {
+            stabilizers.insert((2 * d, 2 + 4 * i), positions.len());
+            positions.push(VisualizePosition::new(d as f64, (1 + 2 * i) as f64, 0.))
+        }
+        for row in 0..d-1 {
+            for idx in 0..d {
+                let i = 2 + 2 * row;
+                let j = 2 * idx + (if row % 2 == 0 { 0 } else { 2 });
+                stabilizers.insert((i, j), positions.len());
+                positions.push(VisualizePosition::new((i/2) as f64, (j/2) as f64, 0.))
+            }
+        }
+        assert_eq!(positions.len(), vertex_num);
+        let mut edges = Vec::new();
+        // first add Z errors
+        for di in (1..2*d).step_by(2) {
+            for dj in (1..2*d).step_by(2) {
+                let mut vertices = vec![];
+                for (si, sj) in [(di-1, dj-1), (di-1, dj+1), (di+1, dj-1), (di+1, dj+1)] {
+                    if stabilizers.contains_key(&(si, sj)) {
+                        vertices.push(stabilizers[&(si, sj)]);
+                    }
+                }
+                let mut edge = CodeEdge::new(vertices);
+                edge.p = pz;
+                edges.push(edge);
+            }
+        }
+        // then add X and Y errors
+        fn is_x_stab(si: usize, sj: usize) -> bool {
+            (si + sj) % 4 == 2
+        }
+        if pxy > 0. {
+            for di in (1..2*d).step_by(2) {
+                for dj in (1..2*d).step_by(2) {
+                    let mut x_error_vertices = vec![];
+                    let mut y_error_vertices = vec![];
+                    for (si, sj) in [(di-1, dj-1), (di-1, dj+1), (di+1, dj-1), (di+1, dj+1)] {
+                        if stabilizers.contains_key(&(si, sj)) {
+                            if !is_x_stab(si, sj) {  // X error is only detectable by Y stabilizers
+                                x_error_vertices.push(stabilizers[&(si, sj)]);
+                            }
+                            if is_x_stab(si, sj) {  // Y error is only detectable by X stabilizers
+                                y_error_vertices.push(stabilizers[&(si, sj)]);
+                            }
+                        }
+                    }
+                    for mut edge in [CodeEdge::new(x_error_vertices), CodeEdge::new(y_error_vertices)] {
+                        edge.p = pxy;
+                        edges.push(edge);
+                    }
+                }
+            }
+        }
+        let mut code = Self {
+            vertices: Vec::new(),
+            edges,
+        };
+        // there might be duplicate edges; select a larger probability one
+        code.remove_duplicate_edges();
+        // create vertices
+        code.fill_vertices(vertex_num);
+        for (i, position) in positions.into_iter().enumerate() {
+            code.vertices[i].position = position;
+        }
+        code
+    }
+
+}
+
+/// code capacity noise model is a single measurement round with perfect stabilizer measurements;
+/// e.g. this is the decoding hypergraph of a color code that have all only the Z stabilizers
+/// (because X and Z have the same location, for simplicity and better visual)
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "python_binding", cfg_eval)]
+#[cfg_attr(feature = "python_binding", pyclass)]
+pub struct CodeCapacityColorCode {
+    /// vertices in the code
+    #[cfg_attr(feature = "python_binding", pyo3(get, set))]
+    pub vertices: Vec<CodeVertex>,
+    /// nearest-neighbor edges in the decoding graph
+    #[cfg_attr(feature = "python_binding", pyo3(get, set))]
+    pub edges: Vec<CodeEdge>,
+}
+
+impl ExampleCode for CodeCapacityColorCode {
+    fn vertices_edges(&mut self) -> (&mut Vec<CodeVertex>, &mut Vec<CodeEdge>) { (&mut self.vertices, &mut self.edges) }
+    fn immutable_vertices_edges(&self) -> (&Vec<CodeVertex>, &Vec<CodeEdge>) { (&self.vertices, &self.edges) }
+}
+
+#[cfg(feature="python_binding")]
+bind_trait_example_code!{CodeCapacityColorCode}
+
+#[cfg_attr(feature = "python_binding", cfg_eval)]
+#[cfg_attr(feature = "python_binding", pymethods)]
+impl CodeCapacityColorCode {
+
+    #[cfg_attr(feature = "python_binding", new)]
+    #[cfg_attr(feature = "python_binding", args(max_half_weight = "500"))]
+    pub fn new(d: VertexNum, p: f64, max_half_weight: Weight) -> Self {
+        let mut code = Self::create_code(d);
+        code.set_probability(p);
+        code.compute_weights(max_half_weight);
+        code
+    }
+
+    #[cfg_attr(feature = "python_binding", staticmethod)]
+    pub fn create_code(d: VertexNum) -> Self {
+        assert!(d >= 3 && d % 2 == 1, "d must be odd integer >= 3");
+        // generate all the existing stabilizers
+        let row_num = (d - 1) / 2 * 3 + 1;
+        let vertex_num = (d - 1) * (d + 1) / 8 * 3;
+        let mut positions = Vec::new();
+        let mut stabilizers = HashMap::<(usize, usize), VertexIndex>::new();
+        fn exists(d: usize, i: isize, j: isize) -> bool {
+            i >= 0 && j >= 0 && i + j <= (d as isize - 1) * 3 / 2
+        }
+        for row in 0..(d-1)/2 {
+            for column in 0..(d-1)/2-row {
+                let gi = 1 + row * 3;
+                let gj = column * 3;
+                for (i, j) in [(gi, gj), (gi-1, gj+2), (gi+1, gj+1)] {
+                    assert!(exists(d, i as isize, j as isize));
+                    stabilizers.insert((i, j), positions.len());
+                    let ratio = 1.;
+                    let x = (i as f64 + j as f64) * ratio;
+                    let y = (j as f64 - i as f64) / 3f64.sqrt() * ratio;
+                    positions.push(VisualizePosition::new(x, y, 0.))
+                }
+            }
+        }
+        assert_eq!(positions.len(), vertex_num);
+        let mut edges = Vec::new();
+        for di in 0..row_num as isize {
+            for dj in 0..row_num as isize - di {
+                assert!(exists(d, di, dj));
+                if (di + 2 * dj) % 3 != 1 {  // is data qubit
+                    let mut vertices = vec![];
+                    let directions = if (di + 2 * dj) % 3 == 0 {
+                        [(0, -1), (1, 0), (-1, 1)]
+                    } else {
+                        [(1, -1), (-1, 0), (0, 1)]
+                    };
+                    for (dsi, dsj) in directions {
+                        let (si, sj) = (di + dsi, dj + dsj);
+                        if exists(d, si, sj) {
+                            vertices.push(stabilizers[&(si as usize, sj as usize)]);
+                        }
+                    }
+                    edges.push(CodeEdge::new(vertices));
+                }
+            }
+        }
+        let mut code = Self {
+            vertices: Vec::new(),
+            edges,
+        };
+        // create vertices
+        code.fill_vertices(vertex_num);
+        for (i, position) in positions.into_iter().enumerate() {
+            code.vertices[i].position = position;
+        }
+        code
+    }
+
+}
+
 /// read from file, including the error patterns;
 /// the point is to avoid bad cache performance, because generating random error requires iterating over a large memory space,
 /// invalidating all cache. also, this can reduce the time of decoding by prepare the data before hand and could be shared between
@@ -659,6 +900,20 @@ mod tests {
         let mut code = CodeCapacityPlanarCode::new(7, 0.1, 500);
         code.sanity_check().unwrap();
         visualize_code(&mut code, format!("example_code_capacity_planar_code.json"));
+    }
+
+    #[test]
+    fn example_code_capacity_tailored_code() {  // cargo test example_code_capacity_tailored_code -- --nocapture
+        let mut code = CodeCapacityTailoredCode::new(5, 0.001, 0.1, 500);
+        code.sanity_check().unwrap();
+        visualize_code(&mut code, format!("example_code_capacity_tailored_code.json"));
+    }
+
+    #[test]
+    fn example_code_capacity_color_code() {  // cargo test example_code_capacity_color_code -- --nocapture
+        let mut code = CodeCapacityColorCode::new(7, 0.1, 500);
+        code.sanity_check().unwrap();
+        visualize_code(&mut code, format!("example_code_capacity_color_code.json"));
     }
 
 }

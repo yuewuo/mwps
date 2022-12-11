@@ -197,7 +197,7 @@ h5 {
                             Edge</span><br>{{ edge.edge_index }}
                         </div>
                     </q-btn>
-                    <div class="edge-visualizer" style="width: 205px;" @mouseenter="mouseenter('edge', edge.edge_index)" @mouseleave="mouseleave()">
+                    <div class="edge-visualizer" style="width: 190px;" @mouseenter="mouseenter('edge', edge.edge_index)" @mouseleave="mouseleave()">
                         <div class="grown" :style="{ width: `calc(100% * ${edge.weight == 0 ? 0.5 : 0.01 + 0.98 * edge.grown / edge.weight})` }">
                             {{ edge.grown == 0 ? "|" : edge.grown }}
                         </div>
@@ -231,7 +231,7 @@ h5 {
                             Edge</span><br>{{ selected_edge.edge_index }}
                         </div>
                     </q-btn>
-                    <div class="edge-visualizer" style="width: 205px;" @mouseenter="mouseenter('edge', selected_edge.edge_index)" @mouseleave="mouseleave()">
+                    <div class="edge-visualizer" style="width: 190px;" @mouseenter="mouseenter('edge', selected_edge.edge_index)" @mouseleave="mouseleave()">
                         <div class="grown" :style="{ width: `calc(100% * ${selected_edge.weight == 0 ? 0.5 : 0.01 + 0.98 * selected_edge.grown / selected_edge.weight})` }">
                             {{ selected_edge.grown == 0 ? "|" : selected_edge.grown }}
                         </div>

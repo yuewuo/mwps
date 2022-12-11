@@ -168,9 +168,15 @@ const singular_edge_geometry = new THREE.CylinderGeometry( vertex_radius * 2, ve
 singular_edge_geometry.translate(0, -vertex_radius, 0)
 const normal_edge_geometry = new THREE.CylinderGeometry( edge_radius, edge_radius, 1, segment, 1, true )
 normal_edge_geometry.translate(0, 0.5, 0)
+const tri_edge_geometry = new THREE.CylinderGeometry( edge_radius * 1.5, edge_radius * 1.5, 1, segment, 1, true )
+tri_edge_geometry.translate(0, 0.5, 0)
+const quad_edge_geometry = new THREE.CylinderGeometry( edge_radius * 2, edge_radius * 2, 1, segment, 1, true )
+quad_edge_geometry.translate(0, 0.5, 0)
 const edge_geometries = [
     singular_edge_geometry,
     normal_edge_geometry,
+    tri_edge_geometry,
+    quad_edge_geometry,
 ]
 function get_edge_geometry(edge_degree) {
     if (edge_degree-1 < edge_geometries.length) return edge_geometries[edge_degree-1]
@@ -417,9 +423,6 @@ export async function refresh_snapshot_data() {
                 edge_mesh.visible = true
                 if (edge.v.length != 1 && edge_length == 0) {
                     edge_mesh.visible = false
-                }
-                if (edge.v.length == 1) {
-                    console.log(edge_mesh)
                 }
                 edge_mesh.material = edge_material  // TODO:
                 if (snapshot.subgraph != null) {
