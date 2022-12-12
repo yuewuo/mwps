@@ -2,6 +2,8 @@ use serde::{Serialize, Deserialize};
 use crate::rand_xoshiro::rand_core::RngCore;
 use crate::rand_xoshiro;
 use crate::num_rational;
+use crate::visualize::*;
+
 
 pub type Weight = i64;
 pub type EdgeIndex = usize;
@@ -103,3 +105,20 @@ impl F64Rng for DeterministicRng {
     }
 }
 
+/// the result of MWPS algorithm: a parity subgraph (defined by some edges that, 
+/// if are selected, will generate the parity result in the syndrome)
+pub struct Subgraph(Vec<EdgeIndex>);
+
+impl Subgraph {
+    pub fn new(edges: Vec<EdgeIndex>) -> Self {
+        Self(edges)
+    }
+}
+
+impl MWPSVisualizer for Subgraph {
+    fn snapshot(&self, _abbrev: bool) -> serde_json::Value {
+        json!({
+            "subgraph": self.0,
+        })
+    }
+}

@@ -204,9 +204,11 @@ impl DualModuleImpl for DualModuleSerial {
         for edge_index in node.hair_edges.iter() {
             let mut edge = self.edges[*edge_index].write();
             edge.growth += grow_amount.clone();
-            assert!(!edge.growth.is_negative(), "edge over-shrunk: the new growth is {:?}", edge.growth);
-            assert!(edge.growth <= edge.weight, "edge over-grown: the new growth is {:?}, weight is {:?}", edge.growth, edge.weight);
+            assert!(!edge.growth.is_negative(), "edge {} over-shrunk: the new growth is {:?}", edge_index, edge.growth);
+            assert!(edge.growth <= edge.weight, "edge {} over-grown: the new growth is {:?}, weight is {:?}", edge_index, edge.growth, edge.weight);
         }
+        drop(node);
+        dual_node_ptr.write().dual_variable += grow_amount;
     }
 
     fn grow(&mut self, mut length: Rational) {
@@ -276,8 +278,8 @@ mod tests {
     #[test]
     fn dual_module_serial_basics_1() {  // cargo test dual_module_serial_basics_1 -- --nocapture
         let visualize_filename = format!("dual_module_serial_basics_1.json");
-        let half_weight = 500;
-        let mut code = CodeCapacityColorCode::new(7, 0.1, half_weight * 2);
+        let weight = 1000;
+        let mut code = CodeCapacityColorCode::new(7, 0.1, weight);
         let mut visualizer = Visualizer::new(Some(visualize_data_folder() + visualize_filename.as_str()), code.get_positions(), true).unwrap();
         print_visualize_link(visualize_filename.clone());
         // create dual module
@@ -291,13 +293,92 @@ mod tests {
         // grow them each by half
         let dual_node_3_ptr = interface_ptr.read_recursive().nodes[0].clone();
         let dual_node_12_ptr = interface_ptr.read_recursive().nodes[1].clone();
-        dual_module.grow_dual_node(&dual_node_3_ptr, Rational::from_i64(half_weight).unwrap());
-        dual_module.grow_dual_node(&dual_node_12_ptr, Rational::from_i64(half_weight).unwrap());
+        dual_module.grow_dual_node(&dual_node_3_ptr, Rational::from_i64(weight/2).unwrap());
+        dual_module.grow_dual_node(&dual_node_12_ptr, Rational::from_i64(weight/2).unwrap());
         visualizer.snapshot_combined(format!("grow"), vec![&interface_ptr, &dual_module]).unwrap();
         // cluster becomes solved
-        dual_module.grow_dual_node(&dual_node_3_ptr, Rational::from_i64(half_weight).unwrap());
-        dual_module.grow_dual_node(&dual_node_12_ptr, Rational::from_i64(half_weight).unwrap());
+        dual_module.grow_dual_node(&dual_node_3_ptr, Rational::from_i64(weight/2).unwrap());
+        dual_module.grow_dual_node(&dual_node_12_ptr, Rational::from_i64(weight/2).unwrap());
         visualizer.snapshot_combined(format!("solved"), vec![&interface_ptr, &dual_module]).unwrap();
+        // the result subgraph
+        let subgraph = Subgraph::new(vec![15, 20]);
+        visualizer.snapshot_combined(format!("subgraph"), vec![&interface_ptr, &dual_module, &subgraph]).unwrap();
+    }
+
+    #[test]
+    fn dual_module_serial_basics_2() {  // cargo test dual_module_serial_basics_2 -- --nocapture
+        let visualize_filename = format!("dual_module_serial_basics_2.json");
+        let weight = 1000;
+        let mut code = CodeCapacityTailoredCode::new(7, 0., 0.1, weight);
+        let mut visualizer = Visualizer::new(Some(visualize_data_folder() + visualize_filename.as_str()), code.get_positions(), true).unwrap();
+        print_visualize_link(visualize_filename.clone());
+        // create dual module
+        let initializer = code.get_initializer();
+        let mut dual_module = DualModuleSerial::new_empty(&initializer);
+        // try to work on a simple syndrome
+        code.vertices[23].is_defect = true;
+        code.vertices[24].is_defect = true;
+        code.vertices[29].is_defect = true;
+        code.vertices[30].is_defect = true;
+        let interface_ptr = DualModuleInterfacePtr::new_load(&code.get_syndrome(), &mut dual_module);
+        visualizer.snapshot_combined(format!("syndrome"), vec![&interface_ptr, &dual_module]).unwrap();
+        // grow them each by half
+        let dual_node_23_ptr = interface_ptr.read_recursive().nodes[0].clone();
+        let dual_node_24_ptr = interface_ptr.read_recursive().nodes[1].clone();
+        let dual_node_29_ptr = interface_ptr.read_recursive().nodes[2].clone();
+        let dual_node_30_ptr = interface_ptr.read_recursive().nodes[3].clone();
+        dual_module.grow_dual_node(&dual_node_23_ptr, Rational::from_i64(weight/4).unwrap());
+        dual_module.grow_dual_node(&dual_node_24_ptr, Rational::from_i64(weight/4).unwrap());
+        dual_module.grow_dual_node(&dual_node_29_ptr, Rational::from_i64(weight/4).unwrap());
+        dual_module.grow_dual_node(&dual_node_30_ptr, Rational::from_i64(weight/4).unwrap());
+        visualizer.snapshot_combined(format!("solved"), vec![&interface_ptr, &dual_module]).unwrap();
+        // the result subgraph
+        let subgraph = Subgraph::new(vec![24]);
+        visualizer.snapshot_combined(format!("subgraph"), vec![&interface_ptr, &dual_module, &subgraph]).unwrap();
+    }
+
+    #[test]
+    fn dual_module_serial_basics_3() {  // cargo test dual_module_serial_basics_3 -- --nocapture
+        let visualize_filename = format!("dual_module_serial_basics_3.json");
+        let weight = 600;  // do not change, the data is hard-coded
+        let pxy = 0.0602828812732227;
+        let mut code = CodeCapacityTailoredCode::new(7, pxy, 0.1, weight);  // do not change probabilities: the data is hard-coded
+        let mut visualizer = Visualizer::new(Some(visualize_data_folder() + visualize_filename.as_str()), code.get_positions(), true).unwrap();
+        print_visualize_link(visualize_filename.clone());
+        // create dual module
+        let initializer = code.get_initializer();
+        let mut dual_module = DualModuleSerial::new_empty(&initializer);
+        // try to work on a simple syndrome
+        code.vertices[17].is_defect = true;
+        code.vertices[23].is_defect = true;
+        code.vertices[29].is_defect = true;
+        code.vertices[30].is_defect = true;
+        let interface_ptr = DualModuleInterfacePtr::new_load(&code.get_syndrome(), &mut dual_module);
+        visualizer.snapshot_combined(format!("syndrome"), vec![&interface_ptr, &dual_module]).unwrap();
+        // grow them each by half
+        let dual_node_17_ptr = interface_ptr.read_recursive().nodes[0].clone();
+        let dual_node_23_ptr = interface_ptr.read_recursive().nodes[1].clone();
+        let dual_node_29_ptr = interface_ptr.read_recursive().nodes[2].clone();
+        let dual_node_30_ptr = interface_ptr.read_recursive().nodes[3].clone();
+        dual_module.grow_dual_node(&dual_node_17_ptr, Rational::from_i64(160).unwrap());
+        dual_module.grow_dual_node(&dual_node_23_ptr, Rational::from_i64(160).unwrap());
+        dual_module.grow_dual_node(&dual_node_29_ptr, Rational::from_i64(160).unwrap());
+        dual_module.grow_dual_node(&dual_node_30_ptr, Rational::from_i64(160).unwrap());
+        visualizer.snapshot_combined(format!("grow"), vec![&interface_ptr, &dual_module]).unwrap();
+        // create cluster
+        interface_ptr.create_cluster_node(vec![24].into_iter().collect(), &mut dual_module);
+        let dual_node_cluster_ptr = interface_ptr.read_recursive().nodes[4].clone();
+        dual_module.grow_dual_node(&dual_node_17_ptr, Rational::from_i64(160).unwrap());
+        dual_module.grow_dual_node(&dual_node_cluster_ptr, Rational::from_i64(160).unwrap());
+        visualizer.snapshot_combined(format!("grow"), vec![&interface_ptr, &dual_module]).unwrap();
+        // create bigger cluster
+        interface_ptr.create_cluster_node(vec![18, 23, 24, 31].into_iter().collect(), &mut dual_module);
+        let dual_node_bigger_cluster_ptr = interface_ptr.read_recursive().nodes[5].clone();
+        dual_module.grow_dual_node(&dual_node_bigger_cluster_ptr, Rational::from_i64(120).unwrap());
+        visualizer.snapshot_combined(format!("solved"), vec![&interface_ptr, &dual_module]).unwrap();
+        // the result subgraph
+        let subgraph = Subgraph::new(vec![82, 24]);
+        visualizer.snapshot_combined(format!("subgraph"), vec![&interface_ptr, &dual_module, &subgraph]).unwrap();
     }
 
 }

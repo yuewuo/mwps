@@ -261,6 +261,23 @@ impl DualModuleInterfacePtr {
         cloned_node_ptr
     }
 
+    pub fn create_cluster_node(&self, internal_edges: BTreeSet<EdgeIndex>, dual_module_impl: &mut impl DualModuleImpl) -> DualNodePtr {
+        let mut interface = self.write();
+        let node_ptr = DualNodePtr::new_value(DualNode {
+            index: interface.nodes.len(),
+            internal_edges: internal_edges,
+            internal_vertices: BTreeSet::new(),  // empty is fine: the implementation will fill it
+            hair_edges: BTreeSet::new(),  // to be filled by concrete implementation
+            dual_variable: Rational::zero(),
+            grow_rate: Rational::one(),
+        });
+        let cloned_node_ptr = node_ptr.clone();
+        interface.nodes.push(node_ptr);
+        drop(interface);
+        dual_module_impl.add_dual_node(&cloned_node_ptr);
+        cloned_node_ptr
+    }
+
 }
 
 impl MWPSVisualizer for DualModuleInterfacePtr {

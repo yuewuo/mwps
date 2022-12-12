@@ -208,22 +208,60 @@ export const normal_vertex_outline_material = new THREE.MeshStandardMaterial({
     transparent: true,
     side: THREE.BackSide,
 })
-export const edge_material = new THREE.MeshStandardMaterial({
-    color: 0x000000,
-    opacity: 0.1,
-    transparent: true,
-    side: THREE.FrontSide,
-})
-export const grown_edge_material = new THREE.MeshStandardMaterial({
-    color: 0xff0000,
-    opacity: 1,
-    transparent: true,
-    side: THREE.FrontSide,
-})
+export const edge_materials = []
+let empty_edge_color = new THREE.Color(0, 0, 0)
+let grown_edge_color = new THREE.Color(1, 0, 0)
+let empty_edge_opacity = 0.1
+let grown_edge_opacity = 1
+let almost_empty_ratio = 0.1
+let almost_grown_ratio = 0.3
+let edge_side = THREE.FrontSide
+const color_steps = 20  // there are 20 colors in the middle apart from the empty and full
+function make_edge_material(ratio) {
+    if (ratio < 0) ratio = 0
+    if (ratio > 1) ratio = 1
+    return new THREE.MeshStandardMaterial({
+        color: new THREE.Color().lerpColors(empty_edge_color, grown_edge_color, ratio),
+        opacity: empty_edge_opacity + (grown_edge_opacity - empty_edge_opacity) * ratio,
+        transparent: true,
+        side: edge_side
+    })
+}
+edge_materials.push(make_edge_material(0))
+edge_materials.push(make_edge_material(1))
+for (let i=0; i<color_steps; ++i) {
+    const ratio = almost_empty_ratio + 
+        (almost_grown_ratio - almost_empty_ratio) * i / (color_steps - 1)
+    edge_materials.push(make_edge_material(ratio))
+}
+function update_edge_materials() {
+    for (let idx=0; idx<color_steps+2; ++idx) {
+        let ratio = almost_empty_ratio + 
+            (almost_grown_ratio - almost_empty_ratio) * (idx - 2) / (color_steps - 1)
+        if (idx == 0) ratio = 0
+        if (idx == 1) ratio = 1
+        let new_material = make_edge_material(ratio)
+        edge_materials[idx].color = new_material.color
+        edge_materials[idx].side = new_material.side
+        edge_materials[idx].opacity = new_material.opacity
+        new_material.dispose()
+    }
+}
+export function get_edge_material(grown, weight) {
+    if (grown <= 0 && weight != 0) {  // empty grown
+        return edge_materials[0]
+    } else if (grown >= weight) {  // fully grown
+        return edge_materials[1]
+    } else {
+        let idx = Math.floor(grown / weight * color_steps)
+        if (idx < 0) idx = 0
+        if (idx >= color_steps) idx = color_steps - 1
+        return edge_materials[idx + 2]
+    }
+}
 export const subgraph_edge_material = new THREE.MeshStandardMaterial({
     color: 0x0000ff,
-    opacity: 1,
-    transparent: true,
+    transparent: false,
     side: THREE.FrontSide,
 })
 export const hover_material = new THREE.MeshStandardMaterial({  // when mouse is on this object (vertex or edge)
@@ -376,6 +414,7 @@ export async function refresh_snapshot_data() {
                 scene.remove( edge_vec_mesh[j] )
             }
             edge_vec_mesh.splice(0, edge_vec_mesh.length) // clear
+            const edge_material = get_edge_material(edge.g, edge.w)
             for (let j=0; j<edge.v.length; ++j) {
                 const edge_mesh = new THREE.Mesh( get_edge_geometry(edge.v.length), edge_material )
                 edge_mesh.userData = {
@@ -424,9 +463,9 @@ export async function refresh_snapshot_data() {
                 if (edge.v.length != 1 && edge_length == 0) {
                     edge_mesh.visible = false
                 }
-                edge_mesh.material = edge_material  // TODO:
+                edge_mesh.material = edge_material
                 if (snapshot.subgraph != null) {
-                    edge_mesh.material = edge_material  // do not display grown edges
+                    edge_mesh.material = get_edge_material(0, edge.w)  // do not display grown edges
                 }
                 if (subgraph_set[i]) {
                     edge_mesh.material = subgraph_edge_material
@@ -506,12 +545,13 @@ const conf = {
     defect_vertex_outline_opacity: defect_vertex_outline_material.opacity,
     normal_vertex_outline_color: normal_vertex_outline_material.color,
     normal_vertex_outline_opacity: normal_vertex_outline_material.opacity,
-    edge_color: edge_material.color,
-    edge_opacity: edge_material.opacity,
-    edge_side: edge_material.side,
-    grown_edge_color: grown_edge_material.color,
-    grown_edge_opacity: grown_edge_material.opacity,
-    grown_edge_side: grown_edge_material.side,
+    empty_edge_color: empty_edge_color,
+    empty_edge_opacity: empty_edge_opacity,
+    grown_edge_color: grown_edge_color,
+    grown_edge_opacity: grown_edge_opacity,
+    edge_side: edge_side,
+    almost_empty_ratio: almost_empty_ratio,
+    almost_grown_ratio: almost_grown_ratio,
     subgraph_edge_color: subgraph_edge_material.color,
     subgraph_edge_opacity: subgraph_edge_material.opacity,
     subgraph_edge_side: subgraph_edge_material.side,
@@ -534,12 +574,13 @@ controller.defect_vertex_outline_opacity = vertex_outline_folder.add( conf, 'def
 controller.normal_vertex_outline_color = vertex_outline_folder.addColor( conf, 'normal_vertex_outline_color' ).onChange( function ( value ) { normal_vertex_outline_material.color = value } )
 controller.normal_vertex_outline_opacity = vertex_outline_folder.add( conf, 'normal_vertex_outline_opacity', 0, 1 ).onChange( function ( value ) { normal_vertex_outline_material.opacity = Number(value) } )
 const edge_folder = gui.addFolder( 'edge' )
-controller.edge_color = edge_folder.addColor( conf, 'edge_color' ).onChange( function ( value ) { edge_material.color = value } )
-controller.edge_opacity = edge_folder.add( conf, 'edge_opacity', 0, 1 ).onChange( function ( value ) { edge_material.opacity = Number(value) } )
-controller.edge_side = edge_folder.add( conf, 'edge_side', side_options ).onChange( function ( value ) { edge_material.side = Number(value) } )
-controller.grown_edge_color = edge_folder.addColor( conf, 'grown_edge_color' ).onChange( function ( value ) { grown_edge_material.color = value } )
-controller.grown_edge_opacity = edge_folder.add( conf, 'grown_edge_opacity', 0, 1 ).onChange( function ( value ) { grown_edge_material.opacity = Number(value) } )
-controller.grown_edge_side = edge_folder.add( conf, 'grown_edge_side', side_options ).onChange( function ( value ) { grown_edge_material.side = Number(value) } )
+controller.empty_edge_color = edge_folder.addColor( conf, 'empty_edge_color' ).onChange( function ( value ) { empty_edge_color = value; update_edge_materials() } )
+controller.empty_edge_opacity = edge_folder.add( conf, 'empty_edge_opacity', 0, 1 ).onChange( function ( value ) { empty_edge_opacity = Number(value); update_edge_materials() } )
+controller.grown_edge_color = edge_folder.addColor( conf, 'grown_edge_color' ).onChange( function ( value ) { grown_edge_color = value; update_edge_materials() } )
+controller.grown_edge_opacity = edge_folder.add( conf, 'grown_edge_opacity', 0, 1 ).onChange( function ( value ) { grown_edge_opacity = Number(value); update_edge_materials() } )
+controller.edge_side = edge_folder.add( conf, 'edge_side', side_options ).onChange( function ( value ) { edge_side = value; update_edge_materials() } )
+controller.almost_empty_ratio = edge_folder.add( conf, 'almost_empty_ratio', 0, 1 ).onChange( function ( value ) { almost_empty_ratio = Number(value); update_edge_materials() } )
+controller.almost_grown_ratio = edge_folder.add( conf, 'almost_grown_ratio', 0, 1 ).onChange( function ( value ) { almost_grown_ratio = Number(value); update_edge_materials() } )
 controller.subgraph_edge_color = edge_folder.addColor( conf, 'subgraph_edge_color' ).onChange( function ( value ) { subgraph_edge_material.color = value } )
 controller.subgraph_edge_opacity = edge_folder.add( conf, 'subgraph_edge_opacity', 0, 1 ).onChange( function ( value ) { subgraph_edge_material.opacity = Number(value) } )
 controller.subgraph_edge_side = edge_folder.add( conf, 'subgraph_edge_side', side_options ).onChange( function ( value ) { subgraph_edge_material.side = Number(value) } )
