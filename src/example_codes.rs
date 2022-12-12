@@ -61,7 +61,7 @@ pub struct CodeEdge {
     pub pe: f64,
     /// the integer weight of this edge
     #[cfg_attr(feature = "python_binding", pyo3(get, set))]
-    pub half_weight: Weight,
+    pub weight: Weight,
     /// whether this edge is erased
     #[cfg_attr(feature = "python_binding", pyo3(get, set))]
     pub is_erasure: bool,
@@ -76,7 +76,7 @@ impl CodeEdge {
             vertices: vertices,
             p: 0.,
             pe: 0.,
-            half_weight: 0,
+            weight: 0,
             is_erasure: false,
         }
     }
@@ -102,7 +102,7 @@ pub trait ExampleCode {
 
     /// generic method that automatically computes integer weights from probabilities,
     /// scales such that the maximum integer weight is 10000 and the minimum is 1
-    fn compute_weights(&mut self, max_half_weight: Weight) {
+    fn compute_weights(&mut self, weight_upper_limit: Weight) {
         let (_vertices, edges) = self.vertices_edges();
         let mut max_weight = 0.;
         for edge in edges.iter() {
@@ -115,8 +115,8 @@ pub trait ExampleCode {
         // scale all weights but set the smallest to 1
         for edge in edges.iter_mut() {
             let weight = weight_of_p(edge.p);
-            let half_weight: Weight = ((max_half_weight as f64) * weight / max_weight).round() as Weight;
-            edge.half_weight = if half_weight == 0 { 1 } else { half_weight };  // weight is required to be even
+            let new_weight: Weight = ((weight_upper_limit as f64) * weight / max_weight).round() as Weight;
+            edge.weight = if new_weight == 0 { 1 } else { new_weight };  // weight is required to be even
         }
     }
 
@@ -241,7 +241,7 @@ pub trait ExampleCode {
         let vertex_num = vertices.len() as VertexIndex;
         let mut weighted_edges = Vec::with_capacity(edges.len());
         for edge in edges.iter() {
-            weighted_edges.push((edge.vertices.clone(), edge.half_weight * 2));
+            weighted_edges.push((edge.vertices.clone(), edge.weight));
         }
         SolverInitializer {
             vertex_num,
@@ -353,7 +353,7 @@ macro_rules! bind_trait_example_code {
             #[pyo3(name = "vertex_num")]
             fn trait_vertex_num(&self) -> VertexNum { self.vertex_num() }
             #[pyo3(name = "compute_weights")]
-            fn trait_compute_weights(&mut self, max_half_weight: Weight) { self.compute_weights(max_half_weight) }
+            fn trait_compute_weights(&mut self, weight_upper_limit: Weight) { self.compute_weights(weight_upper_limit) }
             #[pyo3(name = "sanity_check")]
             fn trait_sanity_check(&self) -> Option<String> { self.sanity_check().err() }
             #[pyo3(name = "set_probability")]
@@ -406,7 +406,7 @@ impl<T> MWPSVisualizer for T where T: ExampleCode {
         let mut edges = Vec::<serde_json::Value>::new();
         for edge in self_edges.iter() {
             edges.push(json!({
-                if abbrev { "w" } else { "weight" }: edge.half_weight * 2,
+                if abbrev { "w" } else { "weight" }: edge.weight,
                 if abbrev { "v" } else { "vertices" }: edge.vertices,
             }));
         }
@@ -443,11 +443,11 @@ bind_trait_example_code!{CodeCapacityRepetitionCode}
 impl CodeCapacityRepetitionCode {
 
     #[cfg_attr(feature = "python_binding", new)]
-    #[cfg_attr(feature = "python_binding", args(max_half_weight = "500"))]
-    pub fn new(d: VertexNum, p: f64, max_half_weight: Weight) -> Self {
+    #[cfg_attr(feature = "python_binding", args(weight_upper_limit = "1000"))]
+    pub fn new(d: VertexNum, p: f64, weight_upper_limit: Weight) -> Self {
         let mut code = Self::create_code(d);
         code.set_probability(p);
-        code.compute_weights(max_half_weight);
+        code.compute_weights(weight_upper_limit);
         code
     }
 
@@ -507,11 +507,11 @@ bind_trait_example_code!{CodeCapacityPlanarCode}
 impl CodeCapacityPlanarCode {
 
     #[cfg_attr(feature = "python_binding", new)]
-    #[cfg_attr(feature = "python_binding", args(max_half_weight = "500"))]
-    pub fn new(d: VertexNum, p: f64, max_half_weight: Weight) -> Self {
+    #[cfg_attr(feature = "python_binding", args(weight_upper_limit = "1000"))]
+    pub fn new(d: VertexNum, p: f64, weight_upper_limit: Weight) -> Self {
         let mut code = Self::create_code(d);
         code.set_probability(p);
-        code.compute_weights(max_half_weight);
+        code.compute_weights(weight_upper_limit);
         code
     }
 
@@ -583,10 +583,10 @@ bind_trait_example_code!{CodeCapacityTailoredCode}
 impl CodeCapacityTailoredCode {
 
     #[cfg_attr(feature = "python_binding", new)]
-    #[cfg_attr(feature = "python_binding", args(max_half_weight = "500"))]
-    pub fn new(d: VertexNum, pxy: f64, pz: f64, max_half_weight: Weight) -> Self {
+    #[cfg_attr(feature = "python_binding", args(weight_upper_limit = "1000"))]
+    pub fn new(d: VertexNum, pxy: f64, pz: f64, weight_upper_limit: Weight) -> Self {
         let mut code = Self::create_code(d, pxy, pz);
-        code.compute_weights(max_half_weight);
+        code.compute_weights(weight_upper_limit);
         code
     }
 
@@ -700,11 +700,11 @@ bind_trait_example_code!{CodeCapacityColorCode}
 impl CodeCapacityColorCode {
 
     #[cfg_attr(feature = "python_binding", new)]
-    #[cfg_attr(feature = "python_binding", args(max_half_weight = "500"))]
-    pub fn new(d: VertexNum, p: f64, max_half_weight: Weight) -> Self {
+    #[cfg_attr(feature = "python_binding", args(weight_upper_limit = "1000"))]
+    pub fn new(d: VertexNum, p: f64, weight_upper_limit: Weight) -> Self {
         let mut code = Self::create_code(d);
         code.set_probability(p);
-        code.compute_weights(max_half_weight);
+        code.compute_weights(weight_upper_limit);
         code
     }
 
@@ -836,28 +836,33 @@ impl ErrorPatternReader {
         let initializer = initializer.expect("initializer not present in file");
         let positions = positions.expect("positions not present in file");
         assert_eq!(positions.len(), initializer.vertex_num as usize);
+        let mut code = Self::from_initializer(&initializer);
+        code.syndrome_patterns = syndrome_patterns;
+        // set virtual vertices and positions
+        for (vertex_index, position) in positions.into_iter().enumerate() {
+            code.vertices[vertex_index].position = position;
+        }
+        code
+    }
+
+    pub fn from_initializer(initializer: &SolverInitializer) -> Self {
         let mut code = Self {
             vertices: Vec::with_capacity(initializer.vertex_num as usize),
             edges: Vec::with_capacity(initializer.weighted_edges.len()),
-            syndrome_patterns,
+            syndrome_patterns: vec![],
             syndrome_index: 0,
         };
         for (vertices, weight) in initializer.weighted_edges.iter() {
-            assert!(weight % 2 == 0, "weight must be even number");
             code.edges.push(CodeEdge {
                 vertices: vertices.clone(),
                 p: 0.,  // doesn't matter
                 pe: 0.,  // doesn't matter
-                half_weight: weight / 2,
+                weight: *weight,
                 is_erasure: false,  // doesn't matter
             });
         }
         // automatically create the vertices and nearest-neighbor connection
         code.fill_vertices(initializer.vertex_num);
-        // set virtual vertices and positions
-        for (vertex_index, position) in positions.into_iter().enumerate() {
-            code.vertices[vertex_index].position = position;
-        }
         code
     }
 
@@ -890,28 +895,28 @@ mod tests {
 
     #[test]
     fn example_code_capacity_repetition_code() {  // cargo test example_code_capacity_repetition_code -- --nocapture
-        let mut code = CodeCapacityRepetitionCode::new(7, 0.2, 500);
+        let mut code = CodeCapacityRepetitionCode::new(7, 0.2, 1000);
         code.sanity_check().unwrap();
         visualize_code(&mut code, format!("example_code_capacity_repetition_code.json"));
     }
 
     #[test]
     fn example_code_capacity_planar_code() {  // cargo test example_code_capacity_planar_code -- --nocapture
-        let mut code = CodeCapacityPlanarCode::new(7, 0.1, 500);
+        let mut code = CodeCapacityPlanarCode::new(7, 0.1, 1000);
         code.sanity_check().unwrap();
         visualize_code(&mut code, format!("example_code_capacity_planar_code.json"));
     }
 
     #[test]
     fn example_code_capacity_tailored_code() {  // cargo test example_code_capacity_tailored_code -- --nocapture
-        let mut code = CodeCapacityTailoredCode::new(5, 0.001, 0.1, 500);
+        let mut code = CodeCapacityTailoredCode::new(5, 0.001, 0.1, 1000);
         code.sanity_check().unwrap();
         visualize_code(&mut code, format!("example_code_capacity_tailored_code.json"));
     }
 
     #[test]
     fn example_code_capacity_color_code() {  // cargo test example_code_capacity_color_code -- --nocapture
-        let mut code = CodeCapacityColorCode::new(7, 0.1, 500);
+        let mut code = CodeCapacityColorCode::new(7, 0.1, 1000);
         code.sanity_check().unwrap();
         visualize_code(&mut code, format!("example_code_capacity_color_code.json"));
     }

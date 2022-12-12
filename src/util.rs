@@ -1,6 +1,7 @@
 use serde::{Serialize, Deserialize};
 use crate::rand_xoshiro::rand_core::RngCore;
-use super::rand_xoshiro;
+use crate::rand_xoshiro;
+use crate::num_rational;
 
 pub type Weight = i64;
 pub type EdgeIndex = usize;
@@ -11,6 +12,8 @@ pub type VertexNodeIndex = VertexIndex;  // must be same as VertexIndex, NodeInd
 pub type VertexNum = VertexIndex;
 pub type NodeNum = VertexIndex;
 
+pub type Rational = num_rational::BigRational;
+// pub type Rational = num_rational::Rational64;
 
 #[cfg_attr(feature = "python_binding", cfg_eval)]
 #[cfg_attr(feature = "python_binding", pyclass)]
@@ -24,7 +27,6 @@ pub struct SolverInitializer {
     pub weighted_edges: Vec<(Vec<VertexIndex>, Weight)>,
 }
 
-
 #[cfg_attr(feature = "python_binding", cfg_eval)]
 #[cfg_attr(feature = "python_binding", pymethods)]
 impl SolverInitializer {
@@ -37,6 +39,12 @@ impl SolverInitializer {
     }
     #[cfg(feature = "python_binding")]
     fn __repr__(&self) -> String { format!("{:?}", self) }
+    /// sanity check to avoid duplicate edges that are hard to debug
+    pub fn sanity_check(&self) -> Result<(), String> {
+        use crate::example_codes::*;
+        let mut code = ErrorPatternReader::from_initializer(self);
+        code.sanity_check()
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -8,6 +8,8 @@ extern crate clap;
 extern crate rand_xoshiro;
 extern crate parking_lot;
 extern crate derivative;
+extern crate num_rational;
+extern crate num_traits;
 
 pub mod cli;
 pub mod visualize;
@@ -15,6 +17,7 @@ pub mod dual_module;
 pub mod util;
 pub mod example_codes;
 pub mod pointers;
+pub mod dual_module_serial;
 
 
 #[cfg(feature="python_binding")]
