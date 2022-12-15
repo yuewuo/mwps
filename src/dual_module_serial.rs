@@ -210,8 +210,49 @@ impl DualModuleImpl for DualModuleSerial {
     }
 
     #[allow(clippy::collapsible_else_if)]
-    fn compute_maximum_update_length_dual_node(&mut self, dual_node_ptr: &DualNodePtr, is_grow: bool, simultaneous_update: bool) -> MaxUpdateLength {
-        unimplemented!();
+    fn compute_maximum_update_length_dual_node(&mut self, dual_node_ptr: &DualNodePtr, simultaneous_update: bool) -> MaxUpdateLength {
+        let node = dual_node_ptr.read_recursive();
+        let mut max_update_length = MaxUpdateLength::new();
+        for &edge_index in node.hair_edges.iter() {
+            let edge = self.edges[edge_index].read_recursive();
+            let mut grow_rate = Rational::zero();
+            if simultaneous_update {  // consider all dual nodes
+                for node_weak in edge.dual_nodes.iter() {
+                    grow_rate += node_weak.upgrade_force().read_recursive().grow_rate.clone();
+                }
+            } else {
+                grow_rate = node.grow_rate.clone();
+            }
+            if grow_rate.is_positive() {
+                let edge_remain = edge.weight.clone() - edge.growth.clone();
+                if edge_remain.is_zero() {
+                    max_update_length.merge(MaxUpdateLength::Conflicting(edge_index));
+                } else {
+                    max_update_length.merge(MaxUpdateLength::ValidGrow(edge_remain / grow_rate));
+                }
+            } else if grow_rate.is_negative() {
+                if edge.growth.is_zero() {
+                    if node.grow_rate.is_negative() {
+                        max_update_length.merge(MaxUpdateLength::ShrinkProhibited(dual_node_ptr.clone()));
+                    } else {
+                        // find a negatively growing edge
+                        let mut found = false;
+                        for node_weak in edge.dual_nodes.iter() {
+                            let node_ptr = node_weak.upgrade_force();
+                            if node_ptr.read_recursive().grow_rate.is_negative() {
+                                max_update_length.merge(MaxUpdateLength::ShrinkProhibited(node_ptr));
+                                found = true;
+                                break
+                            }
+                        }
+                        assert!(found, "unreachable");
+                    }
+                } else {
+                    max_update_length.merge(MaxUpdateLength::ValidGrow(- edge.growth.clone() / grow_rate));
+                }
+            }
+        }
+        max_update_length
     }
 
     fn compute_maximum_update_length(&mut self) -> GroupMaxUpdateLength {

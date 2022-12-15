@@ -7,6 +7,7 @@ use crate::util::*;
 use crate::dual_module::*;
 use crate::visualize::*;
 use crate::pointers::*;
+use crate::num_traits::FromPrimitive;
 
 
 /// common trait that must be implemented for each implementation of primal module
@@ -95,6 +96,12 @@ pub trait PrimalModuleImpl {
     }
 
     fn subgraph<D: DualModuleImpl>(&mut self, interface: &DualModuleInterfacePtr, dual_module: &mut D) -> Subgraph;
+
+    fn subgraph_range<D: DualModuleImpl>(&mut self, interface: &DualModuleInterfacePtr, dual_module: &mut D, initializer: &SolverInitializer) -> (Subgraph, WeightRange) {
+        let subgraph = self.subgraph(interface, dual_module);
+        let weight_range = WeightRange::new(interface.sum_dual_variables(), Rational::from_i64(initializer.total_weight_subgraph(&subgraph)).unwrap());
+        (subgraph, weight_range)
+    }
 
     /// performance profiler report
     fn generate_profiler_report(&self) -> serde_json::Value { json!({}) }

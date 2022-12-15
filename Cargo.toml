@@ -56,6 +56,7 @@ derivative = "2.2.0"
 parking_lot = { version = "0.12.1", features = ["hardware-lock-elision"] }
 num-rational = "0.4"
 num-traits = "0.2.15"
+more-asserts = "0.3.1"
 
 [package.metadata.docs.rs]
 rustdoc-args = [ "--html-in-header", "katex-header.html" ]

@@ -152,3 +152,20 @@ impl MWPSVisualizer for Subgraph {
         })
     }
 }
+
+/// the range of the optimal MWPS solution's weight
+pub struct WeightRange {
+    pub lower: Rational,
+    pub upper: Rational,
+}
+
+impl WeightRange {
+    pub fn new(lower: Rational, upper: Rational) -> Self {
+        Self { lower, upper }
+    }
+    /// a solution is optimal only if the range is a single point
+    pub fn is_optimal(&self) -> bool {
+        self.lower == self.upper
+    }
+}
+

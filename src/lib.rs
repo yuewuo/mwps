@@ -10,6 +10,7 @@ extern crate parking_lot;
 extern crate derivative;
 extern crate num_rational;
 extern crate num_traits;
+extern crate more_asserts;
 
 pub mod cli;
 pub mod visualize;

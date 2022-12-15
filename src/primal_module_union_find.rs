@@ -15,7 +15,7 @@ use crate::pointers::*;
 use crate::serde::{Serialize, Deserialize};
 use crate::union_find::*;
 use std::collections::BTreeSet;
-use crate::num_traits::{Zero, One};
+use crate::num_traits::Zero;
 
 
 #[derive(Derivative)]
@@ -93,7 +93,7 @@ impl PrimalModuleImpl for PrimalModuleUnionFind {
                 MaxUpdateLength::Conflicting(edge_index) => {
                     // union all the dual nodes in the edge index and create new dual node by adding this edge to `internal_edges`
                     let dual_nodes = dual_module.get_edge_nodes(edge_index);
-                    debug_assert!(dual_nodes.len() > 1, "should not conflict if no dual nodes are contributing");
+                    debug_assert!(dual_nodes.len() > 0, "should not conflict if no dual nodes are contributing");
                     let cluster_index = dual_nodes[0].read_recursive().index;
                     for node_ptr in dual_nodes.iter() {
                         let mut node = node_ptr.write();
@@ -121,7 +121,7 @@ impl PrimalModuleImpl for PrimalModuleUnionFind {
         }
     }
 
-    fn subgraph<D: DualModuleImpl>(&mut self, interface: &DualModuleInterfacePtr, dual_module: &mut D) -> Subgraph {
+    fn subgraph<D: DualModuleImpl>(&mut self, _interface: &DualModuleInterfacePtr, dual_module: &mut D) -> Subgraph {
         let mut valid_clusters = BTreeSet::new();
         let mut subgraph = Subgraph::new_empty();
         for i in 0..self.union_find.size() {
@@ -142,7 +142,7 @@ Implementing visualization functions
 */
 
 impl MWPSVisualizer for PrimalModuleUnionFind {
-    fn snapshot(&self, abbrev: bool) -> serde_json::Value {
+    fn snapshot(&self, _abbrev: bool) -> serde_json::Value {
         json!({
 
         })
@@ -154,13 +154,12 @@ pub mod tests {
     use super::*;
     use super::super::example_codes::*;
     use super::super::dual_module_serial::*;
-    use crate::num_traits::FromPrimitive;
+    use crate::more_asserts::*;
+    use crate::num_traits::{FromPrimitive, ToPrimitive};
 
-    pub fn primal_module_union_find_basic_standard_syndrome_optional_viz(d: VertexNum, visualize_filename: Option<String>, defect_vertices: Vec<VertexIndex>, final_dual: Weight)
+    pub fn primal_module_union_find_basic_standard_syndrome_optional_viz(mut code: impl ExampleCode, visualize_filename: Option<String>, defect_vertices: Vec<VertexIndex>, final_dual: Weight)
             -> (DualModuleInterfacePtr, PrimalModuleUnionFind, DualModuleSerial) {
         println!("{defect_vertices:?}");
-        let weight = 1000;
-        let mut code = CodeCapacityTailoredCode::new(d, 0., 0.01, weight);
         let mut visualizer = match visualize_filename.as_ref() {
             Some(visualize_filename) => {
                 let visualizer = Visualizer::new(Some(visualize_data_folder() + visualize_filename.as_str()), code.get_positions(), true).unwrap();
@@ -177,19 +176,19 @@ pub mod tests {
         code.set_defect_vertices(&defect_vertices);
         let interface_ptr = DualModuleInterfacePtr::new_empty();
         primal_module.solve_visualizer(&interface_ptr, &code.get_syndrome(), &mut dual_module, visualizer.as_mut());
-        let subgraph = primal_module.subgraph(&interface_ptr, &mut dual_module);
+        let (subgraph, weight_range) = primal_module.subgraph_range(&interface_ptr, &mut dual_module, &initializer);
         if let Some(visualizer) = visualizer.as_mut() {
             visualizer.snapshot_combined("perfect matching and subgraph".to_string(), vec![&interface_ptr, &dual_module, &subgraph]).unwrap();
         }
-        let sum_dual_variables = interface_ptr.sum_dual_variables();
-        assert_eq!(sum_dual_variables, Rational::from_i64(initializer.total_weight_subgraph(&subgraph)).unwrap(), "unmatched sum dual variables");
-        assert_eq!(sum_dual_variables, Rational::from_i64(final_dual * weight).unwrap(), "unexpected final dual variable sum");
+        assert_le!(Rational::from_i64(final_dual).unwrap(), weight_range.upper, "unmatched sum dual variables");
+        assert_ge!(Rational::from_i64(final_dual).unwrap(), weight_range.lower, "unexpected final dual variable sum");
+        println!("weight range: [{}, {}]", weight_range.lower.to_i64().unwrap(), weight_range.upper.to_i64().unwrap());
         (interface_ptr, primal_module, dual_module)
     }
 
-    pub fn primal_module_union_find_basic_standard_syndrome(d: VertexNum, visualize_filename: String, defect_vertices: Vec<VertexIndex>, final_dual: Weight)
+    pub fn primal_module_union_find_basic_standard_syndrome(code: impl ExampleCode, visualize_filename: String, defect_vertices: Vec<VertexIndex>, final_dual: Weight)
             -> (DualModuleInterfacePtr, PrimalModuleUnionFind, DualModuleSerial) {
-        primal_module_union_find_basic_standard_syndrome_optional_viz(d, Some(visualize_filename), defect_vertices, final_dual)
+        primal_module_union_find_basic_standard_syndrome_optional_viz(code, Some(visualize_filename), defect_vertices, final_dual)
     }
 
     /// test a simple case
@@ -197,14 +196,32 @@ pub mod tests {
     fn primal_module_union_find_basic_1() {  // cargo test primal_module_union_find_basic_1 -- --nocapture
         let visualize_filename = format!("primal_module_union_find_basic_1.json");
         let defect_vertices = vec![23, 24, 29, 30];
-        primal_module_union_find_basic_standard_syndrome(7, visualize_filename, defect_vertices, 1);
+        let code = CodeCapacityTailoredCode::new(7, 0., 0.01, 1);
+        primal_module_union_find_basic_standard_syndrome(code, visualize_filename, defect_vertices, 1);
     }
 
     #[test]
     fn primal_module_union_find_basic_2() {  // cargo test primal_module_union_find_basic_2 -- --nocapture
         let visualize_filename = format!("primal_module_union_find_basic_2.json");
         let defect_vertices = vec![16, 17, 23, 25, 29, 30];
-        primal_module_union_find_basic_standard_syndrome(7, visualize_filename, defect_vertices, 2);
+        let code = CodeCapacityTailoredCode::new(7, 0., 0.01, 1);
+        primal_module_union_find_basic_standard_syndrome(code, visualize_filename, defect_vertices, 2);
+    }
+
+    #[test]
+    fn primal_module_union_find_basic_3() {  // cargo test primal_module_union_find_basic_3 -- --nocapture
+        let visualize_filename = format!("primal_module_union_find_basic_3.json");
+        let defect_vertices = vec![14, 15, 16, 17, 22, 25, 28, 31, 36, 37, 38, 39];
+        let code = CodeCapacityTailoredCode::new(7, 0., 0.01, 1);
+        primal_module_union_find_basic_standard_syndrome(code, visualize_filename, defect_vertices, 5);
+    }
+
+    #[test]
+    fn primal_module_union_find_basic_4() {  // cargo test primal_module_union_find_basic_4 -- --nocapture
+        let visualize_filename = format!("primal_module_union_find_basic_4.json");
+        let defect_vertices = vec![3, 12];
+        let code = CodeCapacityColorCode::new(7, 0.01, 1);
+        primal_module_union_find_basic_standard_syndrome(code, visualize_filename, defect_vertices, 2);
     }
 
 }

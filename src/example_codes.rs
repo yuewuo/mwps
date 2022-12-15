@@ -726,7 +726,7 @@ impl CodeCapacityColorCode {
                 for (i, j) in [(gi, gj), (gi-1, gj+2), (gi+1, gj+1)] {
                     assert!(exists(d, i as isize, j as isize));
                     stabilizers.insert((i, j), positions.len());
-                    let ratio = 0.5;
+                    let ratio = 0.7;
                     let x = (i as f64 + j as f64) * ratio;
                     let y = (j as f64 - i as f64) / 3f64.sqrt() * ratio;
                     positions.push(VisualizePosition::new(x, y, 0.))

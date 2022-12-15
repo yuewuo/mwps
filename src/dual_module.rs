@@ -122,9 +122,8 @@ pub trait DualModuleImpl {
 
     /// An optional function that helps to break down the implementation of [`DualModuleImpl::compute_maximum_update_length`]
     /// check the maximum length to grow (shrink) specific dual node, if length is 0, give the reason of why it cannot further grow (shrink).
-    /// if `is_grow` is false, return `length` <= 0, in any case |`length`| is maximized so that at least one edge becomes fully grown or fully not-grown.
     /// if `simultaneous_update` is true, also check for the peer node according to [`DualNode::grow_state`].
-    fn compute_maximum_update_length_dual_node(&mut self, _dual_node_ptr: &DualNodePtr, _is_grow: bool, _simultaneous_update: bool) -> MaxUpdateLength {
+    fn compute_maximum_update_length_dual_node(&mut self, _dual_node_ptr: &DualNodePtr, _simultaneous_update: bool) -> MaxUpdateLength {
         panic!("the dual module implementation doesn't support this function, please use another dual module")
     }
 
@@ -148,6 +147,32 @@ pub trait DualModuleImpl {
     }
 
     fn get_edge_nodes(&self, edge_index: EdgeIndex) -> Vec<DualNodePtr>;
+
+}
+
+impl MaxUpdateLength {
+
+    pub fn new() -> Self {
+        Self::Unbounded
+    }
+
+    pub fn merge(&mut self, max_update_length: MaxUpdateLength) {
+        match self {
+            Self::Unbounded => {
+                *self = max_update_length;
+            },
+            Self::ValidGrow(current_length) => {
+                match max_update_length {
+                    MaxUpdateLength::Unbounded => { },  // do nothing
+                    MaxUpdateLength::ValidGrow(length) => {
+                        *self = Self::ValidGrow(std::cmp::min(current_length.clone(), length))
+                    }
+                    _ => { *self = max_update_length },
+                }
+            },
+            _ => { }  // do nothing if it's already a conflict
+        }
+    }
 
 }
 
@@ -313,7 +338,11 @@ impl MWPSVisualizer for DualModuleInterfacePtr {
                 if abbrev { "v" } else { "internal_vertices" }: dual_node.internal_vertices,
                 if abbrev { "h" } else { "hair_edges" }: dual_node.hair_edges,
                 if abbrev { "d" } else { "dual_variable" }: dual_node.dual_variable.to_f64(),
+                if abbrev { "dn" } else { "dual_variable_numerator" }: dual_node.dual_variable.numer().to_i64(),
+                if abbrev { "dd" } else { "dual_variable_denominator" }: dual_node.dual_variable.denom().to_i64(),
                 if abbrev { "r" } else { "grow_rate" }: dual_node.grow_rate.to_f64(),
+                if abbrev { "rn" } else { "grow_rate_numerator" }: dual_node.grow_rate.numer().to_i64(),
+                if abbrev { "rd" } else { "grow_rate_denominator" }: dual_node.grow_rate.denom().to_i64(),
             }));
         }
         json!({
