@@ -3,6 +3,7 @@ use crate::rand_xoshiro::rand_core::RngCore;
 use crate::rand_xoshiro;
 use crate::num_rational;
 use crate::visualize::*;
+use crate::num_traits::ToPrimitive;
 
 
 pub type Weight = i64;
@@ -169,3 +170,17 @@ impl WeightRange {
     }
 }
 
+impl MWPSVisualizer for WeightRange {
+    fn snapshot(&self, _abbrev: bool) -> serde_json::Value {
+        json!({
+            "weight_range": {
+                "lower": self.lower.to_f64(),
+                "upper": self.upper.to_f64(),
+                "ln": self.lower.numer().to_i64(),
+                "ld": self.lower.denom().to_i64(),
+                "un": self.upper.numer().to_i64(),
+                "ud": self.upper.denom().to_i64(),
+            },
+        })
+    }
+}

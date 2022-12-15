@@ -345,7 +345,13 @@ impl MWPSVisualizer for DualModuleInterfacePtr {
                 if abbrev { "rd" } else { "grow_rate_denominator" }: dual_node.grow_rate.denom().to_i64(),
             }));
         }
+        let sum_dual = self.sum_dual_variables();
         json!({
+            "interface": {
+                "sum_dual": sum_dual.to_f64(),
+                "sdn": sum_dual.numer().to_i64(),
+                "sdd": sum_dual.denom().to_i64(),
+            },
             "dual_nodes": dual_nodes,
         })
     }

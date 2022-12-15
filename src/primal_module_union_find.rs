@@ -178,7 +178,7 @@ pub mod tests {
         primal_module.solve_visualizer(&interface_ptr, &code.get_syndrome(), &mut dual_module, visualizer.as_mut());
         let (subgraph, weight_range) = primal_module.subgraph_range(&interface_ptr, &mut dual_module, &initializer);
         if let Some(visualizer) = visualizer.as_mut() {
-            visualizer.snapshot_combined("perfect matching and subgraph".to_string(), vec![&interface_ptr, &dual_module, &subgraph]).unwrap();
+            visualizer.snapshot_combined("perfect matching and subgraph".to_string(), vec![&interface_ptr, &dual_module, &subgraph, &weight_range]).unwrap();
         }
         assert_le!(Rational::from_i64(final_dual).unwrap(), weight_range.upper, "unmatched sum dual variables");
         assert_ge!(Rational::from_i64(final_dual).unwrap(), weight_range.lower, "unexpected final dual variable sum");

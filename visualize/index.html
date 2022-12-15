@@ -259,11 +259,16 @@ h5 {
         </q-card>
         <q-card bordered class="select-info-div" v-if="dual_module_info != null">
             <q-card-section class="bg-purple text-white">
-                <div class="text-h6">Dual Variables</div>
+                <div class="text-h6">Dual Variables (Σy = <span class="dual-node-set">
+                    {{ dual_module_info.interface.sdn }}/{{ dual_module_info.interface.sdd }}<q-tooltip anchor="top middle" self="bottom middle" 
+                        :offset="[10, 10]" transition-show="scale" transition-hide="scale">
+                        <span style="font-size: 14px;">{{ dual_module_info.interface.sum_dual }}</span>
+                    </q-tooltip>
+                </span>)</div>
             </q-card-section>
             <q-separator inset></q-separator>
             <q-card-section>
-                <div v-for="(node, node_index) of dual_module_info" style="margin-top: 15px;">
+                <div v-for="(node, node_index) of dual_module_info.dual_nodes" style="margin-top: 15px;">
                     y{{ node_index }} = <span class="dual-node-set bg-purple-2">
                         {{ node.dn }}/{{ node.dd }}<q-tooltip anchor="top middle" self="bottom middle" :offset="[10, 10]" transition-show="scale" transition-hide="scale">
                             <span style="font-size: 14px;">{{ node.d }}</span>

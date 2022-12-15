@@ -296,13 +296,9 @@ const App = {
         },
         update_dual_module_info() {
             let snapshot = mwps_data.snapshots[this.snapshot_select][1]
-            let dual_nodes = snapshot.dual_nodes
-            this.dual_module_info = []
-            for (let node of dual_nodes) {
-                this.dual_module_info.push({
-                    ...node
-                })
-                console.log(node)
+            this.dual_module_info = {
+                dual_nodes: snapshot.dual_nodes,
+                interface: snapshot.interface,
             }
         },
     },
