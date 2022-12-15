@@ -109,6 +109,11 @@ h5 {
 .unexplored {
     background-color: grey;
 }
+.dual-node-set {
+    padding: 8px;
+    border-radius: 5px;
+    line-height: 45px;
+}
 </style>
 </head>
 <body>
@@ -249,6 +254,36 @@ h5 {
                             V</span><br>{{ vertex_index }}
                         </div>
                     </q-btn>
+                </div>
+            </q-card-section>
+        </q-card>
+        <q-card bordered class="select-info-div" v-if="dual_module_info != null">
+            <q-card-section class="bg-purple text-white">
+                <div class="text-h6">Dual Variables</div>
+            </q-card-section>
+            <q-separator inset></q-separator>
+            <q-card-section>
+                <div v-for="(node, node_index) of dual_module_info" style="margin-top: 15px;">
+                    y{{ node_index }} = <span class="dual-node-set bg-purple-2">
+                        {{ node.dn }}/{{ node.dd }}<q-tooltip anchor="top middle" self="bottom middle" :offset="[10, 10]" transition-show="scale" transition-hide="scale">
+                            <span style="font-size: 14px;">{{ node.d }}</span>
+                        </q-tooltip>
+                    </span>, 
+                    <span class="dual-node-set bg-cyan-2" @mouseenter="mouseenter('edges', node.e)" @mouseleave="mouseleave()">E = [
+                        <q-btn color="cyan" no-caps rounded unelevated v-for="edge_index of node.e" style="margin-left: 5px; position: relative; bottom: 1px;"
+                            padding="6px 4px" size="14px" @mouseenter="mouseenter('edge', edge_index)" @mouseleave="mouseleave()"
+                            @click="jump_to('edge', edge_index)">{{ edge_index }}</q-btn>
+                    ]</span>,
+                    <span class="dual-node-set bg-teal-2" @mouseenter="mouseenter('vertices', node.v)" @mouseleave="mouseleave()">V = [
+                        <q-btn color="teal" no-caps rounded unelevated v-for="vertex_index of node.v" style="margin-left: 5px; position: relative; bottom: 1px;"
+                            padding="6px 4px" size="14px" @mouseenter="mouseenter('vertex', vertex_index)" @mouseleave="mouseleave()"
+                            @click="jump_to('vertex', vertex_index)">{{ vertex_index }}</q-btn>
+                    ]</span>,
+                    <span class="dual-node-set bg-cyan-2" @mouseenter="mouseenter('edges', node.h)" @mouseleave="mouseleave()">δ(E) = [
+                        <q-btn color="cyan" no-caps rounded unelevated v-for="edge_index of node.h" style="margin-left: 5px; position: relative; bottom: 1px;"
+                            padding="6px 4px" size="14px" @mouseenter="mouseenter('edge', edge_index)" @mouseleave="mouseleave()"
+                            @click="jump_to('edge', edge_index)">{{ edge_index }}</q-btn>
+                    ]</span>
                 </div>
             </q-card-section>
         </q-card>

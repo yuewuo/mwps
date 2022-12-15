@@ -60,7 +60,7 @@ const App = {
             selected_vertex_attributes: ref(""),
             selected_edge: ref(null),
             selected_edge_attributes: ref(""),
-            noise_model_info: ref(null),
+            dual_module_info: ref(null),
         }
     },
     async mounted() {
@@ -147,6 +147,7 @@ const App = {
             }
             this.snapshot_select = snapshot_idx
         }
+        this.update_dual_module_info()
         // update resolution options when sizes changed
         watch(gui3d.sizes, this.update_export_resolutions, { immediate: true })
         // execute patch scripts
@@ -240,6 +241,16 @@ const App = {
                     type, vertex_index: data
                 }
             }
+            if (type == "vertices") {
+                current_ref.value = {
+                    type, vertices: data
+                }
+            }
+            if (type == "edges") {
+                current_ref.value = {
+                    type, edges: data
+                }
+            }
         },
         mouseenter(type, data) {
             this.jump_to(type, data, false)
@@ -283,6 +294,17 @@ const App = {
         get_idx_from_label(label) {
             return parseInt(label.split(']')[0].split('[')[1])
         },
+        update_dual_module_info() {
+            let snapshot = mwps_data.snapshots[this.snapshot_select][1]
+            let dual_nodes = snapshot.dual_nodes
+            this.dual_module_info = []
+            for (let node of dual_nodes) {
+                this.dual_module_info.push({
+                    ...node
+                })
+                console.log(node)
+            }
+        },
     },
     watch: {
         async snapshot_select() {
@@ -291,6 +313,7 @@ const App = {
             this.snapshot_select_label = this.snapshot_labels[this.snapshot_select]
             for (const _ of Array(4).keys()) await Vue.nextTick()
             await this.update_selected_display()
+            this.update_dual_module_info()
         },
         snapshot_select_label() {
             this.snapshot_select = this.get_idx_from_label(this.snapshot_select_label)

@@ -615,6 +615,20 @@ function is_user_data_valid(user_data) {
     if (user_data.type == "edge") {
         return user_data.edge_index < snapshot.edges.length && snapshot.edges[user_data.edge_index] != null
     }
+    if (user_data.type == "vertices") {
+        let is_valid = true
+        for (let i=0; i<user_data.vertices.length && is_valid; ++i) {
+            is_valid &= user_data.vertices[i] < snapshot.vertices.length && snapshot.vertices[user_data.vertices[i]] != null
+        }
+        return is_valid
+    }
+    if (user_data.type == "edges") {
+        let is_valid = true
+        for (let i=0; i<user_data.edges.length && is_valid; ++i) {
+            is_valid &= user_data.edges[i] < snapshot.edges.length && snapshot.edges[user_data.edges[i]] != null
+        }
+        return is_valid
+    }
     return false
 }
 function set_material_with_user_data(user_data, material) {  // return the previous material
@@ -631,6 +645,36 @@ function set_material_with_user_data(user_data, material) {  // return the previ
         let previous_material = edge_vec_mesh[0].material
         for (let mesh of edge_vec_mesh) {
             mesh.material = material
+        }
+        return previous_material
+    }
+    if (user_data.type == "vertices") {
+        let previous_material = []
+        for (let i=0; i<user_data.vertices.length; ++i) {
+            let vertex_index = user_data.vertices[i]
+            let vertex_mesh = vertex_meshes[vertex_index]
+            previous_material.push(vertex_mesh.material)
+            if (Array.isArray(material)) {
+                vertex_mesh.material = material[i]
+            } else {
+                vertex_mesh.material = material
+            }
+        }
+        return previous_material
+    }
+    if (user_data.type == "edges") {
+        let previous_material = []
+        for (let i=0; i<user_data.edges.length; ++i) {
+            let edge_index = user_data.edges[i]
+            let edge_vec_mesh = edge_vec_meshes[edge_index]
+            previous_material.push(edge_vec_mesh[0].material)
+            for (let mesh of edge_vec_mesh) {
+                if (Array.isArray(material)) {
+                    mesh.material = material[i]
+                } else {
+                    mesh.material = material
+                }
+            }
         }
         return previous_material
     }
