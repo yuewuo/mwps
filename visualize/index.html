@@ -204,10 +204,10 @@ h5 {
                     </q-btn>
                     <div class="edge-visualizer" style="width: 190px;" @mouseenter="mouseenter('edge', edge.edge_index)" @mouseleave="mouseleave()">
                         <div class="grown" :style="{ width: `calc(100% * ${edge.weight == 0 ? 0.5 : 0.01 + 0.98 * edge.grown / edge.weight})` }">
-                            {{ edge.grown == 0 ? "|" : edge.grown }}
+                            {{ edge.grown == 0 ? "|" : `${edge.gn}/${edge.gd}` }}
                         </div>
                         <div class="unexplored" :style="{ width: `calc(100% * ${edge.weight == 0 ? 0 : 0.01 + 0.98 * edge.unexplored / edge.weight})` }">
-                            {{ edge.unexplored == 0 ? "|" : edge.unexplored }}
+                            {{ edge.unexplored == 0 ? "|" : `${edge.un}/${edge.ud}` }}
                         </div>
                     </div>
                     <q-circular-progress show-value :value="edge.grown / edge.weight * 100" style="margin-right: 5px;"
@@ -238,10 +238,10 @@ h5 {
                     </q-btn>
                     <div class="edge-visualizer" style="width: 190px;" @mouseenter="mouseenter('edge', selected_edge.edge_index)" @mouseleave="mouseleave()">
                         <div class="grown" :style="{ width: `calc(100% * ${selected_edge.weight == 0 ? 0.5 : 0.01 + 0.98 * selected_edge.grown / selected_edge.weight})` }">
-                            {{ selected_edge.grown == 0 ? "|" : selected_edge.grown }}
+                            {{ selected_edge.grown == 0 ? "|" : `${selected_edge.gn}/${selected_edge.gd}` }}
                         </div>
                         <div class="unexplored" :style="{ width: `calc(100% * ${selected_edge.weight == 0 ? 0 : 0.01 + 0.98 * selected_edge.unexplored / selected_edge.weight})` }">
-                            {{ selected_edge.unexplored == 0 ? "|" : selected_edge.unexplored }}
+                            {{ selected_edge.unexplored == 0 ? "|" : `${selected_edge.un}/${selected_edge.ud}` }}
                         </div>
                     </div>
                     <q-circular-progress show-value :value="selected_edge.grown / selected_edge.weight * 100" style="margin-right: 5px;"

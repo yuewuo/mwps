@@ -209,6 +209,10 @@ const App = {
                                 unexplored: edge.w - edge.g,
                                 weight: edge.w,
                                 vertices: [...edge.v],
+                                gn: edge.gn == null ? edge.g : edge.gn,
+                                gd: edge.gd == null ? 1 : edge.gd,
+                                un: edge.un == null ? edge.w - edge.g : edge.un,
+                                ud: edge.ud == null ? 1 : edge.ud,
                             })
                             break
                         }
@@ -225,6 +229,10 @@ const App = {
                     unexplored: edge.w - edge.g,
                     weight: edge.w,
                     vertices: [...edge.v],
+                    gn: edge.gn == null ? edge.g : edge.gn,
+                    gd: edge.gd == null ? 1 : edge.gd,
+                    un: edge.un == null ? edge.w - edge.g : edge.un,
+                    ud: edge.ud == null ? 1 : edge.ud,
                 }
                 this.selected_edge_attributes = ""
             }

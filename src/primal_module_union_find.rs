@@ -224,4 +224,12 @@ pub mod tests {
         primal_module_union_find_basic_standard_syndrome(code, visualize_filename, defect_vertices, 2);
     }
 
+    #[test]
+    fn primal_module_union_find_basic_5() {  // cargo test primal_module_union_find_basic_5 -- --nocapture
+        let visualize_filename = format!("primal_module_union_find_basic_5.json");
+        let defect_vertices = vec![3, 5, 10, 12];
+        let code = CodeCapacityColorCode::new(7, 0.01, 1);
+        primal_module_union_find_basic_standard_syndrome(code, visualize_filename, defect_vertices, 4);
+    }
+
 }

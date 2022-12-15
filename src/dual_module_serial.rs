@@ -440,10 +440,15 @@ impl MWPSVisualizer for DualModuleSerial {
         let mut edges: Vec::<serde_json::Value> = vec![];
         for edge_ptr in self.edges.iter() {
             let edge = edge_ptr.read_recursive();
+            let unexplored = edge.weight.clone() - edge.growth.clone();
             edges.push(json!({
                 if abbrev { "w" } else { "weight" }: edge.weight.to_f64(),
                 if abbrev { "v" } else { "vertices" }: edge.vertices.iter().map(|x| x.upgrade_force().read_recursive().vertex_index).collect::<Vec<_>>(),
                 if abbrev { "g" } else { "growth" }: edge.growth.to_f64(),
+                "gn": edge.growth.numer().to_i64(),
+                "gd": edge.growth.denom().to_i64(),
+                "un": unexplored.numer().to_i64(),
+                "ud": unexplored.denom().to_i64(),
             }));
         }
         json!({
