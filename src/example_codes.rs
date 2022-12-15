@@ -8,8 +8,8 @@
 //! To maximize code efficiency, user should design how to group vertices such that memory speed is constant for arbitrary large code distance.
 //! 
 
-use super::visualize::*;
-use super::util::*;
+use crate::visualize::*;
+use crate::util::*;
 use std::collections::{HashMap, HashSet};
 use crate::serde_json;
 use crate::rand_xoshiro::rand_core::SeedableRng;
@@ -726,7 +726,7 @@ impl CodeCapacityColorCode {
                 for (i, j) in [(gi, gj), (gi-1, gj+2), (gi+1, gj+1)] {
                     assert!(exists(d, i as isize, j as isize));
                     stabilizers.insert((i, j), positions.len());
-                    let ratio = 1.;
+                    let ratio = 0.5;
                     let x = (i as f64 + j as f64) * ratio;
                     let y = (j as f64 - i as f64) / 3f64.sqrt() * ratio;
                     positions.push(VisualizePosition::new(x, y, 0.))

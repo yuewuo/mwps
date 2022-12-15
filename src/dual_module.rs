@@ -81,7 +81,7 @@ pub enum MaxUpdateLength {
     /// non-zero maximum update length
     ValidGrow(Rational),
     /// conflicting growth
-    Conflicting(Vec<DualNodePtr>),
+    Conflicting(EdgeIndex),
     /// hitting 0 dual variable while shrinking, only happens when `grow_rate` < 0
     ShrinkProhibited(DualNodePtr),
 }
@@ -133,6 +133,12 @@ pub trait DualModuleImpl {
     /// note that reversing the process is possible, but not recommended: to do that, reverse the state of each dual node, Grow->Shrink, Shrink->Grow
     fn grow(&mut self, length: Rational);
 
+    fn find_valid_subgraph(&self, internal_edges: &BTreeSet<EdgeIndex>) -> Option<Subgraph>;
+
+    fn is_valid_cluster(&self, internal_edges: &BTreeSet<EdgeIndex>) -> bool {
+        self.find_valid_subgraph(internal_edges).is_some()
+    }
+
 }
 
 impl GroupMaxUpdateLength {
@@ -168,7 +174,6 @@ impl GroupMaxUpdateLength {
                     },
                 }
             },
-            _ => { }  // do nothing
         }
     }
 

@@ -3,11 +3,8 @@
 //! A serial implementation of the dual module
 //!
 
-use std::collections::BTreeSet;
-use std::ops::Mul;
-
+use std::collections::{BTreeSet, BTreeMap};
 use num_traits::FromPrimitive;
-
 use crate::util::*;
 use crate::num_traits::sign::Signed;
 use crate::num_traits::{Zero, ToPrimitive};
@@ -15,6 +12,7 @@ use crate::derivative::Derivative;
 use crate::dual_module::*;
 use crate::visualize::*;
 use crate::pointers::*;
+use crate::matrix_util::*;
 
 
 pub struct DualModuleSerial {
@@ -142,12 +140,13 @@ impl DualModuleImpl for DualModuleSerial {
         let mut node = dual_node_ptr.write();
         assert!(!node.internal_edges.is_empty() || !node.internal_vertices.is_empty(), "invalid dual node");
         if node.internal_edges.is_empty() {
-            for vertex_index in node.internal_vertices.iter() {
-                let mut vertex = self.vertices[*vertex_index].write();
-                assert!(!vertex.is_defect, "defect should not be added twice");
-                vertex.is_defect = true;
-            }
+            assert!(node.internal_vertices.len() == 1, "defect node (without internal edges) should only work on a single vertex, for simplicity");
+            let vertex_index = node.internal_vertices.iter().next().unwrap();
+            let mut vertex = self.vertices[*vertex_index].write();
+            assert!(!vertex.is_defect, "defect should not be added twice");
+            vertex.is_defect = true;
         } else {
+            debug_assert!(self.is_valid_cluster(&node.internal_edges), "cannot create dual node out of a valid cluster");
             if node.internal_vertices.is_empty() {
                 let mut internal_vertices = BTreeSet::new();
                 // fill in with all vertices incident to the internal edges
@@ -180,7 +179,6 @@ impl DualModuleImpl for DualModuleSerial {
 
     fn set_grow_rate(&mut self, dual_node_ptr: &DualNodePtr, grow_rate: Rational) {
         let dual_node = dual_node_ptr.write();
-        
     }
 
     #[allow(clippy::collapsible_else_if)]
@@ -214,6 +212,75 @@ impl DualModuleImpl for DualModuleSerial {
     fn grow(&mut self, mut length: Rational) {
         debug_assert!(length.is_positive(), "only positive growth is supported");
         // TODO
+    }
+
+    fn find_valid_subgraph(&self, internal_edges: &BTreeSet<EdgeIndex>) -> Option<Subgraph> {
+        assert!(!internal_edges.is_empty(), "finding subgraph without any internal edges is infeasible");
+        let mut internal_vertices = BTreeSet::new();
+        let mut variable_indices = BTreeMap::new();  // edge_index -> variable_index
+        let mut edge_indices = vec![];  // variable_index -> edge_index
+        // fill in with all vertices incident to the internal edges
+        for (variable_index, edge_index) in internal_edges.iter().enumerate() {
+            edge_indices.push(*edge_index);
+            variable_indices.insert(*edge_index, variable_index);
+            let edge = self.edges[*edge_index].read_recursive();
+            for vertex_weak in edge.vertices.iter() {
+                internal_vertices.insert(vertex_weak.upgrade_force().read_recursive().vertex_index);
+            }
+        }
+        // use Gaussian elimination on a modular 2 linear system (i.e. there is only 0 and 1 elements)
+        let height = internal_vertices.len();  // number of constraints
+        let width = internal_edges.len() + 1;  // number of variables
+        let mut matrix = Vec::<Vec<u8>>::with_capacity(height);
+        for vertex_index in internal_vertices.iter() {
+            let mut row = vec![0; width];
+            let vertex = self.vertices[*vertex_index].read_recursive();
+            for edge_weak in vertex.edges.iter() {
+                let edge_index = edge_weak.upgrade_force().read_recursive().edge_index;
+                if internal_edges.contains(&edge_index) {
+                    row[variable_indices[&edge_index]] = 1;
+                }
+            }
+            row[width - 1] = if vertex.is_defect { 1 } else { 0 };
+            matrix.push(row);
+        }
+        modular_2_row_echelon_form(&mut matrix);
+        // find the first non-zero value on the right column from bottom to top
+        for i in (0..height).rev() {
+            if matrix[i][width - 1] != 0 {
+                // check if all the previous elements are 0, if so then it's unsolvable and thus invalid
+                let mut all_zero = true;
+                let row = &matrix[i];
+                for j in 0..width-1 {
+                    if row[j] == 1 {
+                        all_zero = false;
+                        break
+                    }
+                }
+                if all_zero {
+                    return None;
+                }
+                break
+            }
+        }
+        let mut subgraph_edges = vec![];
+        let mut lead = 0;
+        for i in 0..height {
+            let row = &matrix[i];
+            while row[lead] == 0 {
+                if lead >= width-2 {
+                    break  // cannot find a lead element
+                }
+                lead += 1;
+            }
+            if row[lead] == 0 {
+                break  // cannot find a lead element
+            }
+            if row[width - 1] == 1 {
+                subgraph_edges.push(edge_indices[lead]);
+            }
+        }
+        Some(Subgraph::new(subgraph_edges))
     }
 
 }
@@ -378,6 +445,31 @@ mod tests {
         visualizer.snapshot_combined(format!("solved"), vec![&interface_ptr, &dual_module]).unwrap();
         // the result subgraph
         let subgraph = Subgraph::new(vec![82, 24]);
+        visualizer.snapshot_combined(format!("subgraph"), vec![&interface_ptr, &dual_module, &subgraph]).unwrap();
+    }
+
+    #[test]
+    fn dual_module_serial_find_valid_subgraph_1() {  // cargo test dual_module_serial_find_valid_subgraph_1 -- --nocapture
+        let visualize_filename = format!("dual_module_serial_find_valid_subgraph_1.json");
+        let weight = 1000;
+        let mut code = CodeCapacityColorCode::new(7, 0.1, weight);
+        let mut visualizer = Visualizer::new(Some(visualize_data_folder() + visualize_filename.as_str()), code.get_positions(), true).unwrap();
+        print_visualize_link(visualize_filename.clone());
+        // create dual module
+        let initializer = code.get_initializer();
+        let mut dual_module = DualModuleSerial::new_empty(&initializer);
+        // try to work on a simple syndrome
+        code.vertices[3].is_defect = true;
+        code.vertices[12].is_defect = true;
+        let interface_ptr = DualModuleInterfacePtr::new_load(&code.get_syndrome(), &mut dual_module);
+        visualizer.snapshot_combined(format!("syndrome"), vec![&interface_ptr, &dual_module]).unwrap();
+        // invalid clusters
+        assert!(!dual_module.is_valid_cluster(&vec![20].into_iter().collect()));
+        assert!(!dual_module.is_valid_cluster(&vec![9, 20].into_iter().collect()));
+        assert!(!dual_module.is_valid_cluster(&vec![15].into_iter().collect()));
+        assert!(dual_module.is_valid_cluster(&vec![15, 20].into_iter().collect()));
+        // the result subgraph
+        let subgraph = dual_module.find_valid_subgraph(&vec![9, 15, 20, 21].into_iter().collect()).unwrap();
         visualizer.snapshot_combined(format!("subgraph"), vec![&interface_ptr, &dual_module, &subgraph]).unwrap();
     }
 

@@ -44,7 +44,7 @@ impl SolverInitializer {
     /// sanity check to avoid duplicate edges that are hard to debug
     pub fn sanity_check(&self) -> Result<(), String> {
         use crate::example_codes::*;
-        let mut code = ErrorPatternReader::from_initializer(self);
+        let code = ErrorPatternReader::from_initializer(self);
         code.sanity_check()
     }
 }

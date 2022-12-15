@@ -18,6 +18,9 @@ pub mod util;
 pub mod example_codes;
 pub mod pointers;
 pub mod dual_module_serial;
+pub mod primal_module;
+pub mod primal_module_union_find;
+pub mod matrix_util;
 
 
 #[cfg(feature="python_binding")]

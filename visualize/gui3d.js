@@ -215,7 +215,7 @@ let empty_edge_opacity = 0.1
 let grown_edge_opacity = 1
 let almost_empty_ratio = 0.1
 let almost_grown_ratio = 0.3
-let edge_side = THREE.FrontSide
+let edge_side = THREE.BackSide
 const color_steps = 20  // there are 20 colors in the middle apart from the empty and full
 function make_edge_material(ratio) {
     if (ratio < 0) ratio = 0
@@ -261,7 +261,8 @@ export function get_edge_material(grown, weight) {
 }
 export const subgraph_edge_material = new THREE.MeshStandardMaterial({
     color: 0x0000ff,
-    transparent: false,
+    opacity: 1,
+    transparent: true,
     side: THREE.FrontSide,
 })
 export const hover_material = new THREE.MeshStandardMaterial({  // when mouse is on this object (vertex or edge)
