@@ -94,6 +94,8 @@ pub trait PrimalModuleImpl {
         }
     }
 
+    fn subgraph<D: DualModuleImpl>(&mut self, interface: &DualModuleInterfacePtr, dual_module: &mut D) -> Subgraph;
+
     /// performance profiler report
     fn generate_profiler_report(&self) -> serde_json::Value { json!({}) }
 

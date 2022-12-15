@@ -42,6 +42,18 @@ impl std::fmt::Debug for DualNodeWeak {
     }
 }
 
+impl Ord for DualNodePtr {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.read_recursive().index.cmp(&other.read_recursive().index)
+    }
+}
+
+impl PartialOrd for DualNodePtr {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
 /// an array of dual nodes
 /// dual nodes, once created, will never be deconstructed until the next run
 #[derive(Derivative)]
@@ -49,10 +61,6 @@ impl std::fmt::Debug for DualNodeWeak {
 pub struct DualModuleInterface {
     /// all the dual node that can be used to control a concrete dual module implementation
     pub nodes: Vec<DualNodePtr>,
-    /// record the total sum of all dual variables
-    pub sum_dual_variables: Weight,
-    /// debug mode: only resolve one conflict each time
-    pub debug_print_actions: bool,
 }
 
 pub type DualModuleInterfacePtr = ArcRwLock<DualModuleInterface>;
@@ -61,7 +69,7 @@ pub type DualModuleInterfaceWeak = WeakRwLock<DualModuleInterface>;
 impl std::fmt::Debug for DualModuleInterfacePtr {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         let interface = self.read_recursive();
-        write!(f, "{}", interface.sum_dual_variables)
+        write!(f, "{}", interface.nodes.len())
     }
 }
 
@@ -80,7 +88,7 @@ pub enum MaxUpdateLength {
     Unbounded,
     /// non-zero maximum update length
     ValidGrow(Rational),
-    /// conflicting growth
+    /// conflicting growth, violating the slackness constraint
     Conflicting(EdgeIndex),
     /// hitting 0 dual variable while shrinking, only happens when `grow_rate` < 0
     ShrinkProhibited(DualNodePtr),
@@ -138,6 +146,8 @@ pub trait DualModuleImpl {
     fn is_valid_cluster(&self, internal_edges: &BTreeSet<EdgeIndex>) -> bool {
         self.find_valid_subgraph(internal_edges).is_some()
     }
+
+    fn get_edge_nodes(&self, edge_index: EdgeIndex) -> Vec<DualNodePtr>;
 
 }
 
@@ -223,8 +233,6 @@ impl DualModuleInterfacePtr {
     pub fn new_empty() -> Self {
         Self::new_value(DualModuleInterface {
             nodes: Vec::new(),
-            sum_dual_variables: 0,
-            debug_print_actions: false,
         })
     }
 
@@ -241,9 +249,18 @@ impl DualModuleInterfacePtr {
         }
     }
 
+    pub fn sum_dual_variables(&self) -> Rational {
+        let interface = self.read_recursive();
+        let mut sum = Rational::zero();
+        for dual_node_ptr in interface.nodes.iter() {
+            let dual_node = dual_node_ptr.read_recursive();
+            sum += dual_node.dual_variable.clone();
+        }
+        sum
+    }
+
     pub fn clear(&self) {
         let mut interface = self.write();
-        interface.sum_dual_variables = 0;
         interface.nodes.clear();
     }
 
@@ -300,9 +317,6 @@ impl MWPSVisualizer for DualModuleInterfacePtr {
             }));
         }
         json!({
-            "interface": {
-                if abbrev { "d" } else { "sum_dual_variables" }: interface.sum_dual_variables,
-            },
             "dual_nodes": dual_nodes,
         })
     }

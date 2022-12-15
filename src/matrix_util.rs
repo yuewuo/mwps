@@ -3,6 +3,7 @@
 /// convert a modular 2 matrix into its Echelon form for Gaussian elimination:
 /// https://en.wikipedia.org/wiki/Row_echelon_form
 pub fn modular_2_row_echelon_form(matrix: &mut Vec::<Vec<u8>>) {
+    // eprint_matrix(matrix);  // debug
     if matrix.is_empty() { return }
     let height = matrix.len();
     if matrix[0].is_empty() { return }

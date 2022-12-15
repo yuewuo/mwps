@@ -47,6 +47,13 @@ impl SolverInitializer {
         let code = ErrorPatternReader::from_initializer(self);
         code.sanity_check()
     }
+    pub fn total_weight_subgraph(&self, subgraph: &Subgraph) -> Weight {
+        let mut weight = 0;
+        for &edge_index in subgraph.iter() {
+            weight += self.weighted_edges[edge_index].1;
+        }
+        weight
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -112,6 +119,29 @@ pub struct Subgraph(Vec<EdgeIndex>);
 impl Subgraph {
     pub fn new(edges: Vec<EdgeIndex>) -> Self {
         Self(edges)
+    }
+    pub fn new_empty() -> Self {
+        Self(vec![])
+    }
+}
+
+impl std::ops::Deref for Subgraph {
+    type Target = Vec<EdgeIndex>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl std::ops::DerefMut for Subgraph {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+impl std::fmt::Debug for Subgraph {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{:?}", self.0)
     }
 }
 

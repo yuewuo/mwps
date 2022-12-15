@@ -21,6 +21,7 @@ pub mod dual_module_serial;
 pub mod primal_module;
 pub mod primal_module_union_find;
 pub mod matrix_util;
+pub mod union_find;
 
 
 #[cfg(feature="python_binding")]

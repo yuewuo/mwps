@@ -22,7 +22,9 @@ pub struct DualModuleSerial {
     pub edges: Vec<EdgePtr>,
     /// maintain an active list to optimize for average cases: most defect vertices have already been matched, and we only need to work on a few remained;
     /// note that this list may contain duplicate nodes
-    pub active_edges: BTreeSet<EdgeWeak>,
+    pub active_edges: BTreeSet<EdgeIndex>,
+    /// active nodes
+    pub active_nodes: BTreeSet<DualNodePtr>,
 }
 
 pub type DualModuleSerialPtr = ArcRwLock<DualModuleSerial>;
@@ -113,8 +115,8 @@ impl DualModuleImpl for DualModuleSerial {
                 dual_nodes: vec![],
                 vertices: vertex_indices.iter().map(|i| vertices[*i].downgrade()).collect::<Vec<_>>(),
             });
-            for vertex_index in vertex_indices.iter() {
-                vertices[*vertex_index].write().edges.push(edge_ptr.downgrade());
+            for &vertex_index in vertex_indices.iter() {
+                vertices[vertex_index].write().edges.push(edge_ptr.downgrade());
             }
             edges.push(edge_ptr);
         }
@@ -122,6 +124,7 @@ impl DualModuleImpl for DualModuleSerial {
             vertices,
             edges,
             active_edges: BTreeSet::new(),
+            active_nodes: BTreeSet::new(),
         }
     }
 
@@ -146,12 +149,12 @@ impl DualModuleImpl for DualModuleSerial {
             assert!(!vertex.is_defect, "defect should not be added twice");
             vertex.is_defect = true;
         } else {
-            debug_assert!(self.is_valid_cluster(&node.internal_edges), "cannot create dual node out of a valid cluster");
+            debug_assert!(!self.is_valid_cluster(&node.internal_edges), "cannot create dual node out of a valid cluster");
             if node.internal_vertices.is_empty() {
                 let mut internal_vertices = BTreeSet::new();
                 // fill in with all vertices incident to the internal edges
-                for edge_index in node.internal_edges.iter() {
-                    let edge = self.edges[*edge_index].read_recursive();
+                for &edge_index in node.internal_edges.iter() {
+                    let edge = self.edges[edge_index].read_recursive();
                     for vertex_weak in edge.vertices.iter() {
                         internal_vertices.insert(vertex_weak.upgrade_force().read_recursive().vertex_index);
                     }
@@ -161,14 +164,18 @@ impl DualModuleImpl for DualModuleSerial {
         }
         // calculate hair edges
         let mut hair_edges = BTreeSet::new();
-        for vertex_index in node.internal_vertices.iter() {
-            let vertex = self.vertices[*vertex_index].read_recursive();
+        for &vertex_index in node.internal_vertices.iter() {
+            let vertex = self.vertices[vertex_index].read_recursive();
             for edge_weak in vertex.edges.iter() {
                 let edges_index = edge_weak.upgrade_force().read_recursive().edge_index;
                 if !node.internal_edges.contains(&edges_index) {
                     hair_edges.insert(edges_index);
                 }
             }
+        }
+        for &edge_index in hair_edges.iter() {
+            let mut edge = self.edges[edge_index].write();
+            edge.dual_nodes.push(dual_node_ptr.downgrade());
         }
         assert!(node.hair_edges.is_empty(), "hair edge should not be provided");
         std::mem::swap(&mut node.hair_edges, &mut hair_edges);
@@ -178,17 +185,66 @@ impl DualModuleImpl for DualModuleSerial {
     }
 
     fn set_grow_rate(&mut self, dual_node_ptr: &DualNodePtr, grow_rate: Rational) {
-        let dual_node = dual_node_ptr.write();
+        let mut dual_node = dual_node_ptr.write();
+        dual_node.grow_rate = grow_rate;
+        drop(dual_node);
+        let dual_node = dual_node_ptr.read_recursive();
+        for &edge_index in dual_node.hair_edges.iter() {
+            let edge = self.edges[edge_index].read_recursive();
+            let mut aggregated_grow_rate = Rational::zero();
+            for node_weak in edge.dual_nodes.iter() {
+                let node_ptr = node_weak.upgrade_force();
+                aggregated_grow_rate += node_ptr.read_recursive().grow_rate.clone();
+            }
+            if aggregated_grow_rate.is_zero() {
+                self.active_edges.remove(&edge_index);
+            } else {
+                self.active_edges.insert(edge_index);
+            }
+        }
+        if dual_node.grow_rate.is_zero() {
+            self.active_nodes.remove(dual_node_ptr);
+        } else {
+            self.active_nodes.insert(dual_node_ptr.clone());
+        }
     }
 
     #[allow(clippy::collapsible_else_if)]
     fn compute_maximum_update_length_dual_node(&mut self, dual_node_ptr: &DualNodePtr, is_grow: bool, simultaneous_update: bool) -> MaxUpdateLength {
-        MaxUpdateLength::Unbounded
+        unimplemented!();
     }
 
     fn compute_maximum_update_length(&mut self) -> GroupMaxUpdateLength {
         let mut group_max_update_length = GroupMaxUpdateLength::new();
-
+        for &edge_index in self.active_edges.iter() {
+            let edge = self.edges[edge_index].read_recursive();
+            let mut grow_rate = Rational::zero();
+            for node_weak in edge.dual_nodes.iter() {
+                let node_ptr = node_weak.upgrade_force();
+                let node = node_ptr.read_recursive();
+                grow_rate += node.grow_rate.clone();
+            }
+            if grow_rate.is_positive() {
+                let edge_remain = edge.weight.clone() - edge.growth.clone();
+                if edge_remain.is_zero() {
+                    group_max_update_length.add(MaxUpdateLength::Conflicting(edge_index));
+                } else {
+                    group_max_update_length.add(MaxUpdateLength::ValidGrow(edge_remain / grow_rate));
+                }
+            } else if grow_rate.is_negative() {
+                if edge.growth.is_zero() {
+                    // it will be reported when iterating active dual nodes
+                } else {
+                    group_max_update_length.add(MaxUpdateLength::ValidGrow(- edge.growth.clone() / grow_rate));
+                }
+            }
+        }
+        for node_ptr in self.active_nodes.iter() {
+            let node = node_ptr.read_recursive();
+            if node.grow_rate.is_negative() && !node.dual_variable.is_positive() {
+                group_max_update_length.add(MaxUpdateLength::ShrinkProhibited(node_ptr.clone()));
+            }
+        }
         group_max_update_length
     }
 
@@ -199,19 +255,35 @@ impl DualModuleImpl for DualModuleSerial {
         }
         let node = dual_node_ptr.read_recursive();
         let grow_amount = length * node.grow_rate.clone();
-        for edge_index in node.hair_edges.iter() {
-            let mut edge = self.edges[*edge_index].write();
+        for &edge_index in node.hair_edges.iter() {
+            let mut edge = self.edges[edge_index].write();
             edge.growth += grow_amount.clone();
             assert!(!edge.growth.is_negative(), "edge {} over-shrunk: the new growth is {:?}", edge_index, edge.growth);
             assert!(edge.growth <= edge.weight, "edge {} over-grown: the new growth is {:?}, weight is {:?}", edge_index, edge.growth, edge.weight);
         }
         drop(node);
+        // update dual variable
         dual_node_ptr.write().dual_variable += grow_amount;
     }
 
-    fn grow(&mut self, mut length: Rational) {
-        debug_assert!(length.is_positive(), "only positive growth is supported");
-        // TODO
+    fn grow(&mut self, length: Rational) {
+        debug_assert!(length.is_positive(), "growth should be positive; if desired, please set grow rate to negative for shrinking");
+        // update the active edges
+        for &edge_index in self.active_edges.iter() {
+            let mut edge = self.edges[edge_index].write();
+            let mut grow_rate = Rational::zero();
+            for node_weak in edge.dual_nodes.iter() {
+                grow_rate += node_weak.upgrade_force().read_recursive().grow_rate.clone();
+            }
+            edge.growth += length.clone() * grow_rate;
+            assert!(!edge.growth.is_negative(), "edge {} over-shrunk: the new growth is {:?}", edge_index, edge.growth);
+            assert!(edge.growth <= edge.weight, "edge {} over-grown: the new growth is {:?}, weight is {:?}", edge_index, edge.growth, edge.weight);
+        }
+        // update dual variables
+        for node_ptr in self.active_nodes.iter() {
+            let mut node = node_ptr.write();
+            node.dual_variable = node.dual_variable.clone() + length.clone() * node.grow_rate.clone();
+        }
     }
 
     fn find_valid_subgraph(&self, internal_edges: &BTreeSet<EdgeIndex>) -> Option<Subgraph> {
@@ -220,10 +292,10 @@ impl DualModuleImpl for DualModuleSerial {
         let mut variable_indices = BTreeMap::new();  // edge_index -> variable_index
         let mut edge_indices = vec![];  // variable_index -> edge_index
         // fill in with all vertices incident to the internal edges
-        for (variable_index, edge_index) in internal_edges.iter().enumerate() {
-            edge_indices.push(*edge_index);
-            variable_indices.insert(*edge_index, variable_index);
-            let edge = self.edges[*edge_index].read_recursive();
+        for (variable_index, &edge_index) in internal_edges.iter().enumerate() {
+            edge_indices.push(edge_index);
+            variable_indices.insert(edge_index, variable_index);
+            let edge = self.edges[edge_index].read_recursive();
             for vertex_weak in edge.vertices.iter() {
                 internal_vertices.insert(vertex_weak.upgrade_force().read_recursive().vertex_index);
             }
@@ -232,9 +304,9 @@ impl DualModuleImpl for DualModuleSerial {
         let height = internal_vertices.len();  // number of constraints
         let width = internal_edges.len() + 1;  // number of variables
         let mut matrix = Vec::<Vec<u8>>::with_capacity(height);
-        for vertex_index in internal_vertices.iter() {
+        for &vertex_index in internal_vertices.iter() {
             let mut row = vec![0; width];
-            let vertex = self.vertices[*vertex_index].read_recursive();
+            let vertex = self.vertices[vertex_index].read_recursive();
             for edge_weak in vertex.edges.iter() {
                 let edge_index = edge_weak.upgrade_force().read_recursive().edge_index;
                 if internal_edges.contains(&edge_index) {
@@ -281,6 +353,10 @@ impl DualModuleImpl for DualModuleSerial {
             }
         }
         Some(Subgraph::new(subgraph_edges))
+    }
+    
+    fn get_edge_nodes(&self, edge_index: EdgeIndex) -> Vec<DualNodePtr> {
+        self.edges[edge_index].read_recursive().dual_nodes.iter().map(|x| x.upgrade_force()).collect()
     }
 
 }
