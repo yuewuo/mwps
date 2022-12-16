@@ -4,6 +4,11 @@ use crate::rand_xoshiro;
 use crate::num_rational;
 use crate::visualize::*;
 use crate::num_traits::ToPrimitive;
+use std::collections::BTreeSet;
+use std::time::Instant;
+use std::fs::File;
+use std::io::prelude::*;
+use crate::mwps_solver::*;
 
 
 pub type Weight = i64;
@@ -48,12 +53,40 @@ impl SolverInitializer {
         let code = ErrorPatternReader::from_initializer(self);
         code.sanity_check()
     }
-    pub fn total_weight_subgraph(&self, subgraph: &Subgraph) -> Weight {
+    pub fn get_subgraph_total_weight(&self, subgraph: &Subgraph) -> Weight {
         let mut weight = 0;
         for &edge_index in subgraph.iter() {
             weight += self.weighted_edges[edge_index].1;
         }
         weight
+    }
+    pub fn get_subgraph_syndrome(&self, subgraph: &Subgraph) -> BTreeSet<VertexIndex> {
+        let mut defect_vertices = BTreeSet::new();
+        for &edge_index in subgraph.iter() {
+            let (vertices, _weight) = &self.weighted_edges[edge_index];
+            for &vertex_index in vertices.iter() {
+                if defect_vertices.contains(&vertex_index) {
+                    defect_vertices.remove(&vertex_index);
+                } else {
+                    defect_vertices.insert(vertex_index);
+                }
+            }
+        }
+        defect_vertices
+    }
+    pub fn matches_subgraph_syndrome(&self, subgraph: &Subgraph, defect_vertices: &Vec<VertexIndex>) -> bool {
+        let subgraph_defect_vertices: Vec<_> = self.get_subgraph_syndrome(subgraph).into_iter().collect();
+        let mut defect_vertices = defect_vertices.clone();
+        defect_vertices.sort();
+        if defect_vertices.len() != subgraph_defect_vertices.len() {
+            return false
+        }
+        for i in 0..defect_vertices.len() {
+            if defect_vertices[i] != subgraph_defect_vertices[i] {
+                return false
+            }
+        }
+        true
     }
 }
 
@@ -115,6 +148,7 @@ impl F64Rng for DeterministicRng {
 
 /// the result of MWPS algorithm: a parity subgraph (defined by some edges that, 
 /// if are selected, will generate the parity result in the syndrome)
+#[derive(Clone)]
 pub struct Subgraph(Vec<EdgeIndex>);
 
 impl Subgraph {
@@ -155,6 +189,7 @@ impl MWPSVisualizer for Subgraph {
 }
 
 /// the range of the optimal MWPS solution's weight
+#[derive(Clone, Debug)]
 pub struct WeightRange {
     pub lower: Rational,
     pub upper: Rational,
@@ -182,5 +217,131 @@ impl MWPSVisualizer for WeightRange {
                 "ud": self.upper.denom().to_i64(),
             },
         })
+    }
+}
+
+/// record the decoding time of multiple syndrome patterns
+pub struct BenchmarkProfiler {
+    /// each record corresponds to a different syndrome pattern
+    pub records: Vec<BenchmarkProfilerEntry>,
+    /// summation of all decoding time
+    pub sum_round_time: f64,
+    /// syndrome count
+    pub sum_syndrome: usize,
+    /// error count
+    pub sum_error: usize,
+    /// noisy measurement round
+    pub noisy_measurements: VertexNum,
+    /// the file to output the profiler results
+    pub benchmark_profiler_output: Option<File>,
+}
+
+impl BenchmarkProfiler {
+    pub fn new(noisy_measurements: VertexNum, detail_log_file: Option<String>) -> Self {
+        let benchmark_profiler_output = detail_log_file.map(|filename| {
+            let mut file = File::create(filename).unwrap();
+            file.write_all(serde_json::to_string(&json!({
+                "noisy_measurements": noisy_measurements,
+            })).unwrap().as_bytes()).unwrap();
+            file.write_all(b"\n").unwrap();
+            file
+        });
+        Self {
+            records: vec![],
+            sum_round_time: 0.,
+            sum_syndrome: 0,
+            sum_error: 0,
+            noisy_measurements,
+            benchmark_profiler_output,
+        }
+    }
+    /// record the beginning of a decoding procedure
+    pub fn begin(&mut self, syndrome_pattern: &SyndromePattern, error_pattern: &Subgraph) {
+        // sanity check last entry, if exists, is complete
+        if let Some(last_entry) = self.records.last() {
+            assert!(last_entry.is_complete(), "the last benchmark profiler entry is not complete, make sure to call `begin` and `end` in pairs");
+        }
+        let entry = BenchmarkProfilerEntry::new(syndrome_pattern, error_pattern);
+        self.records.push(entry);
+        self.records.last_mut().unwrap().record_begin();
+    }
+    pub fn event(&mut self, event_name: String) {
+        let last_entry = self.records.last_mut().expect("last entry not exists, call `begin` before `end`");
+        last_entry.record_event(event_name);
+    }
+    /// record the ending of a decoding procedure
+    pub fn end(&mut self, solver: Option<&dyn PrimalDualSolver>) {
+        let last_entry = self.records.last_mut().expect("last entry not exists, call `begin` before `end`");
+        last_entry.record_end();
+        self.sum_round_time += last_entry.round_time.unwrap();
+        self.sum_syndrome += last_entry.syndrome_pattern.defect_vertices.len();
+        self.sum_error += last_entry.error_pattern.len();
+        if let Some(file) = self.benchmark_profiler_output.as_mut() {
+            let mut events = serde_json::Map::new();
+            for (event_name, time) in last_entry.events.iter() {
+                events.insert(event_name.clone(), json!(time));
+            }
+            let mut value = json!({
+                "round_time": last_entry.round_time.unwrap(),
+                "defect_num": last_entry.syndrome_pattern.defect_vertices.len(),
+                "error_num": last_entry.error_pattern.len(),
+                "events": events,
+            });
+            if let Some(solver) = solver {
+                let solver_profile = solver.generate_profiler_report();
+                value.as_object_mut().unwrap().insert("solver_profile".to_string(), solver_profile);
+            }
+            file.write_all(serde_json::to_string(&value).unwrap().as_bytes()).unwrap();
+            file.write_all(b"\n").unwrap();
+        }
+    }
+    /// print out a brief one-line statistics
+    pub fn brief(&self) -> String {
+        let total = self.sum_round_time / (self.records.len() as f64);
+        let per_round = total / (1. + self.noisy_measurements as f64);
+        let per_defect = self.sum_round_time / (self.sum_syndrome as f64);
+        format!("total: {total:.3e}, round: {per_round:.3e}, syndrome: {per_defect:.3e},")
+    }
+}
+
+pub struct BenchmarkProfilerEntry {
+    /// the syndrome pattern of this decoding problem
+    pub syndrome_pattern: SyndromePattern,
+    /// the error pattern
+    pub error_pattern: Subgraph,
+    /// the time of beginning a decoding procedure
+    begin_time: Option<Instant>,
+    /// record additional events
+    pub events: Vec<(String, f64)>,
+    /// interval between calling [`Self::record_begin`] to calling [`Self::record_end`]
+    pub round_time: Option<f64>,
+}
+
+impl BenchmarkProfilerEntry {
+    pub fn new(syndrome_pattern: &SyndromePattern, error_pattern: &Subgraph) -> Self {
+        Self {
+            syndrome_pattern: syndrome_pattern.clone(),
+            error_pattern: error_pattern.clone(),
+            begin_time: None,
+            events: vec![],
+            round_time: None,
+        }
+    }
+    /// record the beginning of a decoding procedure
+    pub fn record_begin(&mut self) {
+        assert_eq!(self.begin_time, None, "do not call `record_begin` twice on the same entry");
+        self.begin_time = Some(Instant::now());
+    }
+    /// record the ending of a decoding procedure
+    pub fn record_end(&mut self) {
+        let begin_time = self.begin_time.as_ref().expect("make sure to call `record_begin` before calling `record_end`");
+        self.round_time = Some(begin_time.elapsed().as_secs_f64());
+    }
+    pub fn record_event(&mut self, event_name: String) {
+        let begin_time = self.begin_time.as_ref().expect("make sure to call `record_begin` before calling `record_end`");
+        self.events.push((event_name, begin_time.elapsed().as_secs_f64()));
+    }
+    pub fn is_complete(&self) -> bool {
+        self.round_time.is_some()
     }
 }

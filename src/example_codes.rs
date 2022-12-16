@@ -310,13 +310,14 @@ pub trait ExampleCode {
     }
 
     /// generate random errors based on the edge probabilities and a seed for pseudo number generator
-    fn generate_random_errors(&mut self, seed: u64) -> SyndromePattern {
+    fn generate_random_errors(&mut self, seed: u64) -> (SyndromePattern, Subgraph) {
         let mut rng = DeterministicRng::seed_from_u64(seed);
         let (vertices, edges) = self.vertices_edges();
         for vertex in vertices.iter_mut() {
             vertex.is_defect = false;
         }
-        for edge in edges.iter_mut() {
+        let mut error_pattern = Subgraph::new_empty();
+        for (edge_index, edge) in edges.iter_mut().enumerate() {
             let p = if rng.next_f64() < edge.pe {
                 edge.is_erasure = true;
                 0.5  // when erasure happens, there are 50% chance of error
@@ -329,9 +330,10 @@ pub trait ExampleCode {
                     let vertex = &mut vertices[*vertex_index];
                     vertex.is_defect = !vertex.is_defect;
                 }
+                error_pattern.push(edge_index)
             }
         }
-        self.get_syndrome()
+        (self.get_syndrome(), error_pattern)
     }
 
     fn is_defect(&self, vertex_idx: usize) -> bool {
@@ -793,11 +795,11 @@ pub struct ErrorPatternReader {
 impl ExampleCode for ErrorPatternReader {
     fn vertices_edges(&mut self) -> (&mut Vec<CodeVertex>, &mut Vec<CodeEdge>) { (&mut self.vertices, &mut self.edges) }
     fn immutable_vertices_edges(&self) -> (&Vec<CodeVertex>, &Vec<CodeEdge>) { (&self.vertices, &self.edges) }
-    fn generate_random_errors(&mut self, _seed: u64) -> SyndromePattern {
+    fn generate_random_errors(&mut self, _seed: u64) -> (SyndromePattern, Subgraph) {
         assert!(self.syndrome_index < self.syndrome_patterns.len(), "reading syndrome pattern more than in the file, consider generate the file with more data points");
         let syndrome_pattern = self.syndrome_patterns[self.syndrome_index].clone();
         self.syndrome_index += 1;
-        syndrome_pattern
+        (syndrome_pattern, Subgraph::new_empty())
     }
 }
 

@@ -131,6 +131,7 @@ impl DualModuleImpl for DualModuleSerial {
     /// clear all growth and existing dual nodes
     fn clear(&mut self) {
         self.active_edges.clear();
+        self.active_nodes.clear();
         for vertex_ptr in self.vertices.iter() {
             vertex_ptr.write().clear();
         }

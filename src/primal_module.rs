@@ -99,7 +99,7 @@ pub trait PrimalModuleImpl {
 
     fn subgraph_range<D: DualModuleImpl>(&mut self, interface: &DualModuleInterfacePtr, dual_module: &mut D, initializer: &SolverInitializer) -> (Subgraph, WeightRange) {
         let subgraph = self.subgraph(interface, dual_module);
-        let weight_range = WeightRange::new(interface.sum_dual_variables(), Rational::from_i64(initializer.total_weight_subgraph(&subgraph)).unwrap());
+        let weight_range = WeightRange::new(interface.sum_dual_variables(), Rational::from_i64(initializer.get_subgraph_total_weight(&subgraph)).unwrap());
         (subgraph, weight_range)
     }
 
