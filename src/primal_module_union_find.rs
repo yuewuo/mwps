@@ -181,8 +181,8 @@ pub mod tests {
             visualizer.snapshot_combined("perfect matching and subgraph".to_string(), vec![&interface_ptr, &dual_module, &subgraph, &weight_range]).unwrap();
         }
         assert!(initializer.matches_subgraph_syndrome(&subgraph, &defect_vertices), "the result subgraph is invalid");
-        assert_le!(Rational::from_i64(final_dual).unwrap(), weight_range.upper, "unmatched sum dual variables");
-        assert_ge!(Rational::from_i64(final_dual).unwrap(), weight_range.lower, "unexpected final dual variable sum");
+        assert_le!(Rational::from_usize(final_dual).unwrap(), weight_range.upper, "unmatched sum dual variables");
+        assert_ge!(Rational::from_usize(final_dual).unwrap(), weight_range.lower, "unexpected final dual variable sum");
         println!("weight range: [{}, {}]", weight_range.lower.to_i64().unwrap(), weight_range.upper.to_i64().unwrap());
         (interface_ptr, primal_module, dual_module)
     }

@@ -111,7 +111,7 @@ impl DualModuleImpl for DualModuleSerial {
             let edge_ptr = EdgePtr::new_value(Edge {
                 edge_index: edges.len() as EdgeIndex,
                 growth: Rational::zero(),
-                weight: Rational::from_i64(*weight).unwrap(),
+                weight: Rational::from_usize(*weight).unwrap(),
                 dual_nodes: vec![],
                 vertices: vertex_indices.iter().map(|i| vertices[*i].downgrade()).collect::<Vec<_>>(),
             });
@@ -483,12 +483,12 @@ mod tests {
         // grow them each by half
         let dual_node_3_ptr = interface_ptr.read_recursive().nodes[0].clone();
         let dual_node_12_ptr = interface_ptr.read_recursive().nodes[1].clone();
-        dual_module.grow_dual_node(&dual_node_3_ptr, Rational::from_i64(weight/2).unwrap());
-        dual_module.grow_dual_node(&dual_node_12_ptr, Rational::from_i64(weight/2).unwrap());
+        dual_module.grow_dual_node(&dual_node_3_ptr, Rational::from_usize(weight/2).unwrap());
+        dual_module.grow_dual_node(&dual_node_12_ptr, Rational::from_usize(weight/2).unwrap());
         visualizer.snapshot_combined(format!("grow"), vec![&interface_ptr, &dual_module]).unwrap();
         // cluster becomes solved
-        dual_module.grow_dual_node(&dual_node_3_ptr, Rational::from_i64(weight/2).unwrap());
-        dual_module.grow_dual_node(&dual_node_12_ptr, Rational::from_i64(weight/2).unwrap());
+        dual_module.grow_dual_node(&dual_node_3_ptr, Rational::from_usize(weight/2).unwrap());
+        dual_module.grow_dual_node(&dual_node_12_ptr, Rational::from_usize(weight/2).unwrap());
         visualizer.snapshot_combined(format!("solved"), vec![&interface_ptr, &dual_module]).unwrap();
         // the result subgraph
         let subgraph = Subgraph::new(vec![15, 20]);
@@ -517,10 +517,10 @@ mod tests {
         let dual_node_24_ptr = interface_ptr.read_recursive().nodes[1].clone();
         let dual_node_29_ptr = interface_ptr.read_recursive().nodes[2].clone();
         let dual_node_30_ptr = interface_ptr.read_recursive().nodes[3].clone();
-        dual_module.grow_dual_node(&dual_node_23_ptr, Rational::from_i64(weight/4).unwrap());
-        dual_module.grow_dual_node(&dual_node_24_ptr, Rational::from_i64(weight/4).unwrap());
-        dual_module.grow_dual_node(&dual_node_29_ptr, Rational::from_i64(weight/4).unwrap());
-        dual_module.grow_dual_node(&dual_node_30_ptr, Rational::from_i64(weight/4).unwrap());
+        dual_module.grow_dual_node(&dual_node_23_ptr, Rational::from_usize(weight/4).unwrap());
+        dual_module.grow_dual_node(&dual_node_24_ptr, Rational::from_usize(weight/4).unwrap());
+        dual_module.grow_dual_node(&dual_node_29_ptr, Rational::from_usize(weight/4).unwrap());
+        dual_module.grow_dual_node(&dual_node_30_ptr, Rational::from_usize(weight/4).unwrap());
         visualizer.snapshot_combined(format!("solved"), vec![&interface_ptr, &dual_module]).unwrap();
         // the result subgraph
         let subgraph = Subgraph::new(vec![24]);

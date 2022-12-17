@@ -293,11 +293,11 @@ impl ResultVerifier for VerifierActualError {
         if !syndrome_pattern.erasures.is_empty() {
             unimplemented!()
         }
-        let actual_weight = Rational::from_i64(self.initializer.get_subgraph_total_weight(error_pattern)).unwrap();
+        let actual_weight = Rational::from_usize(self.initializer.get_subgraph_total_weight(error_pattern)).unwrap();
         let (subgraph, weight_range) = primal_dual_solver.subgraph_range_visualizer(visualizer);
         assert_le!(weight_range.lower, actual_weight, "the lower bound of weight range is larger than the actual weight");
         if self.is_strict {
-            let subgraph_weight = Rational::from_i64(self.initializer.get_subgraph_total_weight(&subgraph)).unwrap();
+            let subgraph_weight = Rational::from_usize(self.initializer.get_subgraph_total_weight(&subgraph)).unwrap();
             assert_le!(subgraph_weight, actual_weight, "it's not a minimum-weight parity subgraph: the actual error pattern has smaller weight");
             assert_eq!(weight_range.lower, weight_range.upper, "the weight range must be optimal: lower = upper");
         }

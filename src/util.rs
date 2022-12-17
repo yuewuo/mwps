@@ -11,7 +11,7 @@ use std::io::prelude::*;
 use crate::mwps_solver::*;
 
 
-pub type Weight = i64;
+pub type Weight = usize;  // only used as input
 pub type EdgeIndex = usize;
 pub type VertexIndex = usize;
 pub type NodeIndex = VertexIndex;
