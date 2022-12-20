@@ -13,6 +13,7 @@ extern crate num_traits;
 extern crate more_asserts;
 extern crate pbr;
 extern crate rand;
+extern crate prettytable;
 
 pub mod cli;
 pub mod visualize;
@@ -26,6 +27,7 @@ pub mod primal_module_union_find;
 pub mod matrix_util;
 pub mod union_find;
 pub mod mwps_solver;
+pub mod explore;
 
 
 #[cfg(feature="python_binding")]

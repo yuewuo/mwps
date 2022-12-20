@@ -148,6 +148,15 @@ pub trait DualModuleImpl {
 
     fn get_edge_nodes(&self, edge_index: EdgeIndex) -> Vec<DualNodePtr>;
 
+    fn is_edge_tight(&self, edge_index: EdgeIndex) -> bool;
+
+    fn get_edge_neighbors(&self, edge_index: EdgeIndex) -> Vec<VertexIndex>;
+
+    fn is_vertex_defect(&self, vertex_index: VertexIndex) -> bool;
+
+    /// return if the vertex is defect and all the edges that connects to it
+    fn get_vertex_neighbors(&self, vertex_index: VertexIndex) -> Vec<EdgeIndex>;
+
 }
 
 impl MaxUpdateLength {
@@ -287,6 +296,11 @@ impl DualModuleInterfacePtr {
     pub fn clear(&self) {
         let mut interface = self.write();
         interface.nodes.clear();
+    }
+
+    pub fn get_node(&self, node_index: NodeIndex) -> Option<DualNodePtr> {
+        let interface = self.read_recursive();
+        interface.nodes.get(node_index).cloned()
     }
 
     pub fn create_defect_node(&self, vertex_idx: VertexIndex, dual_module_impl: &mut impl DualModuleImpl) -> DualNodePtr {

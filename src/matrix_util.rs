@@ -2,7 +2,7 @@
 
 /// convert a modular 2 matrix into its Echelon form for Gaussian elimination:
 /// https://en.wikipedia.org/wiki/Row_echelon_form
-pub fn modular_2_row_echelon_form(matrix: &mut Vec::<Vec<u8>>) {
+pub fn modular_2_row_echelon_form(matrix: &mut Vec<Vec<u8>>) {
     // eprint_matrix(matrix);  // debug
     if matrix.is_empty() { return }
     let height = matrix.len();
@@ -39,7 +39,7 @@ pub fn modular_2_row_echelon_form(matrix: &mut Vec::<Vec<u8>>) {
     }
 }
 
-pub fn assert_matrix_valid_shape<T>(matrix: &Vec::<Vec<T>>) -> Result<(usize, usize), String> {
+pub fn assert_matrix_valid_shape<T>(matrix: &Vec<Vec<T>>) -> Result<(usize, usize), String> {
     let height = matrix.len();
     if height == 0 {
         return Ok((0, 0))
@@ -53,7 +53,7 @@ pub fn assert_matrix_valid_shape<T>(matrix: &Vec::<Vec<T>>) -> Result<(usize, us
     Ok((height, width))
 }
 
-pub fn eprint_matrix<T: std::fmt::Display>(matrix: &Vec::<Vec<T>>) {
+pub fn eprint_matrix<T: std::fmt::Display>(matrix: &Vec<Vec<T>>) {
     let height = matrix.len();
     if height == 0 {
         eprintln!("vec![]");
@@ -74,7 +74,7 @@ pub fn eprint_matrix<T: std::fmt::Display>(matrix: &Vec::<Vec<T>>) {
     eprintln!("]");
 }
 
-pub fn assert_matrix_equal<T: Eq + std::fmt::Display>(matrix_1: &Vec::<Vec<T>>, matrix_2: &Vec::<Vec<T>>) {
+pub fn assert_matrix_equal<T: Eq + std::fmt::Display>(matrix_1: &Vec<Vec<T>>, matrix_2: &Vec<Vec<T>>) {
     let (height_1, width_1) = assert_matrix_valid_shape(matrix_1).unwrap();
     let (height_2, width_2) = assert_matrix_valid_shape(matrix_2).unwrap();
     assert_eq!(height_1, height_2, "height of matrix not equal");

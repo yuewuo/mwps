@@ -233,4 +233,12 @@ pub mod tests {
         primal_module_union_find_basic_standard_syndrome(code, visualize_filename, defect_vertices, 4);
     }
 
+    #[test]
+    fn primal_module_union_find_basic_6() {  // cargo test primal_module_union_find_basic_6 -- --nocapture
+        let visualize_filename = format!("primal_module_union_find_basic_6.json");
+        let defect_vertices = vec![22];
+        let code = CodeCapacityTailoredCode::new(5, 0., 0.05, 1);
+        primal_module_union_find_basic_standard_syndrome(code, visualize_filename, defect_vertices, 4);
+    }
+
 }

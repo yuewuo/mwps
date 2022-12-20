@@ -401,6 +401,25 @@ impl DualModuleImpl for DualModuleSerial {
         self.edges[edge_index].read_recursive().dual_nodes.iter().map(|x| x.upgrade_force()).collect()
     }
 
+    fn is_edge_tight(&self, edge_index: EdgeIndex) -> bool {
+        let edge = self.edges[edge_index].read_recursive();
+        edge.growth == edge.weight
+    }
+
+    fn get_edge_neighbors(&self, edge_index: EdgeIndex) -> Vec<VertexIndex> {
+        let edge = self.edges[edge_index].read_recursive();
+        edge.vertices.iter().map(|ptr| ptr.upgrade_force().read_recursive().vertex_index).collect()
+    }
+
+    fn is_vertex_defect(&self, vertex_index: VertexIndex) -> bool {
+        self.vertices[vertex_index].read_recursive().is_defect
+    }
+
+    fn get_vertex_neighbors(&self, vertex_index: VertexIndex) -> Vec<EdgeIndex> {
+        let vertex = self.vertices[vertex_index].read_recursive();
+        vertex.edges.iter().map(|ptr| ptr.upgrade_force().read_recursive().edge_index).collect()
+    }
+
 }
 
 /*

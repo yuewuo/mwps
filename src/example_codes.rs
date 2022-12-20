@@ -308,6 +308,22 @@ pub trait ExampleCode {
     fn get_syndrome(&self) -> SyndromePattern {
         SyndromePattern::new(self.get_defect_vertices(), self.get_erasures())
     }
+    
+    /// apply an error by flipping the vertices incident to it
+    fn apply_error(&mut self, edge_index: EdgeIndex) {
+        let (vertices, edges) = self.vertices_edges();
+        let edge = &edges[edge_index];
+        for vertex_index in edge.vertices.iter() {
+            let vertex = &mut vertices[*vertex_index];
+            vertex.is_defect = !vertex.is_defect;
+        }
+    }
+
+    fn apply_errors(&mut self, edge_indices: &[EdgeIndex]) {
+        for &edge_index in edge_indices.iter() {
+            self.apply_error(edge_index);
+        }
+    }
 
     /// generate random errors based on the edge probabilities and a seed for pseudo number generator
     fn generate_random_errors(&mut self, seed: u64) -> (SyndromePattern, Subgraph) {
