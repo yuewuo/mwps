@@ -54,6 +54,11 @@ const App = {
             show_hover_effect: gui3d.show_hover_effect,
             lock_view: ref(false),
             is_browser_supported: is_browser_supported,
+            dual_display_compact: ref(true),
+            dual_display_edges: ref(true),
+            dual_display_vertices: ref(true),
+            dual_display_hair: ref(true),
+            dual_display_hide_0: ref(true),
             // select
             current_selected: gui3d.current_selected,
             selected_vertex_neighbor_edges: ref([]),

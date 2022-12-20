@@ -268,27 +268,51 @@ h5 {
             </q-card-section>
             <q-separator inset></q-separator>
             <q-card-section>
+                <div style="display: flex; justify-content: center; flex-direction: row;">
+                    <div><q-toggle v-model="dual_display_hair" label="hair" size="md" color="cyan"/></div>
+                    <div><q-toggle v-model="dual_display_edges" label="edge" size="md" color="cyan"/></div>
+                    <div><q-toggle v-model="dual_display_vertices" label="vertex" size="md" color="teal"/></div>
+                    <div><q-toggle v-model="dual_display_compact" label="compact" size="md" color="orange"/></div>
+                    <div><q-toggle v-model="dual_display_hide_0" label="hide 0" size="md" color="red"/></div>
+                </div>
                 <div v-for="(node, node_index) of dual_module_info.dual_nodes" style="margin-top: 15px;">
-                    y{{ node_index }} = <span class="dual-node-set bg-purple-2">
-                        {{ node.dn }}/{{ node.dd }}<q-tooltip anchor="top middle" self="bottom middle" :offset="[10, 10]" transition-show="scale" transition-hide="scale">
-                            <span style="font-size: 14px;">{{ node.d }}</span>
-                        </q-tooltip>
-                    </span>, 
-                    <span class="dual-node-set bg-cyan-2" @mouseenter="mouseenter('edges', node.e)" @mouseleave="mouseleave()">E = [
-                        <q-btn color="cyan" no-caps rounded unelevated v-for="edge_index of node.e" style="margin-left: 5px; position: relative; bottom: 1px;"
-                            padding="6px 4px" size="14px" @mouseenter="mouseenter('edge', edge_index)" @mouseleave="mouseleave()"
-                            @click="jump_to('edge', edge_index)">{{ edge_index }}</q-btn>
-                    ]</span>,
-                    <span class="dual-node-set bg-teal-2" @mouseenter="mouseenter('vertices', node.v)" @mouseleave="mouseleave()">V = [
-                        <q-btn color="teal" no-caps rounded unelevated v-for="vertex_index of node.v" style="margin-left: 5px; position: relative; bottom: 1px;"
-                            padding="6px 4px" size="14px" @mouseenter="mouseenter('vertex', vertex_index)" @mouseleave="mouseleave()"
-                            @click="jump_to('vertex', vertex_index)">{{ vertex_index }}</q-btn>
-                    ]</span>,
-                    <span class="dual-node-set bg-cyan-2" @mouseenter="mouseenter('edges', node.h)" @mouseleave="mouseleave()">δ(E) = [
-                        <q-btn color="cyan" no-caps rounded unelevated v-for="edge_index of node.h" style="margin-left: 5px; position: relative; bottom: 1px;"
-                            padding="6px 4px" size="14px" @mouseenter="mouseenter('edge', edge_index)" @mouseleave="mouseleave()"
-                            @click="jump_to('edge', edge_index)">{{ edge_index }}</q-btn>
-                    ]</span>
+                    <div v-if="!dual_display_hide_0 || node.dn != 0">
+                        y{{ node_index }} = <span class="dual-node-set bg-purple-2">
+                            {{ node.dn }}/{{ node.dd }}<q-tooltip anchor="top middle" self="bottom middle" :offset="[10, 10]" transition-show="scale" transition-hide="scale">
+                                <span style="font-size: 14px;">{{ node.d }}</span>
+                            </q-tooltip>
+                        </span>
+                        <span v-if="dual_display_hair">, <span class="dual-node-set bg-cyan-2" @mouseenter="mouseenter('edges', node.h)" @mouseleave="mouseleave()">δ(E) = [<span v-if="!dual_display_compact || node.h.length == 1">
+                                <q-btn color="cyan" no-caps rounded unelevated v-for="edge_index of node.h" style="margin-left: 5px; position: relative; bottom: 1px;"
+                                    padding="6px 4px" size="14px" @mouseenter="mouseenter('edge', edge_index)" @mouseleave="mouseleave()"
+                                    @click="jump_to('edge', edge_index)">{{ edge_index }}</q-btn>
+                            </span>
+                            <span v-else>
+                                <span v-if="node.h.length > 1">{{ ` ... ${node.h.length}` }}</span>
+                            </span>
+                            ]</span>
+                        </span>
+                        <span v-if="dual_display_edges">, <span class="dual-node-set bg-cyan-2" @mouseenter="mouseenter('edges', node.e)" @mouseleave="mouseleave()">E = [<span v-if="!dual_display_compact || node.e.length == 1">
+                                <q-btn color="cyan" no-caps rounded unelevated v-for="edge_index of node.e" style="margin-left: 5px; position: relative; bottom: 1px;"
+                                    padding="6px 4px" size="14px" @mouseenter="mouseenter('edge', edge_index)" @mouseleave="mouseleave()"
+                                    @click="jump_to('edge', edge_index)">{{ edge_index }}</q-btn>
+                            </span>
+                            <span v-else>
+                                <span v-if="node.e.length > 1">{{ ` ... ${node.e.length}` }}</span>
+                            </span>
+                            ]</span>
+                        </span>
+                        <span v-if="dual_display_vertices">, <span class="dual-node-set bg-teal-2" @mouseenter="mouseenter('vertices', node.v)" @mouseleave="mouseleave()">V = [<span v-if="!dual_display_compact || node.v.length == 1">
+                                <q-btn color="teal" no-caps rounded unelevated v-for="vertex_index of node.v" style="margin-left: 5px; position: relative; bottom: 1px;"
+                                    padding="6px 4px" size="14px" @mouseenter="mouseenter('vertex', vertex_index)" @mouseleave="mouseleave()"
+                                    @click="jump_to('vertex', vertex_index)">{{ vertex_index }}</q-btn>
+                            </span>
+                            <span v-else>
+                                <span v-if="node.v.length > 1">{{ ` ... ${node.v.length}` }}</span>
+                            </span>
+                            ]</span>
+                        </span>
+                    </div>
                 </div>
             </q-card-section>
         </q-card>

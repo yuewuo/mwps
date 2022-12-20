@@ -40,6 +40,7 @@ pub struct ExploreCluster {
 impl ExploreCluster {
 
     pub fn new(node_ptr: &DualNodePtr, dual_module: &mut impl DualModuleImpl) -> Self {
+        // this is not correct: should consider every node that has been encountered!
         let node = node_ptr.read_recursive();
         let mut grown_edges = BTreeSet::<EdgeIndex>::new();
         let mut newly_touched_vertices = BTreeSet::<VertexIndex>::new();
@@ -143,11 +144,10 @@ impl ExploreParityConstraints {
         table_format.column_separator('\u{254E}');
         let mut title_row = Row::empty();
         for (local_idx, edge_index) in self.variable_edges.iter().enumerate() {
-            let mut cell = Cell::new(format!("{edge_index}").as_str());
-            if local_idx < self.num_non_hair_edges {
-                cell = cell.style_spec("Frb");
+            if local_idx == self.num_non_hair_edges {
+                title_row.add_cell(Cell::new("+"));
             }
-            title_row.add_cell(cell);
+            title_row.add_cell(Cell::new(format!("{edge_index}").as_str()));
         }
         title_row.add_cell(Cell::new(format!("=").as_str()));
         if self.is_initial_constraints {
@@ -157,19 +157,17 @@ impl ExploreParityConstraints {
         for (idx, constraint) in self.constraints.iter().enumerate() {
             let mut row = Row::empty();
             for (local_idx, v) in constraint.iter().enumerate() {
-                let mut cell = Cell::new(if *v == 0 { " " } else { "1" });
-                if local_idx < self.num_non_hair_edges {
-                    cell = cell.style_spec("Fr");
+                if local_idx == self.num_non_hair_edges {
+                    row.add_cell(Cell::new("+"));
                 }
-                row.add_cell(cell);
+                row.add_cell(Cell::new(if *v == 0 { " " } else { "1" }));
             }
             if self.is_initial_constraints {
                 row.add_cell(Cell::new(format!("{}", self.constraint_vertices[idx]).as_str()));
             }
             table.add_row(row);
-
         }
-        table.printstd();
+        println!("{table}");
     }
 
     pub fn to_row_echelon_form(&mut self) {
@@ -498,6 +496,49 @@ mod tests {
                 assert!(single_hair_edges.len() == 1, "haven't thought about how to handle multiple hair edge cases...");
                 subgraph_edges.push(single_hair_edges[0])
             }
+            Subgraph::new(subgraph_edges)
+        });
+    }
+
+    // what about degeneracy? i.e. multiple possible paths, how to find a (in fact, any) proper one?
+    #[test]
+    fn explore_primal_module_5() {  // cargo test explore_primal_module_5 -- --nocapture
+        let visualize_filename = format!("explore_primal_module_5.json");
+        let mut code = CodeCapacityPlanarCode::new(11, 0.01, 1);
+        code.apply_errors(&[88, 89, 101]);
+        let defect_vertices = code.get_syndrome().defect_vertices;
+        explore_primal_module_method(code, Some(visualize_filename), defect_vertices, 5, |interface_ptr, dual_module, visualizer| {
+            // use single grow mode
+            for i in 1..2 {
+                dual_module.set_grow_rate(&interface_ptr.get_node(i).unwrap(), Rational::zero());
+            }
+            let group_max_update_length = dual_module.compute_maximum_update_length();
+            dual_module.grow(group_max_update_length.get_valid_growth().unwrap());
+            take_snapshot(visualizer, "grow".to_string(), interface_ptr, &dual_module);
+            // check constraint
+            let mut constraints = ExploreParityConstraints::new(&interface_ptr.get_node(0).unwrap(), dual_module);
+            constraints.to_row_echelon_form(); constraints.print();
+            assert!(!constraints.cluster.is_valid(dual_module));
+            dual_module.set_grow_rate(&interface_ptr.get_node(0).unwrap(), Rational::zero());
+            interface_ptr.create_cluster_node(constraints.cluster.grown_edges.clone(), dual_module);
+            let group_max_update_length = dual_module.compute_maximum_update_length();
+            dual_module.grow(group_max_update_length.get_valid_growth().unwrap());
+            take_snapshot(visualizer, "grow".to_string(), interface_ptr, &dual_module);
+            // check constraint
+            let mut constraints = ExploreParityConstraints::new(&interface_ptr.get_node(2).unwrap(), dual_module);
+            constraints.to_row_echelon_form(); constraints.print();
+            assert!(!constraints.cluster.is_valid(dual_module));
+            dual_module.set_grow_rate(&interface_ptr.get_node(2).unwrap(), Rational::zero());
+            interface_ptr.create_cluster_node(constraints.cluster.grown_edges.clone(), dual_module);
+            let group_max_update_length = dual_module.compute_maximum_update_length();
+            dual_module.grow(group_max_update_length.get_valid_growth().unwrap());
+            take_snapshot(visualizer, "grow".to_string(), interface_ptr, &dual_module);
+            // check constraint
+            let mut constraints = ExploreParityConstraints::new(&interface_ptr.get_node(3).unwrap(), dual_module);
+            constraints.to_row_echelon_form(); constraints.print();
+            assert!(constraints.cluster.is_valid(dual_module));
+
+            let mut subgraph_edges = vec![];
             Subgraph::new(subgraph_edges)
         });
     }
