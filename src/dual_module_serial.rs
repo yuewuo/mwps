@@ -264,6 +264,9 @@ impl DualModuleImpl for DualModuleSerial {
             for node_weak in edge.dual_nodes.iter() {
                 let node_ptr = node_weak.upgrade_force();
                 let node = node_ptr.read_recursive();
+                if node.grow_rate.is_negative() {  // y >= 0
+                    group_max_update_length.add(MaxUpdateLength::ValidGrow(- node.dual_variable.clone() / node.grow_rate.clone()));
+                }
                 grow_rate += node.grow_rate.clone();
             }
             if grow_rate.is_positive() {

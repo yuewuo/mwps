@@ -269,7 +269,7 @@ mod tests {
         // verify result
         let weight_range = WeightRange::new(interface_ptr.sum_dual_variables(), Rational::from_usize(initializer.get_subgraph_total_weight(&subgraph)).unwrap());
         if let Some(visualizer) = visualizer.as_mut() {
-            visualizer.snapshot_combined("perfect matching and subgraph".to_string(), vec![&interface_ptr, &dual_module, &subgraph, &weight_range]).unwrap();
+            visualizer.snapshot_combined("subgraph".to_string(), vec![&interface_ptr, &dual_module, &subgraph, &weight_range]).unwrap();
         }
         assert!(initializer.matches_subgraph_syndrome(&subgraph, &defect_vertices), "the result subgraph is invalid");
         assert_eq!(Rational::from_usize(final_dual).unwrap(), weight_range.upper, "unmatched sum dual variables");
@@ -507,7 +507,7 @@ mod tests {
         let mut code = CodeCapacityPlanarCode::new(11, 0.01, 1);
         code.apply_errors(&[88, 89, 101]);
         let defect_vertices = code.get_syndrome().defect_vertices;
-        explore_primal_module_method(code, Some(visualize_filename), defect_vertices, 5, |interface_ptr, dual_module, visualizer| {
+        explore_primal_module_method(code, Some(visualize_filename), defect_vertices, 3, |interface_ptr, dual_module, visualizer| {
             // use single grow mode
             for i in 1..2 {
                 dual_module.set_grow_rate(&interface_ptr.get_node(i).unwrap(), Rational::zero());
@@ -537,8 +537,7 @@ mod tests {
             let mut constraints = ExploreParityConstraints::new(&interface_ptr.get_node(3).unwrap(), dual_module);
             constraints.to_row_echelon_form(); constraints.print();
             assert!(constraints.cluster.is_valid(dual_module));
-
-            let mut subgraph_edges = vec![];
+            let subgraph_edges = vec![88, 100, 110];
             Subgraph::new(subgraph_edges)
         });
     }

@@ -10,6 +10,7 @@ use crate::dual_module_serial::*;
 use crate::dual_module::*;
 use crate::primal_module::*;
 use crate::primal_module_union_find::*;
+use crate::primal_module_serial::*;
 use std::fs::File;
 use std::io::prelude::*;
 use std::io::BufWriter;
@@ -77,7 +78,7 @@ impl PrimalDualSolver for SolverUnionFind {
     fn subgraph_range_visualizer(&mut self, visualizer: Option<&mut Visualizer>) -> (Subgraph, WeightRange) {
         let (subgraph, weight_range) = self.primal_module.subgraph_range(&self.interface_ptr, &mut self.dual_module, &self.initializer);
         if let Some(visualizer) = visualizer {
-            visualizer.snapshot_combined("perfect matching".to_string(), vec![&self.interface_ptr, &self.dual_module, &subgraph, &weight_range]).unwrap();
+            visualizer.snapshot_combined("subgraph".to_string(), vec![&self.interface_ptr, &self.dual_module, &subgraph, &weight_range]).unwrap();
         }
         (subgraph, weight_range)
     }
@@ -90,6 +91,67 @@ impl PrimalDualSolver for SolverUnionFind {
     }
 }
 
+pub struct SolverSerial {
+    dual_module: DualModuleSerial,
+    primal_module: PrimalModuleSerial,
+    interface_ptr: DualModuleInterfacePtr,
+    initializer: SolverInitializer,
+}
+
+impl MWPSVisualizer for SolverSerial {
+    fn snapshot(&self, abbrev: bool) -> serde_json::Value {
+        let mut value = self.primal_module.snapshot(abbrev);
+        snapshot_combine_values(&mut value, self.dual_module.snapshot(abbrev), abbrev);
+        snapshot_combine_values(&mut value, self.interface_ptr.snapshot(abbrev), abbrev);
+        value
+    }
+}
+
+#[cfg_attr(feature = "python_binding", cfg_eval)]
+#[cfg_attr(feature = "python_binding", pymethods)]
+impl SolverSerial {
+    #[cfg_attr(feature = "python_binding", new)]
+    pub fn new(initializer: &SolverInitializer) -> Self {
+        Self {
+            dual_module: DualModuleSerial::new_empty(initializer),
+            primal_module: PrimalModuleSerial::new_empty(initializer),
+            interface_ptr: DualModuleInterfacePtr::new_empty(),
+            initializer: initializer.clone(),
+        }
+    }
+}
+
+impl PrimalDualSolver for SolverSerial {
+    fn clear(&mut self) {
+        self.primal_module.clear();
+        self.dual_module.clear();
+        self.interface_ptr.clear();
+    }
+    fn solve_visualizer(&mut self, syndrome_pattern: &SyndromePattern, visualizer: Option<&mut Visualizer>) {
+        if !syndrome_pattern.erasures.is_empty() {
+            unimplemented!();
+        }
+        self.primal_module.solve_visualizer(&self.interface_ptr, syndrome_pattern, &mut self.dual_module, visualizer);
+        debug_assert!({
+            let subgraph = self.subgraph();
+            self.initializer.matches_subgraph_syndrome(&subgraph, &syndrome_pattern.defect_vertices)
+        }, "the subgraph does not generate the syndrome");
+    }
+    fn subgraph_range_visualizer(&mut self, visualizer: Option<&mut Visualizer>) -> (Subgraph, WeightRange) {
+        let (subgraph, weight_range) = self.primal_module.subgraph_range(&self.interface_ptr, &mut self.dual_module, &self.initializer);
+        if let Some(visualizer) = visualizer {
+            visualizer.snapshot_combined("subgraph".to_string(), vec![&self.interface_ptr, &self.dual_module, &subgraph, &weight_range]).unwrap();
+        }
+        (subgraph, weight_range)
+    }
+    fn sum_dual_variables(&self) -> Rational { self.interface_ptr.sum_dual_variables() }
+    fn generate_profiler_report(&self) -> serde_json::Value {
+        json!({
+            // "dual": self.dual_module.generate_profiler_report(),
+            "primal": self.primal_module.generate_profiler_report(),
+        })
+    }
+}
 
 #[cfg_attr(feature = "python_binding", cfg_eval)]
 #[cfg_attr(feature = "python_binding", pyclass)]

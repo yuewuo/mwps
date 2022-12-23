@@ -157,6 +157,14 @@ pub trait DualModuleImpl {
     /// return if the vertex is defect and all the edges that connects to it
     fn get_vertex_neighbors(&self, vertex_index: VertexIndex) -> Vec<EdgeIndex>;
 
+    fn get_edges_neighbors(&self, edges: &[EdgeIndex]) -> BTreeSet<VertexIndex> {
+        let mut vertices = BTreeSet::new();
+        for &edge_index in edges.iter() {
+            vertices.extend(self.get_edge_neighbors(edge_index));
+        }
+        vertices
+    }
+
 }
 
 impl MaxUpdateLength {

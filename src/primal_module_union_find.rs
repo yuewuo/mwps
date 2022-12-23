@@ -84,7 +84,7 @@ impl PrimalModuleImpl for PrimalModuleUnionFind {
         });
     }
 
-    fn resolve<D: DualModuleImpl>(&mut self, mut group_max_update_length: GroupMaxUpdateLength, interface: &DualModuleInterfacePtr, dual_module: &mut D) {
+    fn resolve(&mut self, mut group_max_update_length: GroupMaxUpdateLength, interface: &DualModuleInterfacePtr, dual_module: &mut impl DualModuleImpl) {
         debug_assert!(!group_max_update_length.is_unbounded() && group_max_update_length.get_valid_growth().is_none());
         let mut active_clusters = BTreeSet::<NodeIndex>::new();
         while let Some(conflict) = group_max_update_length.pop() {
@@ -95,11 +95,11 @@ impl PrimalModuleImpl for PrimalModuleUnionFind {
                     let dual_nodes = dual_module.get_edge_nodes(edge_index);
                     debug_assert!(dual_nodes.len() > 0, "should not conflict if no dual nodes are contributing");
                     let cluster_index = dual_nodes[0].read_recursive().index;
-                    for node_ptr in dual_nodes.iter() {
-                        let mut node = node_ptr.write();
-                        active_clusters.remove(&self.union_find.find(node.index));
-                        node.grow_rate = Rational::zero();
-                        self.union_find.union(cluster_index, node.index);
+                    for dual_node_ptr in dual_nodes.iter() {
+                        dual_module.set_grow_rate(dual_node_ptr, Rational::zero());
+                        let node_index = dual_node_ptr.read_recursive().index;
+                        active_clusters.remove(&self.union_find.find(node_index));
+                        self.union_find.union(cluster_index, node_index);
                     }
                     self.union_find.get_mut(cluster_index).internal_edges.insert(edge_index);
                     active_clusters.insert(self.union_find.find(cluster_index));
@@ -121,7 +121,7 @@ impl PrimalModuleImpl for PrimalModuleUnionFind {
         }
     }
 
-    fn subgraph<D: DualModuleImpl>(&mut self, _interface: &DualModuleInterfacePtr, dual_module: &mut D) -> Subgraph {
+    fn subgraph(&mut self, _interface: &DualModuleInterfacePtr, dual_module: &mut impl DualModuleImpl) -> Subgraph {
         let mut valid_clusters = BTreeSet::new();
         let mut subgraph = Subgraph::new_empty();
         for i in 0..self.union_find.size() {
@@ -178,7 +178,7 @@ pub mod tests {
         primal_module.solve_visualizer(&interface_ptr, &code.get_syndrome(), &mut dual_module, visualizer.as_mut());
         let (subgraph, weight_range) = primal_module.subgraph_range(&interface_ptr, &mut dual_module, &initializer);
         if let Some(visualizer) = visualizer.as_mut() {
-            visualizer.snapshot_combined("perfect matching and subgraph".to_string(), vec![&interface_ptr, &dual_module, &subgraph, &weight_range]).unwrap();
+            visualizer.snapshot_combined("subgraph".to_string(), vec![&interface_ptr, &dual_module, &subgraph, &weight_range]).unwrap();
         }
         assert!(initializer.matches_subgraph_syndrome(&subgraph, &defect_vertices), "the result subgraph is invalid");
         assert_le!(Rational::from_usize(final_dual).unwrap(), weight_range.upper, "unmatched sum dual variables");

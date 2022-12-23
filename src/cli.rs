@@ -111,6 +111,8 @@ pub enum ExampleCodeType {
 pub enum PrimalDualType {
     /// the solver from Union-Find decoder
     UnionFind,
+    /// the sequential solver
+    Serial,
     /// log error into a file for later fetch
     ErrorPatternLogger,
 }
@@ -235,6 +237,10 @@ impl PrimalDualType {
             Self::UnionFind => {
                 assert_eq!(primal_dual_config, json!({}));
                 Box::new(SolverUnionFind::new(initializer))
+            },
+            Self::Serial => {
+                assert_eq!(primal_dual_config, json!({}));
+                Box::new(SolverSerial::new(initializer))
             },
             Self::ErrorPatternLogger => {
                 Box::new(SolverErrorPatternLogger::new(initializer, code, primal_dual_config))

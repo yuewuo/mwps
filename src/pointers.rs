@@ -60,6 +60,9 @@ impl<T> WeakRwLock<T> {
     pub fn upgrade(&self) -> Option<ArcRwLock<T>> {
         self.ptr.upgrade().map(|x| ArcRwLock::<T> { ptr: x })
     }
+    pub fn ptr_eq(&self, other: &Self) -> bool {
+        Weak::ptr_eq(&self.ptr,&other.ptr)
+    }
 }
 
 impl<T> Clone for ArcRwLock<T> {

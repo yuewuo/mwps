@@ -46,9 +46,9 @@ pub trait PrimalModuleImpl {
     /// and then tell dual module what to do to resolve these conflicts;
     /// note that this function doesn't necessarily resolve all the conflicts, but can return early if some major change is made.
     /// when implementing this function, it's recommended that you resolve as many conflicts as possible.
-    fn resolve<D: DualModuleImpl>(&mut self, group_max_update_length: GroupMaxUpdateLength, interface: &DualModuleInterfacePtr, dual_module: &mut D);
+    fn resolve(&mut self, group_max_update_length: GroupMaxUpdateLength, interface: &DualModuleInterfacePtr, dual_module: &mut impl DualModuleImpl);
 
-    fn solve<D: DualModuleImpl>(&mut self, interface: &DualModuleInterfacePtr, syndrome_pattern: &SyndromePattern, dual_module: &mut D) {
+    fn solve(&mut self, interface: &DualModuleInterfacePtr, syndrome_pattern: &SyndromePattern, dual_module: &mut impl DualModuleImpl) {
         self.solve_step_callback(interface, syndrome_pattern, dual_module, |_, _, _, _| {})
     }
 
@@ -95,9 +95,9 @@ pub trait PrimalModuleImpl {
         }
     }
 
-    fn subgraph<D: DualModuleImpl>(&mut self, interface: &DualModuleInterfacePtr, dual_module: &mut D) -> Subgraph;
+    fn subgraph(&mut self, interface: &DualModuleInterfacePtr, dual_module: &mut impl DualModuleImpl) -> Subgraph;
 
-    fn subgraph_range<D: DualModuleImpl>(&mut self, interface: &DualModuleInterfacePtr, dual_module: &mut D, initializer: &SolverInitializer) -> (Subgraph, WeightRange) {
+    fn subgraph_range(&mut self, interface: &DualModuleInterfacePtr, dual_module: &mut impl DualModuleImpl, initializer: &SolverInitializer) -> (Subgraph, WeightRange) {
         let subgraph = self.subgraph(interface, dual_module);
         let weight_range = WeightRange::new(interface.sum_dual_variables(), Rational::from_usize(initializer.get_subgraph_total_weight(&subgraph)).unwrap());
         (subgraph, weight_range)
