@@ -107,7 +107,7 @@ impl PrimalModuleImpl for PrimalModuleUnionFind {
             }
         }
         for &cluster_index in active_clusters.iter() {
-            if dual_module.is_valid_cluster(&self.union_find.get(cluster_index).internal_edges) {
+            if dual_module.is_valid_cluster_auto_vertices(&self.union_find.get(cluster_index).internal_edges) {
                 // do nothing
             } else {
                 let new_cluster_node_index = self.union_find.size();
@@ -116,7 +116,7 @@ impl PrimalModuleImpl for PrimalModuleUnionFind {
                     node_index: new_cluster_node_index,
                 });
                 self.union_find.union(cluster_index, new_cluster_node_index);
-                interface.create_cluster_node(self.union_find.get(cluster_index).internal_edges.clone(), dual_module);
+                interface.create_cluster_node_auto_vertices(self.union_find.get(cluster_index).internal_edges.clone(), dual_module);
             }
         }
     }
@@ -128,7 +128,7 @@ impl PrimalModuleImpl for PrimalModuleUnionFind {
             let root_index = self.union_find.find(i);
             if !valid_clusters.contains(&root_index) {
                 valid_clusters.insert(root_index);
-                let cluster_subgraph = dual_module.find_valid_subgraph(&self.union_find.get(root_index).internal_edges).expect("must be valid cluster");
+                let cluster_subgraph = dual_module.find_valid_subgraph_auto_vertices(&self.union_find.get(root_index).internal_edges).expect("must be valid cluster");
                 subgraph.extend(cluster_subgraph.iter());
             }
         }

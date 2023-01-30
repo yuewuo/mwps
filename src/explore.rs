@@ -84,7 +84,7 @@ impl ExploreCluster {
     }
 
     pub fn is_valid(&self, dual_module: &mut impl DualModuleImpl) -> bool {
-        dual_module.is_valid_cluster(&self.grown_edges.iter().cloned().collect())
+        dual_module.is_valid_cluster_auto_vertices(&self.grown_edges.iter().cloned().collect())
     }
 
 }
@@ -308,7 +308,7 @@ mod tests {
             take_snapshot(visualizer, "grow".to_string(), interface_ptr, &dual_module);
             // second stage
             dual_module.set_grow_rate(&interface_ptr.get_node(0).unwrap(), Rational::zero());
-            interface_ptr.create_cluster_node(vec![37, 38, 48, 49].into_iter().collect(), dual_module);
+            interface_ptr.create_cluster_node_auto_vertices(vec![37, 38, 48, 49].into_iter().collect(), dual_module);
             let group_max_update_length = dual_module.compute_maximum_update_length();
             dual_module.grow(group_max_update_length.get_valid_growth().unwrap());
             take_snapshot(visualizer, "grow".to_string(), interface_ptr, &dual_module);
@@ -337,7 +337,7 @@ mod tests {
             take_snapshot(visualizer, "grow".to_string(), interface_ptr, &dual_module);
             // second stage
             dual_module.set_grow_rate(&interface_ptr.get_node(0).unwrap(), Rational::zero());
-            interface_ptr.create_cluster_node(vec![48, 49, 59, 60].into_iter().collect(), dual_module);
+            interface_ptr.create_cluster_node_auto_vertices(vec![48, 49, 59, 60].into_iter().collect(), dual_module);
             let group_max_update_length = dual_module.compute_maximum_update_length();
             dual_module.grow(group_max_update_length.get_valid_growth().unwrap());
             take_snapshot(visualizer, "grow".to_string(), interface_ptr, &dual_module);
@@ -350,8 +350,8 @@ mod tests {
             println!("internal_edges: {internal_edges:?}");
             // no hair edge can alone satisfy all the parity requirements, thus we find a minimum set of edges that are not satisfiable
             // now we try to add as many hair edges to internal edges as possible to make it invalid cluster
-            println!("valid: {}", dual_module.is_valid_cluster(&internal_edges.iter().cloned().collect()));
-            interface_ptr.create_cluster_node(internal_edges.iter().cloned().collect(), dual_module);
+            println!("valid: {}", dual_module.is_valid_cluster_auto_vertices(&internal_edges.iter().cloned().collect()));
+            interface_ptr.create_cluster_node_auto_vertices(internal_edges.iter().cloned().collect(), dual_module);
             dual_module.set_grow_rate(&interface_ptr.get_node(4).unwrap(), -Rational::one());
             let group_max_update_length = dual_module.compute_maximum_update_length();
             dual_module.grow(group_max_update_length.get_valid_growth().unwrap());
@@ -362,8 +362,8 @@ mod tests {
             let cluster = ExploreCluster::new(&interface_ptr.get_node(5).unwrap(), dual_module);
             let internal_edges = cluster.grown_edges.iter().cloned().collect();
             println!("internal_edges: {internal_edges:?}");
-            println!("valid: {}", dual_module.is_valid_cluster(&internal_edges));
-            interface_ptr.create_cluster_node(internal_edges.iter().cloned().collect(), dual_module);
+            println!("valid: {}", dual_module.is_valid_cluster_auto_vertices(&internal_edges));
+            interface_ptr.create_cluster_node_auto_vertices(internal_edges.iter().cloned().collect(), dual_module);
             let group_max_update_length = dual_module.compute_maximum_update_length();
             dual_module.grow(group_max_update_length.get_valid_growth().unwrap());
             take_snapshot(visualizer, "grow".to_string(), interface_ptr, &dual_module);
@@ -375,8 +375,8 @@ mod tests {
             let internal_edges = constraints.cluster.edges_excluding(&single_hair_solution.unwrap_err());
             println!("internal_edges: {internal_edges:?}");
             // again, there is no single hair edge that can satisfy the requirement
-            println!("valid: {}", dual_module.is_valid_cluster(&internal_edges.iter().cloned().collect()));
-            interface_ptr.create_cluster_node(internal_edges.iter().cloned().collect(), dual_module);
+            println!("valid: {}", dual_module.is_valid_cluster_auto_vertices(&internal_edges.iter().cloned().collect()));
+            interface_ptr.create_cluster_node_auto_vertices(internal_edges.iter().cloned().collect(), dual_module);
             dual_module.set_grow_rate(&interface_ptr.get_node(6).unwrap(), -Rational::one());
             let group_max_update_length = dual_module.compute_maximum_update_length();
             dual_module.grow(group_max_update_length.get_valid_growth().unwrap());
@@ -385,10 +385,10 @@ mod tests {
             let cluster = ExploreCluster::new(&interface_ptr.get_node(6).unwrap(), dual_module);
             let internal_edges = cluster.grown_edges.iter().cloned().collect();
             println!("internal_edges: {internal_edges:?}");
-            println!("valid: {}", dual_module.is_valid_cluster(&internal_edges));
+            println!("valid: {}", dual_module.is_valid_cluster_auto_vertices(&internal_edges));
             dual_module.set_grow_rate(&interface_ptr.get_node(6).unwrap(), Rational::zero());
             dual_module.set_grow_rate(&interface_ptr.get_node(7).unwrap(), Rational::zero());
-            interface_ptr.create_cluster_node(internal_edges.iter().cloned().collect(), dual_module);
+            interface_ptr.create_cluster_node_auto_vertices(internal_edges.iter().cloned().collect(), dual_module);
             let group_max_update_length = dual_module.compute_maximum_update_length();
             dual_module.grow(group_max_update_length.get_valid_growth().unwrap());
             take_snapshot(visualizer, "grow".to_string(), interface_ptr, &dual_module);
@@ -425,7 +425,7 @@ mod tests {
             constraints.to_row_echelon_form(); constraints.print();
             assert!(!constraints.cluster.is_valid(dual_module));
             dual_module.set_grow_rate(&interface_ptr.get_node(0).unwrap(), Rational::zero());
-            interface_ptr.create_cluster_node(constraints.cluster.grown_edges.clone(), dual_module);
+            interface_ptr.create_cluster_node_auto_vertices(constraints.cluster.grown_edges.clone(), dual_module);
             let group_max_update_length = dual_module.compute_maximum_update_length();
             dual_module.grow(group_max_update_length.get_valid_growth().unwrap());
             take_snapshot(visualizer, "grow".to_string(), interface_ptr, &dual_module);
@@ -434,7 +434,7 @@ mod tests {
             constraints.to_row_echelon_form(); constraints.print();
             assert!(!constraints.cluster.is_valid(dual_module));
             dual_module.set_grow_rate(&interface_ptr.get_node(12).unwrap(), Rational::zero());
-            interface_ptr.create_cluster_node(constraints.cluster.grown_edges.clone(), dual_module);
+            interface_ptr.create_cluster_node_auto_vertices(constraints.cluster.grown_edges.clone(), dual_module);
             let group_max_update_length = dual_module.compute_maximum_update_length();
             dual_module.grow(group_max_update_length.get_valid_growth().unwrap());
             take_snapshot(visualizer, "grow".to_string(), interface_ptr, &dual_module);
@@ -448,7 +448,7 @@ mod tests {
             println!("single hair solution: {:?}", single_hair_solution);
             let internal_edges = constraints.cluster.edges_excluding(&single_hair_solution.unwrap_err());
             println!("internal_edges: {internal_edges:?}");
-            interface_ptr.create_cluster_node(internal_edges.iter().cloned().collect(), dual_module);
+            interface_ptr.create_cluster_node_auto_vertices(internal_edges.iter().cloned().collect(), dual_module);
             dual_module.set_grow_rate(&interface_ptr.get_node(13).unwrap(), -Rational::one());
             let group_max_update_length = dual_module.compute_maximum_update_length();
             dual_module.grow(group_max_update_length.get_valid_growth().unwrap());
@@ -457,10 +457,10 @@ mod tests {
             let cluster = ExploreCluster::new(&interface_ptr.get_node(13).unwrap(), dual_module);
             let internal_edges = cluster.grown_edges.iter().cloned().collect();
             println!("internal_edges: {internal_edges:?}");
-            println!("valid: {}", dual_module.is_valid_cluster(&internal_edges));
+            println!("valid: {}", dual_module.is_valid_cluster_auto_vertices(&internal_edges));
             dual_module.set_grow_rate(&interface_ptr.get_node(13).unwrap(), Rational::zero());
             dual_module.set_grow_rate(&interface_ptr.get_node(14).unwrap(), Rational::zero());
-            interface_ptr.create_cluster_node(internal_edges.iter().cloned().collect(), dual_module);
+            interface_ptr.create_cluster_node_auto_vertices(internal_edges.iter().cloned().collect(), dual_module);
             let group_max_update_length = dual_module.compute_maximum_update_length();
             dual_module.grow(group_max_update_length.get_valid_growth().unwrap());
             take_snapshot(visualizer, "grow".to_string(), interface_ptr, &dual_module);
@@ -470,7 +470,7 @@ mod tests {
             println!("single hair solution: {:?}", single_hair_solution);
             let internal_edges = constraints.cluster.edges_excluding(&single_hair_solution.unwrap_err());
             println!("internal_edges: {internal_edges:?}");
-            interface_ptr.create_cluster_node(internal_edges.iter().cloned().collect(), dual_module);
+            interface_ptr.create_cluster_node_auto_vertices(internal_edges.iter().cloned().collect(), dual_module);
             dual_module.set_grow_rate(&interface_ptr.get_node(15).unwrap(), -Rational::one());
             let group_max_update_length = dual_module.compute_maximum_update_length();
             dual_module.grow(group_max_update_length.get_valid_growth().unwrap());
@@ -479,10 +479,10 @@ mod tests {
             let cluster = ExploreCluster::new(&interface_ptr.get_node(16).unwrap(), dual_module);
             let internal_edges = cluster.grown_edges.iter().cloned().collect();
             println!("internal_edges: {internal_edges:?}");
-            println!("valid: {}", dual_module.is_valid_cluster(&internal_edges));
+            println!("valid: {}", dual_module.is_valid_cluster_auto_vertices(&internal_edges));
             dual_module.set_grow_rate(&interface_ptr.get_node(15).unwrap(), Rational::zero());
             dual_module.set_grow_rate(&interface_ptr.get_node(16).unwrap(), Rational::zero());
-            interface_ptr.create_cluster_node(internal_edges.iter().cloned().collect(), dual_module);
+            interface_ptr.create_cluster_node_auto_vertices(internal_edges.iter().cloned().collect(), dual_module);
             let group_max_update_length = dual_module.compute_maximum_update_length();
             dual_module.grow(group_max_update_length.get_valid_growth().unwrap());
             take_snapshot(visualizer, "grow".to_string(), interface_ptr, &dual_module);
@@ -520,7 +520,7 @@ mod tests {
             constraints.to_row_echelon_form(); constraints.print();
             assert!(!constraints.cluster.is_valid(dual_module));
             dual_module.set_grow_rate(&interface_ptr.get_node(0).unwrap(), Rational::zero());
-            interface_ptr.create_cluster_node(constraints.cluster.grown_edges.clone(), dual_module);
+            interface_ptr.create_cluster_node_auto_vertices(constraints.cluster.grown_edges.clone(), dual_module);
             let group_max_update_length = dual_module.compute_maximum_update_length();
             dual_module.grow(group_max_update_length.get_valid_growth().unwrap());
             take_snapshot(visualizer, "grow".to_string(), interface_ptr, &dual_module);
@@ -529,7 +529,7 @@ mod tests {
             constraints.to_row_echelon_form(); constraints.print();
             assert!(!constraints.cluster.is_valid(dual_module));
             dual_module.set_grow_rate(&interface_ptr.get_node(2).unwrap(), Rational::zero());
-            interface_ptr.create_cluster_node(constraints.cluster.grown_edges.clone(), dual_module);
+            interface_ptr.create_cluster_node_auto_vertices(constraints.cluster.grown_edges.clone(), dual_module);
             let group_max_update_length = dual_module.compute_maximum_update_length();
             dual_module.grow(group_max_update_length.get_valid_growth().unwrap());
             take_snapshot(visualizer, "grow".to_string(), interface_ptr, &dual_module);

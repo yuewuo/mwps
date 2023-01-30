@@ -1,0 +1,544 @@
+//! Parity Matrix
+//! 
+//! A parity matrix containing all variables and constraints in a cluster, but can have multiple "views" of the same matrix focusing on part of the variables
+//! (forcing other variables to be zero)
+//! 
+//! The matrix can also be plotted with specific order of rows and columns for better visualization purpose
+//! 
+
+use crate::util::*;
+use std::collections::{BTreeMap, BTreeSet};
+use crate::prettytable::*;
+use crate::dual_module::*;
+
+pub type BitArrayUnit = usize;
+pub const BIT_UNIT_LENGTH: usize = std::mem::size_of::<BitArrayUnit>() * 8;
+pub type DualVariableTag = usize;
+
+/// the parity matrix that is necessary to satisfy parity requirement
+pub struct ParityMatrix {
+    /// the edges maintained by this parity check, mapping to the local indices
+    edges: BTreeMap<EdgeIndex, usize>,
+    /// variable index map to edge index and whether the edge is fully grown
+    variables: Vec<(EdgeIndex, bool)>,
+    /// the constraints
+    matrix: Vec<ParityRow>,
+    /// information about the matrix when it's formatted into the Echelon form:
+    /// (is_dependent, if dependent the only "1" position row)
+    echelon_column_info: Vec<(bool, usize)>,
+    /// the number of effective rows
+    echelon_effective_rows: usize,
+    /// whether it's a satisfiable matrix, only valid when `is_echelon_form` is true
+    echelon_satisfiable: bool,
+    /// the leading "1" position column)
+    echelon_row_info: Vec<usize>,
+    /// whether it's already in an echelon form
+    is_echelon_form: bool,
+    /// edges that are affected by any implicit shrink event
+    implicit_shrunk_edges: BTreeSet<EdgeIndex>,
+}
+
+/// optimize for small clusters where there are no more than 63 edges
+pub struct ParityRow {
+    /// the first BIT_UNIT_LENGTH-1 edges are stored here, and the last bit is used the right hand bit value
+    first: BitArrayUnit,
+    /// the other edges
+    others: Vec<BitArrayUnit>,
+}
+
+impl ParityMatrix {
+
+    pub fn new() -> Self {
+        Self {
+            edges: BTreeMap::new(),
+            variables: vec![],
+            matrix: vec![],
+            echelon_column_info: vec![],
+            echelon_effective_rows: 0,
+            echelon_row_info: vec![],
+            echelon_satisfiable: false,
+            is_echelon_form: false,
+            implicit_shrunk_edges: BTreeSet::new(),
+        }
+    }
+
+    pub fn add_variable_tightness(&mut self, edge_index: EdgeIndex, is_tight: bool) {
+        self.add_variable(edge_index);
+        self.update_edge_tightness(edge_index, is_tight);
+    }
+
+    pub fn add_variable(&mut self, edge_index: EdgeIndex) {
+        if self.edges.contains_key(&edge_index) {
+            return  // variable already exists
+        }
+        self.edges.insert(edge_index, self.variables.len());
+        self.variables.push((edge_index, false));
+        let variable_count = self.variables.len();
+        if variable_count % BIT_UNIT_LENGTH == 0 {
+            let others_len = variable_count / BIT_UNIT_LENGTH;
+            for row in self.matrix.iter_mut() {
+                debug_assert_eq!(row.others.len() + 1, others_len);
+                row.others.push(0);
+            }
+        }
+        self.echelon_column_info.push((false, 0));
+        self.is_echelon_form = false;
+    }
+
+    pub fn update_edge_tightness(&mut self, edge_index: EdgeIndex, is_tight: bool) {
+        self.is_echelon_form = false;
+        let var_index = self.edges.get(&edge_index).expect("edge must be a variable").clone();
+        self.variables[var_index].1 = is_tight;
+    }
+
+    /// update the parity matrix with tight edges in the dual module
+    pub fn update_with_dual_module(&mut self, dual_module: &impl DualModuleImpl) {
+        self.is_echelon_form = false;
+        for (edge_index, is_tight) in self.variables.iter_mut() {
+            *is_tight = dual_module.is_edge_tight(*edge_index);
+        }
+    }
+
+    /// add a parity constraint coming from a vertex, note that all edges incident to this vertex will be added as well
+    pub fn add_constraint(&mut self, incident_edges: &[EdgeIndex], parity: bool) {
+        for &edge_index in incident_edges.iter() {
+            self.add_variable(edge_index);
+        }
+        let mut row = ParityRow::new_length(self.variables.len());
+        for &edge_index in incident_edges.iter() {
+            let var_index = self.edges.get(&edge_index).unwrap().clone();
+            row.set_left(var_index, true);
+        }
+        row.set_right(parity);
+        self.matrix.push(row);
+        self.echelon_row_info.push(0);
+        self.echelon_effective_rows = self.matrix.len();  // by default all constraints are taking effect
+        self.is_echelon_form = false;
+    }
+
+    /// print the whole parity check matrix, excluding partial edges
+    pub fn print(&self) {
+        let edges: Vec<_> = self.variables.iter().map(|(edge_index, _)| *edge_index).collect();
+        self.print_reordered(&edges);
+    }
+
+    /// print edges (maybe a subset of edges)
+    pub fn print_reordered(&self, edges: &[EdgeIndex]) {
+        let mut var_indices = Vec::with_capacity(edges.len());
+        for &edge_index in edges.iter() {
+            let var_index = self.edges.get(&edge_index).expect("edge must be a variable").clone();
+            let (_, is_tight) = self.variables[var_index];
+            if is_tight && !self.implicit_shrunk_edges.contains(&edge_index) {
+                var_indices.push(var_index);
+            }
+        }
+        // print
+        let mut table = Table::new();
+        let table_format = table.get_format();
+        table_format.padding(0, 0);
+        table_format.column_separator('\u{254E}');
+        let mut title_row = Row::empty();
+        title_row.add_cell(Cell::new(""));
+        for &edge_index in var_indices.iter() {
+            title_row.add_cell(Cell::new(format!("{edge_index}").as_str()));
+        }
+        title_row.add_cell(Cell::new(format!(" = ").as_str()));
+        if self.is_echelon_form {
+            title_row.add_cell(Cell::new("-"));
+            title_row.add_cell(Cell::new("v"));
+        }
+        table.set_titles(title_row);
+        for (row_index, row) in self.matrix.iter().enumerate() {
+            if self.is_echelon_form && row_index >= self.echelon_effective_rows {
+                break
+            }
+            let mut table_row = Row::empty();
+            table_row.add_cell(Cell::new(format!("{row_index}.").as_str()));
+            for &var_index in var_indices.iter() {
+                table_row.add_cell(Cell::new(if row.get_left(var_index) { "1" } else { " " }));
+            }
+            table_row.add_cell(Cell::new(if row.get_right() { " 1 " } else { "   " }));
+            if self.is_echelon_form {
+                table_row.add_cell(Cell::new("-"));
+                if row_index < self.echelon_effective_rows {
+                    table_row.add_cell(Cell::new(format!("{}", self.variables[self.echelon_row_info[row_index]].0).as_str()));
+                } else {
+                    table_row.add_cell(Cell::new("-"));
+                }
+            }
+            table.add_row(table_row);
+        }
+        if self.is_echelon_form {
+            let mut table_row = Row::empty();
+            table_row.add_cell(Cell::new(""));
+            for &var_index in var_indices.iter() {
+                let (is_dependent, dependent_row) = self.echelon_column_info[var_index];
+                let dependent_row_name = format!("{dependent_row}");
+                table_row.add_cell(Cell::new(if is_dependent { dependent_row_name.as_str() } else { "?" }));
+            }
+            table_row.add_cell(Cell::new("<--"));
+            table_row.add_cell(Cell::new("-"));
+            table.add_row(table_row);
+        }
+        println!("{table}");
+    }
+
+
+    pub fn row_echelon_form(&mut self) {
+        let edges: Vec<_> = self.variables.iter().map(|(edge_index, _)| *edge_index).collect();
+        self.row_echelon_form_reordered(&edges);
+    }
+
+    pub fn row_echelon_form_reordered(&mut self, edges: &[EdgeIndex]) {
+        self.is_echelon_form = false;
+        if self.matrix.is_empty() { return }
+        let height = self.matrix.len();
+        let mut var_indices = Vec::with_capacity(edges.len());
+        for &edge_index in edges.iter() {
+            let var_index = self.edges.get(&edge_index).expect("edge must be a variable").clone();
+            let (_, is_tight) = self.variables[var_index];
+            if is_tight && !self.implicit_shrunk_edges.contains(&edge_index) {
+                var_indices.push(var_index);
+            }
+        }
+        if var_indices.is_empty() { return }
+        self.is_echelon_form = true;
+        let width = var_indices.len();
+        let mut lead = 0;
+        for r in 0..height {
+            if lead >= width {  // no more variables
+                self.echelon_satisfiable = (r..height).all(|row| !self.matrix[row].get_right());
+                self.echelon_effective_rows = if self.echelon_satisfiable { r } else { height };
+                return
+            }
+            let mut i = r;
+            while self.matrix[i].get_left(var_indices[lead]) == false {  // find first non-zero lead
+                i = i + 1;
+                if i == height {
+                    i = r;
+                    // couldn't find a leading 1 in this column, indicating this variable is an independent variable
+                    self.echelon_column_info[var_indices[lead]] = (false, r);
+                    lead = lead + 1;  // consider the next lead
+                    if lead == width {
+                        self.echelon_satisfiable = (r..height).all(|row| !self.matrix[row].get_right());
+                        self.echelon_effective_rows = if self.echelon_satisfiable { r } else { height };
+                        return
+                    }
+                }
+            }
+            if i != r {  // implies r < i
+                let (slice_1, slice_2) = self.matrix.split_at_mut(i);
+                std::mem::swap(&mut slice_1[r], &mut slice_2[0]);
+            }
+            for j in 0..height {
+                if j != r && self.matrix[j].get_left(var_indices[lead]) != false {
+                    self.xor_row(j, r);
+                    self.is_echelon_form = true;
+                }
+            }
+            self.echelon_row_info[r] = var_indices[lead];
+            self.echelon_column_info[var_indices[lead]] = (true, r);
+            self.echelon_effective_rows = r;
+            lead = lead + 1;
+        }
+        while lead < width {
+            self.echelon_column_info[var_indices[lead]] = (false, height-1);
+            lead = lead + 1;
+        }
+        self.echelon_satisfiable = true;
+    }
+
+    /// create the reorder edges and also the starting index of hair edges
+    pub fn hair_edges_to_reorder(&mut self, hair_edges: &[EdgeIndex]) -> (Vec<EdgeIndex>, usize) {
+        let mut hair_edges_set = BTreeSet::new();
+        for hair_edge in hair_edges.iter() {
+            assert!(!hair_edges_set.contains(hair_edge), "duplicate hair edge");
+            hair_edges_set.insert(*hair_edge);
+        }
+        let mut edges = Vec::with_capacity(self.variables.len());
+        for &(edge_index, is_tight) in self.variables.iter() {
+            if is_tight && !self.implicit_shrunk_edges.contains(&edge_index) && !hair_edges.contains(&edge_index) {
+                edges.push(edge_index);
+            }
+        }
+        let start_index = edges.len();
+        for &edge_index in hair_edges.iter() {
+            let var_index = self.edges.get(&edge_index).expect("edge must be a variable").clone();
+            let (_, is_tight) = self.variables[var_index];
+            if is_tight && !self.implicit_shrunk_edges.contains(&edge_index) {
+                edges.push(edge_index);
+            }
+        }
+        (edges, start_index)
+    }
+
+    pub fn xor_row(&mut self, target_row: usize, source_row: usize) {
+        self.is_echelon_form = false;
+        if target_row < source_row {
+            let (slice_1, slice_2) = self.matrix.split_at_mut(source_row);
+            let source = &slice_2[0];
+            let target = &mut slice_1[target_row];
+            target.add(source);
+        } else {
+            let (slice_1, slice_2) = self.matrix.split_at_mut(target_row);
+            let source = &slice_1[source_row];
+            let target = &mut slice_2[0];
+            target.add(source);
+        }
+    }
+
+    /// return a set of edges that can shrink when needed, i.e. they can be view as not-tight edges
+    ///     , None if this is already invalid cluster: indicating it's time to execute the previous implicit edges1
+    pub fn get_implicit_shrink_edges(&mut self, hair_edges: &[EdgeIndex]) -> Option<Vec<EdgeIndex>> {
+        debug_assert!(!hair_edges.is_empty(), "hair edges should not be empty");
+        let (edges, hair_index) = self.hair_edges_to_reorder(&hair_edges);
+        println!("edges: {edges:?}");
+        self.row_echelon_form_reordered(&edges);
+        self.print_reordered(&edges);
+        if !self.echelon_satisfiable {
+            return None
+        }
+        let mut first_dependent_1_hair_row_index = usize::MAX;
+        for local_index in hair_index..edges.len() {
+            let hair_edge_index = edges[local_index];
+            let hair_var_index = *self.edges.get(&hair_edge_index).unwrap();
+            let (is_dependent, row_index) = self.echelon_column_info[hair_var_index];
+            if is_dependent && self.matrix[row_index].get_right() {
+                first_dependent_1_hair_row_index = row_index;
+                break
+            }
+        }
+        assert!(first_dependent_1_hair_row_index != usize::MAX, "lemma 1: there exists at least one dependent variable in the hair edges with RHS=1");
+        // proof: if all hair edges are independent variable or dependent variable with RHS=0, there exists a solution with all hair edges non-selecting
+        //     , violating the assumption of this is the hair of an invalid cluster
+        // check if the cluster is still satisfiable, if not, return None
+        
+        // construct the necessary single hair set using this first dependent variable
+        let mut implicit_shrink_edges = vec![];
+        let row = &self.matrix[first_dependent_1_hair_row_index];
+        for local_index in hair_index..edges.len() {
+            let hair_edge_index = edges[local_index];
+            let hair_var_index = *self.edges.get(&hair_edge_index).unwrap();
+            if !row.get_left(hair_var_index) {
+                implicit_shrink_edges.push(hair_edge_index);
+            }
+        }
+        Some(implicit_shrink_edges)
+    }
+
+    /// these edges can shrink when needed, and record the possible shrink operation by `shrink_tag`
+    pub fn add_implicit_shrink(&mut self, shrink_edges: &[EdgeIndex]) {
+        self.is_echelon_form = false;
+        for &edge_index in shrink_edges.iter() {
+            self.implicit_shrunk_edges.insert(edge_index);
+        }
+    }
+
+    /// using only necessary edges to build a joint solution of all non-zero dual variables,
+    ///     requiring all non-zero dual variables to get empty array when calling `get_implicit_shrink_edges`
+    pub fn get_joint_solution(&mut self) -> Option<Vec<EdgeIndex>> {
+        let mut edges = vec![];
+        for var_index in 0..self.variables.len() {
+            let (edge_index, is_tight) = self.variables[var_index];
+            if is_tight && !self.implicit_shrunk_edges.contains(&edge_index) {
+                edges.push(edge_index);
+            }
+        }
+        self.row_echelon_form_reordered(&edges);
+        if !self.echelon_satisfiable {
+            return None  // no joint solution is possible once all the implicit shrinks have been executed
+        }
+        self.print_reordered(&edges);
+        let mut joint_solution = vec![];
+        for row_index in 0..self.echelon_effective_rows {
+            if self.matrix[row_index].get_right() {
+                joint_solution.push(self.echelon_row_info[row_index]);
+            }
+        }
+        Some(joint_solution)
+    }
+
+}
+
+pub struct FailReason {
+
+}
+
+impl ParityRow {
+
+    pub fn new() -> Self {
+        Self {
+            first: 0,
+            others: vec![],
+        }
+    }
+
+    pub fn new_length(variable_count: usize) -> Self {
+        let mut row = ParityRow::new();
+        let others_len = variable_count / BIT_UNIT_LENGTH;
+        if others_len > 0 {
+            row.others = vec![0; others_len];
+        }
+        row
+    }
+
+    pub fn set_left(&mut self, var_index: usize, value: bool) {
+        if var_index < BIT_UNIT_LENGTH-1 {  // common case
+            if value {
+                self.first |= 0x01 << var_index;
+            } else {
+                self.first &= !(0x01 << var_index);
+            }
+        } else {
+            let bias_index = var_index - (BIT_UNIT_LENGTH-1);
+            let others_idx = bias_index / BIT_UNIT_LENGTH;
+            let bit_idx = bias_index % BIT_UNIT_LENGTH;
+            if value {
+                self.others[others_idx] |= 0x01 << bit_idx;
+            } else {
+                self.others[others_idx] &= (!0x01) << bit_idx;
+            }
+        }
+    }
+
+    pub fn get_left(&self, var_index: usize) -> bool {
+        if var_index < BIT_UNIT_LENGTH-1 {  // common case
+            self.first & (0x01 << var_index) != 0
+        } else {
+            let bias_index = var_index - (BIT_UNIT_LENGTH-1);
+            let others_idx = bias_index / BIT_UNIT_LENGTH;
+            let bit_idx = bias_index % BIT_UNIT_LENGTH;
+            self.others[others_idx] & (0x01 << bit_idx) != 0
+        }
+    }
+
+    pub fn set_right(&mut self, value: bool) {
+        if value {
+            self.first |= 0x01 << (BIT_UNIT_LENGTH-1);
+        } else {
+            self.first &= !(0x01 << (BIT_UNIT_LENGTH-1));
+        }
+    }
+
+    pub fn get_right(&self) -> bool {
+        self.first & (0x01 << (BIT_UNIT_LENGTH-1)) != 0
+    }
+
+    pub fn add(&mut self, other: &Self) {
+        debug_assert_eq!(self.others.len(), other.others.len(), "size must be the same");
+        self.first ^= other.first;
+        for i in 0..self.others.len() {
+            self.others[i] ^= other.others[i];
+        }
+    }
+
+    pub fn is_all_zero(&self) -> bool {
+        if self.first != 0 {
+            return false
+        }
+        for &other in self.others.iter() {
+            if other != 0 {
+                return false
+            }
+        }
+        true
+    }
+
+}
+
+
+
+#[cfg(test)]
+pub mod tests {
+    use super::*;
+
+    #[test]
+    fn parity_matrix_basic_1() {  // cargo test parity_matrix_basic_1 -- --nocapture
+        let mut matrix = ParityMatrix::new();
+        for edge_index in 0..7 {
+            matrix.add_variable_tightness(edge_index, true);
+        }
+        matrix.add_constraint(&[0, 1], true);
+        matrix.add_constraint(&[0, 2], false);
+        matrix.add_constraint(&[2, 3, 5], false);
+        matrix.add_constraint(&[1, 3, 4], false);
+        matrix.add_constraint(&[4, 6], false);
+        matrix.add_constraint(&[5, 6], true);
+        matrix.print();
+        matrix.row_echelon_form();
+        matrix.print();
+        // focus on the middle dual, by letting them to be independent variables as much as possible
+        let edges = vec![0, 1, 5, 6, 2, 3, 4];
+        matrix.row_echelon_form_reordered(&edges);
+        matrix.print_reordered(&edges);
+        // focus on the first dual, by letting them to be independent variables as much as possible
+        let edges = vec![2, 3, 4, 5, 6, 0, 1];
+        matrix.row_echelon_form_reordered(&edges);
+        matrix.print_reordered(&edges);
+    }
+
+    #[test]
+    fn parity_matrix_basic_2() {  // cargo test parity_matrix_basic_2 -- --nocapture
+        let mut matrix = ParityMatrix::new();
+        for edge_index in 0..15 {
+            matrix.add_variable_tightness(edge_index, true);
+        }
+        let odd_parity_checks = vec![vec![0,3,8,12], vec![6,7]];
+        let even_parity_checks = vec![vec![1,2], vec![2,3,4], vec![4,5,6], vec![0,1,14], vec![5,8,9], vec![7,9]
+            , vec![13,14], vec![11,12,13], vec![10,11]];
+        for incident_edges in odd_parity_checks.iter() {
+            matrix.add_constraint(incident_edges, true);
+        }
+        for incident_edges in even_parity_checks.iter() {
+            matrix.add_constraint(incident_edges, false);
+        }
+        let hair_edges_1 = vec![0, 3, 8, 12];
+        let hair_edges_2 = vec![1, 2, 4, 5, 9, 10, 11, 13, 14];
+        let hair_edges_3 = vec![6, 7];
+        println!("the first dual variable");
+        let implicit_shrink_edges = matrix.get_implicit_shrink_edges(&hair_edges_1).unwrap();
+        assert!(implicit_shrink_edges.is_empty(), "no need to add implicit shrinks");
+        println!("the second dual variable");
+        let implicit_shrink_edges = matrix.get_implicit_shrink_edges(&hair_edges_2).unwrap();
+        assert_eq!(implicit_shrink_edges, vec![1, 2, 10, 11, 13, 14]);
+        // we need to add hair edges not in the necessary hair set as implicit shrinks
+        //     , because there is a way to shrink them while maintaining the summation of dual
+        matrix.add_implicit_shrink(&implicit_shrink_edges);
+        let implicit_shrink_edges = matrix.get_implicit_shrink_edges(&hair_edges_2).unwrap();
+        assert!(implicit_shrink_edges.is_empty(), "no need to add more implicit shrinks");
+        println!("the third dual variable");
+        let implicit_shrink_edges = matrix.get_implicit_shrink_edges(&hair_edges_3).unwrap();
+        assert!(implicit_shrink_edges.is_empty(), "no need to add more implicit shrinks");
+        // one more round to check if any edges can shrink
+        let implicit_shrink_edges = matrix.get_implicit_shrink_edges(&hair_edges_1).unwrap();
+        assert_eq!(implicit_shrink_edges, vec![0, 12]);
+        matrix.add_implicit_shrink(&implicit_shrink_edges);
+        let implicit_shrink_edges = matrix.get_implicit_shrink_edges(&hair_edges_1).unwrap();
+        assert!(implicit_shrink_edges.is_empty(), "no need to add more implicit shrinks");
+        let joint_solution = matrix.get_joint_solution().unwrap();
+        assert_eq!(joint_solution, vec![3, 4, 6], "we got some joint solution");
+    }
+
+    /// an example where the first hair edge might be independent variable: because it has nothing to do with outside
+    #[test]
+    fn parity_matrix_basic_3() {  // cargo test parity_matrix_basic_3 -- --nocapture
+        let mut matrix = ParityMatrix::new();
+        for edge_index in 0..4 {
+            matrix.add_variable_tightness(edge_index, true);
+        }
+        let odd_parity_checks = vec![vec![0,1], vec![3]];
+        let even_parity_checks = vec![vec![0,2], vec![1,2,3]];
+        for incident_edges in odd_parity_checks.iter() {
+            matrix.add_constraint(incident_edges, true);
+        }
+        for incident_edges in even_parity_checks.iter() {
+            matrix.add_constraint(incident_edges, false);
+        }
+        matrix.print();
+        matrix.row_echelon_form();
+        matrix.print();
+        let hair_edges = vec![2, 3];
+        matrix.get_implicit_shrink_edges(&hair_edges);
+    }
+
+}

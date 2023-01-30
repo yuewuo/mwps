@@ -3,6 +3,7 @@
 //! This implementation targets to be an exact MWPS solver, although it's not yet sure whether it is actually one.
 //! 
 
+use crate::parity_matrix::*;
 use crate::util::*;
 use crate::primal_module::*;
 use crate::visualize::*;
@@ -10,6 +11,7 @@ use crate::dual_module::*;
 use crate::pointers::*;
 use std::collections::{BTreeSet, BTreeMap};
 use crate::num_traits::{Zero, One};
+use num_traits::zero;
 use prettytable::*;
 use crate::matrix_util::*;
 
@@ -35,7 +37,9 @@ pub struct PrimalCluster {
     /// the index in the cluster
     pub cluster_index: NodeIndex,
     /// the nodes that belongs to this cluster
-    pub nodes: Vec<PrimalModuleSerialNodePtr>, 
+    pub nodes: Vec<PrimalModuleSerialNodePtr>,
+    /// the parity matrix to determine whether it's a valid cluster and also find new ways to increase the dual
+    pub matrix: ParityMatrix,
 }
 
 pub type PrimalClusterPtr = ArcRwLock<PrimalCluster>;
@@ -61,6 +65,7 @@ impl PrimalModuleImpl for PrimalModuleSerial {
         let primal_cluster_ptr = PrimalClusterPtr::new_value(PrimalCluster {
             cluster_index: self.clusters.len(),
             nodes: vec![],
+            matrix: ParityMatrix::new(),
         });
         let primal_node_ptr = PrimalModuleSerialNodePtr::new_value(PrimalModuleSerialNode {
             dual_node_ptr: dual_node_ptr.clone(),
@@ -112,9 +117,8 @@ impl PrimalModuleImpl for PrimalModuleSerial {
             let optimal_solution = cluster.get_optimal_result(dual_module);
             if let Err(suboptimal_reason) = optimal_solution {
                 match suboptimal_reason {
-                    SuboptimalReason::InvalidCluster => {  // simply create a new dual node and grow it
-                        let tight_edges = cluster.get_tight_edges(dual_module);
-                        let dual_node_ptr = interface.create_cluster_node(tight_edges, dual_module);
+                    SuboptimalReason::InvalidCluster(edges) => {  // simply create a new dual node and grow it
+                        let dual_node_ptr = interface.create_cluster_node_auto_vertices(edges, dual_module);
                         let primal_node_ptr = PrimalModuleSerialNodePtr::new_value(PrimalModuleSerialNode {
                             dual_node_ptr: dual_node_ptr.clone(),
                             cluster_weak: cluster_ptr.downgrade(),
@@ -122,17 +126,29 @@ impl PrimalModuleImpl for PrimalModuleSerial {
                         cluster.nodes.push(primal_node_ptr.clone());
                         self.nodes.push(primal_node_ptr);
                     },
-                    SuboptimalReason::OneHairInvalid((shrink_dual_node_ptr, edges)) => {
+                    SuboptimalReason::OneHairInvalid((shrink_dual_node_ptr, edges, vertices)) => {
                         // in this way, the dual objective function doesn't change but remove some tight edges in the middle
                         dual_module.set_grow_rate(&shrink_dual_node_ptr, -Rational::one());
-                        let growing_dual_node_ptr = interface.create_cluster_node(edges, dual_module);
+                        let growing_dual_node_ptr = interface.create_cluster_node(edges, vertices, dual_module);
                         let primal_node_ptr = PrimalModuleSerialNodePtr::new_value(PrimalModuleSerialNode {
                             dual_node_ptr: growing_dual_node_ptr.clone(),
                             cluster_weak: cluster_ptr.downgrade(),
                         });
                         cluster.nodes.push(primal_node_ptr.clone());
                         self.nodes.push(primal_node_ptr);
-                    }
+                    },
+                    SuboptimalReason::SimultaneousOneHairInvalid((vertices, simultaneous_invalid)) => {
+                        for (shrink_dual_node_ptr, edges) in simultaneous_invalid.into_iter() {
+                            dual_module.set_grow_rate(&shrink_dual_node_ptr, -Rational::one());
+                            let growing_dual_node_ptr = interface.create_cluster_node(edges, vertices.clone(), dual_module);
+                            let primal_node_ptr = PrimalModuleSerialNodePtr::new_value(PrimalModuleSerialNode {
+                                dual_node_ptr: growing_dual_node_ptr.clone(),
+                                cluster_weak: cluster_ptr.downgrade(),
+                            });
+                            cluster.nodes.push(primal_node_ptr.clone());
+                            self.nodes.push(primal_node_ptr);
+                        }
+                    },
                 }
             }
         }
@@ -141,7 +157,7 @@ impl PrimalModuleImpl for PrimalModuleSerial {
     fn subgraph(&mut self, _interface: &DualModuleInterfacePtr, dual_module: &mut impl DualModuleImpl) -> Subgraph {
         let mut subgraph = Subgraph::new_empty();
         for cluster_ptr in self.clusters.iter() {
-            let cluster = cluster_ptr.read_recursive();
+            let mut cluster = cluster_ptr.write();
             if cluster.nodes.is_empty() {
                 continue
             }
@@ -193,14 +209,33 @@ impl PrimalCluster {
         edges
     }
 
-    pub fn get_optimal_result(&self, dual_module: &mut impl DualModuleImpl) -> Result<Subgraph, SuboptimalReason> {
-        let tight_edges = self.get_tight_edges(dual_module);
-        let tight_edge_indices: Vec<_> = tight_edges.iter().cloned().collect();
-        let vertices = dual_module.get_edges_neighbors(&tight_edge_indices);
-        // if the fully grown edges are an invalid cluster, simply create a new dual node and grow it
-        if !dual_module.is_valid_cluster(&tight_edges) {
-            return Err(SuboptimalReason::InvalidCluster)
+    pub fn get_vertices(&self) -> BTreeSet<VertexIndex> {
+        let mut vertices = BTreeSet::new();
+        for primal_node_ptr in self.nodes.iter() {
+            let dual_node_ptr = primal_node_ptr.read_recursive().dual_node_ptr.clone();
+            let dual_node = dual_node_ptr.read_recursive();
+            for &vertex_index in dual_node.internal_vertices.iter() {
+                vertices.insert(vertex_index);
+            }
         }
+        vertices
+    }
+
+    pub fn get_optimal_result(&mut self, dual_module: &mut impl DualModuleImpl) -> Result<Subgraph, SuboptimalReason> {
+        self.matrix.update_with_dual_module(dual_module);
+
+
+
+
+        let tight_edges = self.get_tight_edges(dual_module);
+        let vertices = self.get_vertices();
+        // if the fully grown edges are an invalid cluster, simply create a new dual node and grow it
+        if !dual_module.is_valid_cluster_auto_vertices(&tight_edges) {
+            return Err(SuboptimalReason::InvalidCluster(tight_edges))
+        }
+        // TODO: run LP optimization on the existing dual variables
+
+
         // then check whether individual dual node can satisfy the single-hair requirement
         for primal_node_ptr in self.nodes.iter() {
             let dual_node_ptr = primal_node_ptr.read_recursive().dual_node_ptr.clone();
@@ -208,24 +243,74 @@ impl PrimalCluster {
             if dual_node.dual_variable.is_zero() {
                 continue  // no requirement on zero dual variables
             }
+            println!("dual_node: {}", dual_node.index);
             let mut parity_constraints = ParityConstraints::new(&tight_edges, &dual_node.hair_edges, &vertices, dual_module);
+            if parity_constraints.num_non_hair_edges == parity_constraints.variable_edges.len() {
+                continue  // it's possible that none of the hair edges are in the tight edges, in which case we just ignore it
+            }
+            println!("tight_edges: {tight_edges:?}");
+            println!("dual_node.hair_edges: {:?}", dual_node.hair_edges);
             match parity_constraints.get_single_hair_solution_or_necessary_edge_set() {
                 Ok(_single_hair_solution) => {
                     continue  // it's ok
                 },
                 Err(necessary_edges) => {  // removing these edges will make it invalid
-                    // parity_constraints.print();
+                    println!("dual_node: {}", dual_node.index);
+                    parity_constraints.print();
+                    println!("necessary_edges: {necessary_edges:?}");
                     let mut edges = tight_edges.clone();
                     for edge_index in necessary_edges.iter() {
                         edges.remove(edge_index);
                     }
-                    debug_assert!(!dual_module.is_valid_cluster(&edges), "these edges must be necessary");
-                    return Err(SuboptimalReason::OneHairInvalid((dual_node_ptr.clone(), edges)));
+                    println!("edges: {edges:?}");
+                    println!("vertices: {vertices:?}");
+
+                    debug_assert!(!dual_module.is_valid_cluster(&edges, &vertices), "these edges must be necessary");
+                    return Err(SuboptimalReason::OneHairInvalid((dual_node_ptr.clone(), edges, vertices)));
                 },
             }
         }
-        // check joint existence of solution using hair edges from each dual node
 
+
+
+
+        // check joint existence of solution using hair edges from each dual node;
+        // the recovery of this type of error is expensive, thus will leave as the last resort
+        // let mut zero_edges = BTreeSet::new();
+        // let mut tight_edges_zero_removed = tight_edges.clone();
+        // let mut simultaneous_invalid = vec![];
+        // for primal_node_ptr in self.nodes.iter() {
+        //     let dual_node_ptr = primal_node_ptr.read_recursive().dual_node_ptr.clone();
+        //     let dual_node = dual_node_ptr.read_recursive();
+        //     if dual_node.dual_variable.is_zero() {
+        //         continue  // no requirement on zero dual variables
+        //     }
+        //     println!("dual node {}", dual_node.index);
+        //     let mut parity_constraints = ParityConstraints::new(&tight_edges_zero_removed, &dual_node.hair_edges, &vertices, dual_module);  // must exist
+        //     match parity_constraints.get_single_hair_solution_or_necessary_edge_set() {
+        //         Ok(single_hair_solution) => {
+        //             let single_hair_set: BTreeSet<_> = single_hair_solution.iter().cloned().collect();
+        //             for &edge_index in dual_node.hair_edges.iter() {
+        //                 if !single_hair_set.contains(&edge_index) {
+        //                     zero_edges.insert(edge_index);
+        //                     tight_edges_zero_removed.remove(&edge_index);
+        //                 }
+        //             }
+        //             let mut edges = tight_edges_zero_removed.clone();
+        //             for &edge_index in single_hair_set.iter() {
+        //                 edges.remove(&edge_index);
+        //             }
+        //             if !dual_module.is_valid_cluster(&edges, &vertices) {
+        //                 simultaneous_invalid.push((dual_node_ptr.clone(), edges.clone()));
+        //             }
+        //         },
+        //         Err(_necessary_edges) => {  // removing these edges will make it invalid; leave it for next cycle to take effect
+        //             parity_constraints.print();
+        //             println!("simultaneous_invalid: {simultaneous_invalid:?}");
+        //             return Err(SuboptimalReason::SimultaneousOneHairInvalid((vertices, simultaneous_invalid)));
+        //         },
+        //     }
+        // }
 
         // TODO: construct edges only using necessary hair edges from each dual node
 
@@ -233,7 +318,7 @@ impl PrimalCluster {
 
         // TODO: adjust independent variables to try to decrease the value of dual objective function
         
-        Ok(dual_module.find_valid_subgraph(&tight_edges).expect("must be valid cluster"))
+        Ok(dual_module.find_valid_subgraph_auto_vertices(&tight_edges).expect("must be valid cluster"))
     }
 
 }
@@ -241,9 +326,11 @@ impl PrimalCluster {
 #[derive(Debug)]
 pub enum SuboptimalReason {
     /// the cluster is not valid at all
-    InvalidCluster,
+    InvalidCluster(BTreeSet<EdgeIndex>),
     /// the cluster is not valid given that the node ptr has to contain 1 hair edge
-    OneHairInvalid((DualNodePtr, BTreeSet<EdgeIndex>)),
+    OneHairInvalid((DualNodePtr, BTreeSet<EdgeIndex>, BTreeSet<VertexIndex>)),
+    /// the cluster cannot have simultaneous one-hair solution
+    SimultaneousOneHairInvalid((BTreeSet<VertexIndex>, Vec<(DualNodePtr, BTreeSet<EdgeIndex>)>)),
 }
 
 #[derive(Clone, Debug)]
@@ -360,7 +447,9 @@ impl ParityConstraints {
     }
 
     pub fn get_single_hair_solution_or_necessary_edge_set(&mut self) -> Result<Vec<EdgeIndex>, Vec<EdgeIndex>> {
+        self.print();
         self.to_row_echelon_form();
+        self.print();
         // ignore those non-hair edges and focus on the hair edges, is there a single edge variable that can 
         assert!(self.num_non_hair_edges < self.variable_edges.len(), "there is no hair edge");
         let con_idx_start = if self.num_non_hair_edges == 0 {
@@ -495,7 +584,17 @@ pub mod tests {
         let visualize_filename = format!("primal_module_serial_basic_5.json");
         let defect_vertices = vec![1, 4, 6, 7, 8, 9, 10, 16, 18, 19, 20, 23];
         let code = CodeCapacityTailoredCode::new(5, 0., 0.01, 1);
-        primal_module_serial_basic_standard_syndrome(code, visualize_filename, defect_vertices, 8);
+        primal_module_serial_basic_standard_syndrome(code, visualize_filename, defect_vertices, 12);
+    }
+
+    /// debug case: cargo run --release -- benchmark 3 0.1 --code-config='{"pxy":0}' --verifier strict-actual-error -p serial --print-syndrome-pattern --print-error-pattern
+    /// error_pattern: [2, 4, 5]
+    #[test]
+    fn primal_module_serial_basic_6() {  // cargo test primal_module_serial_basic_6 -- --nocapture
+        let visualize_filename = format!("primal_module_serial_basic_6.json");
+        let defect_vertices = vec![0, 3, 4, 5, 7];
+        let code = CodeCapacityTailoredCode::new(3, 0., 0.01, 1);
+        primal_module_serial_basic_standard_syndrome(code, visualize_filename, defect_vertices, 3);
     }
 
 }

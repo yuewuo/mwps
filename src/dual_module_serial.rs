@@ -150,7 +150,6 @@ impl DualModuleImpl for DualModuleSerial {
             assert!(!vertex.is_defect, "defect should not be added twice");
             vertex.is_defect = true;
         } else {
-            debug_assert!(!self.is_valid_cluster(&node.internal_edges), "cannot create dual node out of a valid cluster");
             if node.internal_vertices.is_empty() {
                 let mut internal_vertices = BTreeSet::new();
                 // fill in with all vertices incident to the internal edges
@@ -162,6 +161,7 @@ impl DualModuleImpl for DualModuleSerial {
                 }
                 std::mem::swap(&mut node.internal_vertices, &mut internal_vertices);
             }
+            debug_assert!(!self.is_valid_cluster(&node.internal_edges, &node.internal_vertices), "cannot create dual node out of a valid cluster");
         }
         // calculate hair edges
         let mut hair_edges = BTreeSet::new();
@@ -331,19 +331,14 @@ impl DualModuleImpl for DualModuleSerial {
         }
     }
 
-    fn find_valid_subgraph(&self, internal_edges: &BTreeSet<EdgeIndex>) -> Option<Subgraph> {
+    fn find_valid_subgraph(&self, internal_edges: &BTreeSet<EdgeIndex>, internal_vertices: &BTreeSet<VertexIndex>) -> Option<Subgraph> {
         assert!(!internal_edges.is_empty(), "finding subgraph without any internal edges is infeasible");
-        let mut internal_vertices = BTreeSet::new();
         let mut variable_indices = BTreeMap::new();  // edge_index -> variable_index
         let mut edge_indices = vec![];  // variable_index -> edge_index
         // fill in with all vertices incident to the internal edges
         for (variable_index, &edge_index) in internal_edges.iter().enumerate() {
             edge_indices.push(edge_index);
             variable_indices.insert(edge_index, variable_index);
-            let edge = self.edges[edge_index].read_recursive();
-            for vertex_weak in edge.vertices.iter() {
-                internal_vertices.insert(vertex_weak.upgrade_force().read_recursive().vertex_index);
-            }
         }
         // use Gaussian elimination on a modular 2 linear system (i.e. there is only 0 and 1 elements)
         let height = internal_vertices.len();  // number of constraints
@@ -578,13 +573,13 @@ mod tests {
         dual_module.grow_dual_node(&dual_node_30_ptr, Rational::from_i64(160).unwrap());
         visualizer.snapshot_combined(format!("grow"), vec![&interface_ptr, &dual_module]).unwrap();
         // create cluster
-        interface_ptr.create_cluster_node(vec![24].into_iter().collect(), &mut dual_module);
+        interface_ptr.create_cluster_node_auto_vertices(vec![24].into_iter().collect(), &mut dual_module);
         let dual_node_cluster_ptr = interface_ptr.read_recursive().nodes[4].clone();
         dual_module.grow_dual_node(&dual_node_17_ptr, Rational::from_i64(160).unwrap());
         dual_module.grow_dual_node(&dual_node_cluster_ptr, Rational::from_i64(160).unwrap());
         visualizer.snapshot_combined(format!("grow"), vec![&interface_ptr, &dual_module]).unwrap();
         // create bigger cluster
-        interface_ptr.create_cluster_node(vec![18, 23, 24, 31].into_iter().collect(), &mut dual_module);
+        interface_ptr.create_cluster_node_auto_vertices(vec![18, 23, 24, 31].into_iter().collect(), &mut dual_module);
         let dual_node_bigger_cluster_ptr = interface_ptr.read_recursive().nodes[5].clone();
         dual_module.grow_dual_node(&dual_node_bigger_cluster_ptr, Rational::from_i64(120).unwrap());
         visualizer.snapshot_combined(format!("solved"), vec![&interface_ptr, &dual_module]).unwrap();
@@ -609,12 +604,12 @@ mod tests {
         let interface_ptr = DualModuleInterfacePtr::new_load(&code.get_syndrome(), &mut dual_module);
         visualizer.snapshot_combined(format!("syndrome"), vec![&interface_ptr, &dual_module]).unwrap();
         // invalid clusters
-        assert!(!dual_module.is_valid_cluster(&vec![20].into_iter().collect()));
-        assert!(!dual_module.is_valid_cluster(&vec![9, 20].into_iter().collect()));
-        assert!(!dual_module.is_valid_cluster(&vec![15].into_iter().collect()));
-        assert!(dual_module.is_valid_cluster(&vec![15, 20].into_iter().collect()));
+        assert!(!dual_module.is_valid_cluster_auto_vertices(&vec![20].into_iter().collect()));
+        assert!(!dual_module.is_valid_cluster_auto_vertices(&vec![9, 20].into_iter().collect()));
+        assert!(!dual_module.is_valid_cluster_auto_vertices(&vec![15].into_iter().collect()));
+        assert!(dual_module.is_valid_cluster_auto_vertices(&vec![15, 20].into_iter().collect()));
         // the result subgraph
-        let subgraph = dual_module.find_valid_subgraph(&vec![9, 15, 20, 21].into_iter().collect()).unwrap();
+        let subgraph = dual_module.find_valid_subgraph_auto_vertices(&vec![9, 15, 20, 21].into_iter().collect()).unwrap();
         visualizer.snapshot_combined(format!("subgraph"), vec![&interface_ptr, &dual_module, &subgraph]).unwrap();
     }
 

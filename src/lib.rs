@@ -29,6 +29,7 @@ pub mod union_find;
 pub mod mwps_solver;
 pub mod explore;
 pub mod primal_module_serial;
+pub mod parity_matrix;
 
 
 #[cfg(feature="python_binding")]

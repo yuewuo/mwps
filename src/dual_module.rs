@@ -140,10 +140,18 @@ pub trait DualModuleImpl {
     /// note that reversing the process is possible, but not recommended: to do that, reverse the state of each dual node, Grow->Shrink, Shrink->Grow
     fn grow(&mut self, length: Rational);
 
-    fn find_valid_subgraph(&self, internal_edges: &BTreeSet<EdgeIndex>) -> Option<Subgraph>;
+    fn find_valid_subgraph(&self, internal_edges: &BTreeSet<EdgeIndex>, internal_vertices: &BTreeSet<VertexIndex>) -> Option<Subgraph>;
 
-    fn is_valid_cluster(&self, internal_edges: &BTreeSet<EdgeIndex>) -> bool {
-        self.find_valid_subgraph(internal_edges).is_some()
+    fn find_valid_subgraph_auto_vertices(&self, internal_edges: &BTreeSet<EdgeIndex>) -> Option<Subgraph> {
+        self.find_valid_subgraph(internal_edges, &self.get_edges_neighbors(internal_edges))
+    }
+
+    fn is_valid_cluster(&self, internal_edges: &BTreeSet<EdgeIndex>, internal_vertices: &BTreeSet<VertexIndex>) -> bool {
+        self.find_valid_subgraph(internal_edges, internal_vertices).is_some()
+    }
+
+    fn is_valid_cluster_auto_vertices(&self, internal_edges: &BTreeSet<EdgeIndex>) -> bool {
+        self.find_valid_subgraph_auto_vertices(internal_edges).is_some()
     }
 
     fn get_edge_nodes(&self, edge_index: EdgeIndex) -> Vec<DualNodePtr>;
@@ -157,7 +165,7 @@ pub trait DualModuleImpl {
     /// return if the vertex is defect and all the edges that connects to it
     fn get_vertex_neighbors(&self, vertex_index: VertexIndex) -> Vec<EdgeIndex>;
 
-    fn get_edges_neighbors(&self, edges: &[EdgeIndex]) -> BTreeSet<VertexIndex> {
+    fn get_edges_neighbors(&self, edges: &BTreeSet<EdgeIndex>) -> BTreeSet<VertexIndex> {
         let mut vertices = BTreeSet::new();
         for &edge_index in edges.iter() {
             vertices.extend(self.get_edge_neighbors(edge_index));
@@ -311,7 +319,7 @@ impl DualModuleInterfacePtr {
         interface.nodes.get(node_index).cloned()
     }
 
-    pub fn create_defect_node(&self, vertex_idx: VertexIndex, dual_module_impl: &mut impl DualModuleImpl) -> DualNodePtr {
+    pub fn create_defect_node(&self, vertex_idx: VertexIndex, dual_module: &mut impl DualModuleImpl) -> DualNodePtr {
         let mut interface = self.write();
         let mut internal_vertices = BTreeSet::new();
         internal_vertices.insert(vertex_idx);
@@ -326,16 +334,16 @@ impl DualModuleInterfacePtr {
         let cloned_node_ptr = node_ptr.clone();
         interface.nodes.push(node_ptr);
         drop(interface);
-        dual_module_impl.add_dual_node(&cloned_node_ptr);
+        dual_module.add_dual_node(&cloned_node_ptr);
         cloned_node_ptr
     }
 
-    pub fn create_cluster_node(&self, internal_edges: BTreeSet<EdgeIndex>, dual_module_impl: &mut impl DualModuleImpl) -> DualNodePtr {
+    pub fn create_cluster_node(&self, internal_edges: BTreeSet<EdgeIndex>, internal_vertices: BTreeSet<EdgeIndex>, dual_module: &mut impl DualModuleImpl) -> DualNodePtr {
         let mut interface = self.write();
         let node_ptr = DualNodePtr::new_value(DualNode {
             index: interface.nodes.len(),
             internal_edges: internal_edges,
-            internal_vertices: BTreeSet::new(),  // empty is fine: the implementation will fill it
+            internal_vertices: internal_vertices,
             hair_edges: BTreeSet::new(),  // to be filled by concrete implementation
             dual_variable: Rational::zero(),
             grow_rate: Rational::one(),
@@ -343,8 +351,13 @@ impl DualModuleInterfacePtr {
         let cloned_node_ptr = node_ptr.clone();
         interface.nodes.push(node_ptr);
         drop(interface);
-        dual_module_impl.add_dual_node(&cloned_node_ptr);
+        dual_module.add_dual_node(&cloned_node_ptr);
         cloned_node_ptr
+    }
+
+    pub fn create_cluster_node_auto_vertices(&self, internal_edges: BTreeSet<EdgeIndex>, dual_module: &mut impl DualModuleImpl) -> DualNodePtr {
+        let internal_vertices = dual_module.get_edges_neighbors(&internal_edges);
+        self.create_cluster_node(internal_edges, internal_vertices, dual_module)
     }
 
 }
