@@ -18,7 +18,7 @@ pub type DualVariableTag = usize;
 /// the parity matrix that is necessary to satisfy parity requirement
 pub struct ParityMatrix {
     /// the edges maintained by this parity check, mapping to the local indices
-    edges: BTreeMap<EdgeIndex, usize>,
+    pub edges: BTreeMap<EdgeIndex, usize>,
     /// variable index map to edge index and whether the edge is fully grown
     variables: Vec<(EdgeIndex, bool)>,
     /// the constraints
@@ -29,11 +29,11 @@ pub struct ParityMatrix {
     /// the number of effective rows
     echelon_effective_rows: usize,
     /// whether it's a satisfiable matrix, only valid when `is_echelon_form` is true
-    echelon_satisfiable: bool,
+    pub echelon_satisfiable: bool,
     /// the leading "1" position column)
     echelon_row_info: Vec<usize>,
     /// whether it's already in an echelon form
-    is_echelon_form: bool,
+    pub is_echelon_form: bool,
     /// edges that are affected by any implicit shrink event
     implicit_shrunk_edges: BTreeSet<EdgeIndex>,
 }
@@ -91,12 +91,39 @@ impl ParityMatrix {
         self.variables[var_index].1 = is_tight;
     }
 
+    pub fn update_edges_tightness(&mut self, edges: &[EdgeIndex], is_tight: bool) {
+        self.is_echelon_form = false;
+        for edge_index in edges.iter() {
+            let var_index = self.edges.get(&edge_index).expect("edge must be a variable").clone();
+            self.variables[var_index].1 = is_tight;
+        }
+    }
+
     /// update the parity matrix with tight edges in the dual module
     pub fn update_with_dual_module(&mut self, dual_module: &impl DualModuleImpl) {
         self.is_echelon_form = false;
         for (edge_index, is_tight) in self.variables.iter_mut() {
             *is_tight = dual_module.is_edge_tight(*edge_index);
         }
+    }
+
+    pub fn get_tight_edges(&self) -> Vec<EdgeIndex> {
+        let mut tight_edges = Vec::with_capacity(self.edges.len());
+        for (&edge_index, &var_index) in self.edges.iter() {
+            let (_, is_tight) = self.variables[var_index];
+            if is_tight {
+                tight_edges.push(edge_index);
+            }
+        }
+        tight_edges
+    }
+
+    /// add a row to the parity matrix from a given vertex
+    pub fn add_parity_check_with_dual_module(&mut self, vertex_index: VertexIndex, dual_module: &impl DualModuleImpl) {
+        self.is_echelon_form = false;
+        let incident_edges = dual_module.get_vertex_neighbors(vertex_index);
+        let parity = dual_module.is_vertex_defect(vertex_index);
+        self.add_constraint(&incident_edges, parity);
     }
 
     /// add a parity constraint coming from a vertex, note that all edges incident to this vertex will be added as well
@@ -139,7 +166,8 @@ impl ParityMatrix {
         table_format.column_separator('\u{254E}');
         let mut title_row = Row::empty();
         title_row.add_cell(Cell::new(""));
-        for &edge_index in var_indices.iter() {
+        for &var_index in var_indices.iter() {
+            let (edge_index, _) = self.variables[var_index];
             title_row.add_cell(Cell::new(format!("{edge_index}").as_str()));
         }
         title_row.add_cell(Cell::new(format!(" = ").as_str()));
@@ -182,7 +210,6 @@ impl ParityMatrix {
         }
         println!("{table}");
     }
-
 
     pub fn row_echelon_form(&mut self) {
         let edges: Vec<_> = self.variables.iter().map(|(edge_index, _)| *edge_index).collect();
@@ -238,7 +265,7 @@ impl ParityMatrix {
             }
             self.echelon_row_info[r] = var_indices[lead];
             self.echelon_column_info[var_indices[lead]] = (true, r);
-            self.echelon_effective_rows = r;
+            self.echelon_effective_rows = r+1;
             lead = lead + 1;
         }
         while lead < width {
@@ -311,9 +338,7 @@ impl ParityMatrix {
         assert!(first_dependent_1_hair_row_index != usize::MAX, "lemma 1: there exists at least one dependent variable in the hair edges with RHS=1");
         // proof: if all hair edges are independent variable or dependent variable with RHS=0, there exists a solution with all hair edges non-selecting
         //     , violating the assumption of this is the hair of an invalid cluster
-        // check if the cluster is still satisfiable, if not, return None
-        
-        // construct the necessary single hair set using this first dependent variable
+        // construct a list of shrink edges that are zero in at least one of the RHS=1 constraint rows, 
         let mut implicit_shrink_edges = vec![];
         let row = &self.matrix[first_dependent_1_hair_row_index];
         for local_index in hair_index..edges.len() {
@@ -334,25 +359,25 @@ impl ParityMatrix {
         }
     }
 
+    pub fn clear_implicit_shrink(&mut self) {
+        self.is_echelon_form = false;
+        self.implicit_shrunk_edges.clear();
+    }
+
     /// using only necessary edges to build a joint solution of all non-zero dual variables,
     ///     requiring all non-zero dual variables to get empty array when calling `get_implicit_shrink_edges`
     pub fn get_joint_solution(&mut self) -> Option<Vec<EdgeIndex>> {
-        let mut edges = vec![];
-        for var_index in 0..self.variables.len() {
-            let (edge_index, is_tight) = self.variables[var_index];
-            if is_tight && !self.implicit_shrunk_edges.contains(&edge_index) {
-                edges.push(edge_index);
-            }
-        }
-        self.row_echelon_form_reordered(&edges);
+        self.row_echelon_form();
         if !self.echelon_satisfiable {
             return None  // no joint solution is possible once all the implicit shrinks have been executed
         }
-        self.print_reordered(&edges);
+        self.print();
         let mut joint_solution = vec![];
         for row_index in 0..self.echelon_effective_rows {
             if self.matrix[row_index].get_right() {
-                joint_solution.push(self.echelon_row_info[row_index]);
+                let var_index = self.echelon_row_info[row_index];
+                let (edge_index, _) = self.variables[var_index];
+                joint_solution.push(edge_index);
             }
         }
         Some(joint_solution)
@@ -475,6 +500,10 @@ pub mod tests {
         let edges = vec![2, 3, 4, 5, 6, 0, 1];
         matrix.row_echelon_form_reordered(&edges);
         matrix.print_reordered(&edges);
+        // try a different order
+        let edges = vec![2, 3, 4, 1, 0, 6, 5];
+        matrix.row_echelon_form_reordered(&edges);
+        matrix.print_reordered(&edges);
     }
 
     #[test]
@@ -539,6 +568,66 @@ pub mod tests {
         matrix.print();
         let hair_edges = vec![2, 3];
         matrix.get_implicit_shrink_edges(&hair_edges);
+    }
+
+    /// Notability MWPS design page 56: designed contrary case where although every dual variable has single-hair solution, they don't have a joint single-hair solution
+    #[test]
+    fn parity_matrix_basic_4() {  // cargo test parity_matrix_basic_4 -- --nocapture
+        let mut matrix = ParityMatrix::new();
+        for edge_index in 0..14 {
+            matrix.add_variable_tightness(edge_index, true);
+        }
+        let odd_parity_checks = vec![vec![0,8,12,13], vec![1,8,9,13], vec![2,8,9,10], vec![3,8,9,10,11], vec![4,9,10,11,12]
+            , vec![5,10,11,12,13], vec![6,11,12,13], vec![7,8,9,10,11,12,13]];
+        for incident_edges in odd_parity_checks.iter() {
+            matrix.add_constraint(incident_edges, true);
+        }
+        matrix.print();
+        matrix.row_echelon_form();
+        matrix.print();
+        let hair_edges = vec![7,8,9,10,11,12,13];
+        matrix.get_implicit_shrink_edges(&hair_edges);
+        let hair_edges = vec![0,1,2,3,4,5,6];
+        matrix.get_implicit_shrink_edges(&hair_edges);
+        // then we use the method to create another set of dual variables
+        matrix.update_edges_tightness(&[0,1,3,4,5,7], false);
+        let hair_edges = vec![2,8,9,10];
+        let implicit_shrink_edges = matrix.get_implicit_shrink_edges(&hair_edges).unwrap();
+        assert_eq!(implicit_shrink_edges, vec![8, 9]);
+        matrix.add_implicit_shrink(&implicit_shrink_edges);
+        assert!(matrix.get_joint_solution().is_none());
+        // then we don't have any joint solution after implicitly shrinking those edges
+        matrix.clear_implicit_shrink();
+        matrix.update_edges_tightness(&[0,1,3,4,5,7], true);
+        let hair_edges_orange = vec![0,1,3,4,5,7,2,10];
+        let implicit_shrink_edges = matrix.get_implicit_shrink_edges(&hair_edges_orange).unwrap();
+        assert_eq!(implicit_shrink_edges, vec![5,7]);
+        matrix.add_implicit_shrink(&implicit_shrink_edges);
+        let hair_edges_orange = vec![0,1,3,4,2,10];
+        let implicit_shrink_edges = matrix.get_implicit_shrink_edges(&hair_edges_orange).unwrap();
+        assert_eq!(implicit_shrink_edges, vec![0, 1, 3, 4]);
+        matrix.add_implicit_shrink(&implicit_shrink_edges);
+        let hair_edges_orange = vec![2,10];
+        let implicit_shrink_edges = matrix.get_implicit_shrink_edges(&hair_edges_orange).unwrap();
+        assert!(implicit_shrink_edges.is_empty());
+        let hair_edges_yellow = vec![8,9];
+        let implicit_shrink_edges = matrix.get_implicit_shrink_edges(&hair_edges_yellow).unwrap();
+        assert_eq!(implicit_shrink_edges, vec![9]);
+        matrix.add_implicit_shrink(&implicit_shrink_edges);
+        assert!(matrix.get_joint_solution().is_none());
+        // // then we don't have any joint solution after implicitly shrinking those edges
+        
+        // let hair_edges = vec![0,1,3,4,2,10];
+        // let implicit_shrink_edges = matrix.get_implicit_shrink_edges(&hair_edges).unwrap();
+        // assert_eq!(implicit_shrink_edges, vec![7, 8, 9]);
+        // matrix.add_implicit_shrink(&implicit_shrink_edges);
+        // println!("joint solution: {:?}", matrix.get_joint_solution());
+        // let hair_edges = vec![6,11,12,13];
+        // let implicit_shrink_edges = matrix.get_implicit_shrink_edges(&hair_edges).unwrap();
+        // assert!(implicit_shrink_edges.is_empty());
+        // let hair_edges = vec![0,1,3,4,5,7];
+        // let implicit_shrink_edges = matrix.get_implicit_shrink_edges(&hair_edges).unwrap();
+        // assert!(implicit_shrink_edges.is_empty());
     }
 
 }

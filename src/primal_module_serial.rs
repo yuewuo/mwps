@@ -3,25 +3,53 @@
 //! This implementation targets to be an exact MWPS solver, although it's not yet sure whether it is actually one.
 //! 
 
+use crate::dual_module;
 use crate::parity_matrix::*;
 use crate::util::*;
 use crate::primal_module::*;
 use crate::visualize::*;
 use crate::dual_module::*;
 use crate::pointers::*;
-use std::collections::{BTreeSet, BTreeMap};
+use std::collections::{BTreeSet, BTreeMap, VecDeque};
 use crate::num_traits::{Zero, One};
-use num_traits::zero;
 use prettytable::*;
 use crate::matrix_util::*;
 
 
 pub struct PrimalModuleSerial {
+    /// growing strategy, default to single-tree approach for easier debugging and better locality
+    pub growing_strategy: GrowingStrategy,
     /// dual nodes information
     pub nodes: Vec<PrimalModuleSerialNodePtr>, 
     /// clusters of dual nodes
     pub clusters: Vec<PrimalClusterPtr>,
+    /// pending dual variables to grow,
+    pending_dual_variables: VecDeque<PrimalModuleSerialNodeWeak>,
+    /// debug mode: record all decisions
+    enable_debug: bool,
+    debug_recording: Vec<DebugEntry>,
+    /// the optimization level
+    pub optimization_level: OptimizationLevel,
 }
+
+/// strategy of growing the dual variables
+#[derive(Debug, Clone, Copy)]
+pub enum GrowingStrategy {
+    /// focus on a single cluster at a time, for easier debugging and better locality
+    SingleCluster,
+    /// all clusters grow at the same time
+    MultipleClusters,
+}
+
+pub type OptimizationLevel = usize;
+/// the basic optimization level: just find a valid cluster and stop there
+pub const OPT_LEVEL_UNION_FIND: OptimizationLevel = 0;
+/// every dual variable has a single-hair solution independently
+pub const OPT_LEVEL_INDEPENDENT_SINGLE_HAIR: OptimizationLevel = 1;
+/// every dual variable have single-hair solution after other dual variables eliminates their non-single-hair edges
+pub const OPT_LEVEL_JOINT_SINGLE_HAIR: OptimizationLevel = 2;
+/// searching for rows to find multi-row coordination to further eliminate edges
+pub const OPT_LEVEL_MULTI_ROW_COORDINATION: OptimizationLevel = 3;
 
 pub struct PrimalModuleSerialNode {
     /// the dual node
@@ -38,19 +66,36 @@ pub struct PrimalCluster {
     pub cluster_index: NodeIndex,
     /// the nodes that belongs to this cluster
     pub nodes: Vec<PrimalModuleSerialNodePtr>,
+    /// all the edges ever exists in any hair
+    pub edges: BTreeSet<EdgeIndex>,
+    /// all the vertices ever touched by any tight edge
+    pub vertices: BTreeSet<VertexIndex>,
     /// the parity matrix to determine whether it's a valid cluster and also find new ways to increase the dual
     pub matrix: ParityMatrix,
+    /// the parity subgraph result, only valid when it's solved
+    pub subgraph: Option<Subgraph>,
 }
 
 pub type PrimalClusterPtr = ArcRwLock<PrimalCluster>;
 pub type PrimalClusterWeak = WeakRwLock<PrimalCluster>;
 
+pub enum DebugEntry {
+    SingleZeroForcing {
+        matrix: ParityMatrix,
+    },
+}
+
 impl PrimalModuleImpl for PrimalModuleSerial {
 
     fn new_empty(_initializer: &SolverInitializer) -> Self {
         Self {
+            growing_strategy: GrowingStrategy::SingleCluster,
             nodes: vec![],
             clusters: vec![],
+            pending_dual_variables: VecDeque::new(),
+            enable_debug: true,
+            debug_recording: vec![],
+            optimization_level: OPT_LEVEL_UNION_FIND,  // default to the highest optimization level currently supported
         }
     }
 
@@ -59,13 +104,29 @@ impl PrimalModuleImpl for PrimalModuleSerial {
         self.clusters.clear();
     }
 
-    fn load_defect_dual_node(&mut self, dual_node_ptr: &DualNodePtr) {
+    fn load_defect_dual_node<D: DualModuleImpl>(&mut self, dual_node_ptr: &DualNodePtr, dual_module: &mut D) {
         let node = dual_node_ptr.read_recursive();
         assert_eq!(node.index, self.nodes.len(), "must load defect nodes in order");
+        let mut matrix = ParityMatrix::new();
+        let mut edges = BTreeSet::new();
+        let mut vertices = BTreeSet::new();
+        for &edge_index in node.hair_edges.iter() {
+            matrix.add_variable(edge_index);
+            edges.insert(edge_index);
+        }
+        for &vertex_index in node.internal_vertices.iter() {
+            vertices.insert(vertex_index);
+        }
+        for &vertex_index in vertices.iter() {
+            matrix.add_parity_check_with_dual_module(vertex_index, dual_module);
+        }
         let primal_cluster_ptr = PrimalClusterPtr::new_value(PrimalCluster {
             cluster_index: self.clusters.len(),
             nodes: vec![],
-            matrix: ParityMatrix::new(),
+            edges: BTreeSet::new(),
+            vertices: BTreeSet::new(),
+            matrix: matrix,
+            subgraph: None,
         });
         let primal_node_ptr = PrimalModuleSerialNodePtr::new_value(PrimalModuleSerialNode {
             dual_node_ptr: dual_node_ptr.clone(),
@@ -74,6 +135,16 @@ impl PrimalModuleImpl for PrimalModuleSerial {
         primal_cluster_ptr.write().nodes.push(primal_node_ptr.clone());
         self.nodes.push(primal_node_ptr);
         self.clusters.push(primal_cluster_ptr);
+    }
+
+    fn begin_resolving<D: DualModuleImpl>(&mut self, _interface_ptr: &DualModuleInterfacePtr, dual_module: &mut D) {
+        if matches!(self.growing_strategy, GrowingStrategy::SingleCluster) {
+            for primal_node_ptr in self.nodes.iter().skip(1) {
+                let dual_node_ptr = primal_node_ptr.read_recursive().dual_node_ptr.clone();
+                dual_module.set_grow_rate(&dual_node_ptr, Rational::zero());
+                self.pending_dual_variables.push_back(primal_node_ptr.downgrade());
+            }
+        }
     }
 
     fn resolve(&mut self, mut group_max_update_length: GroupMaxUpdateLength, interface: &DualModuleInterfacePtr, dual_module: &mut impl DualModuleImpl) {
@@ -91,8 +162,17 @@ impl PrimalModuleImpl for PrimalModuleSerial {
                         self.union(dual_node_ptr_0, dual_node_ptr);
                     }
                     let cluster_ptr = self.nodes[dual_node_ptr_0.read_recursive().index].read_recursive().cluster_weak.upgrade_force();
-                    let cluster_index = cluster_ptr.read_recursive().cluster_index;
-                    active_clusters.insert(cluster_index);
+                    let mut cluster = cluster_ptr.write();
+                    // then add new constraints because these edges may touch new vertices
+                    let incident_vertices = dual_module.get_edge_neighbors(edge_index);
+                    for &vertex_index in incident_vertices.iter() {
+                        if !cluster.vertices.contains(&vertex_index) {
+                            cluster.vertices.insert(vertex_index);
+                            cluster.matrix.add_parity_check_with_dual_module(vertex_index, dual_module);
+                        }
+                    }
+                    // add to active cluster so that it's processed later
+                    active_clusters.insert(cluster.cluster_index);
                 },
                 MaxUpdateLength::ShrinkProhibited(dual_node_ptr) => {
                     let cluster_ptr = self.nodes[dual_node_ptr.read_recursive().index].read_recursive().cluster_weak.upgrade_force();
@@ -103,65 +183,58 @@ impl PrimalModuleImpl for PrimalModuleSerial {
             }
         }
         for &cluster_index in active_clusters.iter() {
-            let cluster_ptr = self.clusters[cluster_index].clone();
-            let mut cluster = cluster_ptr.write();
-            if cluster.nodes.is_empty() {
-                continue  // no longer a cluster
-            }
-            // set all nodes to stop growing in the cluster
-            for primal_node_ptr in cluster.nodes.iter() {
-                let dual_node_ptr = primal_node_ptr.read_recursive().dual_node_ptr.clone();
-                dual_module.set_grow_rate(&dual_node_ptr, Rational::zero());
-            }
+            self.resolve_cluster(cluster_index, interface, dual_module);
+            
+
             // check if there exists optimal solution, if not, create new dual node
-            let optimal_solution = cluster.get_optimal_result(dual_module);
-            if let Err(suboptimal_reason) = optimal_solution {
-                match suboptimal_reason {
-                    SuboptimalReason::InvalidCluster(edges) => {  // simply create a new dual node and grow it
-                        let dual_node_ptr = interface.create_cluster_node_auto_vertices(edges, dual_module);
-                        let primal_node_ptr = PrimalModuleSerialNodePtr::new_value(PrimalModuleSerialNode {
-                            dual_node_ptr: dual_node_ptr.clone(),
-                            cluster_weak: cluster_ptr.downgrade(),
-                        });
-                        cluster.nodes.push(primal_node_ptr.clone());
-                        self.nodes.push(primal_node_ptr);
-                    },
-                    SuboptimalReason::OneHairInvalid((shrink_dual_node_ptr, edges, vertices)) => {
-                        // in this way, the dual objective function doesn't change but remove some tight edges in the middle
-                        dual_module.set_grow_rate(&shrink_dual_node_ptr, -Rational::one());
-                        let growing_dual_node_ptr = interface.create_cluster_node(edges, vertices, dual_module);
-                        let primal_node_ptr = PrimalModuleSerialNodePtr::new_value(PrimalModuleSerialNode {
-                            dual_node_ptr: growing_dual_node_ptr.clone(),
-                            cluster_weak: cluster_ptr.downgrade(),
-                        });
-                        cluster.nodes.push(primal_node_ptr.clone());
-                        self.nodes.push(primal_node_ptr);
-                    },
-                    SuboptimalReason::SimultaneousOneHairInvalid((vertices, simultaneous_invalid)) => {
-                        for (shrink_dual_node_ptr, edges) in simultaneous_invalid.into_iter() {
-                            dual_module.set_grow_rate(&shrink_dual_node_ptr, -Rational::one());
-                            let growing_dual_node_ptr = interface.create_cluster_node(edges, vertices.clone(), dual_module);
-                            let primal_node_ptr = PrimalModuleSerialNodePtr::new_value(PrimalModuleSerialNode {
-                                dual_node_ptr: growing_dual_node_ptr.clone(),
-                                cluster_weak: cluster_ptr.downgrade(),
-                            });
-                            cluster.nodes.push(primal_node_ptr.clone());
-                            self.nodes.push(primal_node_ptr);
-                        }
-                    },
-                }
-            }
+            // let optimal_solution = cluster.get_optimal_result(dual_module);
+            // if let Err(suboptimal_reason) = optimal_solution {
+            //     match suboptimal_reason {
+            //         SuboptimalReason::InvalidCluster(edges) => {  // simply create a new dual node and grow it
+            //             let dual_node_ptr = interface.create_cluster_node_auto_vertices(edges, dual_module);
+            //             let primal_node_ptr = PrimalModuleSerialNodePtr::new_value(PrimalModuleSerialNode {
+            //                 dual_node_ptr: dual_node_ptr.clone(),
+            //                 cluster_weak: cluster_ptr.downgrade(),
+            //             });
+            //             cluster.nodes.push(primal_node_ptr.clone());
+            //             self.nodes.push(primal_node_ptr);
+            //         },
+            //         SuboptimalReason::OneHairInvalid((shrink_dual_node_ptr, edges, vertices)) => {
+            //             // in this way, the dual objective function doesn't change but remove some tight edges in the middle
+            //             dual_module.set_grow_rate(&shrink_dual_node_ptr, -Rational::one());
+            //             let growing_dual_node_ptr = interface.create_cluster_node(edges, vertices, dual_module);
+            //             let primal_node_ptr = PrimalModuleSerialNodePtr::new_value(PrimalModuleSerialNode {
+            //                 dual_node_ptr: growing_dual_node_ptr.clone(),
+            //                 cluster_weak: cluster_ptr.downgrade(),
+            //             });
+            //             cluster.nodes.push(primal_node_ptr.clone());
+            //             self.nodes.push(primal_node_ptr);
+            //         },
+            //         SuboptimalReason::SimultaneousOneHairInvalid((vertices, simultaneous_invalid)) => {
+            //             for (shrink_dual_node_ptr, edges) in simultaneous_invalid.into_iter() {
+            //                 dual_module.set_grow_rate(&shrink_dual_node_ptr, -Rational::one());
+            //                 let growing_dual_node_ptr = interface.create_cluster_node(edges, vertices.clone(), dual_module);
+            //                 let primal_node_ptr = PrimalModuleSerialNodePtr::new_value(PrimalModuleSerialNode {
+            //                     dual_node_ptr: growing_dual_node_ptr.clone(),
+            //                     cluster_weak: cluster_ptr.downgrade(),
+            //                 });
+            //                 cluster.nodes.push(primal_node_ptr.clone());
+            //                 self.nodes.push(primal_node_ptr);
+            //             }
+            //         },
+            //     }
+            // }
         }
     }
 
-    fn subgraph(&mut self, _interface: &DualModuleInterfacePtr, dual_module: &mut impl DualModuleImpl) -> Subgraph {
+    fn subgraph(&mut self, _interface: &DualModuleInterfacePtr, _dual_module: &mut impl DualModuleImpl) -> Subgraph {
         let mut subgraph = Subgraph::new_empty();
         for cluster_ptr in self.clusters.iter() {
-            let mut cluster = cluster_ptr.write();
+            let cluster = cluster_ptr.read_recursive();
             if cluster.nodes.is_empty() {
                 continue
             }
-            subgraph.extend(cluster.get_optimal_result(dual_module).expect("must have optimal result").iter());
+            subgraph.extend(cluster.subgraph.clone().expect("bug occurs: cluster should be solved").iter());
         }
         subgraph
     }
@@ -191,23 +264,95 @@ impl PrimalModuleSerial {
         }
     }
 
+    fn resolve_cluster(&mut self, cluster_index: usize, interface: &DualModuleInterfacePtr, dual_module: &mut impl DualModuleImpl) {
+        let cluster_ptr = self.clusters[cluster_index].clone();
+        let mut cluster = cluster_ptr.write();
+        if cluster.nodes.is_empty() {
+            return  // no longer a cluster, no need to handle
+        }
+        // set all nodes to stop growing in the cluster
+        for primal_node_ptr in cluster.nodes.iter() {
+            let dual_node_ptr = primal_node_ptr.read_recursive().dual_node_ptr.clone();
+            dual_module.set_grow_rate(&dual_node_ptr, Rational::zero());
+        }
+        // update the matrix with new tight edges
+        cluster.matrix.clear_implicit_shrink();
+        cluster.matrix.update_with_dual_module(dual_module);
+
+        // 1. check if the cluster is valid (union-find decoder)
+        cluster.matrix.row_echelon_form();
+        cluster.matrix.print();
+        if !cluster.matrix.echelon_satisfiable {
+            let tight_edges = cluster.matrix.get_tight_edges();
+            println!("tight_edges: {:?}", tight_edges);
+            let internal_edges: BTreeSet<EdgeIndex> = tight_edges.into_iter().collect();
+            let dual_node_ptr = interface.create_cluster_node_auto_vertices(internal_edges, dual_module);
+            let primal_node_ptr = PrimalModuleSerialNodePtr::new_value(PrimalModuleSerialNode {
+                dual_node_ptr: dual_node_ptr.clone(),
+                cluster_weak: cluster_ptr.downgrade(),
+            });
+            cluster.nodes.push(primal_node_ptr.clone());
+            self.nodes.push(primal_node_ptr);
+            return
+        }
+        if self.optimization_level <= OPT_LEVEL_UNION_FIND {  // this is the last step, generate a subgraph solution
+            cluster.subgraph = Some(Subgraph::new(cluster.matrix.get_joint_solution().expect("satisfiable")));
+            return  // stop here according to the optimization level specification
+        }
+
+        // 2. check whether independent single-hair solution exists for every non-zero dual variable
+        let cluster_nodes = cluster.nodes.clone();
+        let matrix = &mut cluster.matrix;
+        for primal_node_ptr in cluster_nodes.iter() {
+            let dual_node_ptr = primal_node_ptr.read_recursive().dual_node_ptr.clone();
+            let dual_node = dual_node_ptr.read_recursive();
+            if dual_node.dual_variable.is_zero() {
+                continue  // no requirement on zero dual variables
+            }
+            println!("dual_node: {}", dual_node.index);
+            matrix.clear_implicit_shrink();
+            let hair_edges: Vec<EdgeIndex> = dual_node.hair_edges.iter().cloned().collect();
+            let implicit_shrink_edges = matrix.get_implicit_shrink_edges(&hair_edges).expect("must be satisfiable");
+            matrix.add_implicit_shrink(&implicit_shrink_edges);
+            matrix.row_echelon_form();
+            if !matrix.echelon_satisfiable {
+                unimplemented!();
+                // return None  // no joint solution is possible once all the implicit shrinks have been executed
+            }
+
+
+
+            // let mut parity_constraints = ParityConstraints::new(&tight_edges, &dual_node.hair_edges, &vertices, dual_module);
+            // if parity_constraints.num_non_hair_edges == parity_constraints.variable_edges.len() {
+            //     continue  // it's possible that none of the hair edges are in the tight edges, in which case we just ignore it
+            // }
+            // println!("tight_edges: {tight_edges:?}");
+            // println!("dual_node.hair_edges: {:?}", dual_node.hair_edges);
+            // match parity_constraints.get_single_hair_solution_or_necessary_edge_set() {
+            //     Ok(_single_hair_solution) => {
+            //         continue  // it's ok
+            //     },
+            //     Err(necessary_edges) => {  // removing these edges will make it invalid
+            //         println!("dual_node: {}", dual_node.index);
+            //         parity_constraints.print();
+            //         println!("necessary_edges: {necessary_edges:?}");
+            //         let mut edges = tight_edges.clone();
+            //         for edge_index in necessary_edges.iter() {
+            //             edges.remove(edge_index);
+            //         }
+            //         println!("edges: {edges:?}");
+            //         println!("vertices: {vertices:?}");
+
+            //         debug_assert!(!dual_module.is_valid_cluster(&edges, &vertices), "these edges must be necessary");
+            //         return Err(SuboptimalReason::OneHairInvalid((dual_node_ptr.clone(), edges, vertices)));
+            //     },
+            // }
+        }
+    }
+
 }
 
 impl PrimalCluster {
-
-    pub fn get_tight_edges(&self, dual_module: &impl DualModuleImpl) -> BTreeSet<EdgeIndex> {
-        let mut edges = BTreeSet::new();
-        for primal_node_ptr in self.nodes.iter() {
-            let dual_node_ptr = primal_node_ptr.read_recursive().dual_node_ptr.clone();
-            let dual_node = dual_node_ptr.read_recursive();
-            for &edge_index in dual_node.hair_edges.iter() {
-                if !edges.contains(&edge_index) && dual_module.is_edge_tight(edge_index) {
-                    edges.insert(edge_index);
-                }
-            }
-        }
-        edges
-    }
 
     pub fn get_vertices(&self) -> BTreeSet<VertexIndex> {
         let mut vertices = BTreeSet::new();
@@ -221,55 +366,60 @@ impl PrimalCluster {
         vertices
     }
 
+    /// check if single-hair solution exists for every dual variable, isolated from every other dual variable
+    pub fn check_independent_single_hair(&mut self, dual_module: &mut impl DualModuleImpl) -> Option<SuboptimalReason> {
+        None
+    }
+
     pub fn get_optimal_result(&mut self, dual_module: &mut impl DualModuleImpl) -> Result<Subgraph, SuboptimalReason> {
         self.matrix.update_with_dual_module(dual_module);
 
 
 
 
-        let tight_edges = self.get_tight_edges(dual_module);
-        let vertices = self.get_vertices();
-        // if the fully grown edges are an invalid cluster, simply create a new dual node and grow it
-        if !dual_module.is_valid_cluster_auto_vertices(&tight_edges) {
-            return Err(SuboptimalReason::InvalidCluster(tight_edges))
-        }
-        // TODO: run LP optimization on the existing dual variables
+        // let tight_edges = self.get_tight_edges(dual_module);
+        // let vertices = self.get_vertices();
+        // // if the fully grown edges are an invalid cluster, simply create a new dual node and grow it
+        // if !dual_module.is_valid_cluster_auto_vertices(&tight_edges) {
+        //     return Err(SuboptimalReason::InvalidCluster(tight_edges))
+        // }
+        // // TODO: run LP optimization on the existing dual variables
 
 
-        // then check whether individual dual node can satisfy the single-hair requirement
-        for primal_node_ptr in self.nodes.iter() {
-            let dual_node_ptr = primal_node_ptr.read_recursive().dual_node_ptr.clone();
-            let dual_node = dual_node_ptr.read_recursive();
-            if dual_node.dual_variable.is_zero() {
-                continue  // no requirement on zero dual variables
-            }
-            println!("dual_node: {}", dual_node.index);
-            let mut parity_constraints = ParityConstraints::new(&tight_edges, &dual_node.hair_edges, &vertices, dual_module);
-            if parity_constraints.num_non_hair_edges == parity_constraints.variable_edges.len() {
-                continue  // it's possible that none of the hair edges are in the tight edges, in which case we just ignore it
-            }
-            println!("tight_edges: {tight_edges:?}");
-            println!("dual_node.hair_edges: {:?}", dual_node.hair_edges);
-            match parity_constraints.get_single_hair_solution_or_necessary_edge_set() {
-                Ok(_single_hair_solution) => {
-                    continue  // it's ok
-                },
-                Err(necessary_edges) => {  // removing these edges will make it invalid
-                    println!("dual_node: {}", dual_node.index);
-                    parity_constraints.print();
-                    println!("necessary_edges: {necessary_edges:?}");
-                    let mut edges = tight_edges.clone();
-                    for edge_index in necessary_edges.iter() {
-                        edges.remove(edge_index);
-                    }
-                    println!("edges: {edges:?}");
-                    println!("vertices: {vertices:?}");
+        // // then check whether individual dual node can satisfy the single-hair requirement
+        // for primal_node_ptr in self.nodes.iter() {
+        //     let dual_node_ptr = primal_node_ptr.read_recursive().dual_node_ptr.clone();
+        //     let dual_node = dual_node_ptr.read_recursive();
+        //     if dual_node.dual_variable.is_zero() {
+        //         continue  // no requirement on zero dual variables
+        //     }
+        //     println!("dual_node: {}", dual_node.index);
+        //     let mut parity_constraints = ParityConstraints::new(&tight_edges, &dual_node.hair_edges, &vertices, dual_module);
+        //     if parity_constraints.num_non_hair_edges == parity_constraints.variable_edges.len() {
+        //         continue  // it's possible that none of the hair edges are in the tight edges, in which case we just ignore it
+        //     }
+        //     println!("tight_edges: {tight_edges:?}");
+        //     println!("dual_node.hair_edges: {:?}", dual_node.hair_edges);
+        //     match parity_constraints.get_single_hair_solution_or_necessary_edge_set() {
+        //         Ok(_single_hair_solution) => {
+        //             continue  // it's ok
+        //         },
+        //         Err(necessary_edges) => {  // removing these edges will make it invalid
+        //             println!("dual_node: {}", dual_node.index);
+        //             parity_constraints.print();
+        //             println!("necessary_edges: {necessary_edges:?}");
+        //             let mut edges = tight_edges.clone();
+        //             for edge_index in necessary_edges.iter() {
+        //                 edges.remove(edge_index);
+        //             }
+        //             println!("edges: {edges:?}");
+        //             println!("vertices: {vertices:?}");
 
-                    debug_assert!(!dual_module.is_valid_cluster(&edges, &vertices), "these edges must be necessary");
-                    return Err(SuboptimalReason::OneHairInvalid((dual_node_ptr.clone(), edges, vertices)));
-                },
-            }
-        }
+        //             debug_assert!(!dual_module.is_valid_cluster(&edges, &vertices), "these edges must be necessary");
+        //             return Err(SuboptimalReason::OneHairInvalid((dual_node_ptr.clone(), edges, vertices)));
+        //         },
+        //     }
+        // }
 
 
 
@@ -317,8 +467,9 @@ impl PrimalCluster {
 
 
         // TODO: adjust independent variables to try to decrease the value of dual objective function
+        unimplemented!()
         
-        Ok(dual_module.find_valid_subgraph_auto_vertices(&tight_edges).expect("must be valid cluster"))
+        // Ok(dual_module.find_valid_subgraph_auto_vertices(&tight_edges).expect("must be valid cluster"))
     }
 
 }

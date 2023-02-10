@@ -19,18 +19,21 @@ pub trait PrimalModuleImpl {
     /// clear all states; however this method is not necessarily called when load a new decoding problem, so you need to call it yourself
     fn clear(&mut self);
 
-    fn load_defect_dual_node(&mut self, dual_node_ptr: &DualNodePtr);
+    fn load_defect_dual_node<D: DualModuleImpl>(&mut self, dual_node_ptr: &DualNodePtr, dual_module: &mut D);
+
+    /// indicate all syndrome have been loaded and called before resolving any defect
+    fn begin_resolving<D: DualModuleImpl>(&mut self, interface_ptr: &DualModuleInterfacePtr, dual_module: &mut D);
 
     /// load a single syndrome and update the dual module and the interface
     fn load_defect<D: DualModuleImpl>(&mut self, defect_vertex: VertexIndex, interface_ptr: &DualModuleInterfacePtr, dual_module: &mut D) {
         interface_ptr.create_defect_node(defect_vertex, dual_module);
         let interface = interface_ptr.read_recursive();
         let index = interface.nodes.len() - 1;
-        self.load_defect_dual_node(&interface.nodes[index])
+        self.load_defect_dual_node(&interface.nodes[index], dual_module)
     }
 
     /// load a new decoding problem given dual interface: note that all nodes MUST be syndrome node
-    fn load(&mut self, interface_ptr: &DualModuleInterfacePtr) {
+    fn load<D: DualModuleImpl>(&mut self, interface_ptr: &DualModuleInterfacePtr, dual_module: &mut D) {
         let interface = interface_ptr.read_recursive();
         for index in 0..interface.nodes.len() as NodeIndex {
             let node_ptr = &interface.nodes[index as usize];
@@ -38,7 +41,7 @@ pub trait PrimalModuleImpl {
             debug_assert!(node.internal_edges.is_empty(), "must load a fresh dual module interface, found a complex node");
             debug_assert!(node.internal_vertices.len() == 1, "must load a fresh dual module interface, found invalid defect node");
             debug_assert_eq!(node.index, index, "must load a fresh dual module interface, found index out of order");
-            self.load_defect_dual_node(node_ptr);
+            self.load_defect_dual_node(node_ptr, dual_module);
         }
     }
 
@@ -77,12 +80,13 @@ pub trait PrimalModuleImpl {
     fn solve_step_callback<D: DualModuleImpl, F>(&mut self, interface: &DualModuleInterfacePtr, syndrome_pattern: &SyndromePattern, dual_module: &mut D, callback: F)
             where F: FnMut(&DualModuleInterfacePtr, &mut D, &mut Self, &GroupMaxUpdateLength) {
         interface.load(syndrome_pattern, dual_module);
-        self.load(interface);
+        self.load(interface, dual_module);
         self.solve_step_callback_interface_loaded(interface, dual_module, callback);
     }
 
     fn solve_step_callback_interface_loaded<D: DualModuleImpl, F>(&mut self, interface: &DualModuleInterfacePtr, dual_module: &mut D, mut callback: F)
             where F: FnMut(&DualModuleInterfacePtr, &mut D, &mut Self, &GroupMaxUpdateLength) {
+        self.begin_resolving(interface, dual_module);
         let mut group_max_update_length = dual_module.compute_maximum_update_length();
         while !group_max_update_length.is_unbounded() {
             callback(interface, dual_module, self, &group_max_update_length);

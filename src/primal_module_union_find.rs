@@ -75,13 +75,17 @@ impl PrimalModuleImpl for PrimalModuleUnionFind {
         self.union_find.remove_all();
     }
 
-    fn load_defect_dual_node(&mut self, dual_node_ptr: &DualNodePtr) {
+    fn load_defect_dual_node<D: DualModuleImpl>(&mut self, dual_node_ptr: &DualNodePtr, _dual_module: &mut D) {
         let node = dual_node_ptr.read_recursive();
         assert_eq!(node.index, self.union_find.size(), "must load defect nodes in order");
         self.union_find.insert(PrimalModuleUnionFindNode {
             internal_edges: BTreeSet::new(),
             node_index: node.index,
         });
+    }
+
+    fn begin_resolving<D: DualModuleImpl>(&mut self, _interface_ptr: &DualModuleInterfacePtr, _dual_module: &mut D) {
+
     }
 
     fn resolve(&mut self, mut group_max_update_length: GroupMaxUpdateLength, interface: &DualModuleInterfacePtr, dual_module: &mut impl DualModuleImpl) {
