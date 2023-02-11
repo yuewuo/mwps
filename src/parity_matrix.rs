@@ -10,12 +10,14 @@ use crate::util::*;
 use std::collections::{BTreeMap, BTreeSet};
 use crate::prettytable::*;
 use crate::dual_module::*;
+use crate::visualize::*;
 
 pub type BitArrayUnit = usize;
 pub const BIT_UNIT_LENGTH: usize = std::mem::size_of::<BitArrayUnit>() * 8;
 pub type DualVariableTag = usize;
 
 /// the parity matrix that is necessary to satisfy parity requirement
+#[derive(Clone, Debug)]
 pub struct ParityMatrix {
     /// the edges maintained by this parity check, mapping to the local indices
     pub edges: BTreeMap<EdgeIndex, usize>,
@@ -39,6 +41,7 @@ pub struct ParityMatrix {
 }
 
 /// optimize for small clusters where there are no more than 63 edges
+#[derive(Clone, Debug)]
 pub struct ParityRow {
     /// the first BIT_UNIT_LENGTH-1 edges are stored here, and the last bit is used the right hand bit value
     first: BitArrayUnit,
@@ -149,8 +152,7 @@ impl ParityMatrix {
         self.print_reordered(&edges);
     }
 
-    /// print edges (maybe a subset of edges)
-    pub fn print_reordered(&self, edges: &[EdgeIndex]) {
+    pub fn display_table_reordered(&self, edges: &[EdgeIndex]) -> Table {
         let mut var_indices = Vec::with_capacity(edges.len());
         for &edge_index in edges.iter() {
             let var_index = self.edges.get(&edge_index).expect("edge must be a variable").clone();
@@ -208,7 +210,31 @@ impl ParityMatrix {
             table_row.add_cell(Cell::new("-"));
             table.add_row(table_row);
         }
+        table
+    }
+
+    /// print edges (maybe a subset of edges)
+    pub fn print_reordered(&self, edges: &[EdgeIndex]) {
+        let table = self.display_table_reordered(edges);
         println!("{table}");
+    }
+
+    pub fn to_visualize_json(&self, hair_edges: &[EdgeIndex], abbrev: bool) -> serde_json::Value {
+        let (edges, start_index) = self.hair_edges_to_reorder(hair_edges);
+        let table = self.display_table_reordered(&edges);
+        let mut table_str = vec![];
+        for row in &table {
+            let mut row_str = vec![];
+            for cell in row {
+                row_str.push(cell.get_content());
+            }
+            table_str.push(row_str);
+        }
+        json!({
+            "table": table_str,
+            "edges": edges,
+            if abbrev { "hs" } else { "start_index" }: start_index,  // start index of hair edges
+        })
     }
 
     pub fn row_echelon_form(&mut self) {
@@ -276,7 +302,7 @@ impl ParityMatrix {
     }
 
     /// create the reorder edges and also the starting index of hair edges
-    pub fn hair_edges_to_reorder(&mut self, hair_edges: &[EdgeIndex]) -> (Vec<EdgeIndex>, usize) {
+    pub fn hair_edges_to_reorder(&self, hair_edges: &[EdgeIndex]) -> (Vec<EdgeIndex>, usize) {
         let mut hair_edges_set = BTreeSet::new();
         for hair_edge in hair_edges.iter() {
             assert!(!hair_edges_set.contains(hair_edge), "duplicate hair edge");
@@ -385,9 +411,6 @@ impl ParityMatrix {
 
 }
 
-pub struct FailReason {
-
-}
 
 impl ParityRow {
 

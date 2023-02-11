@@ -11,7 +11,9 @@ use crate::visualize::*;
 use crate::dual_module::*;
 use crate::pointers::*;
 use std::collections::{BTreeSet, BTreeMap, VecDeque};
+use std::fmt::Debug;
 use crate::num_traits::{Zero, One};
+use crate::parking_lot::Mutex;
 use prettytable::*;
 use crate::matrix_util::*;
 
@@ -27,7 +29,8 @@ pub struct PrimalModuleSerial {
     pending_dual_variables: VecDeque<PrimalModuleSerialNodeWeak>,
     /// debug mode: record all decisions
     enable_debug: bool,
-    debug_recording: Vec<DebugEntry>,
+    /// debug recordings, every visualize call will clear the existing recordings
+    debug_recordings: Mutex<Vec<DebugEntry>>,
     /// the optimization level
     pub optimization_level: OptimizationLevel,
 }
@@ -80,9 +83,17 @@ pub type PrimalClusterPtr = ArcRwLock<PrimalCluster>;
 pub type PrimalClusterWeak = WeakRwLock<PrimalCluster>;
 
 pub enum DebugEntry {
-    SingleZeroForcing {
+    /// print a matrix
+    EchelonFormMatrix {
+        /// the parity matrix in the echelon form
         matrix: ParityMatrix,
+        /// hair edges that are reordered to the end of the columns, empty if don't care
+        hair_edges: Vec<EdgeIndex>,
     },
+    /// display a message
+    Message(String),
+    /// display an error
+    Error(String),
 }
 
 impl PrimalModuleImpl for PrimalModuleSerial {
@@ -94,7 +105,7 @@ impl PrimalModuleImpl for PrimalModuleSerial {
             clusters: vec![],
             pending_dual_variables: VecDeque::new(),
             enable_debug: true,
-            debug_recording: vec![],
+            debug_recordings: Mutex::new(vec![]),
             optimization_level: OPT_LEVEL_UNION_FIND,  // default to the highest optimization level currently supported
         }
     }
@@ -159,7 +170,7 @@ impl PrimalModuleImpl for PrimalModuleSerial {
                     let dual_node_ptr_0 = &dual_nodes[0];
                     // first union all the dual nodes
                     for dual_node_ptr in dual_nodes.iter() {
-                        self.union(dual_node_ptr_0, dual_node_ptr);
+                        self.union(dual_node_ptr_0, dual_node_ptr, dual_module);
                     }
                     let cluster_ptr = self.nodes[dual_node_ptr_0.read_recursive().index].read_recursive().cluster_weak.upgrade_force();
                     let mut cluster = cluster_ptr.write();
@@ -244,7 +255,7 @@ impl PrimalModuleImpl for PrimalModuleSerial {
 impl PrimalModuleSerial {
 
     // union the cluster of two dual nodes
-    pub fn union(&self, dual_node_ptr_1: &DualNodePtr, dual_node_ptr_2: &DualNodePtr) {
+    pub fn union<D: DualModuleImpl>(&self, dual_node_ptr_1: &DualNodePtr, dual_node_ptr_2: &DualNodePtr, dual_module: &mut D) {
         let node_index_1 = dual_node_ptr_1.read_recursive().index;
         let node_index_2 = dual_node_ptr_2.read_recursive().index;
         let primal_node_1 = self.nodes[node_index_1].read_recursive();
@@ -261,6 +272,18 @@ impl PrimalModuleSerial {
         for primal_node_ptr in cluster_2.nodes.drain(..) {
             primal_node_ptr.write().cluster_weak = cluster_ptr_1.downgrade();
             cluster_1.nodes.push(primal_node_ptr);
+        }
+        for &edge_index in cluster_2.edges.iter() {
+            if !cluster_1.edges.contains(&edge_index) {
+                cluster_1.edges.insert(edge_index);
+                cluster_1.matrix.add_variable(edge_index);
+            }
+        }
+        for &vertex_index in cluster_2.vertices.iter() {
+            if !cluster_1.vertices.contains(&vertex_index) {
+                cluster_1.vertices.insert(vertex_index);
+                cluster_1.matrix.add_parity_check_with_dual_module(vertex_index, dual_module);
+            }
         }
     }
 
@@ -281,10 +304,15 @@ impl PrimalModuleSerial {
 
         // 1. check if the cluster is valid (union-find decoder)
         cluster.matrix.row_echelon_form();
-        cluster.matrix.print();
+        if self.enable_debug {
+            self.debug_recordings.lock().push(DebugEntry::EchelonFormMatrix {
+                matrix: cluster.matrix.clone(),
+                hair_edges: vec![23, 24],
+            })
+        }
         if !cluster.matrix.echelon_satisfiable {
             let tight_edges = cluster.matrix.get_tight_edges();
-            println!("tight_edges: {:?}", tight_edges);
+            if self.enable_debug { self.debug_recordings.lock().push(DebugEntry::Error(format!("invalid cluster of tight edges {:?}", tight_edges))) }
             let internal_edges: BTreeSet<EdgeIndex> = tight_edges.into_iter().collect();
             let dual_node_ptr = interface.create_cluster_node_auto_vertices(internal_edges, dual_module);
             let primal_node_ptr = PrimalModuleSerialNodePtr::new_value(PrimalModuleSerialNode {
@@ -295,7 +323,9 @@ impl PrimalModuleSerial {
             self.nodes.push(primal_node_ptr);
             return
         }
+        if self.enable_debug { self.debug_recordings.lock().push(DebugEntry::Message(format!("It's a valid cluster"))) }
         if self.optimization_level <= OPT_LEVEL_UNION_FIND {  // this is the last step, generate a subgraph solution
+            if self.enable_debug { self.debug_recordings.lock().push(DebugEntry::Error(format!("algorithm early terminate: optimization level {}", self.optimization_level))) }
             cluster.subgraph = Some(Subgraph::new(cluster.matrix.get_joint_solution().expect("satisfiable")));
             return  // stop here according to the optimization level specification
         }
@@ -644,10 +674,45 @@ Implementing visualization functions
 */
 
 impl MWPSVisualizer for PrimalModuleSerial {
-    fn snapshot(&self, _abbrev: bool) -> serde_json::Value {
+    fn snapshot(&self, abbrev: bool) -> serde_json::Value {
+        let debug_recordings: Option<Vec<serde_json::Value>> = if self.enable_debug {
+            let mut existing_recordings = self.debug_recordings.lock();
+            let mut debug_recordings = vec![];
+            for entry in existing_recordings.iter() {
+                debug_recordings.push(entry.snapshot(abbrev));
+            }
+            existing_recordings.clear();
+            Some(debug_recordings)
+        } else { None };
         json!({
-
+            "debug_recordings": debug_recordings,
         })
+    }
+}
+
+impl MWPSVisualizer for DebugEntry {
+    fn snapshot(&self, abbrev: bool) -> serde_json::Value {
+        match self {
+            DebugEntry::EchelonFormMatrix { matrix, hair_edges } => {
+                json!({
+                    "type": "echelon_form_matrix",
+                    "matrix": matrix.to_visualize_json(hair_edges, abbrev),
+                    "hair_edges": hair_edges,
+                })
+            },
+            DebugEntry::Message(message) => {
+                json!({
+                    "type": "message",
+                    "message": message,
+                })
+            },
+            DebugEntry::Error(error) => {
+                json!({
+                    "type": "error",
+                    "error": error,
+                })
+            }
+        }
     }
 }
 

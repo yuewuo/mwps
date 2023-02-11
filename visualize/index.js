@@ -59,6 +59,8 @@ const App = {
             dual_display_vertices: ref(true),
             dual_display_hair: ref(true),
             dual_display_hide_0: ref(true),
+            collapse_dual_variables: ref(false),
+            collapse_debug_recordings: ref(false),
             // select
             current_selected: gui3d.current_selected,
             selected_vertex_neighbor_edges: ref([]),
@@ -375,8 +377,22 @@ const App = {
             }
         },
         snapshot() {
-            return mwps_data.snapshots[this.snapshot_select][1]
+            if (this.mwps_data_ready) {
+                return mwps_data?.snapshots[this.snapshot_select][1]
+            } else {
+                return null
+            }
         },
+        next_snapshot() {
+            if (this.mwps_data_ready) {
+                if (this.snapshot_select >= mwps_data.snapshots.length - 1) {
+                    return null
+                }
+                return mwps_data?.snapshots[this.snapshot_select+1][1]
+            } else {
+                return null
+            }
+        }
     },
 }
 

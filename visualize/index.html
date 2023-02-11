@@ -114,6 +114,54 @@ h5 {
     border-radius: 5px;
     line-height: 45px;
 }
+.debug-echelon-form-matrix {
+    width: 526px;
+    display: flex;
+    justify-content: center;
+    flex-direction: row;
+}
+.matrix-div {
+    display: inline-block;
+    min-width: 54px;
+    max-width: 526px;
+    overflow: auto;
+    background-color: bisque;
+    min-height: 54px;
+    max-height: 526px;
+    cursor: crosshair;
+}
+.matrix-row {
+    width: max-content;
+    padding: 0;
+    margin: 0;
+    line-height: 30px;
+    height: 30px;
+}
+.matrix-element {
+    position: relative;
+    display: inline-block;
+    width: 30px;
+    height: 30px;
+    margin: 0;
+    padding: 0;
+    border: 1px solid lightgrey;
+}
+.matrix-text {
+    height: 30px;
+    width: 30px;
+    position: absolute;
+    font-size: 16px;
+    text-align: center;
+    line-height: 30px;
+    overflow: hidden;
+    user-select: none;
+}
+.parity-rhs {
+    background-color: rgb(255, 210, 154);
+}
+.hair-edges {
+    background-color: rgb(218, 223, 255);
+}
 </style>
 </head>
 <body>
@@ -258,7 +306,7 @@ h5 {
             </q-card-section>
         </q-card>
         <q-card bordered class="select-info-div" v-if="dual_module_info != null">
-            <q-card-section class="bg-purple text-white">
+            <q-card-section class="bg-purple text-white" @click="collapse_dual_variables = !collapse_dual_variables">
                 <div class="text-h6">Dual Variables (Σy = <span class="dual-node-set">
                     {{ dual_module_info.interface.sdn }}/{{ dual_module_info.interface.sdd }}<q-tooltip anchor="top middle" self="bottom middle" 
                         :offset="[10, 10]" transition-show="scale" transition-hide="scale">
@@ -267,7 +315,7 @@ h5 {
                 </span>)</div>
             </q-card-section>
             <q-separator inset></q-separator>
-            <q-card-section>
+            <q-card-section v-show="!collapse_dual_variables">
                 <div style="display: flex; justify-content: center; flex-direction: row;">
                     <div><q-toggle v-model="dual_display_hair" label="hair" size="md" color="cyan"/></div>
                     <div><q-toggle v-model="dual_display_vertices" label="vertex" size="md" color="teal"/></div>
@@ -312,6 +360,50 @@ h5 {
                             </span>
                             ]</span>
                         </span>
+                    </div>
+                </div>
+            </q-card-section>
+        </q-card>
+        <q-card bordered class="select-info-div" v-if="next_snapshot != null && next_snapshot.debug_recordings != null && next_snapshot.debug_recordings.length > 0">
+            <q-card-section class="bg-deep-orange text-white" @click="collapse_debug_recordings = !collapse_debug_recordings">
+                <div class="text-h6">Algorithm Decisions</div>
+            </q-card-section>
+            <q-separator inset></q-separator>
+            <q-card-section v-show="!collapse_debug_recordings">
+                <div v-for="entry of next_snapshot.debug_recordings" style="margin-top: 15px;">
+                    <div v-if="entry.type == 'echelon_form_matrix'" class="debug-echelon-form-matrix">
+                        <div class="matrix-div">
+                            <div class="matrix-row"><!-- title -->
+                                <div class="matrix-element"><div class="matrix-text" style="font-size: 10px; font-weight: bold; line-height: 15px;">
+                                    <span style="color: rgb(0,180,200);">edge</span><br><span style="color: rgb(0,180,100);">cons</span></div></div>
+                                <div class="matrix-element" v-for="(edge_index, var_index) in entry.matrix.edges" @mouseenter="mouseenter('edge', edge_index)"
+                                        @mouseleave="mouseleave()" @click="jump_to('edge', edge_index)" :class="{ 'hair-edges': var_index >= entry.matrix.hs }">
+                                    <div class="matrix-text" style="color: rgb(0,180,200);">{{ edge_index }}</div>
+                                </div>
+                                <div class="matrix-element parity-rhs"><div class="matrix-text">=</div></div>
+                            </div>
+                            <div class="matrix-row" v-for="(row_content, row) in entry.matrix.table">
+                                <div class="matrix-element" v-show="column != entry.matrix.edges.length+2" v-for="(element, column) in row_content"
+                                    :class="{ 'parity-rhs': column == entry.matrix.edges.length+1, 'hair-edges': column >= entry.matrix.hs + 1 && column <= entry.matrix.edges.length }">
+                                    <div class="matrix-text" :style="{ color: row == entry.matrix.table.length - 1 ? 'rgb(0,180,100)' : column == 0 ? 'rgb(0,180,100)' : column == entry.matrix.edges.length+3 ? 'rgb(0,180,200)' : '', 'font-weight': (row < entry.matrix.table.length - 1 && column > 0 && column < entry.matrix.edges.length+2) ? 'bold' : '' }">{{ element }}</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div v-else-if="entry.type == 'message'">
+                        <q-banner dense class="bg-primary text-white">
+                            {{ entry.message }}
+                        </q-banner>
+                    </div>
+                    <div v-else-if="entry.type == 'error'">
+                        <q-banner dense class="bg-red text-white">
+                            {{ entry.error }}
+                        </q-banner>
+                    </div>
+                    <div v-else>
+                        <q-banner dense class="bg-black text-white">
+                            [GUI Error] Unrecognized Debug Entry: {{ entry.type }}
+                        </q-banner>
                     </div>
                 </div>
             </q-card-section>
