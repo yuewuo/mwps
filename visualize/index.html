@@ -366,10 +366,10 @@ h5 {
         </q-card>
         <q-card bordered class="select-info-div" v-if="next_snapshot != null && next_snapshot.debug_recordings != null && next_snapshot.debug_recordings.length > 0">
             <q-card-section class="bg-deep-orange text-white" @click="collapse_debug_recordings = !collapse_debug_recordings">
-                <div class="text-h6">Algorithm Decisions</div>
+                <div class="text-h6">Primal Algorithm Decisions</div>
             </q-card-section>
             <q-separator inset></q-separator>
-            <q-card-section v-show="!collapse_debug_recordings">
+            <q-card-section v-if="!collapse_debug_recordings">
                 <div v-for="entry of next_snapshot.debug_recordings" style="margin-top: 15px;">
                     <div v-if="entry.type == 'echelon_form_matrix'" class="debug-echelon-form-matrix">
                         <div class="matrix-div">

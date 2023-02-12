@@ -3,22 +3,22 @@
 //! This implementation targets to be an exact MWPS solver, although it's not yet sure whether it is actually one.
 //! 
 
-use crate::dual_module;
 use crate::parity_matrix::*;
 use crate::util::*;
 use crate::primal_module::*;
 use crate::visualize::*;
 use crate::dual_module::*;
 use crate::pointers::*;
-use std::collections::{BTreeSet, BTreeMap, VecDeque};
+use std::collections::{BTreeSet, VecDeque};
 use std::fmt::Debug;
 use crate::num_traits::{Zero, One};
 use crate::parking_lot::Mutex;
-use prettytable::*;
-use crate::matrix_util::*;
+use std::sync::Arc;
 
 
 pub struct PrimalModuleSerial {
+    /// the original hypergraph, used to run local minimization
+    pub initializer: Arc<SolverInitializer>,
     /// growing strategy, default to single-tree approach for easier debugging and better locality
     pub growing_strategy: GrowingStrategy,
     /// dual nodes information
@@ -26,7 +26,7 @@ pub struct PrimalModuleSerial {
     /// clusters of dual nodes
     pub clusters: Vec<PrimalClusterPtr>,
     /// pending dual variables to grow,
-    pending_dual_variables: VecDeque<PrimalModuleSerialNodeWeak>,
+    pending_nodes: VecDeque<PrimalModuleSerialNodeWeak>,
     /// debug mode: record all decisions
     enable_debug: bool,
     /// debug recordings, every visualize call will clear the existing recordings
@@ -98,15 +98,17 @@ pub enum DebugEntry {
 
 impl PrimalModuleImpl for PrimalModuleSerial {
 
-    fn new_empty(_initializer: &SolverInitializer) -> Self {
+    fn new_empty(initializer: &SolverInitializer) -> Self {
         Self {
+            initializer: Arc::new(initializer.clone()),
             growing_strategy: GrowingStrategy::SingleCluster,
+            // growing_strategy: GrowingStrategy::MultipleClusters,
             nodes: vec![],
             clusters: vec![],
-            pending_dual_variables: VecDeque::new(),
+            pending_nodes: VecDeque::new(),
             enable_debug: true,
             debug_recordings: Mutex::new(vec![]),
-            optimization_level: OPT_LEVEL_UNION_FIND,  // default to the highest optimization level currently supported
+            optimization_level: OPT_LEVEL_INDEPENDENT_SINGLE_HAIR,  // default to the highest optimization level currently supported
         }
     }
 
@@ -153,7 +155,7 @@ impl PrimalModuleImpl for PrimalModuleSerial {
             for primal_node_ptr in self.nodes.iter().skip(1) {
                 let dual_node_ptr = primal_node_ptr.read_recursive().dual_node_ptr.clone();
                 dual_module.set_grow_rate(&dual_node_ptr, Rational::zero());
-                self.pending_dual_variables.push_back(primal_node_ptr.downgrade());
+                self.pending_nodes.push_back(primal_node_ptr.downgrade());
             }
         }
     }
@@ -193,48 +195,22 @@ impl PrimalModuleImpl for PrimalModuleSerial {
                 _ => { unreachable!() }
             }
         }
+        let mut all_solved = true;
         for &cluster_index in active_clusters.iter() {
-            self.resolve_cluster(cluster_index, interface, dual_module);
-            
-
-            // check if there exists optimal solution, if not, create new dual node
-            // let optimal_solution = cluster.get_optimal_result(dual_module);
-            // if let Err(suboptimal_reason) = optimal_solution {
-            //     match suboptimal_reason {
-            //         SuboptimalReason::InvalidCluster(edges) => {  // simply create a new dual node and grow it
-            //             let dual_node_ptr = interface.create_cluster_node_auto_vertices(edges, dual_module);
-            //             let primal_node_ptr = PrimalModuleSerialNodePtr::new_value(PrimalModuleSerialNode {
-            //                 dual_node_ptr: dual_node_ptr.clone(),
-            //                 cluster_weak: cluster_ptr.downgrade(),
-            //             });
-            //             cluster.nodes.push(primal_node_ptr.clone());
-            //             self.nodes.push(primal_node_ptr);
-            //         },
-            //         SuboptimalReason::OneHairInvalid((shrink_dual_node_ptr, edges, vertices)) => {
-            //             // in this way, the dual objective function doesn't change but remove some tight edges in the middle
-            //             dual_module.set_grow_rate(&shrink_dual_node_ptr, -Rational::one());
-            //             let growing_dual_node_ptr = interface.create_cluster_node(edges, vertices, dual_module);
-            //             let primal_node_ptr = PrimalModuleSerialNodePtr::new_value(PrimalModuleSerialNode {
-            //                 dual_node_ptr: growing_dual_node_ptr.clone(),
-            //                 cluster_weak: cluster_ptr.downgrade(),
-            //             });
-            //             cluster.nodes.push(primal_node_ptr.clone());
-            //             self.nodes.push(primal_node_ptr);
-            //         },
-            //         SuboptimalReason::SimultaneousOneHairInvalid((vertices, simultaneous_invalid)) => {
-            //             for (shrink_dual_node_ptr, edges) in simultaneous_invalid.into_iter() {
-            //                 dual_module.set_grow_rate(&shrink_dual_node_ptr, -Rational::one());
-            //                 let growing_dual_node_ptr = interface.create_cluster_node(edges, vertices.clone(), dual_module);
-            //                 let primal_node_ptr = PrimalModuleSerialNodePtr::new_value(PrimalModuleSerialNode {
-            //                     dual_node_ptr: growing_dual_node_ptr.clone(),
-            //                     cluster_weak: cluster_ptr.downgrade(),
-            //                 });
-            //                 cluster.nodes.push(primal_node_ptr.clone());
-            //                 self.nodes.push(primal_node_ptr);
-            //             }
-            //         },
-            //     }
-            // }
+            let solved = self.resolve_cluster(cluster_index, interface, dual_module);
+            all_solved &= solved;
+        }
+        if all_solved {
+            while !self.pending_nodes.is_empty() {
+                let primal_node_weak = self.pending_nodes.pop_front().unwrap();
+                let primal_node_ptr = primal_node_weak.upgrade_force();
+                let primal_node = primal_node_ptr.read_recursive();
+                let cluster_ptr = primal_node.cluster_weak.upgrade_force();
+                if cluster_ptr.read_recursive().subgraph.is_none() {
+                    dual_module.set_grow_rate(&primal_node.dual_node_ptr, Rational::one());
+                    break
+                }
+            }
         }
     }
 
@@ -287,11 +263,12 @@ impl PrimalModuleSerial {
         }
     }
 
-    fn resolve_cluster(&mut self, cluster_index: usize, interface: &DualModuleInterfacePtr, dual_module: &mut impl DualModuleImpl) {
+    /// analyze a cluster and return whether there exists an optimal solution (depending on optimization levels)
+    fn resolve_cluster(&mut self, cluster_index: usize, interface: &DualModuleInterfacePtr, dual_module: &mut impl DualModuleImpl) -> bool {
         let cluster_ptr = self.clusters[cluster_index].clone();
         let mut cluster = cluster_ptr.write();
         if cluster.nodes.is_empty() {
-            return  // no longer a cluster, no need to handle
+            return true  // no longer a cluster, no need to handle
         }
         // set all nodes to stop growing in the cluster
         for primal_node_ptr in cluster.nodes.iter() {
@@ -301,17 +278,17 @@ impl PrimalModuleSerial {
         // update the matrix with new tight edges
         cluster.matrix.clear_implicit_shrink();
         cluster.matrix.update_with_dual_module(dual_module);
+        let tight_edges = cluster.matrix.get_tight_edges();
 
         // 1. check if the cluster is valid (union-find decoder)
         cluster.matrix.row_echelon_form();
         if self.enable_debug {
             self.debug_recordings.lock().push(DebugEntry::EchelonFormMatrix {
                 matrix: cluster.matrix.clone(),
-                hair_edges: vec![23, 24],
+                hair_edges: vec![],
             })
         }
         if !cluster.matrix.echelon_satisfiable {
-            let tight_edges = cluster.matrix.get_tight_edges();
             if self.enable_debug { self.debug_recordings.lock().push(DebugEntry::Error(format!("invalid cluster of tight edges {:?}", tight_edges))) }
             let internal_edges: BTreeSet<EdgeIndex> = tight_edges.into_iter().collect();
             let dual_node_ptr = interface.create_cluster_node_auto_vertices(internal_edges, dual_module);
@@ -321,350 +298,74 @@ impl PrimalModuleSerial {
             });
             cluster.nodes.push(primal_node_ptr.clone());
             self.nodes.push(primal_node_ptr);
-            return
+            return false
         }
         if self.enable_debug { self.debug_recordings.lock().push(DebugEntry::Message(format!("It's a valid cluster"))) }
         if self.optimization_level <= OPT_LEVEL_UNION_FIND {  // this is the last step, generate a subgraph solution
             if self.enable_debug { self.debug_recordings.lock().push(DebugEntry::Error(format!("algorithm early terminate: optimization level {}", self.optimization_level))) }
             cluster.subgraph = Some(Subgraph::new(cluster.matrix.get_joint_solution().expect("satisfiable")));
-            return  // stop here according to the optimization level specification
+            return true  // stop here according to the optimization level specification
         }
 
         // 2. check whether independent single-hair solution exists for every non-zero dual variable
         let cluster_nodes = cluster.nodes.clone();
-        let matrix = &mut cluster.matrix;
         for primal_node_ptr in cluster_nodes.iter() {
             let dual_node_ptr = primal_node_ptr.read_recursive().dual_node_ptr.clone();
             let dual_node = dual_node_ptr.read_recursive();
             if dual_node.dual_variable.is_zero() {
                 continue  // no requirement on zero dual variables
             }
-            println!("dual_node: {}", dual_node.index);
-            matrix.clear_implicit_shrink();
+            cluster.matrix.clear_implicit_shrink();
             let hair_edges: Vec<EdgeIndex> = dual_node.hair_edges.iter().cloned().collect();
-            let implicit_shrink_edges = matrix.get_implicit_shrink_edges(&hair_edges).expect("must be satisfiable");
-            matrix.add_implicit_shrink(&implicit_shrink_edges);
-            matrix.row_echelon_form();
-            if !matrix.echelon_satisfiable {
-                unimplemented!();
-                // return None  // no joint solution is possible once all the implicit shrinks have been executed
-            }
-
-
-
-            // let mut parity_constraints = ParityConstraints::new(&tight_edges, &dual_node.hair_edges, &vertices, dual_module);
-            // if parity_constraints.num_non_hair_edges == parity_constraints.variable_edges.len() {
-            //     continue  // it's possible that none of the hair edges are in the tight edges, in which case we just ignore it
-            // }
-            // println!("tight_edges: {tight_edges:?}");
-            // println!("dual_node.hair_edges: {:?}", dual_node.hair_edges);
-            // match parity_constraints.get_single_hair_solution_or_necessary_edge_set() {
-            //     Ok(_single_hair_solution) => {
-            //         continue  // it's ok
-            //     },
-            //     Err(necessary_edges) => {  // removing these edges will make it invalid
-            //         println!("dual_node: {}", dual_node.index);
-            //         parity_constraints.print();
-            //         println!("necessary_edges: {necessary_edges:?}");
-            //         let mut edges = tight_edges.clone();
-            //         for edge_index in necessary_edges.iter() {
-            //             edges.remove(edge_index);
-            //         }
-            //         println!("edges: {edges:?}");
-            //         println!("vertices: {vertices:?}");
-
-            //         debug_assert!(!dual_module.is_valid_cluster(&edges, &vertices), "these edges must be necessary");
-            //         return Err(SuboptimalReason::OneHairInvalid((dual_node_ptr.clone(), edges, vertices)));
-            //     },
-            // }
-        }
-    }
-
-}
-
-impl PrimalCluster {
-
-    pub fn get_vertices(&self) -> BTreeSet<VertexIndex> {
-        let mut vertices = BTreeSet::new();
-        for primal_node_ptr in self.nodes.iter() {
-            let dual_node_ptr = primal_node_ptr.read_recursive().dual_node_ptr.clone();
-            let dual_node = dual_node_ptr.read_recursive();
-            for &vertex_index in dual_node.internal_vertices.iter() {
-                vertices.insert(vertex_index);
-            }
-        }
-        vertices
-    }
-
-    /// check if single-hair solution exists for every dual variable, isolated from every other dual variable
-    pub fn check_independent_single_hair(&mut self, dual_module: &mut impl DualModuleImpl) -> Option<SuboptimalReason> {
-        None
-    }
-
-    pub fn get_optimal_result(&mut self, dual_module: &mut impl DualModuleImpl) -> Result<Subgraph, SuboptimalReason> {
-        self.matrix.update_with_dual_module(dual_module);
-
-
-
-
-        // let tight_edges = self.get_tight_edges(dual_module);
-        // let vertices = self.get_vertices();
-        // // if the fully grown edges are an invalid cluster, simply create a new dual node and grow it
-        // if !dual_module.is_valid_cluster_auto_vertices(&tight_edges) {
-        //     return Err(SuboptimalReason::InvalidCluster(tight_edges))
-        // }
-        // // TODO: run LP optimization on the existing dual variables
-
-
-        // // then check whether individual dual node can satisfy the single-hair requirement
-        // for primal_node_ptr in self.nodes.iter() {
-        //     let dual_node_ptr = primal_node_ptr.read_recursive().dual_node_ptr.clone();
-        //     let dual_node = dual_node_ptr.read_recursive();
-        //     if dual_node.dual_variable.is_zero() {
-        //         continue  // no requirement on zero dual variables
-        //     }
-        //     println!("dual_node: {}", dual_node.index);
-        //     let mut parity_constraints = ParityConstraints::new(&tight_edges, &dual_node.hair_edges, &vertices, dual_module);
-        //     if parity_constraints.num_non_hair_edges == parity_constraints.variable_edges.len() {
-        //         continue  // it's possible that none of the hair edges are in the tight edges, in which case we just ignore it
-        //     }
-        //     println!("tight_edges: {tight_edges:?}");
-        //     println!("dual_node.hair_edges: {:?}", dual_node.hair_edges);
-        //     match parity_constraints.get_single_hair_solution_or_necessary_edge_set() {
-        //         Ok(_single_hair_solution) => {
-        //             continue  // it's ok
-        //         },
-        //         Err(necessary_edges) => {  // removing these edges will make it invalid
-        //             println!("dual_node: {}", dual_node.index);
-        //             parity_constraints.print();
-        //             println!("necessary_edges: {necessary_edges:?}");
-        //             let mut edges = tight_edges.clone();
-        //             for edge_index in necessary_edges.iter() {
-        //                 edges.remove(edge_index);
-        //             }
-        //             println!("edges: {edges:?}");
-        //             println!("vertices: {vertices:?}");
-
-        //             debug_assert!(!dual_module.is_valid_cluster(&edges, &vertices), "these edges must be necessary");
-        //             return Err(SuboptimalReason::OneHairInvalid((dual_node_ptr.clone(), edges, vertices)));
-        //         },
-        //     }
-        // }
-
-
-
-
-        // check joint existence of solution using hair edges from each dual node;
-        // the recovery of this type of error is expensive, thus will leave as the last resort
-        // let mut zero_edges = BTreeSet::new();
-        // let mut tight_edges_zero_removed = tight_edges.clone();
-        // let mut simultaneous_invalid = vec![];
-        // for primal_node_ptr in self.nodes.iter() {
-        //     let dual_node_ptr = primal_node_ptr.read_recursive().dual_node_ptr.clone();
-        //     let dual_node = dual_node_ptr.read_recursive();
-        //     if dual_node.dual_variable.is_zero() {
-        //         continue  // no requirement on zero dual variables
-        //     }
-        //     println!("dual node {}", dual_node.index);
-        //     let mut parity_constraints = ParityConstraints::new(&tight_edges_zero_removed, &dual_node.hair_edges, &vertices, dual_module);  // must exist
-        //     match parity_constraints.get_single_hair_solution_or_necessary_edge_set() {
-        //         Ok(single_hair_solution) => {
-        //             let single_hair_set: BTreeSet<_> = single_hair_solution.iter().cloned().collect();
-        //             for &edge_index in dual_node.hair_edges.iter() {
-        //                 if !single_hair_set.contains(&edge_index) {
-        //                     zero_edges.insert(edge_index);
-        //                     tight_edges_zero_removed.remove(&edge_index);
-        //                 }
-        //             }
-        //             let mut edges = tight_edges_zero_removed.clone();
-        //             for &edge_index in single_hair_set.iter() {
-        //                 edges.remove(&edge_index);
-        //             }
-        //             if !dual_module.is_valid_cluster(&edges, &vertices) {
-        //                 simultaneous_invalid.push((dual_node_ptr.clone(), edges.clone()));
-        //             }
-        //         },
-        //         Err(_necessary_edges) => {  // removing these edges will make it invalid; leave it for next cycle to take effect
-        //             parity_constraints.print();
-        //             println!("simultaneous_invalid: {simultaneous_invalid:?}");
-        //             return Err(SuboptimalReason::SimultaneousOneHairInvalid((vertices, simultaneous_invalid)));
-        //         },
-        //     }
-        // }
-
-        // TODO: construct edges only using necessary hair edges from each dual node
-
-
-
-        // TODO: adjust independent variables to try to decrease the value of dual objective function
-        unimplemented!()
-        
-        // Ok(dual_module.find_valid_subgraph_auto_vertices(&tight_edges).expect("must be valid cluster"))
-    }
-
-}
-
-#[derive(Debug)]
-pub enum SuboptimalReason {
-    /// the cluster is not valid at all
-    InvalidCluster(BTreeSet<EdgeIndex>),
-    /// the cluster is not valid given that the node ptr has to contain 1 hair edge
-    OneHairInvalid((DualNodePtr, BTreeSet<EdgeIndex>, BTreeSet<VertexIndex>)),
-    /// the cluster cannot have simultaneous one-hair solution
-    SimultaneousOneHairInvalid((BTreeSet<VertexIndex>, Vec<(DualNodePtr, BTreeSet<EdgeIndex>)>)),
-}
-
-#[derive(Clone, Debug)]
-pub struct ParityConstraints {
-    /// the edges that corresponds to the variables
-    pub variable_edges: Vec<EdgeIndex>,
-    /// the number of non-hair edges that should be dependent variable as much as possible
-    pub num_non_hair_edges: usize,
-    /// the vertices that correspond to the (initial) constraints;
-    /// but after we adjust the constraints, they will not just corresponds to the vertices
-    pub constraint_vertices: Vec<VertexIndex>,
-    /// the constraints
-    pub constraints: Vec<Vec<u8>>,
-    /// whether the constraints have been modified, if so don't print constraint vertices
-    pub is_initial_constraints: bool,
-}
-
-impl ParityConstraints {
-    
-    /// tight edges are placed in front, followed by the hair edges (in which only one of them should have been selected)
-    pub fn new(tight_edges: &BTreeSet<EdgeIndex>, hair_edges: &BTreeSet<EdgeIndex>, vertices: &BTreeSet<VertexIndex>, dual_module: &impl DualModuleImpl) -> Self {
-        let mut variable_edges = Vec::with_capacity(tight_edges.len());
-        let mut local_indices = BTreeMap::<EdgeIndex, usize>::new();
-        for &edge_index in tight_edges.iter() {
-            if !hair_edges.contains(&edge_index) {
-                local_indices.insert(edge_index, variable_edges.len());
-                variable_edges.push(edge_index);
-            }
-        }
-        let num_non_hair_edges = variable_edges.len();
-        for &edge_index in hair_edges.iter() {
-            if tight_edges.contains(&edge_index) {
-                local_indices.insert(edge_index, variable_edges.len());
-                variable_edges.push(edge_index);
-            }
-        }
-        let mut constraints = Vec::with_capacity(vertices.len());
-        for &vertex_index in vertices.iter() {
-            let is_defect = dual_module.is_vertex_defect(vertex_index);
-            let edges = dual_module.get_vertex_neighbors(vertex_index);
-            let mut constraint = vec![0; variable_edges.len()];
-            for &edge_index in edges.iter() {
-                if let Some(local_index) = local_indices.get(&edge_index) {
-                    constraint[*local_index] = 1;
+            let mut first_implicit_shrink_edges: Option<Vec<EdgeIndex>> = None;
+            loop {
+                let implicit_shrink_edges = match cluster.matrix.get_implicit_shrink_edges(&hair_edges) {
+                    Some(implicit_shrink_edges) => implicit_shrink_edges,
+                    None => {  // it's already unsatisfiable, need to execute the previous actions
+                        let first_implicit_shrink_edges = first_implicit_shrink_edges.expect("should not be unsatisfiable before the first shrink is executed");
+                        drop(dual_node);
+                        dual_module.set_grow_rate(&dual_node_ptr, -Rational::one());
+                        let mut edges: BTreeSet<EdgeIndex> = tight_edges.iter().cloned().collect();
+                        let implicit_shrink_edges_set: BTreeSet<EdgeIndex> = first_implicit_shrink_edges.iter().cloned().collect();
+                        for &edge_index in hair_edges.iter() {
+                            if !implicit_shrink_edges_set.contains(&edge_index) {
+                                edges.remove(&edge_index);
+                            }
+                        }
+                        let growing_dual_node_ptr = interface.create_cluster_node_auto_vertices(edges, dual_module);
+                        let primal_node_ptr = PrimalModuleSerialNodePtr::new_value(PrimalModuleSerialNode {
+                            dual_node_ptr: growing_dual_node_ptr.clone(),
+                            cluster_weak: cluster_ptr.downgrade(),
+                        });
+                        cluster.nodes.push(primal_node_ptr.clone());
+                        self.nodes.push(primal_node_ptr);
+                        return false
+                    },
+                };
+                if implicit_shrink_edges.is_empty() {
+                    break  // finally found a single-hair solution
                 }
-            }
-            constraint.push(if is_defect { 1 } else { 0 });
-            constraints.push(constraint);
-        }
-        Self {
-            variable_edges: variable_edges,
-            num_non_hair_edges: num_non_hair_edges,
-            constraint_vertices: vertices.iter().cloned().collect(),
-            constraints: constraints,
-            is_initial_constraints: true,
-        }
-    }
-
-    /// only support print to std directly
-    pub fn print(&self) {
-        let mut table = Table::new();
-        let table_format = table.get_format();
-        table_format.padding(0, 0);
-        table_format.column_separator('\u{254E}');
-        let mut title_row = Row::empty();
-        for (local_idx, edge_index) in self.variable_edges.iter().enumerate() {
-            if local_idx == self.num_non_hair_edges {
-                title_row.add_cell(Cell::new("+"));
-            }
-            title_row.add_cell(Cell::new(format!("{edge_index}").as_str()));
-        }
-        title_row.add_cell(Cell::new(format!("=").as_str()));
-        if self.is_initial_constraints {
-            title_row.add_cell(Cell::new(format!("vertex").as_str()));
-        }
-        table.set_titles(title_row);
-        for (idx, constraint) in self.constraints.iter().enumerate() {
-            let mut row = Row::empty();
-            for (local_idx, v) in constraint.iter().enumerate() {
-                if local_idx == self.num_non_hair_edges {
-                    row.add_cell(Cell::new("+"));
+                if first_implicit_shrink_edges.is_none() {
+                    first_implicit_shrink_edges = Some(implicit_shrink_edges.clone());
                 }
-                row.add_cell(Cell::new(if *v == 0 { " " } else { "1" }));
+                cluster.matrix.add_implicit_shrink(&implicit_shrink_edges);
             }
-            if self.is_initial_constraints {
-                row.add_cell(Cell::new(format!("{}", self.constraint_vertices[idx]).as_str()));
+            if self.enable_debug {
+                self.debug_recordings.lock().push(DebugEntry::EchelonFormMatrix {
+                    matrix: cluster.matrix.clone(),
+                    hair_edges: hair_edges.clone(),
+                })
             }
-            table.add_row(row);
+            if self.enable_debug { self.debug_recordings.lock().push(DebugEntry::Message(format!("Single-hair solution is found among hair edges {:?}", hair_edges))) }
         }
-        println!("{table}");
-    }
+        if self.enable_debug { self.debug_recordings.lock().push(DebugEntry::Message(format!("Every dual variable has single-hair solution independently"))) }
+        if self.optimization_level <= OPT_LEVEL_INDEPENDENT_SINGLE_HAIR {  // this is the last step, generate a subgraph solution
+            if self.enable_debug { self.debug_recordings.lock().push(DebugEntry::Error(format!("algorithm early terminate: optimization level {}", self.optimization_level))) }
+            cluster.subgraph = Some(Subgraph::new(cluster.matrix.get_joint_solution_local_minimum(&self.initializer).expect("satisfiable")));
+            return true  // stop here according to the optimization level specification
+        }
 
-    pub fn to_row_echelon_form(&mut self) {
-        modular_2_row_echelon_form(&mut self.constraints);
-        self.is_initial_constraints = false;
-    }
-
-    /// find a small set of hair edges so that removing them will invalidate the existence of a solution
-    fn echelon_form_find_necessary_hair_edge_set(&self, con_idx_start: usize) -> Vec<EdgeIndex> {
-        for con_idx in (con_idx_start..self.constraints.len()).rev() {
-            let target = self.constraints[con_idx][self.variable_edges.len()];
-            if target == 1 {
-                let constraint = &self.constraints[con_idx];
-                let mut necessary_hair_edges = vec![];
-                for var_idx in self.num_non_hair_edges..self.variable_edges.len() {
-                    if constraint[var_idx] == 1 {
-                        necessary_hair_edges.push(self.variable_edges[var_idx]);
-                    }
-                }
-                return necessary_hair_edges
-            }
-        }
-        unreachable!("the hair is not required");
-    }
-
-    pub fn get_single_hair_solution_or_necessary_edge_set(&mut self) -> Result<Vec<EdgeIndex>, Vec<EdgeIndex>> {
-        self.print();
-        self.to_row_echelon_form();
-        self.print();
-        // ignore those non-hair edges and focus on the hair edges, is there a single edge variable that can 
-        assert!(self.num_non_hair_edges < self.variable_edges.len(), "there is no hair edge");
-        let con_idx_start = if self.num_non_hair_edges == 0 {
-            0
-        } else {  // as long as the last non-hair edge is zero, it should be considered
-            let mut one_con_idx = self.constraints.len() - 1;
-            while self.constraints[one_con_idx][self.num_non_hair_edges-1] == 0 && one_con_idx > 0 {
-                one_con_idx -= 1;
-            }
-            if self.constraints[one_con_idx][self.num_non_hair_edges-1] == 0 {
-                0
-            } else {
-                one_con_idx + 1
-            }
-        };
-        let mut var_idx_candidates = BTreeSet::new();
-        for var_idx in self.num_non_hair_edges..self.variable_edges.len() {
-            var_idx_candidates.insert(var_idx);
-        }
-        for con_idx in con_idx_start..self.constraints.len() {
-            let target = self.constraints[con_idx][self.variable_edges.len()];
-            let mut new_var_idx_candidates = BTreeSet::new();
-            let constraint = &self.constraints[con_idx];
-            for &var_idx in var_idx_candidates.iter() {
-                if constraint[var_idx] == target {
-                    new_var_idx_candidates.insert(var_idx);
-                }
-            }
-            if new_var_idx_candidates.is_empty() {
-                return Err(self.echelon_form_find_necessary_hair_edge_set(con_idx_start))
-            }
-            std::mem::swap(&mut new_var_idx_candidates, &mut var_idx_candidates);
-        }
-        Ok(var_idx_candidates.into_iter().map(|var_idx| self.variable_edges[var_idx]).collect())
+        true
     }
 
 }
@@ -800,7 +501,7 @@ pub mod tests {
         let visualize_filename = format!("primal_module_serial_basic_5.json");
         let defect_vertices = vec![1, 4, 6, 7, 8, 9, 10, 16, 18, 19, 20, 23];
         let code = CodeCapacityTailoredCode::new(5, 0., 0.01, 1);
-        primal_module_serial_basic_standard_syndrome(code, visualize_filename, defect_vertices, 12);
+        primal_module_serial_basic_standard_syndrome(code, visualize_filename, defect_vertices, 8);
     }
 
     /// debug case: cargo run --release -- benchmark 3 0.1 --code-config='{"pxy":0}' --verifier strict-actual-error -p serial --print-syndrome-pattern --print-error-pattern
