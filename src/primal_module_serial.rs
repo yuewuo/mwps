@@ -688,4 +688,14 @@ pub mod tests {
         primal_module_serial_basic_standard_syndrome(code, visualize_filename, defect_vertices, 4);
     }
 
+    /// debug case: cargo run --release -- benchmark 5 0.1 --code-type code-capacity-color-code --verifier strict-actual-error -p serial --print-syndrome-pattern --print-error-pattern
+    /// error_pattern: [3, 6, 16]
+    #[test]
+    fn primal_module_serial_basic_10() {  // cargo test primal_module_serial_basic_10 -- --nocapture
+        let visualize_filename = format!("primal_module_serial_basic_10.json");
+        let defect_vertices = vec![1, 2, 4, 7, 8];
+        let code = CodeCapacityColorCode::new(5, 0.1, 1);
+        primal_module_serial_basic_standard_syndrome(code, visualize_filename, defect_vertices, 3);
+    }
+
 }
