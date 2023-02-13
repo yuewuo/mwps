@@ -14,6 +14,7 @@ extern crate more_asserts;
 extern crate pbr;
 extern crate rand;
 extern crate prettytable;
+extern crate itertools;
 
 pub mod cli;
 pub mod visualize;

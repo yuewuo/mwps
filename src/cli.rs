@@ -301,6 +301,7 @@ impl ResultVerifier for VerifierActualError {
         }
         let actual_weight = Rational::from_usize(self.initializer.get_subgraph_total_weight(error_pattern)).unwrap();
         let (subgraph, weight_range) = primal_dual_solver.subgraph_range_visualizer(visualizer);
+        assert!(self.initializer.matches_subgraph_syndrome(&subgraph, &syndrome_pattern.defect_vertices), "bug: the result subgraph does not match the syndrome");
         assert_le!(weight_range.lower, actual_weight, "the lower bound of weight range is larger than the actual weight");
         if self.is_strict {
             let subgraph_weight = Rational::from_usize(self.initializer.get_subgraph_total_weight(&subgraph)).unwrap();

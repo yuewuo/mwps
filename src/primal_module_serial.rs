@@ -14,6 +14,7 @@ use std::fmt::Debug;
 use crate::num_traits::{Zero, One};
 use crate::parking_lot::Mutex;
 use std::sync::Arc;
+use crate::itertools::sorted;
 
 
 pub struct PrimalModuleSerial {
@@ -25,6 +26,8 @@ pub struct PrimalModuleSerial {
     pub nodes: Vec<PrimalModuleSerialNodePtr>, 
     /// clusters of dual nodes
     pub clusters: Vec<PrimalClusterPtr>,
+    /// the indices of live clusters: those actively updating the dual module
+    pub live_clusters: BTreeSet<usize>,
     /// pending dual variables to grow,
     pending_nodes: VecDeque<PrimalModuleSerialNodeWeak>,
     /// debug mode: record all decisions
@@ -94,6 +97,13 @@ pub enum DebugEntry {
     Message(String),
     /// display an error
     Error(String),
+    /// a dual cluster
+    DualCluster {
+        index: NodeIndex,
+        edges: Vec<EdgeIndex>,
+        vertices: Vec<VertexIndex>,
+        dual_nodes: Vec<NodeIndex>,
+    },
 }
 
 impl PrimalModuleImpl for PrimalModuleSerial {
@@ -105,9 +115,11 @@ impl PrimalModuleImpl for PrimalModuleSerial {
             // growing_strategy: GrowingStrategy::MultipleClusters,
             nodes: vec![],
             clusters: vec![],
+            live_clusters: BTreeSet::new(),
             pending_nodes: VecDeque::new(),
             enable_debug: true,
             debug_recordings: Mutex::new(vec![]),
+            // optimization_level: OPT_LEVEL_UNION_FIND,
             optimization_level: OPT_LEVEL_INDEPENDENT_SINGLE_HAIR,  // default to the highest optimization level currently supported
         }
     }
@@ -136,8 +148,8 @@ impl PrimalModuleImpl for PrimalModuleSerial {
         let primal_cluster_ptr = PrimalClusterPtr::new_value(PrimalCluster {
             cluster_index: self.clusters.len(),
             nodes: vec![],
-            edges: BTreeSet::new(),
-            vertices: BTreeSet::new(),
+            edges: edges,
+            vertices: vertices,
             matrix: matrix,
             subgraph: None,
         });
@@ -147,6 +159,7 @@ impl PrimalModuleImpl for PrimalModuleSerial {
         });
         primal_cluster_ptr.write().nodes.push(primal_node_ptr.clone());
         self.nodes.push(primal_node_ptr);
+        self.live_clusters.insert(self.clusters.len());
         self.clusters.push(primal_cluster_ptr);
     }
 
@@ -156,6 +169,8 @@ impl PrimalModuleImpl for PrimalModuleSerial {
                 let dual_node_ptr = primal_node_ptr.read_recursive().dual_node_ptr.clone();
                 dual_module.set_grow_rate(&dual_node_ptr, Rational::zero());
                 self.pending_nodes.push_back(primal_node_ptr.downgrade());
+                let cluster_index = primal_node_ptr.read_recursive().cluster_weak.upgrade_force().read_recursive().cluster_index;
+                self.live_clusters.remove(&cluster_index);
             }
         }
     }
@@ -171,11 +186,12 @@ impl PrimalModuleImpl for PrimalModuleSerial {
                     debug_assert!(dual_nodes.len() > 0, "should not conflict if no dual nodes are contributing");
                     let dual_node_ptr_0 = &dual_nodes[0];
                     // first union all the dual nodes
-                    for dual_node_ptr in dual_nodes.iter() {
+                    for dual_node_ptr in dual_nodes.iter().skip(1) {
                         self.union(dual_node_ptr_0, dual_node_ptr, dual_module);
                     }
                     let cluster_ptr = self.nodes[dual_node_ptr_0.read_recursive().index].read_recursive().cluster_weak.upgrade_force();
                     let mut cluster = cluster_ptr.write();
+                    cluster.matrix.add_variable(edge_index);
                     // then add new constraints because these edges may touch new vertices
                     let incident_vertices = dual_module.get_edge_neighbors(edge_index);
                     for &vertex_index in incident_vertices.iter() {
@@ -184,6 +200,7 @@ impl PrimalModuleImpl for PrimalModuleSerial {
                             cluster.matrix.add_parity_check_with_dual_module(vertex_index, dual_module);
                         }
                     }
+                    cluster.edges.insert(edge_index);
                     // add to active cluster so that it's processed later
                     active_clusters.insert(cluster.cluster_index);
                 },
@@ -195,9 +212,46 @@ impl PrimalModuleImpl for PrimalModuleSerial {
                 _ => { unreachable!() }
             }
         }
+        // // union clusters if their phantom edges touch
+        // for &cluster_index in self.live_clusters.iter() {
+        //     let cluster_ptr = self.clusters[cluster_index].clone();
+        //     let cluster = cluster_ptr.read_recursive();
+        //     if cluster.nodes.is_empty() {
+        //         continue
+        //     }
+        //     for &edge_index in cluster.matrix.phantom_edges.iter() {
+        //         if dual_module.is_edge_tight(edge_index) {
+        //             let dual_nodes = dual_module.get_edge_nodes(edge_index);
+        //             debug_assert!(dual_nodes.len() > 0, "should have at least one dual node");
+        //             let dual_node_ptr_0 = &dual_nodes[0];
+        //             for dual_node_ptr in dual_nodes.iter().skip(1) {
+        //                 self.union(dual_node_ptr_0, dual_node_ptr, dual_module);
+        //             }
+        //             let cluster_ptr = self.nodes[dual_node_ptr_0.read_recursive().index].read_recursive().cluster_weak.upgrade_force();
+        //             let mut cluster = cluster_ptr.write();
+        //             cluster.matrix.add_variable(edge_index);
+        //             cluster.edges.insert(edge_index);
+        //             active_clusters.insert(cluster.cluster_index);
+        //         }
+        //     }
+        // }
         let mut all_solved = true;
         for &cluster_index in active_clusters.iter() {
+            if self.enable_debug {
+                let cluster = self.clusters[cluster_index].read_recursive();
+                self.debug_recordings.lock().push(DebugEntry::DualCluster {
+                    index: cluster_index,
+                    edges: cluster.edges.iter().cloned().collect(),
+                    vertices: cluster.vertices.iter().cloned().collect(),
+                    dual_nodes: sorted(cluster.nodes.iter().map(|primal_ptr| {
+                        primal_ptr.read_recursive().dual_node_ptr.read_recursive().index
+                    })).collect(),
+                })
+            }
             let solved = self.resolve_cluster(cluster_index, interface, dual_module);
+            if solved {
+                self.live_clusters.remove(&cluster_index);
+            }
             all_solved &= solved;
         }
         if all_solved {
@@ -206,6 +260,7 @@ impl PrimalModuleImpl for PrimalModuleSerial {
                 let primal_node_ptr = primal_node_weak.upgrade_force();
                 let primal_node = primal_node_ptr.read_recursive();
                 let cluster_ptr = primal_node.cluster_weak.upgrade_force();
+                self.live_clusters.insert(cluster_ptr.read_recursive().cluster_index);
                 if cluster_ptr.read_recursive().subgraph.is_none() {
                     dual_module.set_grow_rate(&primal_node.dual_node_ptr, Rational::one());
                     break
@@ -255,12 +310,14 @@ impl PrimalModuleSerial {
                 cluster_1.matrix.add_variable(edge_index);
             }
         }
+        cluster_2.edges.clear();
         for &vertex_index in cluster_2.vertices.iter() {
             if !cluster_1.vertices.contains(&vertex_index) {
                 cluster_1.vertices.insert(vertex_index);
                 cluster_1.matrix.add_parity_check_with_dual_module(vertex_index, dual_module);
             }
         }
+        cluster_2.vertices.clear();
     }
 
     /// analyze a cluster and return whether there exists an optimal solution (depending on optimization levels)
@@ -361,6 +418,7 @@ impl PrimalModuleSerial {
         if self.enable_debug { self.debug_recordings.lock().push(DebugEntry::Message(format!("Every dual variable has single-hair solution independently"))) }
         if self.optimization_level <= OPT_LEVEL_INDEPENDENT_SINGLE_HAIR {  // this is the last step, generate a subgraph solution
             if self.enable_debug { self.debug_recordings.lock().push(DebugEntry::Error(format!("algorithm early terminate: optimization level {}", self.optimization_level))) }
+            cluster.matrix.clear_implicit_shrink();
             cluster.subgraph = Some(Subgraph::new(cluster.matrix.get_joint_solution_local_minimum(&self.initializer).expect("satisfiable")));
             return true  // stop here according to the optimization level specification
         }
@@ -412,7 +470,16 @@ impl MWPSVisualizer for DebugEntry {
                     "type": "error",
                     "error": error,
                 })
-            }
+            },
+            DebugEntry::DualCluster { index, edges, vertices, dual_nodes } => {
+                json!({
+                    "type": "dual_cluster",
+                    "index": index,
+                    "edges": edges,
+                    "vertices": vertices,
+                    "dual_nodes": dual_nodes,
+                })
+            },
         }
     }
 }
@@ -512,6 +579,30 @@ pub mod tests {
         let defect_vertices = vec![0, 3, 4, 5, 7];
         let code = CodeCapacityTailoredCode::new(3, 0., 0.01, 1);
         primal_module_serial_basic_standard_syndrome(code, visualize_filename, defect_vertices, 3);
+    }
+
+    /// debug case: cargo run --release -- benchmark 3 0.1 --code-config='{"pxy":0}' --verifier strict-actual-error -p serial --print-syndrome-pattern --print-error-pattern
+    /// error_pattern: [0, 1]
+    /// bug reason: an edge is automatically added to the parity matrix for the completeness of constraint, but this edge is already tight and haven't union
+    ///     the clusters on this edge.
+    /// bug fix: we need to maintain the information about which edge is not allowed to be used, aka "phantom edges", and these phantom edges
+    ///     is not enabled until explicitly enabling them
+    #[test]
+    fn primal_module_serial_basic_7() {  // cargo test primal_module_serial_basic_7 -- --nocapture
+        let visualize_filename = format!("primal_module_serial_basic_7.json");
+        let defect_vertices = vec![0, 2, 4];
+        let code = CodeCapacityTailoredCode::new(3, 0., 0.01, 1);
+        primal_module_serial_basic_standard_syndrome(code, visualize_filename, defect_vertices, 2);
+    }
+
+    /// debug case: cargo run --release -- benchmark 3 0.1 --code-config='{"pxy":0}' --verifier strict-actual-error -p serial --print-syndrome-pattern --print-error-pattern
+    /// error_pattern: [1, 2, 6, 8]
+    #[test]
+    fn primal_module_serial_basic_8() {  // cargo test primal_module_serial_basic_8 -- --nocapture
+        let visualize_filename = format!("primal_module_serial_basic_8.json");
+        let defect_vertices = vec![1, 3, 5, 6, 7];
+        let code = CodeCapacityTailoredCode::new(3, 0., 0.01, 1);
+        primal_module_serial_basic_standard_syndrome(code, visualize_filename, defect_vertices, 4);
     }
 
 }

@@ -400,6 +400,32 @@ h5 {
                             {{ entry.error }}
                         </q-banner>
                     </div>
+                    <div v-else-if="entry.type == 'dual_cluster'">
+                        <q-banner dense class="bg-secondary text-white">
+                            dual cluster {{ entry.index }},
+                            edges: <span class="dual-node-set bg-cyan-3" @mouseenter="mouseenter('edges', entry.edges)" @mouseleave="mouseleave()" @click="jump_to('edges', entry.vertices)">[
+                                <span v-if="!dual_display_compact || entry.edges.length == 1">
+                                <q-btn color="cyan" no-caps rounded unelevated v-for="edge_index of entry.edges" style="margin-left: 5px; position: relative; bottom: 1px;"
+                                    padding="3px 4px" size="14px" @mouseenter="mouseenter('edge', edge_index)" @mouseleave="mouseleave()"
+                                    @click="jump_to('edge', edge_index)">{{ edge_index }}</q-btn>
+                                </span>
+                                <span v-else>
+                                    <span v-if="entry.edges.length > 1">{{ ` ... ${entry.edges.length}` }}</span>
+                                </span>
+                                ]</span>,
+                            vertices: <span class="dual-node-set bg-teal-3" @mouseenter="mouseenter('vertices', entry.vertices)" @mouseleave="mouseleave()" @click="jump_to('vertices', entry.vertices)">[
+                                <span v-if="!dual_display_compact || entry.vertices.length == 1">
+                                <q-btn color="teal" no-caps rounded unelevated v-for="vertex_index of entry.vertices" style="margin-left: 5px; position: relative; bottom: 1px;"
+                                    padding="3px 4px" size="14px" @mouseenter="mouseenter('vertex', vertex_index)" @mouseleave="mouseleave()"
+                                    @click="jump_to('vertex', vertex_index)">{{ vertex_index }}</q-btn>
+                                </span>
+                                <span v-else>
+                                    <span v-if="entry.vertices.length > 1">{{ ` ... ${entry.vertices.length}` }}</span>
+                                </span>
+                                ]</span>,
+                            dual nodes: <span v-for="node_index of entry.dual_nodes"><span v-if="dual_module_info.dual_nodes[node_index].dn != 0">y{{ node_index }}, </span></span>
+                        </q-banner>
+                    </div>
                     <div v-else>
                         <q-banner dense class="bg-black text-white">
                             [GUI Error] Unrecognized Debug Entry: {{ entry.type }}

@@ -59,6 +59,7 @@ num-traits = "0.2.15"
 more-asserts = "0.3.1"
 rand = "0.8.5"
 prettytable-rs = "0.9.0"
+itertools = "0.10.5"
 
 [package.metadata.docs.rs]
 rustdoc-args = [ "--html-in-header", "katex-header.html" ]

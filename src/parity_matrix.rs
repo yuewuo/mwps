@@ -36,7 +36,10 @@ pub struct ParityMatrix {
     /// whether it's already in an echelon form
     pub is_echelon_form: bool,
     /// edges that are affected by any implicit shrink event
-    implicit_shrunk_edges: BTreeSet<EdgeIndex>,
+    pub implicit_shrunk_edges: BTreeSet<EdgeIndex>,
+    /// edges that are not visible to outside, e.g. implicitly added to keep the constraints complete;
+    /// these edges must be explicitly added to remove from phantom edges
+    pub phantom_edges: BTreeSet<EdgeIndex>,
 }
 
 /// optimize for small clusters where there are no more than 63 edges
@@ -61,6 +64,7 @@ impl ParityMatrix {
             echelon_satisfiable: false,
             is_echelon_form: false,
             implicit_shrunk_edges: BTreeSet::new(),
+            phantom_edges: BTreeSet::new(),
         }
     }
 
@@ -70,6 +74,7 @@ impl ParityMatrix {
     }
 
     pub fn add_variable(&mut self, edge_index: EdgeIndex) {
+        self.phantom_edges.remove(&edge_index);  // explicitly add edge
         if self.edges.contains_key(&edge_index) {
             return  // variable already exists
         }
@@ -113,14 +118,14 @@ impl ParityMatrix {
         let mut tight_edges = Vec::with_capacity(self.edges.len());
         for (&edge_index, &var_index) in self.edges.iter() {
             let (_, is_tight) = self.variables[var_index];
-            if is_tight {
+            if is_tight && !self.phantom_edges.contains(&edge_index) {
                 tight_edges.push(edge_index);
             }
         }
         tight_edges
     }
 
-    /// add a row to the parity matrix from a given vertex
+    /// add a row to the parity matrix from a given vertex, automatically add phantom edges corresponding to this parity check
     pub fn add_parity_check_with_dual_module(&mut self, vertex_index: VertexIndex, dual_module: &impl DualModuleImpl) {
         self.is_echelon_form = false;
         let incident_edges = dual_module.get_vertex_neighbors(vertex_index);
@@ -128,10 +133,14 @@ impl ParityMatrix {
         self.add_constraint(&incident_edges, parity);
     }
 
-    /// add a parity constraint coming from a vertex, note that all edges incident to this vertex will be added as well
+    /// add a parity constraint coming from a vertex, automatically add phantom edges corresponding to this parity check
     pub fn add_constraint(&mut self, incident_edges: &[EdgeIndex], parity: bool) {
         for &edge_index in incident_edges.iter() {
-            self.add_variable(edge_index);
+            if !self.edges.contains_key(&edge_index) {
+                // add variable but mark as phantom edge
+                self.add_variable(edge_index);
+                self.phantom_edges.insert(edge_index);
+            }
         }
         let mut row = ParityRow::new_length(self.variables.len());
         for &edge_index in incident_edges.iter() {
@@ -156,7 +165,7 @@ impl ParityMatrix {
         for &edge_index in edges.iter() {
             let var_index = self.edges.get(&edge_index).expect("edge must be a variable").clone();
             let (_, is_tight) = self.variables[var_index];
-            if is_tight && !self.implicit_shrunk_edges.contains(&edge_index) {
+            if is_tight && !self.implicit_shrunk_edges.contains(&edge_index) && !self.phantom_edges.contains(&edge_index) {
                 var_indices.push(var_index);
             }
         }
@@ -249,7 +258,7 @@ impl ParityMatrix {
         for &edge_index in edges.iter() {
             let var_index = self.edges.get(&edge_index).expect("edge must be a variable").clone();
             let (_, is_tight) = self.variables[var_index];
-            if is_tight && !self.implicit_shrunk_edges.contains(&edge_index) {
+            if is_tight && !self.implicit_shrunk_edges.contains(&edge_index) && !self.phantom_edges.contains(&edge_index) {
                 var_indices.push(var_index);
             }
         }
@@ -335,7 +344,7 @@ impl ParityMatrix {
         }
         let mut edges = Vec::with_capacity(self.variables.len());
         for &(edge_index, is_tight) in self.variables.iter() {
-            if is_tight && !self.implicit_shrunk_edges.contains(&edge_index) && !hair_edges.contains(&edge_index) {
+            if is_tight && !self.implicit_shrunk_edges.contains(&edge_index) && !self.phantom_edges.contains(&edge_index) && !hair_edges.contains(&edge_index) {
                 edges.push(edge_index);
             }
         }
@@ -343,7 +352,7 @@ impl ParityMatrix {
         for &edge_index in hair_edges.iter() {
             let var_index = self.edges.get(&edge_index).expect("edge must be a variable").clone();
             let (_, is_tight) = self.variables[var_index];
-            if is_tight && !self.implicit_shrunk_edges.contains(&edge_index) {
+            if is_tight && !self.implicit_shrunk_edges.contains(&edge_index) && !self.phantom_edges.contains(&edge_index) {
                 edges.push(edge_index);
             }
         }
@@ -449,6 +458,11 @@ impl ParityMatrix {
         }
         let mut independent_variables = vec![];
         for var_index in 0..self.variables.len() {
+            let (_, is_tight) = self.variables[var_index];
+            let (edge_index, _) = self.variables[var_index];
+            if !is_tight || self.implicit_shrunk_edges.contains(&edge_index) || self.phantom_edges.contains(&edge_index) {
+                continue  // ignore this edge
+            }
             let (is_dependent, _) = self.echelon_column_info[var_index];
             if !is_dependent {
                 independent_variables.push(var_index);
