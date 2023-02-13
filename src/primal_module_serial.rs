@@ -120,7 +120,8 @@ impl PrimalModuleImpl for PrimalModuleSerial {
             enable_debug: true,
             debug_recordings: Mutex::new(vec![]),
             // optimization_level: OPT_LEVEL_UNION_FIND,
-            optimization_level: OPT_LEVEL_INDEPENDENT_SINGLE_HAIR,  // default to the highest optimization level currently supported
+            // optimization_level: OPT_LEVEL_INDEPENDENT_SINGLE_HAIR,
+            optimization_level: OPT_LEVEL_JOINT_SINGLE_HAIR,  // default to the highest optimization level currently supported
         }
     }
 
@@ -348,7 +349,8 @@ impl PrimalModuleSerial {
         if !cluster.matrix.echelon_satisfiable {
             if self.enable_debug { self.debug_recordings.lock().push(DebugEntry::Error(format!("invalid cluster of tight edges {:?}", tight_edges))) }
             let internal_edges: BTreeSet<EdgeIndex> = tight_edges.into_iter().collect();
-            let dual_node_ptr = interface.create_cluster_node_auto_vertices(internal_edges, dual_module);
+            let vertices: BTreeSet<VertexIndex> = cluster.vertices.iter().cloned().collect();
+            let dual_node_ptr = interface.create_cluster_node(internal_edges, vertices, dual_module);
             let primal_node_ptr = PrimalModuleSerialNodePtr::new_value(PrimalModuleSerialNode {
                 dual_node_ptr: dual_node_ptr.clone(),
                 cluster_weak: cluster_ptr.downgrade(),
@@ -419,6 +421,74 @@ impl PrimalModuleSerial {
         if self.optimization_level <= OPT_LEVEL_INDEPENDENT_SINGLE_HAIR {  // this is the last step, generate a subgraph solution
             if self.enable_debug { self.debug_recordings.lock().push(DebugEntry::Error(format!("algorithm early terminate: optimization level {}", self.optimization_level))) }
             cluster.matrix.clear_implicit_shrink();
+            cluster.subgraph = Some(Subgraph::new(cluster.matrix.get_joint_solution_local_minimum(&self.initializer).expect("satisfiable")));
+            return true  // stop here according to the optimization level specification
+        }
+
+        // 3. jointly consider every cluster until everyone of them has a single-hair solution while others zero-forcing those non-single-hair edges
+        let mut first_implicit_shrink_edges: Option<Vec<EdgeIndex>> = None;
+        cluster.matrix.clear_implicit_shrink();
+        loop {
+            let mut no_more_shrink = true;
+            for primal_node_ptr in cluster_nodes.iter() {
+                let dual_node_ptr = primal_node_ptr.read_recursive().dual_node_ptr.clone();
+                let dual_node = dual_node_ptr.read_recursive();
+                if dual_node.dual_variable.is_zero() {
+                    continue  // no requirement on zero dual variables
+                }
+                let hair_edges: Vec<EdgeIndex> = dual_node.hair_edges.iter().cloned().collect();
+                let implicit_shrink_edges = match cluster.matrix.get_implicit_shrink_edges(&hair_edges) {
+                    Some(implicit_shrink_edges) => implicit_shrink_edges,
+                    None => {  // it's already unsatisfiable, need to execute the previous actions
+                        let first_implicit_shrink_edges = first_implicit_shrink_edges.expect("should not be unsatisfiable before the first shrink is executed");
+                        drop(dual_node);
+                        dual_module.set_grow_rate(&dual_node_ptr, -Rational::one());
+                        let mut edges: BTreeSet<EdgeIndex> = tight_edges.iter().cloned().collect();
+                        let implicit_shrink_edges_set: BTreeSet<EdgeIndex> = first_implicit_shrink_edges.iter().cloned().collect();
+                        for &edge_index in hair_edges.iter() {
+                            if !implicit_shrink_edges_set.contains(&edge_index) {
+                                edges.remove(&edge_index);
+                            }
+                        }
+                        let growing_dual_node_ptr = interface.create_cluster_node_auto_vertices(edges, dual_module);
+                        let primal_node_ptr = PrimalModuleSerialNodePtr::new_value(PrimalModuleSerialNode {
+                            dual_node_ptr: growing_dual_node_ptr.clone(),
+                            cluster_weak: cluster_ptr.downgrade(),
+                        });
+                        cluster.nodes.push(primal_node_ptr.clone());
+                        self.nodes.push(primal_node_ptr);
+                        return false
+                    },
+                };
+                if implicit_shrink_edges.is_empty() {  // this primal node already has every edge as single-hair solution
+                    continue  // finally found a single-hair solution
+                }
+                if first_implicit_shrink_edges.is_none() {
+                    first_implicit_shrink_edges = Some(implicit_shrink_edges.clone());
+                }
+                if self.enable_debug {
+                    self.debug_recordings.lock().push(DebugEntry::EchelonFormMatrix {
+                        matrix: cluster.matrix.clone(),
+                        hair_edges: hair_edges.clone(),
+                    })
+                }
+                if self.enable_debug { self.debug_recordings.lock().push(DebugEntry::Message(format!("Jointly shrink edge {:?}", implicit_shrink_edges))) }
+                cluster.matrix.add_implicit_shrink(&implicit_shrink_edges);
+                no_more_shrink = false;
+            }
+            if no_more_shrink {
+                break
+            }
+        }
+        if self.enable_debug {
+            self.debug_recordings.lock().push(DebugEntry::EchelonFormMatrix {
+                matrix: cluster.matrix.clone(),
+                hair_edges: vec![],
+            })
+        }
+        if self.enable_debug { self.debug_recordings.lock().push(DebugEntry::Message(format!("Dual variable has single-hair solution while others implicitly shrink non-single-hair edges"))) }
+        if self.optimization_level <= OPT_LEVEL_JOINT_SINGLE_HAIR {  // this is the last step, generate a subgraph solution
+            if self.enable_debug { self.debug_recordings.lock().push(DebugEntry::Error(format!("algorithm early terminate: optimization level {}", self.optimization_level))) }
             cluster.subgraph = Some(Subgraph::new(cluster.matrix.get_joint_solution_local_minimum(&self.initializer).expect("satisfiable")));
             return true  // stop here according to the optimization level specification
         }
