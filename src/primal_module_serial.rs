@@ -391,7 +391,8 @@ impl PrimalModuleSerial {
                                 edges.remove(&edge_index);
                             }
                         }
-                        let growing_dual_node_ptr = interface.create_cluster_node_auto_vertices(edges, dual_module);
+                        let vertices: BTreeSet<VertexIndex> = cluster.vertices.iter().cloned().collect();
+                        let growing_dual_node_ptr = interface.create_cluster_node(edges, vertices, dual_module);
                         let primal_node_ptr = PrimalModuleSerialNodePtr::new_value(PrimalModuleSerialNode {
                             dual_node_ptr: growing_dual_node_ptr.clone(),
                             cluster_weak: cluster_ptr.downgrade(),
@@ -426,7 +427,7 @@ impl PrimalModuleSerial {
         }
 
         // 3. jointly consider every cluster until everyone of them has a single-hair solution while others zero-forcing those non-single-hair edges
-        let mut first_implicit_shrink_edges: Option<Vec<EdgeIndex>> = None;
+        let mut first_implicit_shrink_edges: Option<(Vec<EdgeIndex>, DualNodePtr, Vec<EdgeIndex>)> = None;
         cluster.matrix.clear_implicit_shrink();
         loop {
             let mut no_more_shrink = true;
@@ -440,8 +441,9 @@ impl PrimalModuleSerial {
                 let implicit_shrink_edges = match cluster.matrix.get_implicit_shrink_edges(&hair_edges) {
                     Some(implicit_shrink_edges) => implicit_shrink_edges,
                     None => {  // it's already unsatisfiable, need to execute the previous actions
-                        let first_implicit_shrink_edges = first_implicit_shrink_edges.expect("should not be unsatisfiable before the first shrink is executed");
                         drop(dual_node);
+                        let (first_implicit_shrink_edges, dual_node_ptr, hair_edges) = first_implicit_shrink_edges
+                            .expect("should not be unsatisfiable before the first shrink is executed");
                         dual_module.set_grow_rate(&dual_node_ptr, -Rational::one());
                         let mut edges: BTreeSet<EdgeIndex> = tight_edges.iter().cloned().collect();
                         let implicit_shrink_edges_set: BTreeSet<EdgeIndex> = first_implicit_shrink_edges.iter().cloned().collect();
@@ -450,7 +452,8 @@ impl PrimalModuleSerial {
                                 edges.remove(&edge_index);
                             }
                         }
-                        let growing_dual_node_ptr = interface.create_cluster_node_auto_vertices(edges, dual_module);
+                        let vertices: BTreeSet<VertexIndex> = cluster.vertices.iter().cloned().collect();
+                        let growing_dual_node_ptr = interface.create_cluster_node(edges, vertices, dual_module);
                         let primal_node_ptr = PrimalModuleSerialNodePtr::new_value(PrimalModuleSerialNode {
                             dual_node_ptr: growing_dual_node_ptr.clone(),
                             cluster_weak: cluster_ptr.downgrade(),
@@ -464,7 +467,7 @@ impl PrimalModuleSerial {
                     continue  // finally found a single-hair solution
                 }
                 if first_implicit_shrink_edges.is_none() {
-                    first_implicit_shrink_edges = Some(implicit_shrink_edges.clone());
+                    first_implicit_shrink_edges = Some((implicit_shrink_edges.clone(), dual_node_ptr.clone(), hair_edges.clone()));
                 }
                 if self.enable_debug {
                     self.debug_recordings.lock().push(DebugEntry::EchelonFormMatrix {
@@ -671,6 +674,16 @@ pub mod tests {
     fn primal_module_serial_basic_8() {  // cargo test primal_module_serial_basic_8 -- --nocapture
         let visualize_filename = format!("primal_module_serial_basic_8.json");
         let defect_vertices = vec![1, 3, 5, 6, 7];
+        let code = CodeCapacityTailoredCode::new(3, 0., 0.01, 1);
+        primal_module_serial_basic_standard_syndrome(code, visualize_filename, defect_vertices, 4);
+    }
+
+    /// debug case: cargo run --release -- benchmark 3 0.1 --code-config='{"pxy":0}' --verifier strict-actual-error -p serial --print-syndrome-pattern --print-error-pattern
+    /// error_pattern: [2, 5, 6, 7]
+    #[test]
+    fn primal_module_serial_basic_9() {  // cargo test primal_module_serial_basic_9 -- --nocapture
+        let visualize_filename = format!("primal_module_serial_basic_9.json");
+        let defect_vertices = vec![0, 7];
         let code = CodeCapacityTailoredCode::new(3, 0., 0.01, 1);
         primal_module_serial_basic_standard_syndrome(code, visualize_filename, defect_vertices, 4);
     }
