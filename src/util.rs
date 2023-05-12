@@ -9,6 +9,8 @@ use std::time::Instant;
 use std::fs::File;
 use std::io::prelude::*;
 use crate::mwps_solver::*;
+#[cfg(feature="python_binding")]
+use pyo3::prelude::*;
 
 
 pub type Weight = usize;  // only used as input
@@ -45,14 +47,10 @@ impl SolverInitializer {
             weighted_edges,
         }
     }
+
     #[cfg(feature = "python_binding")]
     fn __repr__(&self) -> String { format!("{:?}", self) }
-    /// sanity check to avoid duplicate edges that are hard to debug
-    pub fn sanity_check(&self) -> Result<(), String> {
-        use crate::example_codes::*;
-        let code = ErrorPatternReader::from_initializer(self);
-        code.sanity_check()
-    }
+
     pub fn get_subgraph_total_weight(&self, subgraph: &Subgraph) -> Weight {
         let mut weight = 0;
         for &edge_index in subgraph.iter() {
@@ -60,6 +58,7 @@ impl SolverInitializer {
         }
         weight
     }
+
     pub fn get_subgraph_syndrome(&self, subgraph: &Subgraph) -> BTreeSet<VertexIndex> {
         let mut defect_vertices = BTreeSet::new();
         for &edge_index in subgraph.iter() {
@@ -74,6 +73,18 @@ impl SolverInitializer {
         }
         defect_vertices
     }
+
+}
+
+impl SolverInitializer {
+
+    /// sanity check to avoid duplicate edges that are hard to debug
+    pub fn sanity_check(&self) -> Result<(), String> {
+        use crate::example_codes::*;
+        let code = ErrorPatternReader::from_initializer(self);
+        code.sanity_check()
+    }
+
     pub fn matches_subgraph_syndrome(&self, subgraph: &Subgraph, defect_vertices: &Vec<VertexIndex>) -> bool {
         let subgraph_defect_vertices: Vec<_> = self.get_subgraph_syndrome(subgraph).into_iter().collect();
         let mut defect_vertices = defect_vertices.clone();
@@ -87,6 +98,29 @@ impl SolverInitializer {
             }
         }
         true
+    }
+
+}
+
+impl MWPSVisualizer for SolverInitializer {
+    fn snapshot(&self, abbrev: bool) -> serde_json::Value {
+        let mut vertices = Vec::<serde_json::Value>::new();
+        let mut edges = Vec::<serde_json::Value>::new();
+        for _ in 0..self.vertex_num {
+            vertices.push(json!({
+                
+            }));
+        }
+        for (vertices, weight) in self.weighted_edges.iter() {
+            edges.push(json!({
+                if abbrev { "w" } else { "weight" }: weight,
+                if abbrev { "v" } else { "vertices" }: vertices,
+            }));
+        }
+        json!({
+            "vertices": vertices,
+            "edges": edges,
+        })
     }
 }
 
@@ -112,7 +146,7 @@ impl SyndromePattern {
 #[cfg_attr(feature = "python_binding", pymethods)]
 impl SyndromePattern {
     #[cfg_attr(feature = "python_binding", new)]
-    #[cfg_attr(feature = "python_binding", args(defect_vertices="vec![]", erasures="vec![]"))]
+    #[cfg_attr(feature = "python_binding", pyo3(signature = (defect_vertices=vec![], erasures=vec![], syndrome_vertices=None)))]
     pub fn py_new(mut defect_vertices: Vec<VertexIndex>, erasures: Vec<EdgeIndex>, syndrome_vertices: Option<Vec<VertexIndex>>) -> Self {
         if let Some(syndrome_vertices) = syndrome_vertices {
             assert!(defect_vertices.is_empty(), "do not pass both `syndrome_vertices` and `defect_vertices` since they're aliasing");
@@ -148,7 +182,9 @@ impl F64Rng for DeterministicRng {
 
 /// the result of MWPS algorithm: a parity subgraph (defined by some edges that, 
 /// if are selected, will generate the parity result in the syndrome)
-#[derive(Clone)]
+#[cfg_attr(feature = "python_binding", cfg_eval)]
+#[cfg_attr(feature = "python_binding", pyclass)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct Subgraph(Vec<EdgeIndex>);
 
 impl Subgraph {
@@ -344,4 +380,84 @@ impl BenchmarkProfilerEntry {
     pub fn is_complete(&self) -> bool {
         self.round_time.is_some()
     }
+}
+
+#[cfg(feature="python_binding")]
+pub fn json_to_pyobject_locked<'py>(value: serde_json::Value, py: Python<'py>) -> PyObject {
+    match value {
+        serde_json::Value::Null => py.None(),
+        serde_json::Value::Bool(value) => value.to_object(py).into(),
+        serde_json::Value::Number(value) => {
+            if value.is_i64() {
+                value.as_i64().to_object(py).into()
+            } else {
+                value.as_f64().to_object(py).into()
+            }
+        },
+        serde_json::Value::String(value) => value.to_object(py).into(),
+        serde_json::Value::Array(array) => {
+            let elements: Vec<PyObject> = array.into_iter().map(|value| json_to_pyobject_locked(value, py)).collect();
+            pyo3::types::PyList::new(py, elements).into()
+        },
+        serde_json::Value::Object(map) => {
+            let pydict = pyo3::types::PyDict::new(py);
+            for (key, value) in map.into_iter() {
+                let pyobject = json_to_pyobject_locked(value, py);
+                pydict.set_item(key, pyobject).unwrap();
+            }
+            pydict.into()
+        },
+    }
+}
+
+#[cfg(feature="python_binding")]
+pub fn json_to_pyobject(value: serde_json::Value) -> PyObject {
+    Python::with_gil(|py| {
+        json_to_pyobject_locked(value, py)
+    })
+}
+
+#[cfg(feature="python_binding")]
+pub fn pyobject_to_json_locked<'py>(value: PyObject, py: Python<'py>) -> serde_json::Value {
+    let value: &PyAny = value.as_ref(py);
+    if value.is_none() {
+        serde_json::Value::Null
+    } else if value.is_instance_of::<pyo3::types::PyBool>().unwrap() {
+        json!(value.extract::<bool>().unwrap())
+    } else if value.is_instance_of::<pyo3::types::PyInt>().unwrap() {
+        json!(value.extract::<i64>().unwrap())
+    } else if value.is_instance_of::<pyo3::types::PyFloat>().unwrap() {
+        json!(value.extract::<f64>().unwrap())
+    } else if value.is_instance_of::<pyo3::types::PyString>().unwrap() {
+        json!(value.extract::<String>().unwrap())
+    } else if value.is_instance_of::<pyo3::types::PyList>().unwrap() {
+        let elements: Vec<serde_json::Value> = value.extract::<Vec<PyObject>>().unwrap()
+            .into_iter().map(|object| pyobject_to_json_locked(object, py)).collect();
+        json!(elements)
+    } else if value.is_instance_of::<pyo3::types::PyDict>().unwrap() {
+        let map: &pyo3::types::PyDict = value.downcast().unwrap();
+        let mut json_map = serde_json::Map::new();
+        for (key, value) in map.iter() {
+            json_map.insert(key.extract::<String>().unwrap(), pyobject_to_json_locked(value.to_object(py), py));
+        }
+        serde_json::Value::Object(json_map)
+    } else {
+        unimplemented!("unsupported python type, should be (cascaded) dict, list and basic numerical types")
+    }
+}
+
+#[cfg(feature="python_binding")]
+pub fn pyobject_to_json(value: PyObject) -> serde_json::Value {
+    Python::with_gil(|py| {
+        pyobject_to_json_locked(value, py)
+    })
+}
+
+#[cfg(feature="python_binding")]
+#[pyfunction]
+pub(crate) fn register(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
+    m.add_class::<SolverInitializer>()?;
+    m.add_class::<SyndromePattern>()?;
+    m.add_class::<Subgraph>()?;
+    Ok(())
 }

@@ -233,7 +233,7 @@ impl Visualizer {
 
     /// create a new visualizer with target filename and node layout
     #[cfg_attr(feature = "python_binding", new)]
-    #[cfg_attr(feature = "python_binding", args(positions = "vec![]", center = "true"))]
+    #[cfg_attr(feature = "python_binding", pyo3(signature = (filepath, positions=vec![], center=true)))]
     pub fn new(mut filepath: Option<String>, mut positions: Vec<VisualizePosition>, center: bool) -> std::io::Result<Self> {
         if cfg!(feature = "disable_visualizer") {
             filepath = None;  // do not open file

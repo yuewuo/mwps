@@ -1,3 +1,8 @@
+#![cfg_attr(
+    feature="python_binding",
+    feature(cfg_eval)
+)]
+
 extern crate serde;
 #[macro_use] extern crate serde_json;
 #[cfg(feature="python_binding")]
@@ -31,6 +36,7 @@ pub mod mwps_solver;
 pub mod explore;
 pub mod primal_module_serial;
 pub mod parity_matrix;
+pub mod framework;
 
 
 #[cfg(feature="python_binding")]
@@ -39,6 +45,9 @@ use pyo3::prelude::*;
 
 #[cfg(feature="python_binding")]
 #[pymodule]
-fn mwps(_py: Python<'_>, _m: &PyModule) -> PyResult<()> {
-    panic!("this project is currently a placeholder")
+fn mwps(py: Python<'_>, m: &PyModule) -> PyResult<()> {
+    util::register(py, m)?;
+    visualize::register(py, m)?;
+    example_codes::register(py, m)?;
+    Ok(())
 }

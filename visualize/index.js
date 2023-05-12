@@ -311,9 +311,13 @@ const App = {
         },
         update_dual_module_info() {
             let snapshot = mwps_data.snapshots[this.snapshot_select][1]
-            this.dual_module_info = {
-                dual_nodes: snapshot.dual_nodes,
-                interface: snapshot.interface,
+            if (snapshot.dual_nodes != null && snapshot.interface != null) {
+                this.dual_module_info = {
+                    dual_nodes: snapshot.dual_nodes,
+                    interface: snapshot.interface,
+                }
+            } else {
+                this.dual_module_info = null
             }
         },
     },

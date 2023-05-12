@@ -286,8 +286,12 @@ impl DualModuleImpl for DualModuleSerial {
         }
         for node_ptr in self.active_nodes.iter() {
             let node = node_ptr.read_recursive();
-            if node.grow_rate.is_negative() && !node.dual_variable.is_positive() {
-                group_max_update_length.add(MaxUpdateLength::ShrinkProhibited(node_ptr.clone()));
+            if node.grow_rate.is_negative() {
+                if node.dual_variable.is_positive() {
+                    group_max_update_length.add(MaxUpdateLength::ValidGrow(- node.dual_variable.clone() / node.grow_rate.clone()));
+                } else {
+                    group_max_update_length.add(MaxUpdateLength::ShrinkProhibited(node_ptr.clone()));
+                }
             }
         }
         group_max_update_length

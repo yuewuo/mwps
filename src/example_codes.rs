@@ -396,17 +396,11 @@ macro_rules! bind_trait_example_code {
             fn trait_get_erasures(&self) -> Vec<EdgeIndex> { self.get_erasures() }
             #[pyo3(name = "get_syndrome")]
             fn trait_get_syndrome(&self) -> SyndromePattern { self.get_syndrome() }
-            #[pyo3(name = "generate_random_errors")]
-            #[args(seed = "thread_rng().gen()")]
-            fn trait_generate_random_errors(&mut self, seed: u64) -> SyndromePattern { self.generate_random_errors(seed) }
-            #[pyo3(name = "is_virtual")]
-            fn trait_is_virtual(&mut self, vertex_idx: usize) -> bool { self.is_virtual(vertex_idx) }
+            #[pyo3(name = "generate_random_errors", signature = (seed=thread_rng().gen()))]
+            fn trait_generate_random_errors(&mut self, seed: u64) -> (SyndromePattern, Subgraph) { self.generate_random_errors(seed) }
             #[pyo3(name = "is_defect")]
             fn trait_is_defect(&mut self, vertex_idx: usize) -> bool { self.is_defect(vertex_idx) }
-            #[pyo3(name = "reorder_vertices")]
-            fn trait_reorder_vertices(&mut self, sequential_vertices: Vec<VertexIndex>) { self.reorder_vertices(&sequential_vertices) }
-            #[pyo3(name = "snapshot")]
-            #[args(abbrev = "true")]
+            #[pyo3(name = "snapshot", signature = (abbrev=true))]
             fn trait_snapshot(&mut self, abbrev: bool) -> PyObject { json_to_pyobject(self.snapshot(abbrev)) }
         }
     };
@@ -461,7 +455,7 @@ bind_trait_example_code!{CodeCapacityRepetitionCode}
 impl CodeCapacityRepetitionCode {
 
     #[cfg_attr(feature = "python_binding", new)]
-    #[cfg_attr(feature = "python_binding", args(weight_upper_limit = "1000"))]
+    #[cfg_attr(feature = "python_binding", pyo3(signature = (d, p, weight_upper_limit=1000)))]
     pub fn new(d: VertexNum, p: f64, weight_upper_limit: Weight) -> Self {
         let mut code = Self::create_code(d);
         code.set_probability(p);
@@ -525,7 +519,7 @@ bind_trait_example_code!{CodeCapacityPlanarCode}
 impl CodeCapacityPlanarCode {
 
     #[cfg_attr(feature = "python_binding", new)]
-    #[cfg_attr(feature = "python_binding", args(weight_upper_limit = "1000"))]
+    #[cfg_attr(feature = "python_binding", pyo3(signature = (d, p, weight_upper_limit=1000)))]
     pub fn new(d: VertexNum, p: f64, weight_upper_limit: Weight) -> Self {
         let mut code = Self::create_code(d);
         code.set_probability(p);
@@ -601,7 +595,7 @@ bind_trait_example_code!{CodeCapacityTailoredCode}
 impl CodeCapacityTailoredCode {
 
     #[cfg_attr(feature = "python_binding", new)]
-    #[cfg_attr(feature = "python_binding", args(weight_upper_limit = "1000"))]
+    #[cfg_attr(feature = "python_binding", pyo3(signature = (d, pxy, pz, weight_upper_limit=1000)))]
     pub fn new(d: VertexNum, pxy: f64, pz: f64, weight_upper_limit: Weight) -> Self {
         let mut code = Self::create_code(d, pxy, pz);
         code.compute_weights(weight_upper_limit);
@@ -718,7 +712,7 @@ bind_trait_example_code!{CodeCapacityColorCode}
 impl CodeCapacityColorCode {
 
     #[cfg_attr(feature = "python_binding", new)]
-    #[cfg_attr(feature = "python_binding", args(weight_upper_limit = "1000"))]
+    #[cfg_attr(feature = "python_binding", pyo3(signature = (d, p, weight_upper_limit=1000)))]
     pub fn new(d: VertexNum, p: f64, weight_upper_limit: Weight) -> Self {
         let mut code = Self::create_code(d);
         code.set_probability(p);

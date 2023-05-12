@@ -15,6 +15,8 @@ use std::fs::File;
 use std::io::prelude::*;
 use std::io::BufWriter;
 use crate::example_codes::*;
+#[cfg(feature="python_binding")]
+use pyo3::prelude::*;
 
 
 pub trait PrimalDualSolver {
@@ -28,7 +30,8 @@ pub trait PrimalDualSolver {
     fn generate_profiler_report(&self) -> serde_json::Value;
 }
 
-
+#[cfg_attr(feature = "python_binding", cfg_eval)]
+#[cfg_attr(feature = "python_binding", pyclass)]
 pub struct SolverUnionFind {
     dual_module: DualModuleSerial,
     primal_module: PrimalModuleUnionFind,
@@ -91,6 +94,8 @@ impl PrimalDualSolver for SolverUnionFind {
     }
 }
 
+#[cfg_attr(feature = "python_binding", cfg_eval)]
+#[cfg_attr(feature = "python_binding", pyclass)]
 pub struct SolverSerial {
     dual_module: DualModuleSerial,
     primal_module: PrimalModuleSerial,
@@ -158,9 +163,6 @@ impl PrimalDualSolver for SolverSerial {
 pub struct SolverErrorPatternLogger {
     file: BufWriter<File>,
 }
-
-#[cfg(feature="python_binding")]
-bind_trait_primal_dual_solver!{SolverErrorPatternLogger}
 
 impl SolverErrorPatternLogger {
     pub fn new(initializer: &SolverInitializer, code: &dyn ExampleCode, mut config: serde_json::Value) -> Self {

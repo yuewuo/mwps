@@ -119,15 +119,18 @@ impl PrimalModuleImpl for PrimalModuleSerial {
             pending_nodes: VecDeque::new(),
             enable_debug: true,
             debug_recordings: Mutex::new(vec![]),
-            // optimization_level: OPT_LEVEL_UNION_FIND,
+            optimization_level: OPT_LEVEL_UNION_FIND,
             // optimization_level: OPT_LEVEL_INDEPENDENT_SINGLE_HAIR,
-            optimization_level: OPT_LEVEL_JOINT_SINGLE_HAIR,  // default to the highest optimization level currently supported
+            // optimization_level: OPT_LEVEL_JOINT_SINGLE_HAIR,  // default to the highest optimization level currently supported
         }
     }
 
     fn clear(&mut self) {
         self.nodes.clear();
         self.clusters.clear();
+        self.live_clusters.clear();
+        self.pending_nodes.clear();
+        self.debug_recordings.lock().clear();
     }
 
     fn load_defect_dual_node<D: DualModuleImpl>(&mut self, dual_node_ptr: &DualNodePtr, dual_module: &mut D) {
@@ -277,7 +280,7 @@ impl PrimalModuleImpl for PrimalModuleSerial {
             if cluster.nodes.is_empty() {
                 continue
             }
-            subgraph.extend(cluster.subgraph.clone().expect("bug occurs: cluster should be solved").iter());
+            subgraph.extend(cluster.subgraph.clone().expect("bug occurs: cluster should be solved, but the subgraph is not yet generated").iter());
         }
         subgraph
     }
@@ -338,7 +341,7 @@ impl PrimalModuleSerial {
         cluster.matrix.update_with_dual_module(dual_module);
         let tight_edges = cluster.matrix.get_tight_edges();
 
-        // 1. check if the cluster is valid (union-find decoder)
+        // 1. check if the cluster is valid (hypergraph union-find decoder)
         cluster.matrix.row_echelon_form();
         if self.enable_debug {
             self.debug_recordings.lock().push(DebugEntry::EchelonFormMatrix {
@@ -381,18 +384,38 @@ impl PrimalModuleSerial {
                 let implicit_shrink_edges = match cluster.matrix.get_implicit_shrink_edges(&hair_edges) {
                     Some(implicit_shrink_edges) => implicit_shrink_edges,
                     None => {  // it's already unsatisfiable, need to execute the previous actions
-                        let first_implicit_shrink_edges = first_implicit_shrink_edges.expect("should not be unsatisfiable before the first shrink is executed");
                         drop(dual_node);
-                        dual_module.set_grow_rate(&dual_node_ptr, -Rational::one());
-                        let mut edges: BTreeSet<EdgeIndex> = tight_edges.iter().cloned().collect();
+                        let first_implicit_shrink_edges = first_implicit_shrink_edges.expect("should not be unsatisfiable before the first shrink is executed");
                         let implicit_shrink_edges_set: BTreeSet<EdgeIndex> = first_implicit_shrink_edges.iter().cloned().collect();
+                        let vertices: BTreeSet<VertexIndex> = cluster.vertices.iter().cloned().collect();
+                        // original dual node
+                        dual_module.set_grow_rate(&dual_node_ptr, -Rational::one());
+                        println!("shrinking hair edges: {:?}", dual_node_ptr.read_recursive().hair_edges);
+                        // the first growing dual node
+                        let mut edges: BTreeSet<EdgeIndex> = tight_edges.iter().cloned().collect();
                         for &edge_index in hair_edges.iter() {
                             if !implicit_shrink_edges_set.contains(&edge_index) {
                                 edges.remove(&edge_index);
                             }
                         }
-                        let vertices: BTreeSet<VertexIndex> = cluster.vertices.iter().cloned().collect();
+                        let growing_dual_node_ptr = interface.create_cluster_node(edges, vertices.clone(), dual_module);
+                        println!("growing hair edges: {:?}", growing_dual_node_ptr.read_recursive().hair_edges);
+                        let primal_node_ptr = PrimalModuleSerialNodePtr::new_value(PrimalModuleSerialNode {
+                            dual_node_ptr: growing_dual_node_ptr.clone(),
+                            cluster_weak: cluster_ptr.downgrade(),
+                        });
+                        cluster.nodes.push(primal_node_ptr.clone());
+                        self.nodes.push(primal_node_ptr);
+                        // also increase the overall dual node to avoid bouncing, see bug at commit fcf3936, primal_module_serial_basic_10
+                        // the second growing dual node
+                        let mut edges: BTreeSet<EdgeIndex> = tight_edges.iter().cloned().collect();
+                        for &edge_index in hair_edges.iter() {
+                            if implicit_shrink_edges_set.contains(&edge_index) {
+                                edges.remove(&edge_index);
+                            }
+                        }
                         let growing_dual_node_ptr = interface.create_cluster_node(edges, vertices, dual_module);
+                        println!("growing hair edges: {:?}", growing_dual_node_ptr.read_recursive().hair_edges);
                         let primal_node_ptr = PrimalModuleSerialNodePtr::new_value(PrimalModuleSerialNode {
                             dual_node_ptr: growing_dual_node_ptr.clone(),
                             cluster_weak: cluster_ptr.downgrade(),
@@ -694,6 +717,19 @@ pub mod tests {
     fn primal_module_serial_basic_10() {  // cargo test primal_module_serial_basic_10 -- --nocapture
         let visualize_filename = format!("primal_module_serial_basic_10.json");
         let defect_vertices = vec![1, 2, 4, 7, 8];
+        let code = CodeCapacityColorCode::new(5, 0.1, 1);
+        primal_module_serial_basic_standard_syndrome(code, visualize_filename, defect_vertices, 3);
+    }
+
+    /// debug case: cargo run --release -- benchmark 5 0.1 --code-type code-capacity-color-code --verifier strict-actual-error -p serial --print-syndrome-pattern --print-error-pattern
+    /// error_pattern: [10, 12, 18]
+    /// bug reason: when running hair zero-forcing, it may encounter the second loop and 
+    ///     we need to execute all zero-forcing actions instead of only the second one;
+    ///     i.e. we need to keep track of the implicit shrinks and execute them one by one
+    #[test]
+    fn primal_module_serial_basic_11() {  // cargo test primal_module_serial_basic_11 -- --nocapture
+        let visualize_filename = format!("primal_module_serial_basic_11.json");
+        let defect_vertices = vec![3, 6, 7, 8];
         let code = CodeCapacityColorCode::new(5, 0.1, 1);
         primal_module_serial_basic_standard_syndrome(code, visualize_filename, defect_vertices, 3);
     }
