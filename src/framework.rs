@@ -2,9 +2,10 @@ use crate::util::*;
 use std::sync::Arc;
 use crate::visualize::*;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
-use num_traits::Signed;
+use num_traits::{Signed, Zero};
 use std::hash::{Hasher, Hash};
 use std::collections::hash_map::DefaultHasher;
+use crate::parity_matrix::*;
 
 
 /// hyper model graph that contains static information regardless of the syndrome
@@ -127,11 +128,10 @@ impl InvalidSubgraph {
                 }
             }
         }
-        let mut result = Self { hash: 0, vertices, edges, hairs, };
-        debug_assert_eq!(result.sanity_check(decoding_graph), Ok(()));
-        result.update_hash();
-        println!("hash: {}", result.hash);
-        result
+        let mut invalid_subgraph = Self { hash: 0, vertices, edges, hairs, };
+        debug_assert_eq!(invalid_subgraph.sanity_check(decoding_graph), Ok(()));
+        invalid_subgraph.update_hash();
+        invalid_subgraph
     }
 
     pub fn update_hash(&mut self) {
@@ -144,12 +144,44 @@ impl InvalidSubgraph {
 
     // check whether this invalid subgraph is indeed invalid, this is costly and should be disabled in release runs
     pub fn sanity_check(&self, decoding_graph: &HyperDecodingGraph) -> Result<(), String> {
-        
+        if self.vertices.is_empty() {
+            return Err("an invalid subgraph must contain at least one vertex".to_string());
+        }
+        // check if all vertices are valid
+        for &vertex_index in self.vertices.iter() {
+            if vertex_index >= decoding_graph.model_graph.initializer.vertex_num {
+                return Err(format!("vertex {vertex_index} is not a vertex in the model graph"))
+            }
+        }
+        // check if every edge is subset of its vertices
+        for &edge_index in self.edges.iter() {
+            if edge_index >= decoding_graph.model_graph.initializer.weighted_edges.len() {
+                return Err(format!("edge {edge_index} is not an edge in the model graph"))
+            }
+            let (vertices, _weight) = &decoding_graph.model_graph.initializer.weighted_edges[edge_index];
+            for &vertex_index in vertices.iter() {
+                if !self.vertices.contains(&vertex_index) {
+                    return Err(format!("hyperedge {edge_index} connects vertices {vertices:?}, but vertex {vertex_index} is not in the invalid subgraph vertices {:?}", self.vertices))
+                }
+            }
+        }
+        // check the edges indeed cannot satisfy the requirement of the vertices
+        let mut matrix = ParityMatrix::new_no_phantom();
+        for &edge_index in self.edges.iter() {
+            matrix.add_tight_variable(edge_index);
+        }
+        for &vertex_index in self.vertices.iter() {
+            matrix.add_parity_check_with_decoding_graph(vertex_index, decoding_graph);
+        }
+        if matrix.check_is_satisfiable() {
+            return Err(format!("it's a valid subgraph because edges {:?} ⊆ {:?} can satisfy the parity requirement from vertices {:?}", matrix.get_joint_solution().unwrap(), self.edges, self.vertices))
+        }
         Ok(())
     }
 
 }
 
+#[derive(Clone, Debug)]
 pub struct Relaxer {
     /// the direction of invalid subgraphs
     pub direction: Vec<(Arc<InvalidSubgraph>, Rational)>,
@@ -177,14 +209,26 @@ impl Relaxer {
                 untighten_edges.push((edge_index, speed));
             }
         }
-        Self {
+        let relaxer = Self {
             direction,
             untighten_edges: untighten_edges,
-        }
+        };
+        debug_assert_eq!(relaxer.sanity_check(), Ok(()));
+        relaxer
     }
 
-    pub fn sanity_check(&self, decoding_graph: &HyperDecodingGraph) -> Result<(), String> {
-
+    pub fn sanity_check(&self) -> Result<(), String> {
+        // check summation of ΔyS >= 0
+        let mut sum_speed = Rational::zero();
+        for (_, speed) in self.direction.iter() {
+            sum_speed += speed;
+        }
+        if sum_speed.is_negative() {
+            return Err(format!("the summation of ΔyS is negative: {:?}", sum_speed));
+        }
+        if self.untighten_edges.is_empty() && sum_speed.is_zero() {
+            return Err(format!("a valid relaxer must either increase overall ΔyS or untighten some edges"))
+        }
         Ok(())
     }
 
@@ -231,6 +275,45 @@ mod tests {
         visualizer.snapshot_combined(format!("syndrome"), vec![decoding_graph.as_ref()]).unwrap();
         let invalid_subgraph_1 = InvalidSubgraph::new(vec![13].into_iter().collect(), decoding_graph.as_ref());
         println!("invalid_subgraph_1: {invalid_subgraph_1:?}");
+        assert_eq!(invalid_subgraph_1.vertices, vec![2, 6, 7].into_iter().collect());
+        assert_eq!(invalid_subgraph_1.edges, vec![13].into_iter().collect());
+        assert_eq!(invalid_subgraph_1.hairs, vec![5, 6, 9, 10, 11, 12, 14, 15, 16, 17].into_iter().collect());
+    }
+
+    #[test]
+    #[should_panic]
+    fn framework_valid_subgraph() {  // cargo test framework_valid_subgraph -- --nocapture
+        let (model_graph, _initializer, mut visualizer, ..) = color_code_5_model_graph();
+        let syndrome_pattern = Arc::new(SyndromePattern::new_vertices(vec![7, 1]));
+        let decoding_graph = Arc::new(HyperDecodingGraph::new(model_graph.clone(), syndrome_pattern.clone()));
+        visualizer.snapshot_combined(format!("syndrome"), vec![decoding_graph.as_ref()]).unwrap();
+        let invalid_subgraph = InvalidSubgraph::new(vec![6, 10].into_iter().collect(), decoding_graph.as_ref());
+        println!("invalid_subgraph: {invalid_subgraph:?}");  // should not print because it panics
+    }
+
+    #[test]
+    fn framework_good_relaxer() {  // cargo test framework_good_relaxer -- --nocapture
+        let (model_graph, _initializer, mut visualizer, ..) = color_code_5_model_graph();
+        let syndrome_pattern = Arc::new(SyndromePattern::new_vertices(vec![7, 1]));
+        let decoding_graph = Arc::new(HyperDecodingGraph::new(model_graph.clone(), syndrome_pattern.clone()));
+        visualizer.snapshot_combined(format!("syndrome"), vec![decoding_graph.as_ref()]).unwrap();
+        let invalid_subgraph = Arc::new(InvalidSubgraph::new_complete(vec![7].into_iter().collect(), BTreeSet::new(), decoding_graph.as_ref()));
+        use num_traits::One;
+        let relaxer = Relaxer::new(vec![(invalid_subgraph, Rational::one())]);
+        println!("relaxer: {relaxer:?}");
+        assert!(relaxer.untighten_edges.is_empty());
+    }
+
+    #[test]
+    #[should_panic]
+    fn framework_bad_relaxer() {  // cargo test framework_bad_relaxer -- --nocapture
+        let (model_graph, _initializer, mut visualizer, ..) = color_code_5_model_graph();
+        let syndrome_pattern = Arc::new(SyndromePattern::new_vertices(vec![7, 1]));
+        let decoding_graph = Arc::new(HyperDecodingGraph::new(model_graph.clone(), syndrome_pattern.clone()));
+        visualizer.snapshot_combined(format!("syndrome"), vec![decoding_graph.as_ref()]).unwrap();
+        let invalid_subgraph = Arc::new(InvalidSubgraph::new_complete(vec![7].into_iter().collect(), BTreeSet::new(), decoding_graph.as_ref()));
+        let relaxer: Relaxer = Relaxer::new(vec![(invalid_subgraph, Rational::zero())]);
+        println!("relaxer: {relaxer:?}");  // should not print because it panics
     }
 
 }

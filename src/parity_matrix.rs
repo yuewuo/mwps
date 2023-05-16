@@ -10,6 +10,7 @@ use crate::util::*;
 use std::collections::{BTreeMap, BTreeSet};
 use crate::prettytable::*;
 use crate::dual_module::*;
+use crate::framework::*;
 
 pub type BitArrayUnit = usize;
 pub const BIT_UNIT_LENGTH: usize = std::mem::size_of::<BitArrayUnit>() * 8;
@@ -40,6 +41,8 @@ pub struct ParityMatrix {
     /// edges that are not visible to outside, e.g. implicitly added to keep the constraints complete;
     /// these edges must be explicitly added to remove from phantom edges
     pub phantom_edges: BTreeSet<EdgeIndex>,
+    /// whether to keep phantom edges or not, default to True; needed when dynamically changing tight edges
+    pub keep_phantom_edges: bool,
 }
 
 /// optimize for small clusters where there are no more than 63 edges
@@ -65,7 +68,15 @@ impl ParityMatrix {
             is_echelon_form: false,
             implicit_shrunk_edges: BTreeSet::new(),
             phantom_edges: BTreeSet::new(),
+            keep_phantom_edges: true,
         }
+    }
+
+    /// when you're sure no phantom edges will be dynamically included, then this matrix is faster; otherwise it might panic
+    pub fn new_no_phantom() -> Self {
+        let mut matrix = Self::new();
+        matrix.keep_phantom_edges = false;
+        matrix
     }
 
     pub fn add_variable_tightness(&mut self, edge_index: EdgeIndex, is_tight: bool) {
@@ -74,10 +85,10 @@ impl ParityMatrix {
     }
 
     pub fn add_variable(&mut self, edge_index: EdgeIndex) {
-        self.phantom_edges.remove(&edge_index);  // explicitly add edge
         if self.edges.contains_key(&edge_index) {
             return  // variable already exists
         }
+        self.phantom_edges.remove(&edge_index);  // explicitly add edge
         self.edges.insert(edge_index, self.variables.len());
         self.variables.push((edge_index, false));
         let variable_count = self.variables.len();
@@ -90,6 +101,10 @@ impl ParityMatrix {
         }
         self.echelon_column_info.push((false, 0));
         self.is_echelon_form = false;
+    }
+
+    pub fn add_tight_variable(&mut self, edge_index: EdgeIndex) {
+        self.add_variable_tightness(edge_index, true)
     }
 
     pub fn update_edge_tightness(&mut self, edge_index: EdgeIndex, is_tight: bool) {
@@ -133,10 +148,17 @@ impl ParityMatrix {
         self.add_constraint(&incident_edges, parity);
     }
 
-    /// add a parity constraint coming from a vertex, automatically add phantom edges corresponding to this parity check
+    pub fn add_parity_check_with_decoding_graph(&mut self, vertex_index: VertexIndex, decoding_graph: &HyperDecodingGraph) {
+        self.is_echelon_form = false;
+        let incident_edges = &decoding_graph.model_graph.vertices[vertex_index].edges;
+        let parity = decoding_graph.defect_vertices_hashset.contains(&vertex_index);
+        self.add_constraint(incident_edges, parity);
+    }
+
+    /// add a parity constraint coming from a vertex
     pub fn add_constraint(&mut self, incident_edges: &[EdgeIndex], parity: bool) {
         for &edge_index in incident_edges.iter() {
-            if !self.edges.contains_key(&edge_index) {
+            if !self.edges.contains_key(&edge_index) && self.keep_phantom_edges {
                 // add variable but mark as phantom edge
                 self.add_variable(edge_index);
                 self.phantom_edges.insert(edge_index);
@@ -144,8 +166,11 @@ impl ParityMatrix {
         }
         let mut row = ParityRow::new_length(self.variables.len());
         for &edge_index in incident_edges.iter() {
-            let var_index = self.edges.get(&edge_index).unwrap().clone();
-            row.set_left(var_index, true);
+            if let Some(&var_index) = self.edges.get(&edge_index) {
+                row.set_left(var_index, true);
+            } else {
+                assert!(!self.keep_phantom_edges, "unknown edge");
+            }
         }
         row.set_right(parity);
         self.matrix.push(row);
@@ -251,8 +276,15 @@ impl ParityMatrix {
     }
 
     pub fn row_echelon_form_reordered(&mut self, edges: &[EdgeIndex]) {
-        self.is_echelon_form = false;
-        if self.matrix.is_empty() { return }
+        if self.is_echelon_form {
+            return  // already in echelon form
+        }
+        self.is_echelon_form = true;
+        if self.matrix.is_empty() { 
+            // no parity requirement
+            self.echelon_satisfiable = true;
+            return
+        }
         let height = self.matrix.len();
         let mut var_indices = Vec::with_capacity(edges.len());
         for &edge_index in edges.iter() {
@@ -262,8 +294,11 @@ impl ParityMatrix {
                 var_indices.push(var_index);
             }
         }
-        if var_indices.is_empty() { return }
-        self.is_echelon_form = true;
+        if var_indices.is_empty() {
+            // no variable to satisfy any requirement
+            self.echelon_satisfiable = !self.matrix.iter().any(|x| x.get_right());  // if any RHS=1, it cannot be satisfied
+            return
+        }
         let width = var_indices.len();
         let mut lead = 0;
         for r in 0..height {
@@ -320,7 +355,7 @@ impl ParityMatrix {
             for j in 0..height {
                 if j != r && self.matrix[j].get_left(var_indices[lead]) != false {
                     self.xor_row(j, r);
-                    self.is_echelon_form = true;
+                    self.is_echelon_form = true;  // because `xor_row` will set it to false
                 }
             }
             self.echelon_row_info[r] = var_indices[lead];
@@ -333,6 +368,11 @@ impl ParityMatrix {
             lead = lead + 1;
         }
         self.echelon_satisfiable = true;
+    }
+
+    pub fn check_is_satisfiable(&mut self) -> bool {
+        self.row_echelon_form();
+        self.echelon_satisfiable
     }
 
     /// create the reorder edges and also the starting index of hair edges
