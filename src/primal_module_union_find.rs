@@ -75,20 +75,23 @@ impl PrimalModuleImpl for PrimalModuleUnionFind {
         self.union_find.remove_all();
     }
 
-    fn load_defect_dual_node<D: DualModuleImpl>(&mut self, dual_node_ptr: &DualNodePtr, _dual_module: &mut D) {
-        let node = dual_node_ptr.read_recursive();
-        assert_eq!(node.index, self.union_find.size(), "must load defect nodes in order");
-        self.union_find.insert(PrimalModuleUnionFindNode {
-            internal_edges: BTreeSet::new(),
-            node_index: node.index,
-        });
+    fn load<D: DualModuleImpl>(&mut self, interface_ptr: &DualModuleInterfacePtr, _dual_module: &mut D) {
+        let interface = interface_ptr.read_recursive();
+        for index in 0..interface.nodes.len() as NodeIndex {
+            let node_ptr = &interface.nodes[index as usize];
+            let node = node_ptr.read_recursive();
+            debug_assert!(node.invalid_subgraph.edges.is_empty(), "must load a fresh dual module interface, found a complex node");
+            debug_assert!(node.invalid_subgraph.vertices.len() == 1, "must load a fresh dual module interface, found invalid defect node");
+            debug_assert_eq!(node.index, index, "must load a fresh dual module interface, found index out of order");
+            assert_eq!(node.index, self.union_find.size(), "must load defect nodes in order");
+            self.union_find.insert(PrimalModuleUnionFindNode {
+                internal_edges: BTreeSet::new(),
+                node_index: node.index,
+            });
+        }
     }
 
-    fn begin_resolving<D: DualModuleImpl>(&mut self, _interface_ptr: &DualModuleInterfacePtr, _dual_module: &mut D) {
-
-    }
-
-    fn resolve(&mut self, mut group_max_update_length: GroupMaxUpdateLength, interface: &DualModuleInterfacePtr, dual_module: &mut impl DualModuleImpl) {
+    fn resolve(&mut self, mut group_max_update_length: GroupMaxUpdateLength, interface_ptr: &DualModuleInterfacePtr, dual_module: &mut impl DualModuleImpl) {
         debug_assert!(!group_max_update_length.is_unbounded() && group_max_update_length.get_valid_growth().is_none());
         let mut active_clusters = BTreeSet::<NodeIndex>::new();
         while let Some(conflict) = group_max_update_length.pop() {
@@ -111,7 +114,7 @@ impl PrimalModuleImpl for PrimalModuleUnionFind {
             }
         }
         for &cluster_index in active_clusters.iter() {
-            if dual_module.is_valid_cluster_auto_vertices(&self.union_find.get(cluster_index).internal_edges) {
+            if interface_ptr.read_recursive().decoding_graph.is_valid_cluster_auto_vertices(&self.union_find.get(cluster_index).internal_edges) {
                 // do nothing
             } else {
                 let new_cluster_node_index = self.union_find.size();
@@ -120,19 +123,19 @@ impl PrimalModuleImpl for PrimalModuleUnionFind {
                     node_index: new_cluster_node_index,
                 });
                 self.union_find.union(cluster_index, new_cluster_node_index);
-                interface.create_cluster_node_auto_vertices(self.union_find.get(cluster_index).internal_edges.clone(), dual_module);
+                interface_ptr.create_cluster_node_auto_vertices(self.union_find.get(cluster_index).internal_edges.clone(), dual_module);
             }
         }
     }
 
-    fn subgraph(&mut self, _interface: &DualModuleInterfacePtr, dual_module: &mut impl DualModuleImpl) -> Subgraph {
+    fn subgraph(&mut self, interface_ptr: &DualModuleInterfacePtr, _dual_module: &mut impl DualModuleImpl) -> Subgraph {
         let mut valid_clusters = BTreeSet::new();
         let mut subgraph = Subgraph::new_empty();
         for i in 0..self.union_find.size() {
             let root_index = self.union_find.find(i);
             if !valid_clusters.contains(&root_index) {
                 valid_clusters.insert(root_index);
-                let cluster_subgraph = dual_module.find_valid_subgraph_auto_vertices(&self.union_find.get(root_index).internal_edges).expect("must be valid cluster");
+                let cluster_subgraph = interface_ptr.read_recursive().decoding_graph.find_valid_subgraph_auto_vertices(&self.union_find.get(root_index).internal_edges).expect("must be valid cluster");
                 subgraph.extend(cluster_subgraph.iter());
             }
         }
@@ -160,6 +163,7 @@ pub mod tests {
     use super::super::dual_module_serial::*;
     use crate::more_asserts::*;
     use crate::num_traits::{FromPrimitive, ToPrimitive};
+    use std::sync::Arc;
 
     pub fn primal_module_union_find_basic_standard_syndrome_optional_viz(mut code: impl ExampleCode, visualize_filename: Option<String>, defect_vertices: Vec<VertexIndex>, final_dual: Weight)
             -> (DualModuleInterfacePtr, PrimalModuleUnionFind, DualModuleSerial) {
@@ -172,19 +176,19 @@ pub mod tests {
             }, None => None
         };
         // create dual module
-        let initializer = code.get_initializer();
-        let mut dual_module = DualModuleSerial::new_empty(&initializer);
+        let model_graph = code.get_model_graph();
+        let mut dual_module = DualModuleSerial::new_empty(&model_graph.initializer);
         // create primal module
-        let mut primal_module = PrimalModuleUnionFind::new_empty(&initializer);
+        let mut primal_module = PrimalModuleUnionFind::new_empty(&model_graph.initializer);
         // try to work on a simple syndrome
         code.set_defect_vertices(&defect_vertices);
-        let interface_ptr = DualModuleInterfacePtr::new_empty();
-        primal_module.solve_visualizer(&interface_ptr, &code.get_syndrome(), &mut dual_module, visualizer.as_mut());
-        let (subgraph, weight_range) = primal_module.subgraph_range(&interface_ptr, &mut dual_module, &initializer);
+        let interface_ptr = DualModuleInterfacePtr::new(model_graph.clone());
+        primal_module.solve_visualizer(&interface_ptr, Arc::new(code.get_syndrome()), &mut dual_module, visualizer.as_mut());
+        let (subgraph, weight_range) = primal_module.subgraph_range(&interface_ptr, &mut dual_module);
         if let Some(visualizer) = visualizer.as_mut() {
             visualizer.snapshot_combined("subgraph".to_string(), vec![&interface_ptr, &dual_module, &subgraph, &weight_range]).unwrap();
         }
-        assert!(initializer.matches_subgraph_syndrome(&subgraph, &defect_vertices), "the result subgraph is invalid");
+        assert!(model_graph.initializer.matches_subgraph_syndrome(&subgraph, &defect_vertices), "the result subgraph is invalid");
         assert_le!(Rational::from_usize(final_dual).unwrap(), weight_range.upper, "unmatched sum dual variables");
         assert_ge!(Rational::from_usize(final_dual).unwrap(), weight_range.lower, "unexpected final dual variable sum");
         println!("weight range: [{}, {}]", weight_range.lower.to_i64().unwrap(), weight_range.upper.to_i64().unwrap());

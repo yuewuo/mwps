@@ -5,21 +5,19 @@
 
 use crate::util::*;
 use crate::pointers::*;
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 use crate::derivative::Derivative;
 use crate::num_traits::{Zero, One, ToPrimitive};
 use crate::visualize::*;
+use crate::framework::*;
+use std::sync::Arc;
 
 
 pub struct DualNode {
     /// the index of this dual node, helps to locate internal details of this dual node
     pub index: NodeIndex,
-    /// specified by users, these internal edges must not satisfy the parity requirement to be a valid dual variable
-    pub internal_edges: BTreeSet<EdgeIndex>,
-    /// all the vertices that are incident to the internal edges; if empty it will calculate from `internal_edges`
-    pub internal_vertices: BTreeSet<VertexIndex>,
-    /// calculated automatically: the hair edges (some vertices inside some others outside)
-    pub hair_edges: BTreeSet<EdgeIndex>,
+    /// the corresponding invalid subgraph
+    pub invalid_subgraph: Arc<InvalidSubgraph>,
     /// current dual variable's value
     pub dual_variable: Rational,
     /// the strategy to grow the dual variables
@@ -61,6 +59,10 @@ impl PartialOrd for DualNodePtr {
 pub struct DualModuleInterface {
     /// all the dual node that can be used to control a concrete dual module implementation
     pub nodes: Vec<DualNodePtr>,
+    /// given an invalid subgraph, find its corresponding dual node
+    pub hashmap: HashMap<Arc<InvalidSubgraph>, NodeIndex>,
+    /// the decoding graph
+    pub decoding_graph: HyperDecodingGraph,
 }
 
 pub type DualModuleInterfacePtr = ArcRwLock<DualModuleInterface>;
@@ -137,41 +139,12 @@ pub trait DualModuleImpl {
     }
 
     /// grow a specific length globally, length must be positive.
-    /// note that reversing the process is possible, but not recommended: to do that, reverse the state of each dual node, Grow->Shrink, Shrink->Grow
+    /// note that a negative growth should be implemented by reversing the speed of each dual node
     fn grow(&mut self, length: Rational);
-
-    fn find_valid_subgraph(&self, internal_edges: &BTreeSet<EdgeIndex>, internal_vertices: &BTreeSet<VertexIndex>) -> Option<Subgraph>;
-
-    fn find_valid_subgraph_auto_vertices(&self, internal_edges: &BTreeSet<EdgeIndex>) -> Option<Subgraph> {
-        self.find_valid_subgraph(internal_edges, &self.get_edges_neighbors(internal_edges))
-    }
-
-    fn is_valid_cluster(&self, internal_edges: &BTreeSet<EdgeIndex>, internal_vertices: &BTreeSet<VertexIndex>) -> bool {
-        self.find_valid_subgraph(internal_edges, internal_vertices).is_some()
-    }
-
-    fn is_valid_cluster_auto_vertices(&self, internal_edges: &BTreeSet<EdgeIndex>) -> bool {
-        self.find_valid_subgraph_auto_vertices(internal_edges).is_some()
-    }
 
     fn get_edge_nodes(&self, edge_index: EdgeIndex) -> Vec<DualNodePtr>;
 
     fn is_edge_tight(&self, edge_index: EdgeIndex) -> bool;
-
-    fn get_edge_neighbors(&self, edge_index: EdgeIndex) -> Vec<VertexIndex>;
-
-    fn is_vertex_defect(&self, vertex_index: VertexIndex) -> bool;
-
-    /// return if the vertex is defect and all the edges that connects to it
-    fn get_vertex_neighbors(&self, vertex_index: VertexIndex) -> Vec<EdgeIndex>;
-
-    fn get_edges_neighbors(&self, edges: &BTreeSet<EdgeIndex>) -> BTreeSet<VertexIndex> {
-        let mut vertices = BTreeSet::new();
-        for &edge_index in edges.iter() {
-            vertices.extend(self.get_edge_neighbors(edge_index));
-        }
-        vertices
-    }
 
 }
 
@@ -279,21 +252,23 @@ impl GroupMaxUpdateLength {
 
 impl DualModuleInterfacePtr {
 
-    /// create an empty interface
-    pub fn new_empty() -> Self {
+    pub fn new(model_graph: Arc<HyperModelGraph>) -> Self {
         Self::new_value(DualModuleInterface {
             nodes: Vec::new(),
+            hashmap: HashMap::new(),
+            decoding_graph: HyperDecodingGraph::new(model_graph, Arc::new(SyndromePattern::new_empty())),
         })
     }
 
     /// a dual module interface MUST be created given a concrete implementation of the dual module
-    pub fn new_load(syndrome_pattern: &SyndromePattern, dual_module_impl: &mut impl DualModuleImpl) -> Self {
-        let interface_ptr = Self::new_empty();
-        interface_ptr.load(syndrome_pattern, dual_module_impl);
+    pub fn new_load(decoding_graph: HyperDecodingGraph, dual_module_impl: &mut impl DualModuleImpl) -> Self {
+        let interface_ptr = Self::new(decoding_graph.model_graph.clone());
+        interface_ptr.load(decoding_graph.syndrome_pattern, dual_module_impl);
         interface_ptr
     }
 
-    pub fn load(&self, syndrome_pattern: &SyndromePattern, dual_module_impl: &mut impl DualModuleImpl) {
+    pub fn load(&self, syndrome_pattern: Arc<SyndromePattern>, dual_module_impl: &mut impl DualModuleImpl) {
+        self.write().decoding_graph.set_syndrome(syndrome_pattern.clone());
         for vertex_idx in syndrome_pattern.defect_vertices.iter() {
             self.create_defect_node(*vertex_idx, dual_module_impl);
         }
@@ -312,6 +287,7 @@ impl DualModuleInterfacePtr {
     pub fn clear(&self) {
         let mut interface = self.write();
         interface.nodes.clear();
+        interface.hashmap.clear();
     }
 
     pub fn get_node(&self, node_index: NodeIndex) -> Option<DualNodePtr> {
@@ -319,32 +295,31 @@ impl DualModuleInterfacePtr {
         interface.nodes.get(node_index).cloned()
     }
 
-    pub fn create_defect_node(&self, vertex_idx: VertexIndex, dual_module: &mut impl DualModuleImpl) -> DualNodePtr {
-        let mut interface = self.write();
+    /// make it private; use `load` instead
+    fn create_defect_node(&self, vertex_idx: VertexIndex, dual_module: &mut impl DualModuleImpl) -> DualNodePtr {
+        let interface = self.read_recursive();
         let mut internal_vertices = BTreeSet::new();
         internal_vertices.insert(vertex_idx);
         let node_ptr = DualNodePtr::new_value(DualNode {
             index: interface.nodes.len(),
-            internal_edges: BTreeSet::new(),  // empty
-            internal_vertices,
-            hair_edges: BTreeSet::new(),  // to be filled by concrete implementation
+            invalid_subgraph: Arc::new(InvalidSubgraph::new_complete(vec![vertex_idx].into_iter().collect(), BTreeSet::new(), &interface.decoding_graph)),
             dual_variable: Rational::zero(),
             grow_rate: Rational::one(),
         });
         let cloned_node_ptr = node_ptr.clone();
+        drop(interface);
+        let mut interface = self.write();
         interface.nodes.push(node_ptr);
         drop(interface);
         dual_module.add_dual_node(&cloned_node_ptr);
         cloned_node_ptr
     }
 
-    pub fn create_cluster_node(&self, internal_edges: BTreeSet<EdgeIndex>, internal_vertices: BTreeSet<EdgeIndex>, dual_module: &mut impl DualModuleImpl) -> DualNodePtr {
+    pub fn create_cluster_node(&self, edges: BTreeSet<EdgeIndex>, vertices: BTreeSet<EdgeIndex>, dual_module: &mut impl DualModuleImpl) -> DualNodePtr {
         let mut interface = self.write();
         let node_ptr = DualNodePtr::new_value(DualNode {
             index: interface.nodes.len(),
-            internal_edges: internal_edges,
-            internal_vertices: internal_vertices,
-            hair_edges: BTreeSet::new(),  // to be filled by concrete implementation
+            invalid_subgraph: Arc::new(InvalidSubgraph::new_complete(vertices, edges, &interface.decoding_graph)),
             dual_variable: Rational::zero(),
             grow_rate: Rational::one(),
         });
@@ -356,7 +331,7 @@ impl DualModuleInterfacePtr {
     }
 
     pub fn create_cluster_node_auto_vertices(&self, internal_edges: BTreeSet<EdgeIndex>, dual_module: &mut impl DualModuleImpl) -> DualNodePtr {
-        let internal_vertices = dual_module.get_edges_neighbors(&internal_edges);
+        let internal_vertices = self.read_recursive().decoding_graph.get_edges_neighbors(&internal_edges);
         self.create_cluster_node(internal_edges, internal_vertices, dual_module)
     }
 
@@ -369,9 +344,9 @@ impl MWPSVisualizer for DualModuleInterfacePtr {
         for dual_node_ptr in interface.nodes.iter() {
             let dual_node = dual_node_ptr.read_recursive();
             dual_nodes.push(json!({
-                if abbrev { "e" } else { "internal_edges" }: dual_node.internal_edges,
-                if abbrev { "v" } else { "internal_vertices" }: dual_node.internal_vertices,
-                if abbrev { "h" } else { "hair_edges" }: dual_node.hair_edges,
+                if abbrev { "e" } else { "edges" }: dual_node.invalid_subgraph.edges,
+                if abbrev { "v" } else { "vertices" }: dual_node.invalid_subgraph.vertices,
+                if abbrev { "h" } else { "hairs" }: dual_node.invalid_subgraph.hairs,
                 if abbrev { "d" } else { "dual_variable" }: dual_node.dual_variable.to_f64(),
                 if abbrev { "dn" } else { "dual_variable_numerator" }: dual_node.dual_variable.numer().to_i64(),
                 if abbrev { "dd" } else { "dual_variable_denominator" }: dual_node.dual_variable.denom().to_i64(),

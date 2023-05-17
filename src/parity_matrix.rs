@@ -141,17 +141,10 @@ impl ParityMatrix {
     }
 
     /// add a row to the parity matrix from a given vertex, automatically add phantom edges corresponding to this parity check
-    pub fn add_parity_check_with_dual_module(&mut self, vertex_index: VertexIndex, dual_module: &impl DualModuleImpl) {
-        self.is_echelon_form = false;
-        let incident_edges = dual_module.get_vertex_neighbors(vertex_index);
-        let parity = dual_module.is_vertex_defect(vertex_index);
-        self.add_constraint(&incident_edges, parity);
-    }
-
     pub fn add_parity_check_with_decoding_graph(&mut self, vertex_index: VertexIndex, decoding_graph: &HyperDecodingGraph) {
         self.is_echelon_form = false;
-        let incident_edges = &decoding_graph.model_graph.vertices[vertex_index].edges;
-        let parity = decoding_graph.defect_vertices_hashset.contains(&vertex_index);
+        let incident_edges = decoding_graph.get_vertex_neighbors(vertex_index);
+        let parity = decoding_graph.is_vertex_defect(vertex_index);
         self.add_constraint(incident_edges, parity);
     }
 
@@ -465,7 +458,7 @@ impl ParityMatrix {
 
     /// using only necessary edges to build a joint solution of all non-zero dual variables,
     ///     requiring all non-zero dual variables to get empty array when calling `get_implicit_shrink_edges`
-    pub fn get_joint_solution(&mut self) -> Option<Vec<EdgeIndex>> {
+    pub fn get_joint_solution(&mut self) -> Option<Subgraph> {
         self.row_echelon_form();
         if !self.echelon_satisfiable {
             return None  // no joint solution is possible once all the implicit shrinks have been executed
@@ -479,11 +472,11 @@ impl ParityMatrix {
                 joint_solution.push(edge_index);
             }
         }
-        Some(joint_solution)
+        Some(Subgraph::new(joint_solution))
     }
 
     /// try every independent variables and try to minimize the overall primal objective function
-    pub fn get_joint_solution_local_minimum(&mut self, hypergraph: &SolverInitializer) -> Option<Vec<EdgeIndex>> {
+    pub fn get_joint_solution_local_minimum(&mut self, hypergraph: &SolverInitializer) -> Option<Subgraph> {
         self.row_echelon_form();
         if !self.echelon_satisfiable {
             return None  // no joint solution is possible once all the implicit shrinks have been executed
@@ -543,7 +536,7 @@ impl ParityMatrix {
             }
             break
         }
-        Some(joint_solution.into_iter().collect())
+        Some(Subgraph::new(joint_solution.into_iter().collect()))
     }
 
 }
@@ -641,7 +634,7 @@ pub mod tests {
     fn parity_matrix_basic_1() {  // cargo test parity_matrix_basic_1 -- --nocapture
         let mut matrix = ParityMatrix::new();
         for edge_index in 0..7 {
-            matrix.add_variable_tightness(edge_index, true);
+            matrix.add_tight_variable(edge_index);
         }
         matrix.add_constraint(&[0, 1], true);
         matrix.add_constraint(&[0, 2], false);
@@ -670,7 +663,7 @@ pub mod tests {
     fn parity_matrix_basic_2() {  // cargo test parity_matrix_basic_2 -- --nocapture
         let mut matrix = ParityMatrix::new();
         for edge_index in 0..15 {
-            matrix.add_variable_tightness(edge_index, true);
+            matrix.add_tight_variable(edge_index);
         }
         let odd_parity_checks = vec![vec![0,3,8,12], vec![6,7]];
         let even_parity_checks = vec![vec![1,2], vec![2,3,4], vec![4,5,6], vec![0,1,14], vec![5,8,9], vec![7,9]
@@ -705,7 +698,7 @@ pub mod tests {
         let implicit_shrink_edges = matrix.get_implicit_shrink_edges(&hair_edges_1).unwrap();
         assert!(implicit_shrink_edges.is_empty(), "no need to add more implicit shrinks");
         let joint_solution = matrix.get_joint_solution().unwrap();
-        assert_eq!(joint_solution, vec![3, 4, 6], "we got some joint solution");
+        assert_eq!(joint_solution, Subgraph::new(vec![3, 4, 6]), "we got some joint solution");
     }
 
     /// an example where the first hair edge might be independent variable: because it has nothing to do with outside
@@ -713,7 +706,7 @@ pub mod tests {
     fn parity_matrix_basic_3() {  // cargo test parity_matrix_basic_3 -- --nocapture
         let mut matrix = ParityMatrix::new();
         for edge_index in 0..4 {
-            matrix.add_variable_tightness(edge_index, true);
+            matrix.add_tight_variable(edge_index);
         }
         let odd_parity_checks = vec![vec![0,1], vec![3]];
         let even_parity_checks = vec![vec![0,2], vec![1,2,3]];
@@ -735,7 +728,7 @@ pub mod tests {
     fn parity_matrix_basic_4() {  // cargo test parity_matrix_basic_4 -- --nocapture
         let mut matrix = ParityMatrix::new();
         for edge_index in 0..14 {
-            matrix.add_variable_tightness(edge_index, true);
+            matrix.add_tight_variable(edge_index);
         }
         let odd_parity_checks = vec![vec![0,8,12,13], vec![1,8,9,13], vec![2,8,9,10], vec![3,8,9,10,11], vec![4,9,10,11,12]
             , vec![5,10,11,12,13], vec![6,11,12,13], vec![7,8,9,10,11,12,13]];

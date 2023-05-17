@@ -3,6 +3,7 @@
 //! This implementation targets to be an exact MWPS solver, although it's not yet sure whether it is actually one.
 //! 
 
+use crate::framework::HyperDecodingGraph;
 use crate::parity_matrix::*;
 use crate::util::*;
 use crate::primal_module::*;
@@ -133,21 +134,21 @@ impl PrimalModuleImpl for PrimalModuleSerial {
         self.debug_recordings.lock().clear();
     }
 
-    fn load_defect_dual_node<D: DualModuleImpl>(&mut self, dual_node_ptr: &DualNodePtr, dual_module: &mut D) {
+    fn load_defect_dual_node<D: DualModuleImpl>(&mut self, dual_node_ptr: &DualNodePtr, decoding_graph: &HyperDecodingGraph, dual_module: &mut D) {
         let node = dual_node_ptr.read_recursive();
         assert_eq!(node.index, self.nodes.len(), "must load defect nodes in order");
         let mut matrix = ParityMatrix::new();
         let mut edges = BTreeSet::new();
         let mut vertices = BTreeSet::new();
-        for &edge_index in node.hair_edges.iter() {
+        for &edge_index in node.invalid_subgraph.hairs.iter() {
             matrix.add_variable(edge_index);
             edges.insert(edge_index);
         }
-        for &vertex_index in node.internal_vertices.iter() {
+        for &vertex_index in node.invalid_subgraph.vertices.iter() {
             vertices.insert(vertex_index);
         }
         for &vertex_index in vertices.iter() {
-            matrix.add_parity_check_with_dual_module(vertex_index, dual_module);
+            matrix.add_parity_check_with_decoding_graph(vertex_index, decoding_graph);
         }
         let primal_cluster_ptr = PrimalClusterPtr::new_value(PrimalCluster {
             cluster_index: self.clusters.len(),
@@ -179,9 +180,11 @@ impl PrimalModuleImpl for PrimalModuleSerial {
         }
     }
 
-    fn resolve(&mut self, mut group_max_update_length: GroupMaxUpdateLength, interface: &DualModuleInterfacePtr, dual_module: &mut impl DualModuleImpl) {
+    fn resolve(&mut self, mut group_max_update_length: GroupMaxUpdateLength, interface_ptr: &DualModuleInterfacePtr, dual_module: &mut impl DualModuleImpl) {
         debug_assert!(!group_max_update_length.is_unbounded() && group_max_update_length.get_valid_growth().is_none());
         let mut active_clusters = BTreeSet::<NodeIndex>::new();
+        let interface = interface_ptr.read_recursive();
+        let decoding_graph = &interface.decoding_graph;
         while let Some(conflict) = group_max_update_length.pop() {
             match conflict {
                 MaxUpdateLength::Conflicting(edge_index) => {
@@ -197,11 +200,11 @@ impl PrimalModuleImpl for PrimalModuleSerial {
                     let mut cluster = cluster_ptr.write();
                     cluster.matrix.add_variable(edge_index);
                     // then add new constraints because these edges may touch new vertices
-                    let incident_vertices = dual_module.get_edge_neighbors(edge_index);
+                    let incident_vertices = decoding_graph.get_edge_neighbors(edge_index);
                     for &vertex_index in incident_vertices.iter() {
                         if !cluster.vertices.contains(&vertex_index) {
                             cluster.vertices.insert(vertex_index);
-                            cluster.matrix.add_parity_check_with_dual_module(vertex_index, dual_module);
+                            cluster.matrix.add_parity_check_with_decoding_graph(vertex_index, decoding_graph);
                         }
                     }
                     cluster.edges.insert(edge_index);
@@ -216,6 +219,7 @@ impl PrimalModuleImpl for PrimalModuleSerial {
                 _ => { unreachable!() }
             }
         }
+        drop(interface);
         // // union clusters if their phantom edges touch
         // for &cluster_index in self.live_clusters.iter() {
         //     let cluster_ptr = self.clusters[cluster_index].clone();
@@ -252,7 +256,7 @@ impl PrimalModuleImpl for PrimalModuleSerial {
                     })).collect(),
                 })
             }
-            let solved = self.resolve_cluster(cluster_index, interface, dual_module);
+            let solved = self.resolve_cluster(cluster_index, interface_ptr, dual_module);
             if solved {
                 self.live_clusters.remove(&cluster_index);
             }

@@ -184,7 +184,7 @@ impl F64Rng for DeterministicRng {
 /// if are selected, will generate the parity result in the syndrome)
 #[cfg_attr(feature = "python_binding", cfg_eval)]
 #[cfg_attr(feature = "python_binding", pyclass)]
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Subgraph(Vec<EdgeIndex>);
 
 impl Subgraph {

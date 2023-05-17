@@ -239,8 +239,9 @@ impl PrimalDualType {
                 Box::new(SolverUnionFind::new(initializer))
             },
             Self::Serial => {
-                assert_eq!(primal_dual_config, json!({}));
-                Box::new(SolverSerial::new(initializer))
+                unimplemented!()
+                // assert_eq!(primal_dual_config, json!({}));
+                // Box::new(SolverSerial::new(initializer))
             },
             Self::ErrorPatternLogger => {
                 Box::new(SolverErrorPatternLogger::new(initializer, code, primal_dual_config))

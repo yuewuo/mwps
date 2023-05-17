@@ -33,10 +33,11 @@ pub mod primal_module_union_find;
 pub mod matrix_util;
 pub mod union_find;
 pub mod mwps_solver;
-pub mod explore;
-pub mod primal_module_serial;
+// pub mod explore;
+// pub mod primal_module_serial;
 pub mod parity_matrix;
 pub mod framework;
+pub mod plugin;
 
 
 #[cfg(feature="python_binding")]

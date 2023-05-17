@@ -3,7 +3,7 @@
 //! A serial implementation of the dual module
 //!
 
-use std::collections::{BTreeSet, BTreeMap};
+use std::collections::BTreeSet;
 use num_traits::FromPrimitive;
 use crate::util::*;
 use crate::num_traits::sign::Signed;
@@ -12,7 +12,6 @@ use crate::derivative::Derivative;
 use crate::dual_module::*;
 use crate::visualize::*;
 use crate::pointers::*;
-use crate::matrix_util::*;
 
 
 pub struct DualModuleSerial {
@@ -74,6 +73,8 @@ pub struct Edge {
     pub growth: Rational,
     /// the dual nodes that contributes to this edge
     pub dual_nodes: Vec<DualNodeWeak>,
+    /// the speed of growth
+    pub grow_rate: Rational,
 }
 
 pub type EdgePtr = ArcRwLock<Edge>;
@@ -114,6 +115,7 @@ impl DualModuleImpl for DualModuleSerial {
                 weight: Rational::from_usize(*weight).unwrap(),
                 dual_nodes: vec![],
                 vertices: vertex_indices.iter().map(|i| vertices[*i].downgrade()).collect::<Vec<_>>(),
+                grow_rate: Rational::zero(),
             });
             for &vertex_index in vertex_indices.iter() {
                 vertices[vertex_index].write().edges.push(edge_ptr.downgrade());
@@ -141,63 +143,39 @@ impl DualModuleImpl for DualModuleSerial {
     }
 
     fn add_dual_node(&mut self, dual_node_ptr: &DualNodePtr) {
-        let mut node = dual_node_ptr.write();
-        assert!(!node.internal_edges.is_empty() || !node.internal_vertices.is_empty(), "invalid dual node");
-        if node.internal_edges.is_empty() {
-            assert!(node.internal_vertices.len() == 1, "defect node (without internal edges) should only work on a single vertex, for simplicity");
-            let vertex_index = node.internal_vertices.iter().next().unwrap();
+        // make sure the active edges are set
+        let dual_node_weak = dual_node_ptr.downgrade();
+        let dual_node = dual_node_ptr.read_recursive();
+        if dual_node.invalid_subgraph.edges.is_empty() {
+            assert!(dual_node.invalid_subgraph.vertices.len() == 1, "defect node (without edges) should only work on a single vertex, for simplicity");
+            let vertex_index = dual_node.invalid_subgraph.vertices.iter().next().unwrap();
             let mut vertex = self.vertices[*vertex_index].write();
             assert!(!vertex.is_defect, "defect should not be added twice");
             vertex.is_defect = true;
-        } else {
-            if node.internal_vertices.is_empty() {
-                let mut internal_vertices = BTreeSet::new();
-                // fill in with all vertices incident to the internal edges
-                for &edge_index in node.internal_edges.iter() {
-                    let edge = self.edges[edge_index].read_recursive();
-                    for vertex_weak in edge.vertices.iter() {
-                        internal_vertices.insert(vertex_weak.upgrade_force().read_recursive().vertex_index);
-                    }
-                }
-                std::mem::swap(&mut node.internal_vertices, &mut internal_vertices);
-            }
-            debug_assert!(!self.is_valid_cluster(&node.internal_edges, &node.internal_vertices), "cannot create dual node out of a valid cluster");
         }
-        // calculate hair edges
-        let mut hair_edges = BTreeSet::new();
-        for &vertex_index in node.internal_vertices.iter() {
-            let vertex = self.vertices[vertex_index].read_recursive();
-            for edge_weak in vertex.edges.iter() {
-                let edges_index = edge_weak.upgrade_force().read_recursive().edge_index;
-                if !node.internal_edges.contains(&edges_index) {
-                    hair_edges.insert(edges_index);
-                }
-            }
-        }
-        for &edge_index in hair_edges.iter() {
+        for &edge_index in dual_node.invalid_subgraph.hairs.iter() {
             let mut edge = self.edges[edge_index].write();
-            edge.dual_nodes.push(dual_node_ptr.downgrade());
+            edge.grow_rate += &dual_node.grow_rate;
+            edge.dual_nodes.push(dual_node_weak.clone());
+            if edge.grow_rate.is_zero() {
+                self.active_edges.remove(&edge_index);
+            } else {
+                self.active_edges.insert(edge_index);
+            }
         }
-        assert!(node.hair_edges.is_empty(), "hair edge should not be provided");
-        std::mem::swap(&mut node.hair_edges, &mut hair_edges);
-        let grow_rate = node.grow_rate.clone();
-        drop(node);
-        self.set_grow_rate(dual_node_ptr, grow_rate);  // make sure the active edges are set
+        self.active_nodes.insert(dual_node_ptr.clone());
     }
 
     fn set_grow_rate(&mut self, dual_node_ptr: &DualNodePtr, grow_rate: Rational) {
         let mut dual_node = dual_node_ptr.write();
+        let grow_rate_diff = grow_rate.clone() - &dual_node.grow_rate;
         dual_node.grow_rate = grow_rate;
         drop(dual_node);
         let dual_node = dual_node_ptr.read_recursive();
-        for &edge_index in dual_node.hair_edges.iter() {
-            let edge = self.edges[edge_index].read_recursive();
-            let mut aggregated_grow_rate = Rational::zero();
-            for node_weak in edge.dual_nodes.iter() {
-                let node_ptr = node_weak.upgrade_force();
-                aggregated_grow_rate += node_ptr.read_recursive().grow_rate.clone();
-            }
-            if aggregated_grow_rate.is_zero() {
+        for &edge_index in dual_node.invalid_subgraph.hairs.iter() {
+            let mut edge = self.edges[edge_index].write();
+            edge.grow_rate += &grow_rate_diff;
+            if edge.grow_rate.is_zero() {
                 self.active_edges.remove(&edge_index);
             } else {
                 self.active_edges.insert(edge_index);
@@ -214,7 +192,7 @@ impl DualModuleImpl for DualModuleSerial {
     fn compute_maximum_update_length_dual_node(&mut self, dual_node_ptr: &DualNodePtr, simultaneous_update: bool) -> MaxUpdateLength {
         let node = dual_node_ptr.read_recursive();
         let mut max_update_length = MaxUpdateLength::new();
-        for &edge_index in node.hair_edges.iter() {
+        for &edge_index in node.invalid_subgraph.hairs.iter() {
             let edge = self.edges[edge_index].read_recursive();
             let mut grow_rate = Rational::zero();
             if simultaneous_update {  // consider all dual nodes
@@ -304,7 +282,7 @@ impl DualModuleImpl for DualModuleSerial {
         }
         let node = dual_node_ptr.read_recursive();
         let grow_amount = length * node.grow_rate.clone();
-        for &edge_index in node.hair_edges.iter() {
+        for &edge_index in node.invalid_subgraph.hairs.iter() {
             let mut edge = self.edges[edge_index].write();
             edge.growth += grow_amount.clone();
             assert!(!edge.growth.is_negative(), "edge {} over-shrunk: the new growth is {:?}", edge_index, edge.growth);
@@ -335,70 +313,6 @@ impl DualModuleImpl for DualModuleSerial {
         }
     }
 
-    fn find_valid_subgraph(&self, internal_edges: &BTreeSet<EdgeIndex>, internal_vertices: &BTreeSet<VertexIndex>) -> Option<Subgraph> {
-        assert!(!internal_edges.is_empty(), "finding subgraph without any internal edges is infeasible");
-        let mut variable_indices = BTreeMap::new();  // edge_index -> variable_index
-        let mut edge_indices = vec![];  // variable_index -> edge_index
-        // fill in with all vertices incident to the internal edges
-        for (variable_index, &edge_index) in internal_edges.iter().enumerate() {
-            edge_indices.push(edge_index);
-            variable_indices.insert(edge_index, variable_index);
-        }
-        // use Gaussian elimination on a modular 2 linear system (i.e. there is only 0 and 1 elements)
-        let height = internal_vertices.len();  // number of constraints
-        let width = internal_edges.len() + 1;  // number of variables
-        let mut matrix = Vec::<Vec<u8>>::with_capacity(height);
-        for &vertex_index in internal_vertices.iter() {
-            let mut row = vec![0; width];
-            let vertex = self.vertices[vertex_index].read_recursive();
-            for edge_weak in vertex.edges.iter() {
-                let edge_index = edge_weak.upgrade_force().read_recursive().edge_index;
-                if internal_edges.contains(&edge_index) {
-                    row[variable_indices[&edge_index]] = 1;
-                }
-            }
-            row[width - 1] = if vertex.is_defect { 1 } else { 0 };
-            matrix.push(row);
-        }
-        modular_2_row_echelon_form(&mut matrix);
-        // find the first non-zero value on the right column from bottom to top
-        for i in (0..height).rev() {
-            if matrix[i][width - 1] != 0 {
-                // check if all the previous elements are 0, if so then it's unsolvable and thus invalid
-                let mut all_zero = true;
-                let row = &matrix[i];
-                for j in 0..width-1 {
-                    if row[j] == 1 {
-                        all_zero = false;
-                        break
-                    }
-                }
-                if all_zero {
-                    return None;
-                }
-                break
-            }
-        }
-        let mut subgraph_edges = vec![];
-        let mut lead = 0;
-        for i in 0..height {
-            let row = &matrix[i];
-            while row[lead] == 0 {
-                if lead >= width-2 {
-                    break  // cannot find a lead element
-                }
-                lead += 1;
-            }
-            if row[lead] == 0 {
-                break  // cannot find a lead element
-            }
-            if row[width - 1] == 1 {
-                subgraph_edges.push(edge_indices[lead]);
-            }
-        }
-        Some(Subgraph::new(subgraph_edges))
-    }
-    
     fn get_edge_nodes(&self, edge_index: EdgeIndex) -> Vec<DualNodePtr> {
         self.edges[edge_index].read_recursive().dual_nodes.iter().map(|x| x.upgrade_force()).collect()
     }
@@ -406,20 +320,6 @@ impl DualModuleImpl for DualModuleSerial {
     fn is_edge_tight(&self, edge_index: EdgeIndex) -> bool {
         let edge = self.edges[edge_index].read_recursive();
         edge.growth == edge.weight
-    }
-
-    fn get_edge_neighbors(&self, edge_index: EdgeIndex) -> Vec<VertexIndex> {
-        let edge = self.edges[edge_index].read_recursive();
-        edge.vertices.iter().map(|ptr| ptr.upgrade_force().read_recursive().vertex_index).collect()
-    }
-
-    fn is_vertex_defect(&self, vertex_index: VertexIndex) -> bool {
-        self.vertices[vertex_index].read_recursive().is_defect
-    }
-
-    fn get_vertex_neighbors(&self, vertex_index: VertexIndex) -> Vec<EdgeIndex> {
-        let vertex = self.vertices[vertex_index].read_recursive();
-        vertex.edges.iter().map(|ptr| ptr.upgrade_force().read_recursive().edge_index).collect()
     }
 
 }
@@ -485,21 +385,21 @@ impl MWPSVisualizer for DualModuleSerial {
 mod tests {
     use super::*;
     use super::super::example_codes::*;
+    use crate::framework::*;
 
     #[test]
     fn dual_module_serial_basics_1() {  // cargo test dual_module_serial_basics_1 -- --nocapture
         let visualize_filename = format!("dual_module_serial_basics_1.json");
         let weight = 1000;
-        let mut code = CodeCapacityColorCode::new(7, 0.1, weight);
+        let code = CodeCapacityColorCode::new(7, 0.1, weight);
         let mut visualizer = Visualizer::new(Some(visualize_data_folder() + visualize_filename.as_str()), code.get_positions(), true).unwrap();
         print_visualize_link(visualize_filename.clone());
         // create dual module
-        let initializer = code.get_initializer();
-        let mut dual_module = DualModuleSerial::new_empty(&initializer);
+        let model_graph = code.get_model_graph();
+        let mut dual_module = DualModuleSerial::new_empty(&model_graph.initializer);
         // try to work on a simple syndrome
-        code.vertices[3].is_defect = true;
-        code.vertices[12].is_defect = true;
-        let interface_ptr = DualModuleInterfacePtr::new_load(&code.get_syndrome(), &mut dual_module);
+        let decoding_graph = HyperDecodingGraph::new_defects(model_graph, vec![3, 12]);
+        let interface_ptr = DualModuleInterfacePtr::new_load(decoding_graph, &mut dual_module);
         visualizer.snapshot_combined(format!("syndrome"), vec![&interface_ptr, &dual_module]).unwrap();
         // grow them each by half
         let dual_node_3_ptr = interface_ptr.read_recursive().nodes[0].clone();
@@ -520,18 +420,15 @@ mod tests {
     fn dual_module_serial_basics_2() {  // cargo test dual_module_serial_basics_2 -- --nocapture
         let visualize_filename = format!("dual_module_serial_basics_2.json");
         let weight = 1000;
-        let mut code = CodeCapacityTailoredCode::new(7, 0., 0.1, weight);
+        let code = CodeCapacityTailoredCode::new(7, 0., 0.1, weight);
         let mut visualizer = Visualizer::new(Some(visualize_data_folder() + visualize_filename.as_str()), code.get_positions(), true).unwrap();
         print_visualize_link(visualize_filename.clone());
         // create dual module
-        let initializer = code.get_initializer();
-        let mut dual_module = DualModuleSerial::new_empty(&initializer);
+        let model_graph = code.get_model_graph();
+        let mut dual_module = DualModuleSerial::new_empty(&model_graph.initializer);
         // try to work on a simple syndrome
-        code.vertices[23].is_defect = true;
-        code.vertices[24].is_defect = true;
-        code.vertices[29].is_defect = true;
-        code.vertices[30].is_defect = true;
-        let interface_ptr = DualModuleInterfacePtr::new_load(&code.get_syndrome(), &mut dual_module);
+        let decoding_graph = HyperDecodingGraph::new_defects(model_graph, vec![23, 24, 29, 30]);
+        let interface_ptr = DualModuleInterfacePtr::new_load(decoding_graph, &mut dual_module);
         visualizer.snapshot_combined(format!("syndrome"), vec![&interface_ptr, &dual_module]).unwrap();
         // grow them each by half
         let dual_node_23_ptr = interface_ptr.read_recursive().nodes[0].clone();
@@ -553,18 +450,15 @@ mod tests {
         let visualize_filename = format!("dual_module_serial_basics_3.json");
         let weight = 600;  // do not change, the data is hard-coded
         let pxy = 0.0602828812732227;
-        let mut code = CodeCapacityTailoredCode::new(7, pxy, 0.1, weight);  // do not change probabilities: the data is hard-coded
+        let code = CodeCapacityTailoredCode::new(7, pxy, 0.1, weight);  // do not change probabilities: the data is hard-coded
         let mut visualizer = Visualizer::new(Some(visualize_data_folder() + visualize_filename.as_str()), code.get_positions(), true).unwrap();
         print_visualize_link(visualize_filename.clone());
         // create dual module
-        let initializer = code.get_initializer();
-        let mut dual_module = DualModuleSerial::new_empty(&initializer);
+        let model_graph = code.get_model_graph();
+        let mut dual_module = DualModuleSerial::new_empty(&model_graph.initializer);
         // try to work on a simple syndrome
-        code.vertices[17].is_defect = true;
-        code.vertices[23].is_defect = true;
-        code.vertices[29].is_defect = true;
-        code.vertices[30].is_defect = true;
-        let interface_ptr = DualModuleInterfacePtr::new_load(&code.get_syndrome(), &mut dual_module);
+        let decoding_graph = HyperDecodingGraph::new_defects(model_graph, vec![17, 23, 29, 30]);
+        let interface_ptr = DualModuleInterfacePtr::new_load(decoding_graph, &mut dual_module);
         visualizer.snapshot_combined(format!("syndrome"), vec![&interface_ptr, &dual_module]).unwrap();
         // grow them each by half
         let dual_node_17_ptr = interface_ptr.read_recursive().nodes[0].clone();
@@ -596,24 +490,23 @@ mod tests {
     fn dual_module_serial_find_valid_subgraph_1() {  // cargo test dual_module_serial_find_valid_subgraph_1 -- --nocapture
         let visualize_filename = format!("dual_module_serial_find_valid_subgraph_1.json");
         let weight = 1000;
-        let mut code = CodeCapacityColorCode::new(7, 0.1, weight);
+        let code = CodeCapacityColorCode::new(7, 0.1, weight);
         let mut visualizer = Visualizer::new(Some(visualize_data_folder() + visualize_filename.as_str()), code.get_positions(), true).unwrap();
         print_visualize_link(visualize_filename.clone());
         // create dual module
-        let initializer = code.get_initializer();
-        let mut dual_module = DualModuleSerial::new_empty(&initializer);
+        let model_graph = code.get_model_graph();
+        let mut dual_module = DualModuleSerial::new_empty(&model_graph.initializer);
         // try to work on a simple syndrome
-        code.vertices[3].is_defect = true;
-        code.vertices[12].is_defect = true;
-        let interface_ptr = DualModuleInterfacePtr::new_load(&code.get_syndrome(), &mut dual_module);
+        let decoding_graph = HyperDecodingGraph::new_defects(model_graph, vec![3, 12]);
+        let interface_ptr = DualModuleInterfacePtr::new_load(decoding_graph.clone(), &mut dual_module);
         visualizer.snapshot_combined(format!("syndrome"), vec![&interface_ptr, &dual_module]).unwrap();
         // invalid clusters
-        assert!(!dual_module.is_valid_cluster_auto_vertices(&vec![20].into_iter().collect()));
-        assert!(!dual_module.is_valid_cluster_auto_vertices(&vec![9, 20].into_iter().collect()));
-        assert!(!dual_module.is_valid_cluster_auto_vertices(&vec![15].into_iter().collect()));
-        assert!(dual_module.is_valid_cluster_auto_vertices(&vec![15, 20].into_iter().collect()));
+        assert!(!decoding_graph.is_valid_cluster_auto_vertices(&vec![20].into_iter().collect()));
+        assert!(!decoding_graph.is_valid_cluster_auto_vertices(&vec![9, 20].into_iter().collect()));
+        assert!(!decoding_graph.is_valid_cluster_auto_vertices(&vec![15].into_iter().collect()));
+        assert!(decoding_graph.is_valid_cluster_auto_vertices(&vec![15, 20].into_iter().collect()));
         // the result subgraph
-        let subgraph = dual_module.find_valid_subgraph_auto_vertices(&vec![9, 15, 20, 21].into_iter().collect()).unwrap();
+        let subgraph = decoding_graph.find_valid_subgraph_auto_vertices(&vec![9, 15, 20, 21].into_iter().collect()).unwrap();
         visualizer.snapshot_combined(format!("subgraph"), vec![&interface_ptr, &dual_module, &subgraph]).unwrap();
     }
 

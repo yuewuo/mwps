@@ -18,6 +18,8 @@ use std::fs::File;
 use std::io::{self, BufRead};
 #[cfg(feature="python_binding")]
 use pyo3::prelude::*;
+use std::sync::Arc;
+use crate::framework::*;
 
 
 /// Vertex corresponds to a stabilizer measurement bit
@@ -247,6 +249,11 @@ pub trait ExampleCode {
             vertex_num,
             weighted_edges,
         }
+    }
+
+    fn get_model_graph(&self) -> Arc<HyperModelGraph> {
+        let initializer = Arc::new(self.get_initializer());
+        Arc::new(HyperModelGraph::new(initializer))
     }
 
     /// set defect vertices (non-trivial measurement result in case of single round of measurement, 

@@ -38,6 +38,26 @@ impl HyperModelGraph {
         }
     }
 
+    pub fn get_edge_neighbors(&self, edge_index: EdgeIndex) -> &Vec<VertexIndex> {
+        &self.initializer.weighted_edges[edge_index].0
+    }
+
+    pub fn get_vertex_neighbors(&self, vertex_index: VertexIndex) -> &Vec<EdgeIndex> {
+        &self.vertices[vertex_index].edges
+    }
+
+    pub fn get_edges_neighbors(&self, edges: &BTreeSet<EdgeIndex>) -> BTreeSet<VertexIndex> {
+        let mut vertices = BTreeSet::new();
+        for &edge_index in edges.iter() {
+            vertices.extend(self.get_edge_neighbors(edge_index));
+        }
+        vertices
+    }
+
+    pub fn matches_subgraph_syndrome(&self, subgraph: &Subgraph, defect_vertices: &Vec<VertexIndex>) -> bool {
+        self.initializer.matches_subgraph_syndrome(subgraph, defect_vertices)
+    }
+
 }
 
 impl MWPSVisualizer for HyperModelGraph {
@@ -46,6 +66,7 @@ impl MWPSVisualizer for HyperModelGraph {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct HyperDecodingGraph {
     /// model graph
     pub model_graph: Arc<HyperModelGraph>,
@@ -60,18 +81,74 @@ pub struct HyperDecodingGraph {
 impl HyperDecodingGraph {
 
     pub fn new(model_graph: Arc<HyperModelGraph>, syndrome_pattern: Arc<SyndromePattern>) -> Self {
-        let mut defect_vertices_hashset = HashSet::with_capacity(syndrome_pattern.defect_vertices.len());
+        let mut decoding_graph = Self {
+            model_graph, syndrome_pattern: syndrome_pattern.clone(),
+            defect_vertices_hashset: HashSet::new(), erasures_hashset: HashSet::new(),
+        };
+        decoding_graph.set_syndrome(syndrome_pattern);
+        decoding_graph
+    }
+
+    pub fn set_syndrome(&mut self, syndrome_pattern: Arc<SyndromePattern>) {
+        self.defect_vertices_hashset.clear();
+        self.erasures_hashset.clear();
+        // reserve space for the hashset
+        if self.defect_vertices_hashset.capacity() < syndrome_pattern.defect_vertices.len() {
+            self.defect_vertices_hashset.reserve(syndrome_pattern.defect_vertices.len() - self.defect_vertices_hashset.capacity())
+        }
+        if self.erasures_hashset.capacity() < syndrome_pattern.erasures.len() {
+            self.erasures_hashset.reserve(syndrome_pattern.erasures.len() - self.erasures_hashset.capacity())
+        }
+        // add new syndrome
         for &vertex_index in syndrome_pattern.defect_vertices.iter() {
-            defect_vertices_hashset.insert(vertex_index);
+            self.defect_vertices_hashset.insert(vertex_index);
         }
-        let mut erasures_hashset = HashSet::with_capacity(syndrome_pattern.erasures.len());
         for &edge_index in syndrome_pattern.erasures.iter() {
-            erasures_hashset.insert(edge_index);
+            self.erasures_hashset.insert(edge_index);
         }
-        Self {
-            model_graph, syndrome_pattern,
-            defect_vertices_hashset, erasures_hashset,
+    }
+
+    pub fn new_defects(model_graph: Arc<HyperModelGraph>, defect_vertices: Vec<VertexIndex>) -> Self {
+        Self::new(model_graph, Arc::new(SyndromePattern::new_vertices(defect_vertices)))
+    }
+
+    pub fn find_valid_subgraph(&self, edges: &BTreeSet<EdgeIndex>, vertices: &BTreeSet<VertexIndex>) -> Option<Subgraph> {
+        let mut matrix = ParityMatrix::new_no_phantom();
+        for &edge_index in edges.iter() {
+            matrix.add_tight_variable(edge_index);
         }
+        for &vertex_index in vertices.iter() {
+            matrix.add_parity_check_with_decoding_graph(vertex_index, self);
+        }
+        matrix.get_joint_solution()
+    }
+
+    pub fn find_valid_subgraph_auto_vertices(&self, edges: &BTreeSet<EdgeIndex>) -> Option<Subgraph> {
+        self.find_valid_subgraph(edges, &self.get_edges_neighbors(edges))
+    }
+
+    pub fn is_valid_cluster(&self, edges: &BTreeSet<EdgeIndex>, vertices: &BTreeSet<VertexIndex>) -> bool {
+        self.find_valid_subgraph(edges, vertices).is_some()
+    }
+
+    pub fn is_valid_cluster_auto_vertices(&self, edges: &BTreeSet<EdgeIndex>) -> bool {
+        self.find_valid_subgraph_auto_vertices(edges).is_some()
+    }
+
+    pub fn is_vertex_defect(&self, vertex_index: VertexIndex) -> bool {
+        self.defect_vertices_hashset.contains(&vertex_index)
+    }
+
+    pub fn get_edge_neighbors(&self, edge_index: EdgeIndex) -> &Vec<VertexIndex> {
+        self.model_graph.get_edge_neighbors(edge_index)
+    }
+
+    pub fn get_vertex_neighbors(&self, vertex_index: VertexIndex) -> &Vec<EdgeIndex> {
+        self.model_graph.get_vertex_neighbors(vertex_index)
+    }
+
+    pub fn get_edges_neighbors(&self, edges: &BTreeSet<EdgeIndex>) -> BTreeSet<VertexIndex> {
+        self.model_graph.get_edges_neighbors(edges)
     }
 
 }
@@ -96,11 +173,11 @@ pub struct InvalidSubgraph {
     /// the hash value calculated by other fields
     pub hash: u64,
     /// subset of vertices
-    vertices: BTreeSet<VertexIndex>,
+    pub vertices: BTreeSet<VertexIndex>,
     /// subset of edges
-    edges: BTreeSet<EdgeIndex>,
+    pub edges: BTreeSet<EdgeIndex>,
     /// the hair of the invalid subgraph, to avoid repeated computation
-    hairs: BTreeSet<EdgeIndex>,
+    pub hairs: BTreeSet<EdgeIndex>,
 }
 
 impl InvalidSubgraph {
@@ -240,25 +317,23 @@ mod tests {
     use super::*;
     use super::super::example_codes::*;
 
-    fn color_code_5_model_graph() -> (Arc<HyperModelGraph>, Arc<SolverInitializer>, Visualizer, CodeCapacityColorCode) {
+    fn color_code_5_model_graph() -> (Arc<HyperModelGraph>, Visualizer) {
         let visualize_filename = format!("framework_hyper_model_graph.json");
         let code = CodeCapacityColorCode::new(5, 0.1, 1000);
         let mut visualizer = Visualizer::new(Some(visualize_data_folder() + visualize_filename.as_str()), code.get_positions(), true).unwrap();
         print_visualize_link(visualize_filename.clone());
         visualizer.snapshot_combined(format!("code"), vec![&code]).unwrap();
-        let initializer = Arc::new(code.get_initializer());
-        // println!("initializer: {initializer:?}");
-        let model_graph = HyperModelGraph::new(initializer.clone());
-        (Arc::new(model_graph), initializer, visualizer, code)
+        let model_graph = code.get_model_graph();
+        (model_graph, visualizer)
     }
 
     #[test]
     fn framework_hyper_model_graph() {  // cargo test framework_hyper_model_graph -- --nocapture
-        let (model_graph, initializer, ..) = color_code_5_model_graph();
+        let (model_graph, ..) = color_code_5_model_graph();
         println!("model_graph: {model_graph:?}");
         let mut edge_reference_initializer = 0;
         let mut edge_reference_hyper_model_graph = 0;
-        for (incident_vertices, _weight) in initializer.weighted_edges.iter() {
+        for (incident_vertices, _weight) in model_graph.initializer.weighted_edges.iter() {
             edge_reference_initializer += incident_vertices.len();
         }
         for vertex in model_graph.vertices.iter() {
@@ -267,12 +342,17 @@ mod tests {
         assert_eq!(edge_reference_initializer, edge_reference_hyper_model_graph);
     }
 
+    fn color_code_5_decoding_graph(defect_vertices: Vec<VertexIndex>) -> (Arc<HyperDecodingGraph>, Visualizer) {
+        let (model_graph, mut visualizer) = color_code_5_model_graph();
+        let syndrome_pattern = Arc::new(SyndromePattern::new_vertices(defect_vertices));
+        let decoding_graph = Arc::new(HyperDecodingGraph::new(model_graph, syndrome_pattern));
+        visualizer.snapshot_combined(format!("syndrome"), vec![decoding_graph.as_ref()]).unwrap();
+        (decoding_graph, visualizer)
+    }
+
     #[test]
     fn framework_invalid_subgraph() {  // cargo test framework_invalid_subgraph -- --nocapture
-        let (model_graph, _initializer, mut visualizer, ..) = color_code_5_model_graph();
-        let syndrome_pattern = Arc::new(SyndromePattern::new_vertices(vec![7, 1]));
-        let decoding_graph = Arc::new(HyperDecodingGraph::new(model_graph.clone(), syndrome_pattern.clone()));
-        visualizer.snapshot_combined(format!("syndrome"), vec![decoding_graph.as_ref()]).unwrap();
+        let (decoding_graph, ..) = color_code_5_decoding_graph(vec![7, 1]);
         let invalid_subgraph_1 = InvalidSubgraph::new(vec![13].into_iter().collect(), decoding_graph.as_ref());
         println!("invalid_subgraph_1: {invalid_subgraph_1:?}");
         assert_eq!(invalid_subgraph_1.vertices, vec![2, 6, 7].into_iter().collect());
@@ -283,20 +363,14 @@ mod tests {
     #[test]
     #[should_panic]
     fn framework_valid_subgraph() {  // cargo test framework_valid_subgraph -- --nocapture
-        let (model_graph, _initializer, mut visualizer, ..) = color_code_5_model_graph();
-        let syndrome_pattern = Arc::new(SyndromePattern::new_vertices(vec![7, 1]));
-        let decoding_graph = Arc::new(HyperDecodingGraph::new(model_graph.clone(), syndrome_pattern.clone()));
-        visualizer.snapshot_combined(format!("syndrome"), vec![decoding_graph.as_ref()]).unwrap();
+        let (decoding_graph, ..) = color_code_5_decoding_graph(vec![7, 1]);
         let invalid_subgraph = InvalidSubgraph::new(vec![6, 10].into_iter().collect(), decoding_graph.as_ref());
         println!("invalid_subgraph: {invalid_subgraph:?}");  // should not print because it panics
     }
 
     #[test]
     fn framework_good_relaxer() {  // cargo test framework_good_relaxer -- --nocapture
-        let (model_graph, _initializer, mut visualizer, ..) = color_code_5_model_graph();
-        let syndrome_pattern = Arc::new(SyndromePattern::new_vertices(vec![7, 1]));
-        let decoding_graph = Arc::new(HyperDecodingGraph::new(model_graph.clone(), syndrome_pattern.clone()));
-        visualizer.snapshot_combined(format!("syndrome"), vec![decoding_graph.as_ref()]).unwrap();
+        let (decoding_graph, ..) = color_code_5_decoding_graph(vec![7, 1]);
         let invalid_subgraph = Arc::new(InvalidSubgraph::new_complete(vec![7].into_iter().collect(), BTreeSet::new(), decoding_graph.as_ref()));
         use num_traits::One;
         let relaxer = Relaxer::new(vec![(invalid_subgraph, Rational::one())]);
@@ -307,10 +381,7 @@ mod tests {
     #[test]
     #[should_panic]
     fn framework_bad_relaxer() {  // cargo test framework_bad_relaxer -- --nocapture
-        let (model_graph, _initializer, mut visualizer, ..) = color_code_5_model_graph();
-        let syndrome_pattern = Arc::new(SyndromePattern::new_vertices(vec![7, 1]));
-        let decoding_graph = Arc::new(HyperDecodingGraph::new(model_graph.clone(), syndrome_pattern.clone()));
-        visualizer.snapshot_combined(format!("syndrome"), vec![decoding_graph.as_ref()]).unwrap();
+        let (decoding_graph, ..) = color_code_5_decoding_graph(vec![7, 1]);
         let invalid_subgraph = Arc::new(InvalidSubgraph::new_complete(vec![7].into_iter().collect(), BTreeSet::new(), decoding_graph.as_ref()));
         let relaxer: Relaxer = Relaxer::new(vec![(invalid_subgraph, Rational::zero())]);
         println!("relaxer: {relaxer:?}");  // should not print because it panics
