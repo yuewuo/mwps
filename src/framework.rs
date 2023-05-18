@@ -256,6 +256,17 @@ impl InvalidSubgraph {
         Ok(())
     }
 
+    pub fn generate_matrix(&self, decoding_graph: &HyperDecodingGraph) -> ParityMatrix {
+        let mut matrix = ParityMatrix::new();
+        for &edge_index in self.hairs.iter() {
+            matrix.add_variable(edge_index);
+        }
+        for &vertex_index in self.vertices.iter() {
+            matrix.add_parity_check_with_decoding_graph(vertex_index, decoding_graph);
+        }
+        matrix
+    }
+
 }
 
 #[derive(Clone, Debug)]
@@ -317,8 +328,7 @@ mod tests {
     use super::*;
     use super::super::example_codes::*;
 
-    fn color_code_5_model_graph() -> (Arc<HyperModelGraph>, Visualizer) {
-        let visualize_filename = format!("framework_hyper_model_graph.json");
+    fn color_code_5_model_graph(visualize_filename: String) -> (Arc<HyperModelGraph>, Visualizer) {
         let code = CodeCapacityColorCode::new(5, 0.1, 1000);
         let mut visualizer = Visualizer::new(Some(visualize_data_folder() + visualize_filename.as_str()), code.get_positions(), true).unwrap();
         print_visualize_link(visualize_filename.clone());
@@ -329,7 +339,8 @@ mod tests {
 
     #[test]
     fn framework_hyper_model_graph() {  // cargo test framework_hyper_model_graph -- --nocapture
-        let (model_graph, ..) = color_code_5_model_graph();
+        let visualize_filename = format!("framework_hyper_model_graph.json");
+        let (model_graph, ..) = color_code_5_model_graph(visualize_filename);
         println!("model_graph: {model_graph:?}");
         let mut edge_reference_initializer = 0;
         let mut edge_reference_hyper_model_graph = 0;
@@ -342,8 +353,8 @@ mod tests {
         assert_eq!(edge_reference_initializer, edge_reference_hyper_model_graph);
     }
 
-    fn color_code_5_decoding_graph(defect_vertices: Vec<VertexIndex>) -> (Arc<HyperDecodingGraph>, Visualizer) {
-        let (model_graph, mut visualizer) = color_code_5_model_graph();
+    fn color_code_5_decoding_graph(defect_vertices: Vec<VertexIndex>, visualize_filename: String) -> (Arc<HyperDecodingGraph>, Visualizer) {
+        let (model_graph, mut visualizer) = color_code_5_model_graph(visualize_filename);
         let syndrome_pattern = Arc::new(SyndromePattern::new_vertices(defect_vertices));
         let decoding_graph = Arc::new(HyperDecodingGraph::new(model_graph, syndrome_pattern));
         visualizer.snapshot_combined(format!("syndrome"), vec![decoding_graph.as_ref()]).unwrap();
@@ -352,7 +363,8 @@ mod tests {
 
     #[test]
     fn framework_invalid_subgraph() {  // cargo test framework_invalid_subgraph -- --nocapture
-        let (decoding_graph, ..) = color_code_5_decoding_graph(vec![7, 1]);
+        let visualize_filename = format!("framework_invalid_subgraph.json");
+        let (decoding_graph, ..) = color_code_5_decoding_graph(vec![7, 1], visualize_filename);
         let invalid_subgraph_1 = InvalidSubgraph::new(vec![13].into_iter().collect(), decoding_graph.as_ref());
         println!("invalid_subgraph_1: {invalid_subgraph_1:?}");
         assert_eq!(invalid_subgraph_1.vertices, vec![2, 6, 7].into_iter().collect());
@@ -363,14 +375,16 @@ mod tests {
     #[test]
     #[should_panic]
     fn framework_valid_subgraph() {  // cargo test framework_valid_subgraph -- --nocapture
-        let (decoding_graph, ..) = color_code_5_decoding_graph(vec![7, 1]);
+        let visualize_filename = format!("framework_valid_subgraph.json");
+        let (decoding_graph, ..) = color_code_5_decoding_graph(vec![7, 1], visualize_filename);
         let invalid_subgraph = InvalidSubgraph::new(vec![6, 10].into_iter().collect(), decoding_graph.as_ref());
         println!("invalid_subgraph: {invalid_subgraph:?}");  // should not print because it panics
     }
 
     #[test]
     fn framework_good_relaxer() {  // cargo test framework_good_relaxer -- --nocapture
-        let (decoding_graph, ..) = color_code_5_decoding_graph(vec![7, 1]);
+        let visualize_filename = format!("framework_good_relaxer.json");
+        let (decoding_graph, ..) = color_code_5_decoding_graph(vec![7, 1], visualize_filename);
         let invalid_subgraph = Arc::new(InvalidSubgraph::new_complete(vec![7].into_iter().collect(), BTreeSet::new(), decoding_graph.as_ref()));
         use num_traits::One;
         let relaxer = Relaxer::new(vec![(invalid_subgraph, Rational::one())]);
@@ -381,7 +395,8 @@ mod tests {
     #[test]
     #[should_panic]
     fn framework_bad_relaxer() {  // cargo test framework_bad_relaxer -- --nocapture
-        let (decoding_graph, ..) = color_code_5_decoding_graph(vec![7, 1]);
+        let visualize_filename = format!("framework_bad_relaxer.json");
+        let (decoding_graph, ..) = color_code_5_decoding_graph(vec![7, 1], visualize_filename);
         let invalid_subgraph = Arc::new(InvalidSubgraph::new_complete(vec![7].into_iter().collect(), BTreeSet::new(), decoding_graph.as_ref()));
         let relaxer: Relaxer = Relaxer::new(vec![(invalid_subgraph, Rational::zero())]);
         println!("relaxer: {relaxer:?}");  // should not print because it panics

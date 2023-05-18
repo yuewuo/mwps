@@ -10,9 +10,9 @@ use crate::parity_matrix::*;
 use crate::dual_module::*;
 
 /// common trait that must be implemented for each plugin
-pub trait PluginImpl: Clone {
+pub trait PluginImpl {
 
     /// given the tight edges and parity constraints, find relaxers
-    fn find_relaxers(&mut self, matrix: &mut ParityMatrix, dual_variables: &[DualNodePtr]) -> Vec<Relaxer>;
+    fn find_relaxers(&self, matrix: &mut ParityMatrix, dual_variables: &[DualNodePtr]) -> Vec<Relaxer>;
 
 }
