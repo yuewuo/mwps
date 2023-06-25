@@ -16,6 +16,7 @@ use crate::serde::{Serialize, Deserialize};
 use crate::union_find::*;
 use std::collections::BTreeSet;
 use crate::num_traits::Zero;
+use crate::framework::*;
 
 
 #[derive(Derivative)]
@@ -123,7 +124,9 @@ impl PrimalModuleImpl for PrimalModuleUnionFind {
                     node_index: new_cluster_node_index,
                 });
                 self.union_find.union(cluster_index, new_cluster_node_index);
-                interface_ptr.create_cluster_node_auto_vertices(self.union_find.get(cluster_index).internal_edges.clone(), dual_module);
+                let invalid_subgraph = InvalidSubgraph::new_ptr(self.union_find.get(cluster_index).internal_edges.clone()
+                    , &interface_ptr.read_recursive().decoding_graph);
+                interface_ptr.create_node(invalid_subgraph, dual_module);
             }
         }
     }

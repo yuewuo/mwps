@@ -7,3 +7,31 @@
 
 use crate::framework::*;
 use crate::parity_matrix::*;
+use crate::plugin::*;
+use crate::dual_module::*;
+use crate::num_traits::Zero;
+
+
+#[derive(Debug, Clone, Default)]
+pub struct PluginIndependentSingleHair {
+
+}
+
+impl PluginImpl for PluginIndependentSingleHair {
+
+    fn find_relaxers(&self, mut matrix: ParityMatrix, dual_nodes: &[DualNodePtr]) -> Vec<Relaxer> {
+        for dual_node_ptr in dual_nodes.iter() {
+            let dual_node = dual_node_ptr.read_recursive();
+            if dual_node.dual_variable.is_zero() {
+                continue  // no requirement on zero dual variables
+            }
+            println!("find non-zero dual node: {}", dual_node.index);
+            // matrix
+            matrix.clear_implicit_shrink();
+
+        }
+        vec![]
+    }
+
+}
+

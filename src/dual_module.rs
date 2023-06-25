@@ -315,26 +315,48 @@ impl DualModuleInterfacePtr {
         cloned_node_ptr
     }
 
-    pub fn create_cluster_node(&self, edges: BTreeSet<EdgeIndex>, vertices: BTreeSet<EdgeIndex>, dual_module: &mut impl DualModuleImpl) -> DualNodePtr {
+    /// find existing node
+    pub fn find_node(&self, invalid_subgraph: &Arc<InvalidSubgraph>) -> Option<DualNodePtr> {
+        let interface = self.read_recursive();
+        interface.hashmap.get(invalid_subgraph).map(|index| interface.nodes[*index].clone())
+    }
+
+    pub fn create_node(&self, invalid_subgraph: Arc<InvalidSubgraph>, dual_module: &mut impl DualModuleImpl) -> DualNodePtr {
+        debug_assert!(self.find_node(&invalid_subgraph).is_none(), "do not create the same node twice");
         let mut interface = self.write();
         let node_ptr = DualNodePtr::new_value(DualNode {
             index: interface.nodes.len(),
-            invalid_subgraph: Arc::new(InvalidSubgraph::new_complete(vertices, edges, &interface.decoding_graph)),
+            invalid_subgraph,
             dual_variable: Rational::zero(),
             grow_rate: Rational::one(),
         });
-        let cloned_node_ptr = node_ptr.clone();
-        interface.nodes.push(node_ptr);
+        interface.nodes.push(node_ptr.clone());
         drop(interface);
-        dual_module.add_dual_node(&cloned_node_ptr);
-        cloned_node_ptr
+        dual_module.add_dual_node(&node_ptr);
+        node_ptr
     }
 
-    pub fn create_cluster_node_auto_vertices(&self, internal_edges: BTreeSet<EdgeIndex>, dual_module: &mut impl DualModuleImpl) -> DualNodePtr {
-        let internal_vertices = self.read_recursive().decoding_graph.get_edges_neighbors(&internal_edges);
-        self.create_cluster_node(internal_edges, internal_vertices, dual_module)
+    /// return whether it's existing node or not
+    pub fn find_or_create_node(&self, invalid_subgraph: Arc<InvalidSubgraph>, dual_module: &mut impl DualModuleImpl) -> (bool, DualNodePtr) {
+        match self.find_node(&invalid_subgraph) {
+            Some(node_ptr) => (true, node_ptr),
+            None => (false, self.create_node(invalid_subgraph, dual_module))
+        }
     }
 
+}
+
+// shortcuts for easier code writing at debugging
+impl DualModuleInterfacePtr {
+    pub fn create_node_vec(&self, edges: &[EdgeIndex], dual_module: &mut impl DualModuleImpl) -> DualNodePtr {
+        let invalid_subgraph = Arc::new(InvalidSubgraph::new(edges.iter().cloned().collect(), &self.read_recursive().decoding_graph));
+        self.create_node(invalid_subgraph, dual_module)
+    }
+    pub fn create_node_complete_vec(&self, vertices: &[VertexIndex], edges: &[EdgeIndex], dual_module: &mut impl DualModuleImpl) -> DualNodePtr {
+        let invalid_subgraph = Arc::new(InvalidSubgraph::new_complete(vertices.iter().cloned().collect()
+            , edges.iter().cloned().collect(), &self.read_recursive().decoding_graph));
+        self.create_node(invalid_subgraph, dual_module)
+    }
 }
 
 impl MWPSVisualizer for DualModuleInterfacePtr {

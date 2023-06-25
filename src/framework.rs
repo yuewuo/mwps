@@ -168,16 +168,22 @@ impl MWPSVisualizer for HyperDecodingGraph {
 }
 
 /// the invalid subgraph is the core of the framework, $S = (V_S, E_S)$
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct InvalidSubgraph {
     /// the hash value calculated by other fields
-    pub hash: u64,
+    pub hash_value: u64,
     /// subset of vertices
     pub vertices: BTreeSet<VertexIndex>,
     /// subset of edges
     pub edges: BTreeSet<EdgeIndex>,
     /// the hair of the invalid subgraph, to avoid repeated computation
     pub hairs: BTreeSet<EdgeIndex>,
+}
+
+impl Hash for InvalidSubgraph {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.hash_value.hash(state);
+    }
 }
 
 impl InvalidSubgraph {
@@ -194,6 +200,7 @@ impl InvalidSubgraph {
         Self::new_complete(vertices, edges, decoding_graph)
     }
 
+
     /// complete definition of invalid subgraph $S = (V_S, E_S)$
     pub fn new_complete(vertices: BTreeSet<VertexIndex>, edges: BTreeSet<EdgeIndex>, decoding_graph: &HyperDecodingGraph) -> Self {
         let mut hairs = BTreeSet::new();
@@ -205,7 +212,7 @@ impl InvalidSubgraph {
                 }
             }
         }
-        let mut invalid_subgraph = Self { hash: 0, vertices, edges, hairs, };
+        let mut invalid_subgraph = Self { hash_value: 0, vertices, edges, hairs, };
         debug_assert_eq!(invalid_subgraph.sanity_check(decoding_graph), Ok(()));
         invalid_subgraph.update_hash();
         invalid_subgraph
@@ -216,7 +223,7 @@ impl InvalidSubgraph {
         self.vertices.hash(&mut hasher);
         self.edges.hash(&mut hasher);
         self.hairs.hash(&mut hasher);
-        self.hash = hasher.finish();
+        self.hash_value = hasher.finish();
     }
 
     // check whether this invalid subgraph is indeed invalid, this is costly and should be disabled in release runs
@@ -269,6 +276,22 @@ impl InvalidSubgraph {
 
 }
 
+// shortcuts for easier code writing at debugging
+impl InvalidSubgraph {
+    pub fn new_ptr(edges: BTreeSet<EdgeIndex>, decoding_graph: &HyperDecodingGraph) -> Arc<Self> {
+        Arc::new(Self::new(edges, decoding_graph))
+    }
+    pub fn new_vec_ptr(edges: &[EdgeIndex], decoding_graph: &HyperDecodingGraph) -> Arc<Self> {
+        Self::new_ptr(edges.iter().cloned().collect(), decoding_graph)
+    }
+    pub fn new_complete_ptr(vertices: BTreeSet<VertexIndex>, edges: BTreeSet<EdgeIndex>, decoding_graph: &HyperDecodingGraph) -> Arc<Self> {
+        Arc::new(Self::new_complete(vertices, edges, decoding_graph))
+    }
+    pub fn new_complete_vec_ptr(vertices: BTreeSet<VertexIndex>, edges: &[EdgeIndex], decoding_graph: &HyperDecodingGraph) -> Arc<Self> {
+        Self::new_complete_ptr(vertices.iter().cloned().collect(), edges.iter().cloned().collect(), decoding_graph)
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct Relaxer {
     /// the direction of invalid subgraphs
@@ -276,6 +299,8 @@ pub struct Relaxer {
     /// the edges that will be untightened after growing along `direction`;
     /// basically all the edges that have negative `overall_growing_rate`
     pub untighten_edges: Vec<(EdgeIndex, Rational)>,
+    /// the edges that will grow
+    pub growing_edges: Vec<(EdgeIndex, Rational)>,
 }
 
 impl Relaxer {
@@ -292,14 +317,18 @@ impl Relaxer {
             }
         }
         let mut untighten_edges = vec![];
+        let mut growing_edges = vec![];
         for (edge_index, speed) in edges {
             if speed.is_negative() {
                 untighten_edges.push((edge_index, speed));
+            } else if speed.is_positive() {
+                growing_edges.push((edge_index, speed));
             }
         }
         let relaxer = Self {
             direction,
-            untighten_edges: untighten_edges,
+            untighten_edges,
+            growing_edges,
         };
         debug_assert_eq!(relaxer.sanity_check(), Ok(()));
         relaxer

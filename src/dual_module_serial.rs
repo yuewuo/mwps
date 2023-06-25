@@ -471,13 +471,13 @@ mod tests {
         dual_module.grow_dual_node(&dual_node_30_ptr, Rational::from_i64(160).unwrap());
         visualizer.snapshot_combined(format!("grow"), vec![&interface_ptr, &dual_module]).unwrap();
         // create cluster
-        interface_ptr.create_cluster_node_auto_vertices(vec![24].into_iter().collect(), &mut dual_module);
+        interface_ptr.create_node_vec(&[24], &mut dual_module);
         let dual_node_cluster_ptr = interface_ptr.read_recursive().nodes[4].clone();
         dual_module.grow_dual_node(&dual_node_17_ptr, Rational::from_i64(160).unwrap());
         dual_module.grow_dual_node(&dual_node_cluster_ptr, Rational::from_i64(160).unwrap());
         visualizer.snapshot_combined(format!("grow"), vec![&interface_ptr, &dual_module]).unwrap();
         // create bigger cluster
-        interface_ptr.create_cluster_node_auto_vertices(vec![18, 23, 24, 31].into_iter().collect(), &mut dual_module);
+        interface_ptr.create_node_vec(&[18, 23, 24, 31], &mut dual_module);
         let dual_node_bigger_cluster_ptr = interface_ptr.read_recursive().nodes[5].clone();
         dual_module.grow_dual_node(&dual_node_bigger_cluster_ptr, Rational::from_i64(120).unwrap());
         visualizer.snapshot_combined(format!("solved"), vec![&interface_ptr, &dual_module]).unwrap();
