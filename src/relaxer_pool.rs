@@ -1,5 +1,5 @@
 //! Relaxer Pool
-//! 
+//!
 //! Maintain several lists of relaxers
 //!
 
@@ -12,11 +12,6 @@ pub struct RelaxerPool {
     pub lists: Vec<RelaxerVec>,
 }
 
+pub trait RelaxerVecImpl {}
 
-pub trait RelaxerVecImpl {
-
-}
-
-impl RelaxerVecImpl for RelaxerVec {
-
-}
+impl RelaxerVecImpl for RelaxerVec {}

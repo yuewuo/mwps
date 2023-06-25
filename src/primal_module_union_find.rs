@@ -1,23 +1,22 @@
 //! Serial Primal Module like Union-Find decoder
-//! 
+//!
 //! This implementation is an approximate MWPS solver, which is essentially what hypergraph UF decoder does.
 //! Delfosse, Nicolas, Vivien Londe, and Michael E. Beverland. "Toward a Union-Find decoder for quantum LDPC codes." IEEE Transactions on Information Theory 68.5 (2022): 3187-3199.
 //!
 //! there might be some minor difference with Delfosse's paper, but the idea is the same
-//! 
+//!
 
-use crate::util::*;
 use crate::derivative::Derivative;
-use crate::primal_module::*;
-use crate::visualize::*;
 use crate::dual_module::*;
-use crate::pointers::*;
-use crate::serde::{Serialize, Deserialize};
-use crate::union_find::*;
-use std::collections::BTreeSet;
-use crate::num_traits::Zero;
 use crate::framework::*;
-
+use crate::num_traits::Zero;
+use crate::pointers::*;
+use crate::primal_module::*;
+use crate::serde::{Deserialize, Serialize};
+use crate::union_find::*;
+use crate::util::*;
+use crate::visualize::*;
+use std::collections::BTreeSet;
 
 #[derive(Derivative)]
 #[derivative(Debug)]
@@ -46,7 +45,7 @@ impl UnionNodeTrait for PrimalModuleUnionFindNode {
         internal_edges.extend(right.internal_edges.iter().cloned());
         let result = Self {
             internal_edges: internal_edges,
-            node_index: NodeIndex::MAX,  // waiting for assignment
+            node_index: NodeIndex::MAX, // waiting for assignment
         };
         // if left size is larger, choose left (weighted union)
         (true, result)
@@ -59,13 +58,12 @@ impl UnionNodeTrait for PrimalModuleUnionFindNode {
     fn default() -> Self {
         Self {
             internal_edges: BTreeSet::new(),
-            node_index: NodeIndex::MAX,  // waiting for assignment
+            node_index: NodeIndex::MAX, // waiting for assignment
         }
     }
 }
 
 impl PrimalModuleImpl for PrimalModuleUnionFind {
-
     fn new_empty(_initializer: &SolverInitializer) -> Self {
         Self {
             union_find: UnionFind::new(0),
@@ -76,15 +74,32 @@ impl PrimalModuleImpl for PrimalModuleUnionFind {
         self.union_find.remove_all();
     }
 
-    fn load<D: DualModuleImpl>(&mut self, interface_ptr: &DualModuleInterfacePtr, _dual_module: &mut D) {
+    fn load<D: DualModuleImpl>(
+        &mut self,
+        interface_ptr: &DualModuleInterfacePtr,
+        _dual_module: &mut D,
+    ) {
         let interface = interface_ptr.read_recursive();
         for index in 0..interface.nodes.len() as NodeIndex {
             let node_ptr = &interface.nodes[index as usize];
             let node = node_ptr.read_recursive();
-            debug_assert!(node.invalid_subgraph.edges.is_empty(), "must load a fresh dual module interface, found a complex node");
-            debug_assert!(node.invalid_subgraph.vertices.len() == 1, "must load a fresh dual module interface, found invalid defect node");
-            debug_assert_eq!(node.index, index, "must load a fresh dual module interface, found index out of order");
-            assert_eq!(node.index, self.union_find.size(), "must load defect nodes in order");
+            debug_assert!(
+                node.invalid_subgraph.edges.is_empty(),
+                "must load a fresh dual module interface, found a complex node"
+            );
+            debug_assert!(
+                node.invalid_subgraph.vertices.len() == 1,
+                "must load a fresh dual module interface, found invalid defect node"
+            );
+            debug_assert_eq!(
+                node.index, index,
+                "must load a fresh dual module interface, found index out of order"
+            );
+            assert_eq!(
+                node.index,
+                self.union_find.size(),
+                "must load defect nodes in order"
+            );
             self.union_find.insert(PrimalModuleUnionFindNode {
                 internal_edges: BTreeSet::new(),
                 node_index: node.index,
@@ -92,8 +107,16 @@ impl PrimalModuleImpl for PrimalModuleUnionFind {
         }
     }
 
-    fn resolve(&mut self, mut group_max_update_length: GroupMaxUpdateLength, interface_ptr: &DualModuleInterfacePtr, dual_module: &mut impl DualModuleImpl) {
-        debug_assert!(!group_max_update_length.is_unbounded() && group_max_update_length.get_valid_growth().is_none());
+    fn resolve(
+        &mut self,
+        mut group_max_update_length: GroupMaxUpdateLength,
+        interface_ptr: &DualModuleInterfacePtr,
+        dual_module: &mut impl DualModuleImpl,
+    ) {
+        debug_assert!(
+            !group_max_update_length.is_unbounded()
+                && group_max_update_length.get_valid_growth().is_none()
+        );
         let mut active_clusters = BTreeSet::<NodeIndex>::new();
         while let Some(conflict) = group_max_update_length.pop() {
             // println!("conflict: {conflict:?}");
@@ -101,7 +124,10 @@ impl PrimalModuleImpl for PrimalModuleUnionFind {
                 MaxUpdateLength::Conflicting(edge_index) => {
                     // union all the dual nodes in the edge index and create new dual node by adding this edge to `internal_edges`
                     let dual_nodes = dual_module.get_edge_nodes(edge_index);
-                    debug_assert!(dual_nodes.len() > 0, "should not conflict if no dual nodes are contributing");
+                    debug_assert!(
+                        dual_nodes.len() > 0,
+                        "should not conflict if no dual nodes are contributing"
+                    );
                     let cluster_index = dual_nodes[0].read_recursive().index;
                     for dual_node_ptr in dual_nodes.iter() {
                         dual_module.set_grow_rate(dual_node_ptr, Rational::zero());
@@ -109,13 +135,23 @@ impl PrimalModuleImpl for PrimalModuleUnionFind {
                         active_clusters.remove(&self.union_find.find(node_index));
                         self.union_find.union(cluster_index, node_index);
                     }
-                    self.union_find.get_mut(cluster_index).internal_edges.insert(edge_index);
+                    self.union_find
+                        .get_mut(cluster_index)
+                        .internal_edges
+                        .insert(edge_index);
                     active_clusters.insert(self.union_find.find(cluster_index));
-                }, _ => { unreachable!() }
+                }
+                _ => {
+                    unreachable!()
+                }
             }
         }
         for &cluster_index in active_clusters.iter() {
-            if interface_ptr.read_recursive().decoding_graph.is_valid_cluster_auto_vertices(&self.union_find.get(cluster_index).internal_edges) {
+            if interface_ptr
+                .read_recursive()
+                .decoding_graph
+                .is_valid_cluster_auto_vertices(&self.union_find.get(cluster_index).internal_edges)
+            {
                 // do nothing
             } else {
                 let new_cluster_node_index = self.union_find.size();
@@ -124,27 +160,38 @@ impl PrimalModuleImpl for PrimalModuleUnionFind {
                     node_index: new_cluster_node_index,
                 });
                 self.union_find.union(cluster_index, new_cluster_node_index);
-                let invalid_subgraph = InvalidSubgraph::new_ptr(self.union_find.get(cluster_index).internal_edges.clone()
-                    , &interface_ptr.read_recursive().decoding_graph);
+                let invalid_subgraph = InvalidSubgraph::new_ptr(
+                    self.union_find.get(cluster_index).internal_edges.clone(),
+                    &interface_ptr.read_recursive().decoding_graph,
+                );
                 interface_ptr.create_node(invalid_subgraph, dual_module);
             }
         }
     }
 
-    fn subgraph(&mut self, interface_ptr: &DualModuleInterfacePtr, _dual_module: &mut impl DualModuleImpl) -> Subgraph {
+    fn subgraph(
+        &mut self,
+        interface_ptr: &DualModuleInterfacePtr,
+        _dual_module: &mut impl DualModuleImpl,
+    ) -> Subgraph {
         let mut valid_clusters = BTreeSet::new();
         let mut subgraph = Subgraph::new_empty();
         for i in 0..self.union_find.size() {
             let root_index = self.union_find.find(i);
             if !valid_clusters.contains(&root_index) {
                 valid_clusters.insert(root_index);
-                let cluster_subgraph = interface_ptr.read_recursive().decoding_graph.find_valid_subgraph_auto_vertices(&self.union_find.get(root_index).internal_edges).expect("must be valid cluster");
+                let cluster_subgraph = interface_ptr
+                    .read_recursive()
+                    .decoding_graph
+                    .find_valid_subgraph_auto_vertices(
+                        &self.union_find.get(root_index).internal_edges,
+                    )
+                    .expect("must be valid cluster");
                 subgraph.extend(cluster_subgraph.iter());
             }
         }
         subgraph
     }
-
 }
 
 /*
@@ -153,30 +200,42 @@ Implementing visualization functions
 
 impl MWPSVisualizer for PrimalModuleUnionFind {
     fn snapshot(&self, _abbrev: bool) -> serde_json::Value {
-        json!({
-
-        })
+        json!({})
     }
 }
 
 #[cfg(test)]
 pub mod tests {
-    use super::*;
-    use super::super::example_codes::*;
     use super::super::dual_module_serial::*;
+    use super::super::example_codes::*;
+    use super::*;
     use crate::more_asserts::*;
     use crate::num_traits::{FromPrimitive, ToPrimitive};
     use std::sync::Arc;
 
-    pub fn primal_module_union_find_basic_standard_syndrome_optional_viz(mut code: impl ExampleCode, visualize_filename: Option<String>, defect_vertices: Vec<VertexIndex>, final_dual: Weight)
-            -> (DualModuleInterfacePtr, PrimalModuleUnionFind, DualModuleSerial) {
+    pub fn primal_module_union_find_basic_standard_syndrome_optional_viz(
+        mut code: impl ExampleCode,
+        visualize_filename: Option<String>,
+        defect_vertices: Vec<VertexIndex>,
+        final_dual: Weight,
+    ) -> (
+        DualModuleInterfacePtr,
+        PrimalModuleUnionFind,
+        DualModuleSerial,
+    ) {
         println!("{defect_vertices:?}");
         let mut visualizer = match visualize_filename.as_ref() {
             Some(visualize_filename) => {
-                let visualizer = Visualizer::new(Some(visualize_data_folder() + visualize_filename.as_str()), code.get_positions(), true).unwrap();
+                let visualizer = Visualizer::new(
+                    Some(visualize_data_folder() + visualize_filename.as_str()),
+                    code.get_positions(),
+                    true,
+                )
+                .unwrap();
                 print_visualize_link(visualize_filename.clone());
                 Some(visualizer)
-            }, None => None
+            }
+            None => None,
         };
         // create dual module
         let model_graph = code.get_model_graph();
@@ -186,70 +245,146 @@ pub mod tests {
         // try to work on a simple syndrome
         code.set_defect_vertices(&defect_vertices);
         let interface_ptr = DualModuleInterfacePtr::new(model_graph.clone());
-        primal_module.solve_visualizer(&interface_ptr, Arc::new(code.get_syndrome()), &mut dual_module, visualizer.as_mut());
-        let (subgraph, weight_range) = primal_module.subgraph_range(&interface_ptr, &mut dual_module);
+        primal_module.solve_visualizer(
+            &interface_ptr,
+            Arc::new(code.get_syndrome()),
+            &mut dual_module,
+            visualizer.as_mut(),
+        );
+        let (subgraph, weight_range) =
+            primal_module.subgraph_range(&interface_ptr, &mut dual_module);
         if let Some(visualizer) = visualizer.as_mut() {
-            visualizer.snapshot_combined("subgraph".to_string(), vec![&interface_ptr, &dual_module, &subgraph, &weight_range]).unwrap();
+            visualizer
+                .snapshot_combined(
+                    "subgraph".to_string(),
+                    vec![&interface_ptr, &dual_module, &subgraph, &weight_range],
+                )
+                .unwrap();
         }
-        assert!(model_graph.initializer.matches_subgraph_syndrome(&subgraph, &defect_vertices), "the result subgraph is invalid");
-        assert_le!(Rational::from_usize(final_dual).unwrap(), weight_range.upper, "unmatched sum dual variables");
-        assert_ge!(Rational::from_usize(final_dual).unwrap(), weight_range.lower, "unexpected final dual variable sum");
-        println!("weight range: [{}, {}]", weight_range.lower.to_i64().unwrap(), weight_range.upper.to_i64().unwrap());
+        assert!(
+            model_graph
+                .initializer
+                .matches_subgraph_syndrome(&subgraph, &defect_vertices),
+            "the result subgraph is invalid"
+        );
+        assert_le!(
+            Rational::from_usize(final_dual).unwrap(),
+            weight_range.upper,
+            "unmatched sum dual variables"
+        );
+        assert_ge!(
+            Rational::from_usize(final_dual).unwrap(),
+            weight_range.lower,
+            "unexpected final dual variable sum"
+        );
+        println!(
+            "weight range: [{}, {}]",
+            weight_range.lower.to_i64().unwrap(),
+            weight_range.upper.to_i64().unwrap()
+        );
         (interface_ptr, primal_module, dual_module)
     }
 
-    pub fn primal_module_union_find_basic_standard_syndrome(code: impl ExampleCode, visualize_filename: String, defect_vertices: Vec<VertexIndex>, final_dual: Weight)
-            -> (DualModuleInterfacePtr, PrimalModuleUnionFind, DualModuleSerial) {
-        primal_module_union_find_basic_standard_syndrome_optional_viz(code, Some(visualize_filename), defect_vertices, final_dual)
+    pub fn primal_module_union_find_basic_standard_syndrome(
+        code: impl ExampleCode,
+        visualize_filename: String,
+        defect_vertices: Vec<VertexIndex>,
+        final_dual: Weight,
+    ) -> (
+        DualModuleInterfacePtr,
+        PrimalModuleUnionFind,
+        DualModuleSerial,
+    ) {
+        primal_module_union_find_basic_standard_syndrome_optional_viz(
+            code,
+            Some(visualize_filename),
+            defect_vertices,
+            final_dual,
+        )
     }
 
     /// test a simple case
     #[test]
-    fn primal_module_union_find_basic_1() {  // cargo test primal_module_union_find_basic_1 -- --nocapture
+    fn primal_module_union_find_basic_1() {
+        // cargo test primal_module_union_find_basic_1 -- --nocapture
         let visualize_filename = format!("primal_module_union_find_basic_1.json");
         let defect_vertices = vec![23, 24, 29, 30];
         let code = CodeCapacityTailoredCode::new(7, 0., 0.01, 1);
-        primal_module_union_find_basic_standard_syndrome(code, visualize_filename, defect_vertices, 1);
+        primal_module_union_find_basic_standard_syndrome(
+            code,
+            visualize_filename,
+            defect_vertices,
+            1,
+        );
     }
 
     #[test]
-    fn primal_module_union_find_basic_2() {  // cargo test primal_module_union_find_basic_2 -- --nocapture
+    fn primal_module_union_find_basic_2() {
+        // cargo test primal_module_union_find_basic_2 -- --nocapture
         let visualize_filename = format!("primal_module_union_find_basic_2.json");
         let defect_vertices = vec![16, 17, 23, 25, 29, 30];
         let code = CodeCapacityTailoredCode::new(7, 0., 0.01, 1);
-        primal_module_union_find_basic_standard_syndrome(code, visualize_filename, defect_vertices, 2);
+        primal_module_union_find_basic_standard_syndrome(
+            code,
+            visualize_filename,
+            defect_vertices,
+            2,
+        );
     }
 
     #[test]
-    fn primal_module_union_find_basic_3() {  // cargo test primal_module_union_find_basic_3 -- --nocapture
+    fn primal_module_union_find_basic_3() {
+        // cargo test primal_module_union_find_basic_3 -- --nocapture
         let visualize_filename = format!("primal_module_union_find_basic_3.json");
         let defect_vertices = vec![14, 15, 16, 17, 22, 25, 28, 31, 36, 37, 38, 39];
         let code = CodeCapacityTailoredCode::new(7, 0., 0.01, 1);
-        primal_module_union_find_basic_standard_syndrome(code, visualize_filename, defect_vertices, 5);
+        primal_module_union_find_basic_standard_syndrome(
+            code,
+            visualize_filename,
+            defect_vertices,
+            5,
+        );
     }
 
     #[test]
-    fn primal_module_union_find_basic_4() {  // cargo test primal_module_union_find_basic_4 -- --nocapture
+    fn primal_module_union_find_basic_4() {
+        // cargo test primal_module_union_find_basic_4 -- --nocapture
         let visualize_filename = format!("primal_module_union_find_basic_4.json");
         let defect_vertices = vec![3, 12];
         let code = CodeCapacityColorCode::new(7, 0.01, 1);
-        primal_module_union_find_basic_standard_syndrome(code, visualize_filename, defect_vertices, 2);
+        primal_module_union_find_basic_standard_syndrome(
+            code,
+            visualize_filename,
+            defect_vertices,
+            2,
+        );
     }
 
     #[test]
-    fn primal_module_union_find_basic_5() {  // cargo test primal_module_union_find_basic_5 -- --nocapture
+    fn primal_module_union_find_basic_5() {
+        // cargo test primal_module_union_find_basic_5 -- --nocapture
         let visualize_filename = format!("primal_module_union_find_basic_5.json");
         let defect_vertices = vec![3, 5, 10, 12];
         let code = CodeCapacityColorCode::new(7, 0.01, 1);
-        primal_module_union_find_basic_standard_syndrome(code, visualize_filename, defect_vertices, 4);
+        primal_module_union_find_basic_standard_syndrome(
+            code,
+            visualize_filename,
+            defect_vertices,
+            4,
+        );
     }
 
     #[test]
-    fn primal_module_union_find_basic_6() {  // cargo test primal_module_union_find_basic_6 -- --nocapture
+    fn primal_module_union_find_basic_6() {
+        // cargo test primal_module_union_find_basic_6 -- --nocapture
         let visualize_filename = format!("primal_module_union_find_basic_6.json");
         let defect_vertices = vec![22];
         let code = CodeCapacityTailoredCode::new(5, 0., 0.05, 1);
-        primal_module_union_find_basic_standard_syndrome(code, visualize_filename, defect_vertices, 4);
+        primal_module_union_find_basic_standard_syndrome(
+            code,
+            visualize_filename,
+            defect_vertices,
+            4,
+        );
     }
-
 }

@@ -1,17 +1,16 @@
 //! Dual Module
-//! 
+//!
 //! Generics for dual modules
 //!
 
-use crate::util::*;
-use crate::pointers::*;
-use std::collections::{BTreeSet, HashMap};
 use crate::derivative::Derivative;
-use crate::num_traits::{Zero, One, ToPrimitive};
-use crate::visualize::*;
 use crate::framework::*;
+use crate::num_traits::{One, ToPrimitive, Zero};
+use crate::pointers::*;
+use crate::util::*;
+use crate::visualize::*;
+use std::collections::{BTreeSet, HashMap};
 use std::sync::Arc;
-
 
 pub struct DualNode {
     /// the index of this dual node, helps to locate internal details of this dual node
@@ -29,7 +28,7 @@ pub type DualNodeWeak = WeakRwLock<DualNode>;
 
 impl std::fmt::Debug for DualNodePtr {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        let dual_node = self.read_recursive();  // reading index is consistent
+        let dual_node = self.read_recursive(); // reading index is consistent
         write!(f, "{}", dual_node.index)
     }
 }
@@ -42,7 +41,9 @@ impl std::fmt::Debug for DualNodeWeak {
 
 impl Ord for DualNodePtr {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.read_recursive().index.cmp(&other.read_recursive().index)
+        self.read_recursive()
+            .index
+            .cmp(&other.read_recursive().index)
     }
 }
 
@@ -109,7 +110,6 @@ pub enum GroupMaxUpdateLength {
 
 /// common trait that must be implemented for each implementation of dual module
 pub trait DualModuleImpl {
-
     /// create a new dual module with empty syndrome
     fn new_empty(initializer: &SolverInitializer) -> Self;
 
@@ -125,7 +125,11 @@ pub trait DualModuleImpl {
     /// An optional function that helps to break down the implementation of [`DualModuleImpl::compute_maximum_update_length`]
     /// check the maximum length to grow (shrink) specific dual node, if length is 0, give the reason of why it cannot further grow (shrink).
     /// if `simultaneous_update` is true, also check for the peer node according to [`DualNode::grow_state`].
-    fn compute_maximum_update_length_dual_node(&mut self, _dual_node_ptr: &DualNodePtr, _simultaneous_update: bool) -> MaxUpdateLength {
+    fn compute_maximum_update_length_dual_node(
+        &mut self,
+        _dual_node_ptr: &DualNodePtr,
+        _simultaneous_update: bool,
+    ) -> MaxUpdateLength {
         panic!("the dual module implementation doesn't support this function, please use another dual module")
     }
 
@@ -145,11 +149,9 @@ pub trait DualModuleImpl {
     fn get_edge_nodes(&self, edge_index: EdgeIndex) -> Vec<DualNodePtr>;
 
     fn is_edge_tight(&self, edge_index: EdgeIndex) -> bool;
-
 }
 
 impl MaxUpdateLength {
-
     pub fn new() -> Self {
         Self::Unbounded
     }
@@ -158,24 +160,22 @@ impl MaxUpdateLength {
         match self {
             Self::Unbounded => {
                 *self = max_update_length;
-            },
+            }
             Self::ValidGrow(current_length) => {
                 match max_update_length {
-                    MaxUpdateLength::Unbounded => { },  // do nothing
+                    MaxUpdateLength::Unbounded => {} // do nothing
                     MaxUpdateLength::ValidGrow(length) => {
                         *self = Self::ValidGrow(std::cmp::min(current_length.clone(), length))
                     }
-                    _ => { *self = max_update_length },
+                    _ => *self = max_update_length,
                 }
-            },
-            _ => { }  // do nothing if it's already a conflict
+            }
+            _ => {} // do nothing if it's already a conflict
         }
     }
-
 }
 
 impl GroupMaxUpdateLength {
-
     pub fn new() -> Self {
         Self::Unbounded
     }
@@ -184,29 +184,29 @@ impl GroupMaxUpdateLength {
         match self {
             Self::Unbounded => {
                 match max_update_length {
-                    MaxUpdateLength::Unbounded => { },  // do nothing
-                    MaxUpdateLength::ValidGrow(length) => { *self = Self::ValidGrow(length) },
-                    _ => { *self = Self::Conflicts(vec![max_update_length]) },
+                    MaxUpdateLength::Unbounded => {} // do nothing
+                    MaxUpdateLength::ValidGrow(length) => *self = Self::ValidGrow(length),
+                    _ => *self = Self::Conflicts(vec![max_update_length]),
                 }
-            },
+            }
             Self::ValidGrow(current_length) => {
                 match max_update_length {
-                    MaxUpdateLength::Unbounded => { },  // do nothing
+                    MaxUpdateLength::Unbounded => {} // do nothing
                     MaxUpdateLength::ValidGrow(length) => {
                         *self = Self::ValidGrow(std::cmp::min(current_length.clone(), length))
                     }
-                    _ => { *self = Self::Conflicts(vec![max_update_length]) },
+                    _ => *self = Self::Conflicts(vec![max_update_length]),
                 }
-            },
+            }
             Self::Conflicts(conflicts) => {
                 match max_update_length {
-                    MaxUpdateLength::Unbounded => { },  // do nothing
-                    MaxUpdateLength::ValidGrow(_) => { },  // do nothing
+                    MaxUpdateLength::Unbounded => {}    // do nothing
+                    MaxUpdateLength::ValidGrow(_) => {} // do nothing
                     _ => {
                         conflicts.push(max_update_length);
-                    },
+                    }
                 }
-            },
+            }
         }
     }
 
@@ -219,10 +219,8 @@ impl GroupMaxUpdateLength {
             Self::Unbounded => {
                 panic!("please call GroupMaxUpdateLength::is_unbounded to check if it's unbounded");
             }
-            Self::ValidGrow(length) => {
-                Some(length.clone())
-            },
-            _ => { None }
+            Self::ValidGrow(length) => Some(length.clone()),
+            _ => None,
         }
     }
 
@@ -230,10 +228,8 @@ impl GroupMaxUpdateLength {
         match self {
             Self::Unbounded | Self::ValidGrow(_) => {
                 panic!("please call GroupMaxUpdateLength::get_valid_growth to check if this group is none_zero_growth");
-            },
-            Self::Conflicts(conflicts) => {
-                conflicts.pop()
             }
+            Self::Conflicts(conflicts) => conflicts.pop(),
         }
     }
 
@@ -241,34 +237,42 @@ impl GroupMaxUpdateLength {
         match self {
             Self::Unbounded | Self::ValidGrow(_) => {
                 panic!("please call GroupMaxUpdateLength::get_valid_growth to check if this group is none_zero_growth");
-            },
-            Self::Conflicts(conflicts) => {
-                conflicts.last()
             }
+            Self::Conflicts(conflicts) => conflicts.last(),
         }
     }
-
 }
 
 impl DualModuleInterfacePtr {
-
     pub fn new(model_graph: Arc<HyperModelGraph>) -> Self {
         Self::new_value(DualModuleInterface {
             nodes: Vec::new(),
             hashmap: HashMap::new(),
-            decoding_graph: HyperDecodingGraph::new(model_graph, Arc::new(SyndromePattern::new_empty())),
+            decoding_graph: HyperDecodingGraph::new(
+                model_graph,
+                Arc::new(SyndromePattern::new_empty()),
+            ),
         })
     }
 
     /// a dual module interface MUST be created given a concrete implementation of the dual module
-    pub fn new_load(decoding_graph: HyperDecodingGraph, dual_module_impl: &mut impl DualModuleImpl) -> Self {
+    pub fn new_load(
+        decoding_graph: HyperDecodingGraph,
+        dual_module_impl: &mut impl DualModuleImpl,
+    ) -> Self {
         let interface_ptr = Self::new(decoding_graph.model_graph.clone());
         interface_ptr.load(decoding_graph.syndrome_pattern, dual_module_impl);
         interface_ptr
     }
 
-    pub fn load(&self, syndrome_pattern: Arc<SyndromePattern>, dual_module_impl: &mut impl DualModuleImpl) {
-        self.write().decoding_graph.set_syndrome(syndrome_pattern.clone());
+    pub fn load(
+        &self,
+        syndrome_pattern: Arc<SyndromePattern>,
+        dual_module_impl: &mut impl DualModuleImpl,
+    ) {
+        self.write()
+            .decoding_graph
+            .set_syndrome(syndrome_pattern.clone());
         for vertex_idx in syndrome_pattern.defect_vertices.iter() {
             self.create_defect_node(*vertex_idx, dual_module_impl);
         }
@@ -296,13 +300,21 @@ impl DualModuleInterfacePtr {
     }
 
     /// make it private; use `load` instead
-    fn create_defect_node(&self, vertex_idx: VertexIndex, dual_module: &mut impl DualModuleImpl) -> DualNodePtr {
+    fn create_defect_node(
+        &self,
+        vertex_idx: VertexIndex,
+        dual_module: &mut impl DualModuleImpl,
+    ) -> DualNodePtr {
         let interface = self.read_recursive();
         let mut internal_vertices = BTreeSet::new();
         internal_vertices.insert(vertex_idx);
         let node_ptr = DualNodePtr::new_value(DualNode {
             index: interface.nodes.len(),
-            invalid_subgraph: Arc::new(InvalidSubgraph::new_complete(vec![vertex_idx].into_iter().collect(), BTreeSet::new(), &interface.decoding_graph)),
+            invalid_subgraph: Arc::new(InvalidSubgraph::new_complete(
+                vec![vertex_idx].into_iter().collect(),
+                BTreeSet::new(),
+                &interface.decoding_graph,
+            )),
             dual_variable: Rational::zero(),
             grow_rate: Rational::one(),
         });
@@ -318,11 +330,21 @@ impl DualModuleInterfacePtr {
     /// find existing node
     pub fn find_node(&self, invalid_subgraph: &Arc<InvalidSubgraph>) -> Option<DualNodePtr> {
         let interface = self.read_recursive();
-        interface.hashmap.get(invalid_subgraph).map(|index| interface.nodes[*index].clone())
+        interface
+            .hashmap
+            .get(invalid_subgraph)
+            .map(|index| interface.nodes[*index].clone())
     }
 
-    pub fn create_node(&self, invalid_subgraph: Arc<InvalidSubgraph>, dual_module: &mut impl DualModuleImpl) -> DualNodePtr {
-        debug_assert!(self.find_node(&invalid_subgraph).is_none(), "do not create the same node twice");
+    pub fn create_node(
+        &self,
+        invalid_subgraph: Arc<InvalidSubgraph>,
+        dual_module: &mut impl DualModuleImpl,
+    ) -> DualNodePtr {
+        debug_assert!(
+            self.find_node(&invalid_subgraph).is_none(),
+            "do not create the same node twice"
+        );
         let mut interface = self.write();
         let node_ptr = DualNodePtr::new_value(DualNode {
             index: interface.nodes.len(),
@@ -337,24 +359,42 @@ impl DualModuleInterfacePtr {
     }
 
     /// return whether it's existing node or not
-    pub fn find_or_create_node(&self, invalid_subgraph: Arc<InvalidSubgraph>, dual_module: &mut impl DualModuleImpl) -> (bool, DualNodePtr) {
+    pub fn find_or_create_node(
+        &self,
+        invalid_subgraph: Arc<InvalidSubgraph>,
+        dual_module: &mut impl DualModuleImpl,
+    ) -> (bool, DualNodePtr) {
         match self.find_node(&invalid_subgraph) {
             Some(node_ptr) => (true, node_ptr),
-            None => (false, self.create_node(invalid_subgraph, dual_module))
+            None => (false, self.create_node(invalid_subgraph, dual_module)),
         }
     }
-
 }
 
 // shortcuts for easier code writing at debugging
 impl DualModuleInterfacePtr {
-    pub fn create_node_vec(&self, edges: &[EdgeIndex], dual_module: &mut impl DualModuleImpl) -> DualNodePtr {
-        let invalid_subgraph = Arc::new(InvalidSubgraph::new(edges.iter().cloned().collect(), &self.read_recursive().decoding_graph));
+    pub fn create_node_vec(
+        &self,
+        edges: &[EdgeIndex],
+        dual_module: &mut impl DualModuleImpl,
+    ) -> DualNodePtr {
+        let invalid_subgraph = Arc::new(InvalidSubgraph::new(
+            edges.iter().cloned().collect(),
+            &self.read_recursive().decoding_graph,
+        ));
         self.create_node(invalid_subgraph, dual_module)
     }
-    pub fn create_node_complete_vec(&self, vertices: &[VertexIndex], edges: &[EdgeIndex], dual_module: &mut impl DualModuleImpl) -> DualNodePtr {
-        let invalid_subgraph = Arc::new(InvalidSubgraph::new_complete(vertices.iter().cloned().collect()
-            , edges.iter().cloned().collect(), &self.read_recursive().decoding_graph));
+    pub fn create_node_complete_vec(
+        &self,
+        vertices: &[VertexIndex],
+        edges: &[EdgeIndex],
+        dual_module: &mut impl DualModuleImpl,
+    ) -> DualNodePtr {
+        let invalid_subgraph = Arc::new(InvalidSubgraph::new_complete(
+            vertices.iter().cloned().collect(),
+            edges.iter().cloned().collect(),
+            &self.read_recursive().decoding_graph,
+        ));
         self.create_node(invalid_subgraph, dual_module)
     }
 }

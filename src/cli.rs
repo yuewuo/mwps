@@ -1,16 +1,15 @@
 use crate::clap;
-use crate::clap::{ValueEnum, Parser, Subcommand};
+use crate::clap::{Parser, Subcommand, ValueEnum};
+use crate::example_codes::*;
+use crate::mwps_solver::*;
 use crate::util::*;
 use crate::visualize::*;
-use crate::example_codes::*;
 use more_asserts::assert_le;
+use num_traits::FromPrimitive;
+use pbr::ProgressBar;
+use rand::{thread_rng, Rng};
 use serde::Serialize;
 use std::env;
-use crate::mwps_solver::*;
-use pbr::ProgressBar;
-use rand::{Rng, thread_rng};
-use num_traits::FromPrimitive;
-
 
 #[derive(Parser, Clone)]
 #[clap(author = clap::crate_authors!(", "))]
@@ -25,7 +24,6 @@ pub struct Cli {
     command: Commands,
 }
 
-
 #[derive(Subcommand, Clone)]
 #[allow(clippy::large_enum_variant)]
 enum Commands {
@@ -38,7 +36,7 @@ pub struct BenchmarkParameters {
     /// code distance
     #[clap(value_parser)]
     d: VertexNum,
-    /// physical error rate: the probability of each edge to 
+    /// physical error rate: the probability of each edge to
     #[clap(value_parser)]
     p: f64,
     /// rounds of noisy measurement, valid only when multiple rounds
@@ -132,22 +130,44 @@ pub enum Verifier {
 impl Cli {
     pub fn run(self) {
         match self.command {
-            Commands::Benchmark( BenchmarkParameters { d, p, pe, noisy_measurements, max_weight, code_type
-                    , enable_visualizer, verifier, total_rounds, primal_dual_type
-                    , pb_message, primal_dual_config, code_config, use_deterministic_seed
-                    , benchmark_profiler_output, print_syndrome_pattern, starting_iteration, print_error_pattern } ) => {
+            Commands::Benchmark(BenchmarkParameters {
+                d,
+                p,
+                pe,
+                noisy_measurements,
+                max_weight,
+                code_type,
+                enable_visualizer,
+                verifier,
+                total_rounds,
+                primal_dual_type,
+                pb_message,
+                primal_dual_config,
+                code_config,
+                use_deterministic_seed,
+                benchmark_profiler_output,
+                print_syndrome_pattern,
+                starting_iteration,
+                print_error_pattern,
+            }) => {
                 // whether to disable progress bar, useful when running jobs in background
                 let disable_progress_bar = env::var("DISABLE_PROGRESS_BAR").is_ok();
-                let mut code: Box<dyn ExampleCode> = code_type.build(d, p, noisy_measurements, max_weight, code_config);
-                if pe != 0. { code.set_erasure_probability(pe); }
-                if enable_visualizer {  // print visualizer file path only once
+                let mut code: Box<dyn ExampleCode> =
+                    code_type.build(d, p, noisy_measurements, max_weight, code_config);
+                if pe != 0. {
+                    code.set_erasure_probability(pe);
+                }
+                if enable_visualizer {
+                    // print visualizer file path only once
                     print_visualize_link(static_visualize_data_filename());
                 }
                 // create initializer and solver
                 let initializer = code.get_initializer();
-                let mut primal_dual_solver = primal_dual_type.build(&initializer, &*code, primal_dual_config);
+                let mut primal_dual_solver =
+                    primal_dual_type.build(&initializer, &*code, primal_dual_config);
                 let mut result_verifier = verifier.build(&initializer);
-                let mut benchmark_profiler = BenchmarkProfiler::new(noisy_measurements, benchmark_profiler_output);
+                let mut benchmark_profiler =
+                    BenchmarkProfiler::new(noisy_measurements, benchmark_profiler_output);
                 // prepare progress bar display
                 let mut pb = if !disable_progress_bar {
                     let mut pb = ProgressBar::on(std::io::stderr(), total_rounds as u64);
@@ -162,7 +182,11 @@ impl Cli {
                 let mut rng = thread_rng();
                 for round in (starting_iteration as u64)..(total_rounds as u64) {
                     pb.as_mut().map(|pb| pb.set(round));
-                    let seed = if use_deterministic_seed { round } else { rng.gen() };
+                    let seed = if use_deterministic_seed {
+                        round
+                    } else {
+                        rng.gen()
+                    };
                     let (syndrome_pattern, error_pattern) = code.generate_random_errors(seed);
                     if print_syndrome_pattern {
                         println!("syndrome_pattern: {:?}", syndrome_pattern);
@@ -173,16 +197,27 @@ impl Cli {
                     // create a new visualizer each round
                     let mut visualizer = None;
                     if enable_visualizer {
-                        let new_visualizer = Visualizer::new(Some(visualize_data_folder() + static_visualize_data_filename().as_str())
-                            , code.get_positions(), true).unwrap();
+                        let new_visualizer = Visualizer::new(
+                            Some(
+                                visualize_data_folder() + static_visualize_data_filename().as_str(),
+                            ),
+                            code.get_positions(),
+                            true,
+                        )
+                        .unwrap();
                         visualizer = Some(new_visualizer);
                     }
                     benchmark_profiler.begin(&syndrome_pattern, &error_pattern);
                     primal_dual_solver.solve_visualizer(&syndrome_pattern, visualizer.as_mut());
                     benchmark_profiler.event("decoded".to_string());
-                    result_verifier.verify(&mut primal_dual_solver, &syndrome_pattern, &error_pattern, visualizer.as_mut());
+                    result_verifier.verify(
+                        &mut primal_dual_solver,
+                        &syndrome_pattern,
+                        &error_pattern,
+                        visualizer.as_mut(),
+                    );
                     benchmark_profiler.event("verified".to_string());
-                    primal_dual_solver.clear();  // also count the clear operation
+                    primal_dual_solver.clear(); // also count the clear operation
                     benchmark_profiler.end(Some(&*primal_dual_solver));
                     if let Some(pb) = pb.as_mut() {
                         if pb_message.is_empty() {
@@ -190,10 +225,13 @@ impl Cli {
                         }
                     }
                 }
-                if disable_progress_bar {  // always print out brief
+                if disable_progress_bar {
+                    // always print out brief
                     println!("{}", benchmark_profiler.brief());
                 } else {
-                    if let Some(pb) = pb.as_mut() { pb.finish() }
+                    if let Some(pb) = pb.as_mut() {
+                        pb.finish()
+                    }
                     println!();
                 }
             }
@@ -202,50 +240,64 @@ impl Cli {
 }
 
 impl ExampleCodeType {
-    fn build(&self, d: VertexNum, p: f64, _noisy_measurements: VertexNum, max_weight: Weight, mut code_config: serde_json::Value) -> Box<dyn ExampleCode> {
+    fn build(
+        &self,
+        d: VertexNum,
+        p: f64,
+        _noisy_measurements: VertexNum,
+        max_weight: Weight,
+        mut code_config: serde_json::Value,
+    ) -> Box<dyn ExampleCode> {
         match self {
             Self::CodeCapacityRepetitionCode => {
                 assert_eq!(code_config, json!({}), "config not supported");
                 Box::new(CodeCapacityRepetitionCode::new(d, p, max_weight))
-            },
+            }
             Self::CodeCapacityPlanarCode => {
                 assert_eq!(code_config, json!({}), "config not supported");
                 Box::new(CodeCapacityPlanarCode::new(d, p, max_weight))
-            },
+            }
             Self::CodeCapacityTailoredCode => {
-                let mut pxy = 0.;  // default to infinite bias
-                let config = code_config.as_object_mut().expect("config must be JSON object");
+                let mut pxy = 0.; // default to infinite bias
+                let config = code_config
+                    .as_object_mut()
+                    .expect("config must be JSON object");
                 if let Some(value) = config.remove("pxy") {
                     pxy = value.as_f64().expect("code_count number");
                 }
                 Box::new(CodeCapacityTailoredCode::new(d, pxy, p, max_weight))
-            },
+            }
             Self::CodeCapacityColorCode => {
                 assert_eq!(code_config, json!({}), "config not supported");
                 Box::new(CodeCapacityColorCode::new(d, p, max_weight))
-            },
-            Self::ErrorPatternReader => {
-                Box::new(ErrorPatternReader::new(code_config))
-            },
+            }
+            Self::ErrorPatternReader => Box::new(ErrorPatternReader::new(code_config)),
         }
     }
 }
 
 impl PrimalDualType {
-    fn build(&self, initializer: &SolverInitializer, code: &dyn ExampleCode, primal_dual_config: serde_json::Value) -> Box<dyn PrimalDualSolver> {
+    fn build(
+        &self,
+        initializer: &SolverInitializer,
+        code: &dyn ExampleCode,
+        primal_dual_config: serde_json::Value,
+    ) -> Box<dyn PrimalDualSolver> {
         match self {
             Self::UnionFind => {
                 assert_eq!(primal_dual_config, json!({}));
                 Box::new(SolverUnionFind::new(initializer))
-            },
+            }
             Self::Serial => {
                 unimplemented!()
                 // assert_eq!(primal_dual_config, json!({}));
                 // Box::new(SolverSerial::new(initializer))
-            },
-            Self::ErrorPatternLogger => {
-                Box::new(SolverErrorPatternLogger::new(initializer, code, primal_dual_config))
-            },
+            }
+            Self::ErrorPatternLogger => Box::new(SolverErrorPatternLogger::new(
+                initializer,
+                code,
+                primal_dual_config,
+            )),
         }
     }
 }
@@ -253,15 +305,15 @@ impl PrimalDualType {
 impl Verifier {
     fn build(&self, initializer: &SolverInitializer) -> Box<dyn ResultVerifier> {
         match self {
-            Self::None => Box::new(VerifierNone { }),
-            Self::FusionSerial => Box::new(VerifierFusionSerial { 
+            Self::None => Box::new(VerifierNone {}),
+            Self::FusionSerial => Box::new(VerifierFusionSerial {
                 initializer: initializer.clone(),
             }),
-            Self::ActualError => Box::new(VerifierActualError { 
+            Self::ActualError => Box::new(VerifierActualError {
                 initializer: initializer.clone(),
                 is_strict: false,
             }),
-            Self::StrictActualError => Box::new(VerifierActualError { 
+            Self::StrictActualError => Box::new(VerifierActualError {
                 initializer: initializer.clone(),
                 is_strict: true,
             }),
@@ -270,13 +322,26 @@ impl Verifier {
 }
 
 trait ResultVerifier {
-    fn verify(&mut self, primal_dual_solver: &mut Box<dyn PrimalDualSolver>, syndrome_pattern: &SyndromePattern, error_pattern: &Subgraph, visualizer: Option<&mut Visualizer>);
+    fn verify(
+        &mut self,
+        primal_dual_solver: &mut Box<dyn PrimalDualSolver>,
+        syndrome_pattern: &SyndromePattern,
+        error_pattern: &Subgraph,
+        visualizer: Option<&mut Visualizer>,
+    );
 }
 
-struct VerifierNone { }
+struct VerifierNone {}
 
 impl ResultVerifier for VerifierNone {
-    fn verify(&mut self, _primal_dual_solver: &mut Box<dyn PrimalDualSolver>, _syndrome_pattern: &SyndromePattern, _error_pattern: &Subgraph, _visualizer: Option<&mut Visualizer>) { }
+    fn verify(
+        &mut self,
+        _primal_dual_solver: &mut Box<dyn PrimalDualSolver>,
+        _syndrome_pattern: &SyndromePattern,
+        _error_pattern: &Subgraph,
+        _visualizer: Option<&mut Visualizer>,
+    ) {
+    }
 }
 
 struct VerifierFusionSerial {
@@ -284,7 +349,13 @@ struct VerifierFusionSerial {
 }
 
 impl ResultVerifier for VerifierFusionSerial {
-    fn verify(&mut self, _primal_dual_solver: &mut Box<dyn PrimalDualSolver>, _syndrome_pattern: &SyndromePattern, _error_pattern: &Subgraph, _visualizer: Option<&mut Visualizer>) {
+    fn verify(
+        &mut self,
+        _primal_dual_solver: &mut Box<dyn PrimalDualSolver>,
+        _syndrome_pattern: &SyndromePattern,
+        _error_pattern: &Subgraph,
+        _visualizer: Option<&mut Visualizer>,
+    ) {
         println!("{}", self.initializer.vertex_num);
         unimplemented!()
     }
@@ -296,18 +367,39 @@ struct VerifierActualError {
 }
 
 impl ResultVerifier for VerifierActualError {
-    fn verify(&mut self, primal_dual_solver: &mut Box<dyn PrimalDualSolver>, syndrome_pattern: &SyndromePattern, error_pattern: &Subgraph, visualizer: Option<&mut Visualizer>) {
+    fn verify(
+        &mut self,
+        primal_dual_solver: &mut Box<dyn PrimalDualSolver>,
+        syndrome_pattern: &SyndromePattern,
+        error_pattern: &Subgraph,
+        visualizer: Option<&mut Visualizer>,
+    ) {
         if !syndrome_pattern.erasures.is_empty() {
             unimplemented!()
         }
-        let actual_weight = Rational::from_usize(self.initializer.get_subgraph_total_weight(error_pattern)).unwrap();
+        let actual_weight =
+            Rational::from_usize(self.initializer.get_subgraph_total_weight(error_pattern))
+                .unwrap();
         let (subgraph, weight_range) = primal_dual_solver.subgraph_range_visualizer(visualizer);
-        assert!(self.initializer.matches_subgraph_syndrome(&subgraph, &syndrome_pattern.defect_vertices), "bug: the result subgraph does not match the syndrome");
-        assert_le!(weight_range.lower, actual_weight, "the lower bound of weight range is larger than the actual weight");
+        assert!(
+            self.initializer
+                .matches_subgraph_syndrome(&subgraph, &syndrome_pattern.defect_vertices),
+            "bug: the result subgraph does not match the syndrome"
+        );
+        assert_le!(
+            weight_range.lower,
+            actual_weight,
+            "the lower bound of weight range is larger than the actual weight"
+        );
         if self.is_strict {
-            let subgraph_weight = Rational::from_usize(self.initializer.get_subgraph_total_weight(&subgraph)).unwrap();
+            let subgraph_weight =
+                Rational::from_usize(self.initializer.get_subgraph_total_weight(&subgraph))
+                    .unwrap();
             assert_le!(subgraph_weight, actual_weight, "it's not a minimum-weight parity subgraph: the actual error pattern has smaller weight, range: {weight_range:?}");
-            assert_eq!(weight_range.lower, weight_range.upper, "the weight range must be optimal: lower = upper");
+            assert_eq!(
+                weight_range.lower, weight_range.upper,
+                "the weight range must be optimal: lower = upper"
+            );
         }
     }
 }

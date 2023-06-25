@@ -1,6 +1,5 @@
+use crate::serde::{Deserialize, Serialize};
 use std::iter::FromIterator;
-use crate::serde::{Serialize, Deserialize};
-
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct UnionFindGeneric<NodeType: UnionNodeTrait> {
@@ -16,13 +15,19 @@ pub trait UnionNodeTrait {
     /// return `is_left`, `after_union`
     fn union(left: &Self, right: &Self) -> (bool, Self);
     /// clear the state, if [`UnionFindGeneric::clear`] is called then this must be provided
-    fn clear(&mut self) { unimplemented!("[`UnionNodeTrait::clear`] must be implemented") }
+    fn clear(&mut self) {
+        unimplemented!("[`UnionNodeTrait::clear`] must be implemented")
+    }
     /// default structure
-    fn default() -> Self where Self: std::marker::Sized { unimplemented!("[`UnionNodeTrait::default`] must be implemented") }
+    fn default() -> Self
+    where
+        Self: std::marker::Sized,
+    {
+        unimplemented!("[`UnionNodeTrait::default`] must be implemented")
+    }
 }
 
 pub type ExampleUnionFind = UnionFindGeneric<ExampleUnionNode>;
-
 
 /// define your own union-find node data structure like this
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -46,9 +51,7 @@ impl UnionNodeTrait for ExampleUnionNode {
     }
     #[inline]
     fn default() -> Self {
-        Self {
-            set_size: 1,
-        }
+        Self { set_size: 1 }
     }
 }
 
@@ -111,7 +114,7 @@ impl<NodeType: UnionNodeTrait> UnionFindGeneric<NodeType> {
 
         let (parent, child, val) = match NodeType::union(&self.payload[k0], &self.payload[k1]) {
             (true, val) => (k0, k1, val),  // left
-            (false, val) => (k1, k0, val),  // right
+            (false, val) => (k1, k0, val), // right
         };
         self.payload[parent] = val;
         self.link_parent[child] = parent;
@@ -130,7 +133,7 @@ impl<NodeType: UnionNodeTrait> UnionFindGeneric<NodeType> {
         }
         let root = k;
         for k in self.find_parent_list.iter() {
-            self.link_parent[*k] = root;  // path compression
+            self.link_parent[*k] = root; // path compression
         }
         self.find_parent_list.clear();
         root
@@ -178,16 +181,15 @@ impl<NodeType: UnionNodeTrait> UnionFindGeneric<NodeType> {
         self.payload.clear();
         self.link_parent.clear();
     }
-
 }
-
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn union_find_algorithm_test_1() {  // cargo test union_find_algorithm_test_1 -- --nocapture
+    fn union_find_algorithm_test_1() {
+        // cargo test union_find_algorithm_test_1 -- --nocapture
         let mut uf = ExampleUnionFind::new(100);
         // test from https://github.com/gifnksm/union-find-rs/blob/master/src/tests.rs
         assert_eq!(1, uf.get(0).set_size);
@@ -221,5 +223,4 @@ mod tests {
         assert_eq!(101, uf.size());
         uf.clear();
     }
-    
 }

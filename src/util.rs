@@ -1,24 +1,23 @@
-use serde::{Serialize, Deserialize};
-use crate::rand_xoshiro::rand_core::RngCore;
-use crate::rand_xoshiro;
+use crate::mwps_solver::*;
 use crate::num_rational;
-use crate::visualize::*;
 use crate::num_traits::ToPrimitive;
+use crate::rand_xoshiro;
+use crate::rand_xoshiro::rand_core::RngCore;
+use crate::visualize::*;
+#[cfg(feature = "python_binding")]
+use pyo3::prelude::*;
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
-use std::time::Instant;
 use std::fs::File;
 use std::io::prelude::*;
-use crate::mwps_solver::*;
-#[cfg(feature="python_binding")]
-use pyo3::prelude::*;
+use std::time::Instant;
 
-
-pub type Weight = usize;  // only used as input
+pub type Weight = usize; // only used as input
 pub type EdgeIndex = usize;
 pub type VertexIndex = usize;
 pub type NodeIndex = VertexIndex;
 pub type DefectIndex = VertexIndex;
-pub type VertexNodeIndex = VertexIndex;  // must be same as VertexIndex, NodeIndex, DefectIndex
+pub type VertexNodeIndex = VertexIndex; // must be same as VertexIndex, NodeIndex, DefectIndex
 pub type VertexNum = VertexIndex;
 pub type NodeNum = VertexIndex;
 
@@ -41,7 +40,10 @@ pub struct SolverInitializer {
 #[cfg_attr(feature = "python_binding", pymethods)]
 impl SolverInitializer {
     #[cfg_attr(feature = "python_binding", new)]
-    pub fn new(vertex_num: VertexNum, weighted_edges: Vec<(Vec<VertexIndex>, Weight)>) -> SolverInitializer {
+    pub fn new(
+        vertex_num: VertexNum,
+        weighted_edges: Vec<(Vec<VertexIndex>, Weight)>,
+    ) -> SolverInitializer {
         SolverInitializer {
             vertex_num,
             weighted_edges,
@@ -49,7 +51,9 @@ impl SolverInitializer {
     }
 
     #[cfg(feature = "python_binding")]
-    fn __repr__(&self) -> String { format!("{:?}", self) }
+    fn __repr__(&self) -> String {
+        format!("{:?}", self)
+    }
 
     pub fn get_subgraph_total_weight(&self, subgraph: &Subgraph) -> Weight {
         let mut weight = 0;
@@ -73,11 +77,9 @@ impl SolverInitializer {
         }
         defect_vertices
     }
-
 }
 
 impl SolverInitializer {
-
     /// sanity check to avoid duplicate edges that are hard to debug
     pub fn sanity_check(&self) -> Result<(), String> {
         use crate::example_codes::*;
@@ -85,21 +87,25 @@ impl SolverInitializer {
         code.sanity_check()
     }
 
-    pub fn matches_subgraph_syndrome(&self, subgraph: &Subgraph, defect_vertices: &Vec<VertexIndex>) -> bool {
-        let subgraph_defect_vertices: Vec<_> = self.get_subgraph_syndrome(subgraph).into_iter().collect();
+    pub fn matches_subgraph_syndrome(
+        &self,
+        subgraph: &Subgraph,
+        defect_vertices: &Vec<VertexIndex>,
+    ) -> bool {
+        let subgraph_defect_vertices: Vec<_> =
+            self.get_subgraph_syndrome(subgraph).into_iter().collect();
         let mut defect_vertices = defect_vertices.clone();
         defect_vertices.sort();
         if defect_vertices.len() != subgraph_defect_vertices.len() {
-            return false
+            return false;
         }
         for i in 0..defect_vertices.len() {
             if defect_vertices[i] != subgraph_defect_vertices[i] {
-                return false
+                return false;
             }
         }
         true
     }
-
 }
 
 impl MWPSVisualizer for SolverInitializer {
@@ -107,9 +113,7 @@ impl MWPSVisualizer for SolverInitializer {
         let mut vertices = Vec::<serde_json::Value>::new();
         let mut edges = Vec::<serde_json::Value>::new();
         for _ in 0..self.vertex_num {
-            vertices.push(json!({
-                
-            }));
+            vertices.push(json!({}));
         }
         for (vertices, weight) in self.weighted_edges.iter() {
             edges.push(json!({
@@ -138,7 +142,10 @@ pub struct SyndromePattern {
 
 impl SyndromePattern {
     pub fn new(defect_vertices: Vec<VertexIndex>, erasures: Vec<EdgeIndex>) -> Self {
-        Self { defect_vertices, erasures }
+        Self {
+            defect_vertices,
+            erasures,
+        }
     }
 }
 
@@ -147,12 +154,22 @@ impl SyndromePattern {
 impl SyndromePattern {
     #[cfg_attr(feature = "python_binding", new)]
     #[cfg_attr(feature = "python_binding", pyo3(signature = (defect_vertices=vec![], erasures=vec![], syndrome_vertices=None)))]
-    pub fn py_new(mut defect_vertices: Vec<VertexIndex>, erasures: Vec<EdgeIndex>, syndrome_vertices: Option<Vec<VertexIndex>>) -> Self {
+    pub fn py_new(
+        mut defect_vertices: Vec<VertexIndex>,
+        erasures: Vec<EdgeIndex>,
+        syndrome_vertices: Option<Vec<VertexIndex>>,
+    ) -> Self {
         if let Some(syndrome_vertices) = syndrome_vertices {
-            assert!(defect_vertices.is_empty(), "do not pass both `syndrome_vertices` and `defect_vertices` since they're aliasing");
+            assert!(
+                defect_vertices.is_empty(),
+                "do not pass both `syndrome_vertices` and `defect_vertices` since they're aliasing"
+            );
             defect_vertices = syndrome_vertices;
         }
-        Self { defect_vertices, erasures }
+        Self {
+            defect_vertices,
+            erasures,
+        }
     }
     #[cfg_attr(feature = "python_binding", staticmethod)]
     pub fn new_vertices(defect_vertices: Vec<VertexIndex>) -> Self {
@@ -163,7 +180,9 @@ impl SyndromePattern {
         Self::new(vec![], vec![])
     }
     #[cfg(feature = "python_binding")]
-    fn __repr__(&self) -> String { format!("{:?}", self) }
+    fn __repr__(&self) -> String {
+        format!("{:?}", self)
+    }
 }
 
 #[allow(dead_code)]
@@ -180,7 +199,7 @@ impl F64Rng for DeterministicRng {
     }
 }
 
-/// the result of MWPS algorithm: a parity subgraph (defined by some edges that, 
+/// the result of MWPS algorithm: a parity subgraph (defined by some edges that,
 /// if are selected, will generate the parity result in the syndrome)
 #[cfg_attr(feature = "python_binding", cfg_eval)]
 #[cfg_attr(feature = "python_binding", pyclass)]
@@ -276,9 +295,14 @@ impl BenchmarkProfiler {
     pub fn new(noisy_measurements: VertexNum, detail_log_file: Option<String>) -> Self {
         let benchmark_profiler_output = detail_log_file.map(|filename| {
             let mut file = File::create(filename).unwrap();
-            file.write_all(serde_json::to_string(&json!({
-                "noisy_measurements": noisy_measurements,
-            })).unwrap().as_bytes()).unwrap();
+            file.write_all(
+                serde_json::to_string(&json!({
+                    "noisy_measurements": noisy_measurements,
+                }))
+                .unwrap()
+                .as_bytes(),
+            )
+            .unwrap();
             file.write_all(b"\n").unwrap();
             file
         });
@@ -302,12 +326,18 @@ impl BenchmarkProfiler {
         self.records.last_mut().unwrap().record_begin();
     }
     pub fn event(&mut self, event_name: String) {
-        let last_entry = self.records.last_mut().expect("last entry not exists, call `begin` before `end`");
+        let last_entry = self
+            .records
+            .last_mut()
+            .expect("last entry not exists, call `begin` before `end`");
         last_entry.record_event(event_name);
     }
     /// record the ending of a decoding procedure
     pub fn end(&mut self, solver: Option<&dyn PrimalDualSolver>) {
-        let last_entry = self.records.last_mut().expect("last entry not exists, call `begin` before `end`");
+        let last_entry = self
+            .records
+            .last_mut()
+            .expect("last entry not exists, call `begin` before `end`");
         last_entry.record_end();
         self.sum_round_time += last_entry.round_time.unwrap();
         self.sum_syndrome += last_entry.syndrome_pattern.defect_vertices.len();
@@ -325,9 +355,13 @@ impl BenchmarkProfiler {
             });
             if let Some(solver) = solver {
                 let solver_profile = solver.generate_profiler_report();
-                value.as_object_mut().unwrap().insert("solver_profile".to_string(), solver_profile);
+                value
+                    .as_object_mut()
+                    .unwrap()
+                    .insert("solver_profile".to_string(), solver_profile);
             }
-            file.write_all(serde_json::to_string(&value).unwrap().as_bytes()).unwrap();
+            file.write_all(serde_json::to_string(&value).unwrap().as_bytes())
+                .unwrap();
             file.write_all(b"\n").unwrap();
         }
     }
@@ -365,24 +399,34 @@ impl BenchmarkProfilerEntry {
     }
     /// record the beginning of a decoding procedure
     pub fn record_begin(&mut self) {
-        assert_eq!(self.begin_time, None, "do not call `record_begin` twice on the same entry");
+        assert_eq!(
+            self.begin_time, None,
+            "do not call `record_begin` twice on the same entry"
+        );
         self.begin_time = Some(Instant::now());
     }
     /// record the ending of a decoding procedure
     pub fn record_end(&mut self) {
-        let begin_time = self.begin_time.as_ref().expect("make sure to call `record_begin` before calling `record_end`");
+        let begin_time = self
+            .begin_time
+            .as_ref()
+            .expect("make sure to call `record_begin` before calling `record_end`");
         self.round_time = Some(begin_time.elapsed().as_secs_f64());
     }
     pub fn record_event(&mut self, event_name: String) {
-        let begin_time = self.begin_time.as_ref().expect("make sure to call `record_begin` before calling `record_end`");
-        self.events.push((event_name, begin_time.elapsed().as_secs_f64()));
+        let begin_time = self
+            .begin_time
+            .as_ref()
+            .expect("make sure to call `record_begin` before calling `record_end`");
+        self.events
+            .push((event_name, begin_time.elapsed().as_secs_f64()));
     }
     pub fn is_complete(&self) -> bool {
         self.round_time.is_some()
     }
 }
 
-#[cfg(feature="python_binding")]
+#[cfg(feature = "python_binding")]
 pub fn json_to_pyobject_locked<'py>(value: serde_json::Value, py: Python<'py>) -> PyObject {
     match value {
         serde_json::Value::Null => py.None(),
@@ -393,12 +437,15 @@ pub fn json_to_pyobject_locked<'py>(value: serde_json::Value, py: Python<'py>) -
             } else {
                 value.as_f64().to_object(py).into()
             }
-        },
+        }
         serde_json::Value::String(value) => value.to_object(py).into(),
         serde_json::Value::Array(array) => {
-            let elements: Vec<PyObject> = array.into_iter().map(|value| json_to_pyobject_locked(value, py)).collect();
+            let elements: Vec<PyObject> = array
+                .into_iter()
+                .map(|value| json_to_pyobject_locked(value, py))
+                .collect();
             pyo3::types::PyList::new(py, elements).into()
-        },
+        }
         serde_json::Value::Object(map) => {
             let pydict = pyo3::types::PyDict::new(py);
             for (key, value) in map.into_iter() {
@@ -406,18 +453,16 @@ pub fn json_to_pyobject_locked<'py>(value: serde_json::Value, py: Python<'py>) -
                 pydict.set_item(key, pyobject).unwrap();
             }
             pydict.into()
-        },
+        }
     }
 }
 
-#[cfg(feature="python_binding")]
+#[cfg(feature = "python_binding")]
 pub fn json_to_pyobject(value: serde_json::Value) -> PyObject {
-    Python::with_gil(|py| {
-        json_to_pyobject_locked(value, py)
-    })
+    Python::with_gil(|py| json_to_pyobject_locked(value, py))
 }
 
-#[cfg(feature="python_binding")]
+#[cfg(feature = "python_binding")]
 pub fn pyobject_to_json_locked<'py>(value: PyObject, py: Python<'py>) -> serde_json::Value {
     let value: &PyAny = value.as_ref(py);
     if value.is_none() {
@@ -431,29 +476,36 @@ pub fn pyobject_to_json_locked<'py>(value: PyObject, py: Python<'py>) -> serde_j
     } else if value.is_instance_of::<pyo3::types::PyString>().unwrap() {
         json!(value.extract::<String>().unwrap())
     } else if value.is_instance_of::<pyo3::types::PyList>().unwrap() {
-        let elements: Vec<serde_json::Value> = value.extract::<Vec<PyObject>>().unwrap()
-            .into_iter().map(|object| pyobject_to_json_locked(object, py)).collect();
+        let elements: Vec<serde_json::Value> = value
+            .extract::<Vec<PyObject>>()
+            .unwrap()
+            .into_iter()
+            .map(|object| pyobject_to_json_locked(object, py))
+            .collect();
         json!(elements)
     } else if value.is_instance_of::<pyo3::types::PyDict>().unwrap() {
         let map: &pyo3::types::PyDict = value.downcast().unwrap();
         let mut json_map = serde_json::Map::new();
         for (key, value) in map.iter() {
-            json_map.insert(key.extract::<String>().unwrap(), pyobject_to_json_locked(value.to_object(py), py));
+            json_map.insert(
+                key.extract::<String>().unwrap(),
+                pyobject_to_json_locked(value.to_object(py), py),
+            );
         }
         serde_json::Value::Object(json_map)
     } else {
-        unimplemented!("unsupported python type, should be (cascaded) dict, list and basic numerical types")
+        unimplemented!(
+            "unsupported python type, should be (cascaded) dict, list and basic numerical types"
+        )
     }
 }
 
-#[cfg(feature="python_binding")]
+#[cfg(feature = "python_binding")]
 pub fn pyobject_to_json(value: PyObject) -> serde_json::Value {
-    Python::with_gil(|py| {
-        pyobject_to_json_locked(value, py)
-    })
+    Python::with_gil(|py| pyobject_to_json_locked(value, py))
 }
 
-#[cfg(feature="python_binding")]
+#[cfg(feature = "python_binding")]
 #[pyfunction]
 pub(crate) fn register(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<SolverInitializer>()?;

@@ -1,12 +1,11 @@
-use crate::util::*;
-use std::sync::Arc;
-use crate::visualize::*;
-use std::collections::{BTreeMap, BTreeSet, HashSet};
-use num_traits::{Signed, Zero};
-use std::hash::{Hasher, Hash};
-use std::collections::hash_map::DefaultHasher;
 use crate::parity_matrix::*;
-
+use crate::util::*;
+use crate::visualize::*;
+use num_traits::{Signed, Zero};
+use std::collections::hash_map::DefaultHasher;
+use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::hash::{Hash, Hasher};
+use std::sync::Arc;
 
 /// hyper model graph that contains static information regardless of the syndrome
 #[derive(Debug, Clone)]
@@ -24,10 +23,12 @@ pub struct HyperModelGraphVertex {
 }
 
 impl HyperModelGraph {
-
     pub fn new(initializer: Arc<SolverInitializer>) -> Self {
-        let mut vertices: Vec<HyperModelGraphVertex> = vec![HyperModelGraphVertex::default(); initializer.vertex_num];
-        for (edge_index, (incident_vertices, _weight)) in initializer.weighted_edges.iter().enumerate() {
+        let mut vertices: Vec<HyperModelGraphVertex> =
+            vec![HyperModelGraphVertex::default(); initializer.vertex_num];
+        for (edge_index, (incident_vertices, _weight)) in
+            initializer.weighted_edges.iter().enumerate()
+        {
             for &vertex_index in incident_vertices.iter() {
                 vertices[vertex_index].edges.push(edge_index);
             }
@@ -54,10 +55,14 @@ impl HyperModelGraph {
         vertices
     }
 
-    pub fn matches_subgraph_syndrome(&self, subgraph: &Subgraph, defect_vertices: &Vec<VertexIndex>) -> bool {
-        self.initializer.matches_subgraph_syndrome(subgraph, defect_vertices)
+    pub fn matches_subgraph_syndrome(
+        &self,
+        subgraph: &Subgraph,
+        defect_vertices: &Vec<VertexIndex>,
+    ) -> bool {
+        self.initializer
+            .matches_subgraph_syndrome(subgraph, defect_vertices)
     }
-
 }
 
 impl MWPSVisualizer for HyperModelGraph {
@@ -79,11 +84,12 @@ pub struct HyperDecodingGraph {
 }
 
 impl HyperDecodingGraph {
-
     pub fn new(model_graph: Arc<HyperModelGraph>, syndrome_pattern: Arc<SyndromePattern>) -> Self {
         let mut decoding_graph = Self {
-            model_graph, syndrome_pattern: syndrome_pattern.clone(),
-            defect_vertices_hashset: HashSet::new(), erasures_hashset: HashSet::new(),
+            model_graph,
+            syndrome_pattern: syndrome_pattern.clone(),
+            defect_vertices_hashset: HashSet::new(),
+            erasures_hashset: HashSet::new(),
         };
         decoding_graph.set_syndrome(syndrome_pattern);
         decoding_graph
@@ -94,10 +100,13 @@ impl HyperDecodingGraph {
         self.erasures_hashset.clear();
         // reserve space for the hashset
         if self.defect_vertices_hashset.capacity() < syndrome_pattern.defect_vertices.len() {
-            self.defect_vertices_hashset.reserve(syndrome_pattern.defect_vertices.len() - self.defect_vertices_hashset.capacity())
+            self.defect_vertices_hashset.reserve(
+                syndrome_pattern.defect_vertices.len() - self.defect_vertices_hashset.capacity(),
+            )
         }
         if self.erasures_hashset.capacity() < syndrome_pattern.erasures.len() {
-            self.erasures_hashset.reserve(syndrome_pattern.erasures.len() - self.erasures_hashset.capacity())
+            self.erasures_hashset
+                .reserve(syndrome_pattern.erasures.len() - self.erasures_hashset.capacity())
         }
         // add new syndrome
         for &vertex_index in syndrome_pattern.defect_vertices.iter() {
@@ -108,11 +117,21 @@ impl HyperDecodingGraph {
         }
     }
 
-    pub fn new_defects(model_graph: Arc<HyperModelGraph>, defect_vertices: Vec<VertexIndex>) -> Self {
-        Self::new(model_graph, Arc::new(SyndromePattern::new_vertices(defect_vertices)))
+    pub fn new_defects(
+        model_graph: Arc<HyperModelGraph>,
+        defect_vertices: Vec<VertexIndex>,
+    ) -> Self {
+        Self::new(
+            model_graph,
+            Arc::new(SyndromePattern::new_vertices(defect_vertices)),
+        )
     }
 
-    pub fn find_valid_subgraph(&self, edges: &BTreeSet<EdgeIndex>, vertices: &BTreeSet<VertexIndex>) -> Option<Subgraph> {
+    pub fn find_valid_subgraph(
+        &self,
+        edges: &BTreeSet<EdgeIndex>,
+        vertices: &BTreeSet<VertexIndex>,
+    ) -> Option<Subgraph> {
         let mut matrix = ParityMatrix::new_no_phantom();
         for &edge_index in edges.iter() {
             matrix.add_tight_variable(edge_index);
@@ -123,11 +142,18 @@ impl HyperDecodingGraph {
         matrix.get_joint_solution()
     }
 
-    pub fn find_valid_subgraph_auto_vertices(&self, edges: &BTreeSet<EdgeIndex>) -> Option<Subgraph> {
+    pub fn find_valid_subgraph_auto_vertices(
+        &self,
+        edges: &BTreeSet<EdgeIndex>,
+    ) -> Option<Subgraph> {
         self.find_valid_subgraph(edges, &self.get_edges_neighbors(edges))
     }
 
-    pub fn is_valid_cluster(&self, edges: &BTreeSet<EdgeIndex>, vertices: &BTreeSet<VertexIndex>) -> bool {
+    pub fn is_valid_cluster(
+        &self,
+        edges: &BTreeSet<EdgeIndex>,
+        vertices: &BTreeSet<VertexIndex>,
+    ) -> bool {
         self.find_valid_subgraph(edges, vertices).is_some()
     }
 
@@ -150,7 +176,6 @@ impl HyperDecodingGraph {
     pub fn get_edges_neighbors(&self, edges: &BTreeSet<EdgeIndex>) -> BTreeSet<VertexIndex> {
         self.model_graph.get_edges_neighbors(edges)
     }
-
 }
 
 impl MWPSVisualizer for HyperDecodingGraph {
@@ -187,12 +212,12 @@ impl Hash for InvalidSubgraph {
 }
 
 impl InvalidSubgraph {
-
-    /// construct an invalid subgraph using only $E_S$, and constructing the $V_S$ by $\cup E_S$ 
+    /// construct an invalid subgraph using only $E_S$, and constructing the $V_S$ by $\cup E_S$
     pub fn new(edges: BTreeSet<EdgeIndex>, decoding_graph: &HyperDecodingGraph) -> Self {
         let mut vertices = BTreeSet::new();
         for &edge_index in edges.iter() {
-            let (incident_vertices, _weight) = &decoding_graph.model_graph.initializer.weighted_edges[edge_index];
+            let (incident_vertices, _weight) =
+                &decoding_graph.model_graph.initializer.weighted_edges[edge_index];
             for &vertex_index in incident_vertices.iter() {
                 vertices.insert(vertex_index);
             }
@@ -200,9 +225,12 @@ impl InvalidSubgraph {
         Self::new_complete(vertices, edges, decoding_graph)
     }
 
-
     /// complete definition of invalid subgraph $S = (V_S, E_S)$
-    pub fn new_complete(vertices: BTreeSet<VertexIndex>, edges: BTreeSet<EdgeIndex>, decoding_graph: &HyperDecodingGraph) -> Self {
+    pub fn new_complete(
+        vertices: BTreeSet<VertexIndex>,
+        edges: BTreeSet<EdgeIndex>,
+        decoding_graph: &HyperDecodingGraph,
+    ) -> Self {
         let mut hairs = BTreeSet::new();
         for &vertex_index in vertices.iter() {
             let vertex = &decoding_graph.model_graph.vertices[vertex_index];
@@ -212,7 +240,12 @@ impl InvalidSubgraph {
                 }
             }
         }
-        let mut invalid_subgraph = Self { hash_value: 0, vertices, edges, hairs, };
+        let mut invalid_subgraph = Self {
+            hash_value: 0,
+            vertices,
+            edges,
+            hairs,
+        };
         debug_assert_eq!(invalid_subgraph.sanity_check(decoding_graph), Ok(()));
         invalid_subgraph.update_hash();
         invalid_subgraph
@@ -234,18 +267,23 @@ impl InvalidSubgraph {
         // check if all vertices are valid
         for &vertex_index in self.vertices.iter() {
             if vertex_index >= decoding_graph.model_graph.initializer.vertex_num {
-                return Err(format!("vertex {vertex_index} is not a vertex in the model graph"))
+                return Err(format!(
+                    "vertex {vertex_index} is not a vertex in the model graph"
+                ));
             }
         }
         // check if every edge is subset of its vertices
         for &edge_index in self.edges.iter() {
             if edge_index >= decoding_graph.model_graph.initializer.weighted_edges.len() {
-                return Err(format!("edge {edge_index} is not an edge in the model graph"))
+                return Err(format!(
+                    "edge {edge_index} is not an edge in the model graph"
+                ));
             }
-            let (vertices, _weight) = &decoding_graph.model_graph.initializer.weighted_edges[edge_index];
+            let (vertices, _weight) =
+                &decoding_graph.model_graph.initializer.weighted_edges[edge_index];
             for &vertex_index in vertices.iter() {
                 if !self.vertices.contains(&vertex_index) {
-                    return Err(format!("hyperedge {edge_index} connects vertices {vertices:?}, but vertex {vertex_index} is not in the invalid subgraph vertices {:?}", self.vertices))
+                    return Err(format!("hyperedge {edge_index} connects vertices {vertices:?}, but vertex {vertex_index} is not in the invalid subgraph vertices {:?}", self.vertices));
                 }
             }
         }
@@ -258,7 +296,7 @@ impl InvalidSubgraph {
             matrix.add_parity_check_with_decoding_graph(vertex_index, decoding_graph);
         }
         if matrix.check_is_satisfiable() {
-            return Err(format!("it's a valid subgraph because edges {:?} ⊆ {:?} can satisfy the parity requirement from vertices {:?}", matrix.get_joint_solution().unwrap(), self.edges, self.vertices))
+            return Err(format!("it's a valid subgraph because edges {:?} ⊆ {:?} can satisfy the parity requirement from vertices {:?}", matrix.get_joint_solution().unwrap(), self.edges, self.vertices));
         }
         Ok(())
     }
@@ -273,7 +311,6 @@ impl InvalidSubgraph {
         }
         matrix
     }
-
 }
 
 // shortcuts for easier code writing at debugging
@@ -284,11 +321,23 @@ impl InvalidSubgraph {
     pub fn new_vec_ptr(edges: &[EdgeIndex], decoding_graph: &HyperDecodingGraph) -> Arc<Self> {
         Self::new_ptr(edges.iter().cloned().collect(), decoding_graph)
     }
-    pub fn new_complete_ptr(vertices: BTreeSet<VertexIndex>, edges: BTreeSet<EdgeIndex>, decoding_graph: &HyperDecodingGraph) -> Arc<Self> {
+    pub fn new_complete_ptr(
+        vertices: BTreeSet<VertexIndex>,
+        edges: BTreeSet<EdgeIndex>,
+        decoding_graph: &HyperDecodingGraph,
+    ) -> Arc<Self> {
         Arc::new(Self::new_complete(vertices, edges, decoding_graph))
     }
-    pub fn new_complete_vec_ptr(vertices: BTreeSet<VertexIndex>, edges: &[EdgeIndex], decoding_graph: &HyperDecodingGraph) -> Arc<Self> {
-        Self::new_complete_ptr(vertices.iter().cloned().collect(), edges.iter().cloned().collect(), decoding_graph)
+    pub fn new_complete_vec_ptr(
+        vertices: BTreeSet<VertexIndex>,
+        edges: &[EdgeIndex],
+        decoding_graph: &HyperDecodingGraph,
+    ) -> Arc<Self> {
+        Self::new_complete_ptr(
+            vertices.iter().cloned().collect(),
+            edges.iter().cloned().collect(),
+            decoding_graph,
+        )
     }
 }
 
@@ -304,7 +353,6 @@ pub struct Relaxer {
 }
 
 impl Relaxer {
-
     pub fn new(direction: Vec<(Arc<InvalidSubgraph>, Rational)>) -> Self {
         let mut edges = BTreeMap::new();
         for (invalid_subgraph, speed) in direction.iter() {
@@ -344,30 +392,38 @@ impl Relaxer {
             return Err(format!("the summation of ΔyS is negative: {:?}", sum_speed));
         }
         if self.untighten_edges.is_empty() && sum_speed.is_zero() {
-            return Err(format!("a valid relaxer must either increase overall ΔyS or untighten some edges"))
+            return Err(format!(
+                "a valid relaxer must either increase overall ΔyS or untighten some edges"
+            ));
         }
         Ok(())
     }
-
 }
-
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::example_codes::*;
+    use super::*;
 
     fn color_code_5_model_graph(visualize_filename: String) -> (Arc<HyperModelGraph>, Visualizer) {
         let code = CodeCapacityColorCode::new(5, 0.1, 1000);
-        let mut visualizer = Visualizer::new(Some(visualize_data_folder() + visualize_filename.as_str()), code.get_positions(), true).unwrap();
+        let mut visualizer = Visualizer::new(
+            Some(visualize_data_folder() + visualize_filename.as_str()),
+            code.get_positions(),
+            true,
+        )
+        .unwrap();
         print_visualize_link(visualize_filename.clone());
-        visualizer.snapshot_combined(format!("code"), vec![&code]).unwrap();
+        visualizer
+            .snapshot_combined(format!("code"), vec![&code])
+            .unwrap();
         let model_graph = code.get_model_graph();
         (model_graph, visualizer)
     }
 
     #[test]
-    fn framework_hyper_model_graph() {  // cargo test framework_hyper_model_graph -- --nocapture
+    fn framework_hyper_model_graph() {
+        // cargo test framework_hyper_model_graph -- --nocapture
         let visualize_filename = format!("framework_hyper_model_graph.json");
         let (model_graph, ..) = color_code_5_model_graph(visualize_filename);
         println!("model_graph: {model_graph:?}");
@@ -382,39 +438,61 @@ mod tests {
         assert_eq!(edge_reference_initializer, edge_reference_hyper_model_graph);
     }
 
-    fn color_code_5_decoding_graph(defect_vertices: Vec<VertexIndex>, visualize_filename: String) -> (Arc<HyperDecodingGraph>, Visualizer) {
+    fn color_code_5_decoding_graph(
+        defect_vertices: Vec<VertexIndex>,
+        visualize_filename: String,
+    ) -> (Arc<HyperDecodingGraph>, Visualizer) {
         let (model_graph, mut visualizer) = color_code_5_model_graph(visualize_filename);
         let syndrome_pattern = Arc::new(SyndromePattern::new_vertices(defect_vertices));
         let decoding_graph = Arc::new(HyperDecodingGraph::new(model_graph, syndrome_pattern));
-        visualizer.snapshot_combined(format!("syndrome"), vec![decoding_graph.as_ref()]).unwrap();
+        visualizer
+            .snapshot_combined(format!("syndrome"), vec![decoding_graph.as_ref()])
+            .unwrap();
         (decoding_graph, visualizer)
     }
 
     #[test]
-    fn framework_invalid_subgraph() {  // cargo test framework_invalid_subgraph -- --nocapture
+    fn framework_invalid_subgraph() {
+        // cargo test framework_invalid_subgraph -- --nocapture
         let visualize_filename = format!("framework_invalid_subgraph.json");
         let (decoding_graph, ..) = color_code_5_decoding_graph(vec![7, 1], visualize_filename);
-        let invalid_subgraph_1 = InvalidSubgraph::new(vec![13].into_iter().collect(), decoding_graph.as_ref());
+        let invalid_subgraph_1 =
+            InvalidSubgraph::new(vec![13].into_iter().collect(), decoding_graph.as_ref());
         println!("invalid_subgraph_1: {invalid_subgraph_1:?}");
-        assert_eq!(invalid_subgraph_1.vertices, vec![2, 6, 7].into_iter().collect());
+        assert_eq!(
+            invalid_subgraph_1.vertices,
+            vec![2, 6, 7].into_iter().collect()
+        );
         assert_eq!(invalid_subgraph_1.edges, vec![13].into_iter().collect());
-        assert_eq!(invalid_subgraph_1.hairs, vec![5, 6, 9, 10, 11, 12, 14, 15, 16, 17].into_iter().collect());
+        assert_eq!(
+            invalid_subgraph_1.hairs,
+            vec![5, 6, 9, 10, 11, 12, 14, 15, 16, 17]
+                .into_iter()
+                .collect()
+        );
     }
 
     #[test]
     #[should_panic]
-    fn framework_valid_subgraph() {  // cargo test framework_valid_subgraph -- --nocapture
+    fn framework_valid_subgraph() {
+        // cargo test framework_valid_subgraph -- --nocapture
         let visualize_filename = format!("framework_valid_subgraph.json");
         let (decoding_graph, ..) = color_code_5_decoding_graph(vec![7, 1], visualize_filename);
-        let invalid_subgraph = InvalidSubgraph::new(vec![6, 10].into_iter().collect(), decoding_graph.as_ref());
-        println!("invalid_subgraph: {invalid_subgraph:?}");  // should not print because it panics
+        let invalid_subgraph =
+            InvalidSubgraph::new(vec![6, 10].into_iter().collect(), decoding_graph.as_ref());
+        println!("invalid_subgraph: {invalid_subgraph:?}"); // should not print because it panics
     }
 
     #[test]
-    fn framework_good_relaxer() {  // cargo test framework_good_relaxer -- --nocapture
+    fn framework_good_relaxer() {
+        // cargo test framework_good_relaxer -- --nocapture
         let visualize_filename = format!("framework_good_relaxer.json");
         let (decoding_graph, ..) = color_code_5_decoding_graph(vec![7, 1], visualize_filename);
-        let invalid_subgraph = Arc::new(InvalidSubgraph::new_complete(vec![7].into_iter().collect(), BTreeSet::new(), decoding_graph.as_ref()));
+        let invalid_subgraph = Arc::new(InvalidSubgraph::new_complete(
+            vec![7].into_iter().collect(),
+            BTreeSet::new(),
+            decoding_graph.as_ref(),
+        ));
         use num_traits::One;
         let relaxer = Relaxer::new(vec![(invalid_subgraph, Rational::one())]);
         println!("relaxer: {relaxer:?}");
@@ -423,12 +501,16 @@ mod tests {
 
     #[test]
     #[should_panic]
-    fn framework_bad_relaxer() {  // cargo test framework_bad_relaxer -- --nocapture
+    fn framework_bad_relaxer() {
+        // cargo test framework_bad_relaxer -- --nocapture
         let visualize_filename = format!("framework_bad_relaxer.json");
         let (decoding_graph, ..) = color_code_5_decoding_graph(vec![7, 1], visualize_filename);
-        let invalid_subgraph = Arc::new(InvalidSubgraph::new_complete(vec![7].into_iter().collect(), BTreeSet::new(), decoding_graph.as_ref()));
+        let invalid_subgraph = Arc::new(InvalidSubgraph::new_complete(
+            vec![7].into_iter().collect(),
+            BTreeSet::new(),
+            decoding_graph.as_ref(),
+        ));
         let relaxer: Relaxer = Relaxer::new(vec![(invalid_subgraph, Rational::zero())]);
-        println!("relaxer: {relaxer:?}");  // should not print because it panics
+        println!("relaxer: {relaxer:?}"); // should not print because it panics
     }
-
 }

@@ -1,12 +1,9 @@
 extern crate clap;
 extern crate pbr;
 
-use mwps::cli::*;
 use crate::clap::Parser;
-
+use mwps::cli::*;
 
 pub fn main() {
-
     Cli::parse().run();
-
 }
