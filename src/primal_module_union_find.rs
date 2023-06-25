@@ -108,6 +108,7 @@ impl PrimalModuleImpl for PrimalModuleUnionFind {
         }
     }
 
+    #[allow(clippy::unnecessary_cast)]
     fn resolve(
         &mut self,
         mut group_max_update_length: GroupMaxUpdateLength,
@@ -387,7 +388,7 @@ pub mod tests {
     #[test]
     fn primal_module_union_find_basic_6() {
         // cargo test primal_module_union_find_basic_6 -- --nocapture
-        let visualize_filename = format!("primal_module_union_find_basic_6.json");
+        let visualize_filename = "primal_module_union_find_basic_6.json".to_string();
         let defect_vertices = vec![22];
         let code = CodeCapacityTailoredCode::new(5, 0., 0.05, 1);
         primal_module_union_find_basic_standard_syndrome(

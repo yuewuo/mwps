@@ -160,6 +160,7 @@ impl PrimalModuleImpl for PrimalModuleSerial {
         }
     }
 
+    #[allow(clippy::unnecessary_cast)]
     fn resolve(
         &mut self,
         mut group_max_update_length: GroupMaxUpdateLength,
@@ -264,6 +265,7 @@ impl PrimalModuleImpl for PrimalModuleSerial {
 
 impl PrimalModuleSerial {
     // union the cluster of two dual nodes
+    #[allow(clippy::unnecessary_cast)]
     pub fn union(
         &self,
         dual_node_ptr_1: &DualNodePtr,
@@ -309,6 +311,7 @@ impl PrimalModuleSerial {
     }
 
     /// analyze a cluster and return whether there exists an optimal solution (depending on optimization levels)
+    #[allow(clippy::unnecessary_cast)]
     fn resolve_cluster(
         &mut self,
         cluster_index: NodeIndex,

@@ -69,6 +69,7 @@ impl SolverInitializer {
         format!("{:?}", self)
     }
 
+    #[allow(clippy::unnecessary_cast)]
     pub fn get_subgraph_total_weight(&self, subgraph: &Subgraph) -> Weight {
         let mut weight = 0;
         for &edge_index in subgraph.iter() {
@@ -77,6 +78,7 @@ impl SolverInitializer {
         weight
     }
 
+    #[allow(clippy::unnecessary_cast)]
     pub fn get_subgraph_syndrome(&self, subgraph: &Subgraph) -> BTreeSet<VertexIndex> {
         let mut defect_vertices = BTreeSet::new();
         for &edge_index in subgraph.iter() {

@@ -201,7 +201,7 @@ impl DualModuleImpl for DualModuleSerial {
         }
     }
 
-    #[allow(clippy::collapsible_else_if)]
+    #[allow(clippy::collapsible_else_if, clippy::unnecessary_cast)]
     fn compute_maximum_update_length_dual_node(
         &mut self,
         dual_node_ptr: &DualNodePtr,
@@ -255,6 +255,7 @@ impl DualModuleImpl for DualModuleSerial {
         max_update_length
     }
 
+    #[allow(clippy::unnecessary_cast)]
     fn compute_maximum_update_length(&mut self) -> GroupMaxUpdateLength {
         let mut group_max_update_length = GroupMaxUpdateLength::new();
         for &edge_index in self.active_edges.iter() {
@@ -304,6 +305,7 @@ impl DualModuleImpl for DualModuleSerial {
         group_max_update_length
     }
 
+    #[allow(clippy::unnecessary_cast)]
     fn grow_dual_node(&mut self, dual_node_ptr: &DualNodePtr, length: Rational) {
         if length.is_zero() {
             eprintln!("[warning] calling `grow_dual_node` with zero length, nothing to do");
@@ -333,6 +335,7 @@ impl DualModuleImpl for DualModuleSerial {
         dual_node_ptr.write().dual_variable += grow_amount;
     }
 
+    #[allow(clippy::unnecessary_cast)]
     fn grow(&mut self, length: Rational) {
         debug_assert!(
             length.is_positive(),
@@ -368,6 +371,7 @@ impl DualModuleImpl for DualModuleSerial {
         }
     }
 
+    #[allow(clippy::unnecessary_cast)]
     fn get_edge_nodes(&self, edge_index: EdgeIndex) -> Vec<DualNodePtr> {
         self.edges[edge_index as usize]
             .read_recursive()
@@ -377,6 +381,7 @@ impl DualModuleImpl for DualModuleSerial {
             .collect()
     }
 
+    #[allow(clippy::unnecessary_cast)]
     fn is_edge_tight(&self, edge_index: EdgeIndex) -> bool {
         let edge = self.edges[edge_index as usize].read_recursive();
         edge.growth == edge.weight

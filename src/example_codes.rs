@@ -131,6 +131,7 @@ pub trait ExampleCode {
     }
 
     /// remove duplicate edges by keeping one with largest probability
+    #[allow(clippy::unnecessary_cast)]
     fn remove_duplicate_edges(&mut self) {
         let (_vertices, edges) = self.vertices_edges();
         let mut remove_edges = HashSet::new();
@@ -342,6 +343,7 @@ pub trait ExampleCode {
     }
 
     /// apply an error by flipping the vertices incident to it
+    #[allow(clippy::unnecessary_cast)]
     fn apply_error(&mut self, edge_index: EdgeIndex) {
         let (vertices, edges) = self.vertices_edges();
         let edge = &edges[edge_index as usize];
@@ -358,6 +360,7 @@ pub trait ExampleCode {
     }
 
     /// generate random errors based on the edge probabilities and a seed for pseudo number generator
+    #[allow(clippy::unnecessary_cast)]
     fn generate_random_errors(&mut self, seed: u64) -> (SyndromePattern, Subgraph) {
         let mut rng = DeterministicRng::seed_from_u64(seed);
         let (vertices, edges) = self.vertices_edges();
@@ -680,6 +683,7 @@ impl CodeCapacityTailoredCode {
     }
 
     #[cfg_attr(feature = "python_binding", staticmethod)]
+    #[allow(clippy::unnecessary_cast)]
     pub fn create_code(d: VertexNum, pxy: f64, pz: f64) -> Self {
         assert!(d >= 3 && d % 2 == 1, "d must be odd integer >= 3");
         // generate all the existing stabilizers
@@ -815,6 +819,7 @@ impl CodeCapacityColorCode {
     }
 
     #[cfg_attr(feature = "python_binding", staticmethod)]
+    #[allow(clippy::unnecessary_cast)]
     pub fn create_code(d: VertexNum) -> Self {
         assert!(d >= 3 && d % 2 == 1, "d must be odd integer >= 3");
         // generate all the existing stabilizers
@@ -1010,7 +1015,7 @@ mod tests {
             true,
         )
         .unwrap();
-        visualizer.snapshot(format!("code"), code).unwrap();
+        visualizer.snapshot("code".to_string(), code).unwrap();
         for round in 0..3 {
             code.generate_random_errors(round);
             visualizer
@@ -1026,7 +1031,7 @@ mod tests {
         code.sanity_check().unwrap();
         visualize_code(
             &mut code,
-            format!("example_code_capacity_repetition_code.json"),
+            "example_code_capacity_repetition_code.json".to_string(),
         );
     }
 
@@ -1035,7 +1040,10 @@ mod tests {
         // cargo test example_code_capacity_planar_code -- --nocapture
         let mut code = CodeCapacityPlanarCode::new(7, 0.1, 1000);
         code.sanity_check().unwrap();
-        visualize_code(&mut code, format!("example_code_capacity_planar_code.json"));
+        visualize_code(
+            &mut code,
+            "example_code_capacity_planar_code.json".to_string(),
+        );
     }
 
     #[test]
@@ -1045,7 +1053,7 @@ mod tests {
         code.sanity_check().unwrap();
         visualize_code(
             &mut code,
-            format!("example_code_capacity_tailored_code.json"),
+            "example_code_capacity_tailored_code.json".to_string(),
         );
     }
 
@@ -1054,6 +1062,9 @@ mod tests {
         // cargo test example_code_capacity_color_code -- --nocapture
         let mut code = CodeCapacityColorCode::new(7, 0.1, 1000);
         code.sanity_check().unwrap();
-        visualize_code(&mut code, format!("example_code_capacity_color_code.json"));
+        visualize_code(
+            &mut code,
+            "example_code_capacity_color_code.json".to_string(),
+        );
     }
 }

@@ -521,6 +521,7 @@ impl ParityMatrix {
     }
 
     /// try every independent variables and try to minimize the overall primal objective function
+    #[allow(clippy::unnecessary_cast)]
     pub fn get_joint_solution_local_minimum(
         &mut self,
         hypergraph: &SolverInitializer,
