@@ -87,6 +87,7 @@ impl PrimalModuleImpl for PrimalModuleSerial {
         self.pending_nodes.clear();
     }
 
+    #[allow(clippy::unnecessary_cast)]
     fn load<D: DualModuleImpl>(
         &mut self,
         interface_ptr: &DualModuleInterfacePtr,
@@ -178,7 +179,7 @@ impl PrimalModuleImpl for PrimalModuleSerial {
                     // union all the dual nodes in the edge index and create new dual node by adding this edge to `internal_edges`
                     let dual_nodes = dual_module.get_edge_nodes(edge_index);
                     debug_assert!(
-                        dual_nodes.len() > 0,
+                        !dual_nodes.is_empty(),
                         "should not conflict if no dual nodes are contributing"
                     );
                     let dual_node_ptr_0 = &dual_nodes[0];
@@ -364,7 +365,7 @@ impl PrimalModuleSerial {
                 .map(|p| p.read_recursive().dual_node_ptr.clone())
                 .collect();
             println!("dual_variables: {dual_variables:?}");
-            let mut last_matrix = cluster.matrix.clone(); // the matrix after applying the relaxers from last plugin
+            let last_matrix = cluster.matrix.clone(); // the matrix after applying the relaxers from last plugin
             for plugin in self.plugins.iter() {
                 plugin.find_relaxers(last_matrix.clone(), &dual_variables);
             }
@@ -492,7 +493,7 @@ pub mod tests {
     #[test]
     fn primal_module_serial_basic_1() {
         // cargo test primal_module_serial_basic_1 -- --nocapture
-        let visualize_filename = format!("primal_module_serial_basic_1.json");
+        let visualize_filename = "primal_module_serial_basic_1.json".to_string();
         let defect_vertices = vec![23, 24, 29, 30];
         let code = CodeCapacityTailoredCode::new(7, 0., 0.01, 1);
         primal_module_serial_basic_standard_syndrome(
@@ -508,7 +509,7 @@ pub mod tests {
     #[test]
     fn primal_module_serial_basic_2() {
         // cargo test primal_module_serial_basic_2 -- --nocapture
-        let visualize_filename = format!("primal_module_serial_basic_2.json");
+        let visualize_filename = "primal_module_serial_basic_2.json".to_string();
         let defect_vertices = vec![16, 17, 23, 25, 29, 30];
         let code = CodeCapacityTailoredCode::new(7, 0., 0.01, 1);
         primal_module_serial_basic_standard_syndrome(
@@ -526,7 +527,7 @@ pub mod tests {
     #[should_panic]
     fn primal_module_serial_basic_3_single() {
         // cargo test primal_module_serial_basic_3_single -- --nocapture
-        let visualize_filename = format!("primal_module_serial_basic_3_single.json");
+        let visualize_filename = "primal_module_serial_basic_3_single.json".to_string();
         let defect_vertices = vec![14, 15, 16, 17, 22, 25, 28, 31, 36, 37, 38, 39];
         let code = CodeCapacityTailoredCode::new(7, 0., 0.01, 1);
         primal_module_serial_basic_standard_syndrome(
@@ -542,7 +543,7 @@ pub mod tests {
     #[test]
     fn primal_module_serial_basic_3_multi() {
         // cargo test primal_module_serial_basic_3_multi -- --nocapture
-        let visualize_filename = format!("primal_module_serial_basic_3_multi.json");
+        let visualize_filename = "primal_module_serial_basic_3_multi.json".to_string();
         let defect_vertices = vec![14, 15, 16, 17, 22, 25, 28, 31, 36, 37, 38, 39];
         let code = CodeCapacityTailoredCode::new(7, 0., 0.01, 1);
         primal_module_serial_basic_standard_syndrome(
@@ -559,7 +560,7 @@ pub mod tests {
     #[should_panic]
     fn primal_module_serial_basic_4_single() {
         // cargo test primal_module_serial_basic_4_single -- --nocapture
-        let visualize_filename = format!("primal_module_serial_basic_4_single.json");
+        let visualize_filename = "primal_module_serial_basic_4_single.json".to_string();
         let defect_vertices = vec![10, 11, 12, 15, 16, 17, 18];
         let code = CodeCapacityTailoredCode::new(5, 0., 0.01, 1);
         primal_module_serial_basic_standard_syndrome(
@@ -578,7 +579,7 @@ pub mod tests {
     #[should_panic]
     fn primal_module_serial_basic_4_multi() {
         // cargo test primal_module_serial_basic_4_multi -- --nocapture
-        let visualize_filename = format!("primal_module_serial_basic_4_multi.json");
+        let visualize_filename = "primal_module_serial_basic_4_multi.json".to_string();
         let defect_vertices = vec![10, 11, 12, 15, 16, 17, 18];
         let code = CodeCapacityTailoredCode::new(5, 0., 0.01, 1);
         primal_module_serial_basic_standard_syndrome(
@@ -594,7 +595,7 @@ pub mod tests {
     #[test]
     fn primal_module_serial_basic_4_single_plug1() {
         // cargo test primal_module_serial_basic_4_single_plug1 -- --nocapture
-        let visualize_filename = format!("primal_module_serial_basic_4_single_plug1.json");
+        let visualize_filename = "primal_module_serial_basic_4_single_plug1.json".to_string();
         let defect_vertices = vec![10, 11, 12, 15, 16, 17, 18];
         let code = CodeCapacityTailoredCode::new(5, 0., 0.01, 1);
         primal_module_serial_basic_standard_syndrome(

@@ -10,6 +10,7 @@ use crate::dual_module::*;
 use crate::framework::*;
 use crate::prettytable::*;
 use crate::util::*;
+use derivative::Derivative;
 use std::collections::{BTreeMap, BTreeSet};
 
 pub type BitArrayUnit = usize;
@@ -17,7 +18,8 @@ pub const BIT_UNIT_LENGTH: usize = std::mem::size_of::<BitArrayUnit>() * 8;
 pub type DualVariableTag = usize;
 
 /// the parity matrix that is necessary to satisfy parity requirement
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Derivative)]
+#[derivative(Default(new = "true"))]
 pub struct ParityMatrix {
     /// the edges maintained by this parity check, mapping to the local indices
     pub edges: BTreeMap<EdgeIndex, usize>,
@@ -32,7 +34,7 @@ pub struct ParityMatrix {
     echelon_effective_rows: usize,
     /// whether it's a satisfiable matrix, only valid when `is_echelon_form` is true
     pub echelon_satisfiable: bool,
-    /// the leading "1" position column)
+    /// the leading "1" position column
     echelon_row_info: Vec<usize>,
     /// whether it's already in an echelon form
     pub is_echelon_form: bool,
@@ -42,11 +44,13 @@ pub struct ParityMatrix {
     /// these edges must be explicitly added to remove from phantom edges
     pub phantom_edges: BTreeSet<EdgeIndex>,
     /// whether to keep phantom edges or not, default to True; needed when dynamically changing tight edges
+    #[derivative(Default(value = "true"))]
     pub keep_phantom_edges: bool,
 }
 
 /// optimize for small clusters where there are no more than 63 edges
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Derivative)]
+#[derivative(Default(new = "true"))]
 pub struct ParityRow {
     /// the first BIT_UNIT_LENGTH-1 edges are stored here, and the last bit is used the right hand bit value
     first: BitArrayUnit,
@@ -55,22 +59,6 @@ pub struct ParityRow {
 }
 
 impl ParityMatrix {
-    pub fn new() -> Self {
-        Self {
-            edges: BTreeMap::new(),
-            variables: vec![],
-            matrix: vec![],
-            echelon_column_info: vec![],
-            echelon_effective_rows: 0,
-            echelon_row_info: vec![],
-            echelon_satisfiable: false,
-            is_echelon_form: false,
-            implicit_shrunk_edges: BTreeSet::new(),
-            phantom_edges: BTreeSet::new(),
-            keep_phantom_edges: true,
-        }
-    }
-
     /// when you're sure no phantom edges will be dynamically included, then this matrix is faster; otherwise it might panic
     pub fn new_no_phantom() -> Self {
         let mut matrix = Self::new();
@@ -109,22 +97,17 @@ impl ParityMatrix {
 
     pub fn update_edge_tightness(&mut self, edge_index: EdgeIndex, is_tight: bool) {
         self.is_echelon_form = false;
-        let var_index = self
+        let var_index = *self
             .edges
             .get(&edge_index)
-            .expect("edge must be a variable")
-            .clone();
+            .expect("edge must be a variable");
         self.variables[var_index].1 = is_tight;
     }
 
     pub fn update_edges_tightness(&mut self, edges: &[EdgeIndex], is_tight: bool) {
         self.is_echelon_form = false;
         for edge_index in edges.iter() {
-            let var_index = self
-                .edges
-                .get(&edge_index)
-                .expect("edge must be a variable")
-                .clone();
+            let var_index = *self.edges.get(edge_index).expect("edge must be a variable");
             self.variables[var_index].1 = is_tight;
         }
     }
@@ -197,11 +180,10 @@ impl ParityMatrix {
     pub fn display_table_reordered(&self, edges: &[EdgeIndex]) -> Table {
         let mut var_indices = Vec::with_capacity(edges.len());
         for &edge_index in edges.iter() {
-            let var_index = self
+            let var_index = *self
                 .edges
                 .get(&edge_index)
-                .expect("edge must be a variable")
-                .clone();
+                .expect("edge must be a variable");
             let (_, is_tight) = self.variables[var_index];
             if is_tight
                 && !self.implicit_shrunk_edges.contains(&edge_index)
@@ -221,7 +203,7 @@ impl ParityMatrix {
             let (edge_index, _) = self.variables[var_index];
             title_row.add_cell(Cell::new(format!("{edge_index}").as_str()));
         }
-        title_row.add_cell(Cell::new(format!(" = ").as_str()));
+        title_row.add_cell(Cell::new(" = "));
         if self.is_echelon_form {
             title_row.add_cell(Cell::new("-"));
             title_row.add_cell(Cell::new("v"));
@@ -315,11 +297,10 @@ impl ParityMatrix {
         let height = self.matrix.len();
         let mut var_indices = Vec::with_capacity(edges.len());
         for &edge_index in edges.iter() {
-            let var_index = self
+            let var_index = *self
                 .edges
                 .get(&edge_index)
-                .expect("edge must be a variable")
-                .clone();
+                .expect("edge must be a variable");
             let (_, is_tight) = self.variables[var_index];
             if is_tight
                 && !self.implicit_shrunk_edges.contains(&edge_index)
@@ -359,14 +340,14 @@ impl ParityMatrix {
                 return;
             }
             let mut i = r;
-            while self.matrix[i].get_left(var_indices[lead]) == false {
+            while !self.matrix[i].get_left(var_indices[lead]) {
                 // find first non-zero lead
-                i = i + 1;
+                i += 1;
                 if i == height {
                     i = r;
                     // couldn't find a leading 1 in this column, indicating this variable is an independent variable
                     self.echelon_column_info[var_indices[lead]] = (false, r);
-                    lead = lead + 1; // consider the next lead
+                    lead += 1; // consider the next lead
                     if lead == width {
                         self.echelon_satisfiable =
                             r == height || (r..height).all(|row| !self.matrix[row].get_right());
@@ -396,7 +377,7 @@ impl ParityMatrix {
                 std::mem::swap(&mut slice_1[r], &mut slice_2[0]);
             }
             for j in 0..height {
-                if j != r && self.matrix[j].get_left(var_indices[lead]) != false {
+                if j != r && self.matrix[j].get_left(var_indices[lead]) {
                     self.xor_row(j, r);
                     self.is_echelon_form = true; // because `xor_row` will set it to false
                 }
@@ -404,11 +385,11 @@ impl ParityMatrix {
             self.echelon_row_info[r] = var_indices[lead];
             self.echelon_column_info[var_indices[lead]] = (true, r);
             self.echelon_effective_rows = r + 1;
-            lead = lead + 1;
+            lead += 1;
         }
         while lead < width {
             self.echelon_column_info[var_indices[lead]] = (false, height - 1);
-            lead = lead + 1;
+            lead += 1;
         }
         self.echelon_satisfiable = true;
     }
@@ -437,11 +418,10 @@ impl ParityMatrix {
         }
         let start_index = edges.len();
         for &edge_index in hair_edges.iter() {
-            let var_index = self
+            let var_index = *self
                 .edges
                 .get(&edge_index)
-                .expect("edge must be a variable")
-                .clone();
+                .expect("edge must be a variable");
             let (_, is_tight) = self.variables[var_index];
             if is_tight
                 && !self.implicit_shrunk_edges.contains(&edge_index)
@@ -475,16 +455,15 @@ impl ParityMatrix {
         hair_edges: &[EdgeIndex],
     ) -> Option<Vec<EdgeIndex>> {
         debug_assert!(!hair_edges.is_empty(), "hair edges should not be empty");
-        let (edges, hair_index) = self.hair_edges_to_reorder(&hair_edges);
+        let (edges, hair_index) = self.hair_edges_to_reorder(hair_edges);
         self.row_echelon_form_reordered(&edges);
         // self.print_reordered(&edges);
         if !self.echelon_satisfiable {
             return None;
         }
         let mut first_dependent_1_hair_row_index = usize::MAX;
-        for local_index in hair_index..edges.len() {
-            let hair_edge_index = edges[local_index];
-            let hair_var_index = *self.edges.get(&hair_edge_index).unwrap();
+        for hair_edge_index in edges.iter().skip(hair_index) {
+            let hair_var_index = *self.edges.get(hair_edge_index).unwrap();
             let (is_dependent, row_index) = self.echelon_column_info[hair_var_index];
             if is_dependent && self.matrix[row_index].get_right() {
                 first_dependent_1_hair_row_index = row_index;
@@ -500,11 +479,10 @@ impl ParityMatrix {
         // construct a list of shrink edges that are zero in at least one of the RHS=1 constraint rows,
         let mut implicit_shrink_edges = vec![];
         let row = &self.matrix[first_dependent_1_hair_row_index];
-        for local_index in hair_index..edges.len() {
-            let hair_edge_index = edges[local_index];
-            let hair_var_index = *self.edges.get(&hair_edge_index).unwrap();
+        for hair_edge_index in edges.iter().skip(hair_index) {
+            let hair_var_index = *self.edges.get(hair_edge_index).unwrap();
             if !row.get_left(hair_var_index) {
-                implicit_shrink_edges.push(hair_edge_index);
+                implicit_shrink_edges.push(*hair_edge_index);
             }
         }
         Some(implicit_shrink_edges)
@@ -579,7 +557,9 @@ impl ParityMatrix {
             primal_objective_value += hypergraph.weighted_edges[edge_index].1;
         }
         let mut pending_flip_edge_indices = vec![];
-        loop {
+        let mut is_local_minimum = false;
+        while !is_local_minimum {
+            is_local_minimum = true;
             // try every independent variable and find a local minimum
             for &var_index in independent_variables.iter() {
                 pending_flip_edge_indices.clear();
@@ -615,23 +595,16 @@ impl ParityMatrix {
                             joint_solution.insert(edge_index);
                         }
                     }
-                    continue; // loop over again
+                    is_local_minimum = false;
+                    break; // loop over again
                 }
             }
-            break;
         }
         Some(Subgraph::new(joint_solution.into_iter().collect()))
     }
 }
 
 impl ParityRow {
-    pub fn new() -> Self {
-        Self {
-            first: 0,
-            others: vec![],
-        }
-    }
-
     pub fn new_length(variable_count: usize) -> Self {
         let mut row = ParityRow::new();
         let others_len = variable_count / BIT_UNIT_LENGTH;

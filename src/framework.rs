@@ -58,7 +58,7 @@ impl HyperModelGraph {
     pub fn matches_subgraph_syndrome(
         &self,
         subgraph: &Subgraph,
-        defect_vertices: &Vec<VertexIndex>,
+        defect_vertices: &[VertexIndex],
     ) -> bool {
         self.initializer
             .matches_subgraph_syndrome(subgraph, defect_vertices)
@@ -392,9 +392,10 @@ impl Relaxer {
             return Err(format!("the summation of ΔyS is negative: {:?}", sum_speed));
         }
         if self.untighten_edges.is_empty() && sum_speed.is_zero() {
-            return Err(format!(
+            return Err(
                 "a valid relaxer must either increase overall ΔyS or untighten some edges"
-            ));
+                    .to_string(),
+            );
         }
         Ok(())
     }

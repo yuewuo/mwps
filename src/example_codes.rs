@@ -76,7 +76,7 @@ impl CodeEdge {
     #[cfg_attr(feature = "python_binding", new)]
     pub fn new(vertices: Vec<VertexIndex>) -> Self {
         Self {
-            vertices: vertices,
+            vertices,
             p: 0.,
             pe: 0.,
             weight: 0,
@@ -170,7 +170,7 @@ pub trait ExampleCode {
             HashMap::<Vec<VertexIndex>, EdgeIndex>::with_capacity(edges.len() * 2);
         for (edge_idx, edge) in edges.iter().enumerate() {
             let mut vertices = edge.vertices.clone();
-            if vertices.len() < 1 {
+            if vertices.is_empty() {
                 return Err(format!("empty hyperedge {}", edge_idx));
             }
             vertices.sort();
@@ -230,6 +230,7 @@ pub trait ExampleCode {
     }
 
     /// automatically create vertices given edges
+    #[allow(clippy::unnecessary_cast)]
     fn fill_vertices(&mut self, vertex_num: VertexNum) {
         let (vertices, edges) = self.vertices_edges();
         vertices.clear();
@@ -280,6 +281,7 @@ pub trait ExampleCode {
 
     /// set defect vertices (non-trivial measurement result in case of single round of measurement,
     /// or different result from the previous round in case of multiple rounds of measurement)
+    #[allow(clippy::unnecessary_cast)]
     fn set_defect_vertices(&mut self, defect_vertices: &[VertexIndex]) {
         let (vertices, _edges) = self.vertices_edges();
         for vertex in vertices.iter_mut() {
@@ -292,6 +294,7 @@ pub trait ExampleCode {
     }
 
     /// set erasure edges
+    #[allow(clippy::unnecessary_cast)]
     fn set_erasures(&mut self, erasures: &[EdgeIndex]) {
         let (_vertices, edges) = self.vertices_edges();
         for edge in edges.iter_mut() {
@@ -909,6 +912,7 @@ impl ExampleCode for ErrorPatternReader {
 }
 
 impl ErrorPatternReader {
+    #[allow(clippy::unnecessary_cast)]
     pub fn new(mut config: serde_json::Value) -> Self {
         let mut filename = "tmp/syndrome_patterns.txt".to_string();
         let config = config.as_object_mut().expect("config must be JSON object");
@@ -960,6 +964,7 @@ impl ErrorPatternReader {
         code
     }
 
+    #[allow(clippy::unnecessary_cast)]
     pub fn from_initializer(initializer: &SolverInitializer) -> Self {
         let mut code = Self {
             vertices: Vec::with_capacity(initializer.vertex_num as usize),

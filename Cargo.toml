@@ -41,6 +41,8 @@ debug = true
 [features]
 # to enable a feature, use `--features xxx`
 default = []
+r64_weight = []  # use Rational64 instead of BigRational as weight type
+u32_index = []  # use u32 instead of usize as index type, to save memory by at most half
 python_binding = ["pyo3"]  # bind to Python
 
 [dependencies]
@@ -60,6 +62,7 @@ more-asserts = "0.3.1"
 rand = "0.8.5"
 prettytable-rs = "0.10.0"
 itertools = "0.10.5"
+cfg-if = "1.0.0"
 
 [package.metadata.docs.rs]
 rustdoc-args = [ "--html-in-header", "katex-header.html" ]

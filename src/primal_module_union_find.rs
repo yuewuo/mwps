@@ -44,7 +44,7 @@ impl UnionNodeTrait for PrimalModuleUnionFindNode {
         internal_edges.extend(left.internal_edges.iter().cloned());
         internal_edges.extend(right.internal_edges.iter().cloned());
         let result = Self {
-            internal_edges: internal_edges,
+            internal_edges,
             node_index: NodeIndex::MAX, // waiting for assignment
         };
         // if left size is larger, choose left (weighted union)
@@ -74,6 +74,7 @@ impl PrimalModuleImpl for PrimalModuleUnionFind {
         self.union_find.remove_all();
     }
 
+    #[allow(clippy::unnecessary_cast)]
     fn load<D: DualModuleImpl>(
         &mut self,
         interface_ptr: &DualModuleInterfacePtr,
@@ -125,7 +126,7 @@ impl PrimalModuleImpl for PrimalModuleUnionFind {
                     // union all the dual nodes in the edge index and create new dual node by adding this edge to `internal_edges`
                     let dual_nodes = dual_module.get_edge_nodes(edge_index);
                     debug_assert!(
-                        dual_nodes.len() > 0,
+                        !dual_nodes.is_empty(),
                         "should not conflict if no dual nodes are contributing"
                     );
                     let cluster_index = dual_nodes[0].read_recursive().index;
@@ -307,7 +308,7 @@ pub mod tests {
     #[test]
     fn primal_module_union_find_basic_1() {
         // cargo test primal_module_union_find_basic_1 -- --nocapture
-        let visualize_filename = format!("primal_module_union_find_basic_1.json");
+        let visualize_filename = "primal_module_union_find_basic_1.json".to_string();
         let defect_vertices = vec![23, 24, 29, 30];
         let code = CodeCapacityTailoredCode::new(7, 0., 0.01, 1);
         primal_module_union_find_basic_standard_syndrome(
@@ -321,7 +322,7 @@ pub mod tests {
     #[test]
     fn primal_module_union_find_basic_2() {
         // cargo test primal_module_union_find_basic_2 -- --nocapture
-        let visualize_filename = format!("primal_module_union_find_basic_2.json");
+        let visualize_filename = "primal_module_union_find_basic_2.json".to_string();
         let defect_vertices = vec![16, 17, 23, 25, 29, 30];
         let code = CodeCapacityTailoredCode::new(7, 0., 0.01, 1);
         primal_module_union_find_basic_standard_syndrome(
@@ -335,7 +336,7 @@ pub mod tests {
     #[test]
     fn primal_module_union_find_basic_3() {
         // cargo test primal_module_union_find_basic_3 -- --nocapture
-        let visualize_filename = format!("primal_module_union_find_basic_3.json");
+        let visualize_filename = "primal_module_union_find_basic_3.json".to_string();
         let defect_vertices = vec![14, 15, 16, 17, 22, 25, 28, 31, 36, 37, 38, 39];
         let code = CodeCapacityTailoredCode::new(7, 0., 0.01, 1);
         primal_module_union_find_basic_standard_syndrome(
@@ -349,7 +350,7 @@ pub mod tests {
     #[test]
     fn primal_module_union_find_basic_4() {
         // cargo test primal_module_union_find_basic_4 -- --nocapture
-        let visualize_filename = format!("primal_module_union_find_basic_4.json");
+        let visualize_filename = "primal_module_union_find_basic_4.json".to_string();
         let defect_vertices = vec![3, 12];
         let code = CodeCapacityColorCode::new(7, 0.01, 1);
         primal_module_union_find_basic_standard_syndrome(
@@ -363,7 +364,7 @@ pub mod tests {
     #[test]
     fn primal_module_union_find_basic_5() {
         // cargo test primal_module_union_find_basic_5 -- --nocapture
-        let visualize_filename = format!("primal_module_union_find_basic_5.json");
+        let visualize_filename = "primal_module_union_find_basic_5.json".to_string();
         let defect_vertices = vec![3, 5, 10, 12];
         let code = CodeCapacityColorCode::new(7, 0.01, 1);
         primal_module_union_find_basic_standard_syndrome(

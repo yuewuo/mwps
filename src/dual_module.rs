@@ -85,9 +85,10 @@ impl std::fmt::Debug for DualModuleInterfaceWeak {
 /// gives the maximum absolute length to grow, if not possible, give the reason;
 /// note that strong reference is stored in `MaxUpdateLength` so dropping these temporary messages are necessary to avoid memory leakage
 #[derive(Derivative, PartialEq, Eq, Clone)]
-#[derivative(Debug)]
+#[derivative(Debug, Default(new = "true"))]
 pub enum MaxUpdateLength {
     /// unbounded
+    #[derivative(Default)]
     Unbounded,
     /// non-zero maximum update length
     ValidGrow(Rational),
@@ -98,9 +99,10 @@ pub enum MaxUpdateLength {
 }
 
 #[derive(Derivative, Clone)]
-#[derivative(Debug)]
+#[derivative(Debug, Default(new = "true"))]
 pub enum GroupMaxUpdateLength {
     /// unbounded
+    #[derivative(Default)]
     Unbounded,
     /// non-zero maximum update length
     ValidGrow(Rational),
@@ -152,10 +154,6 @@ pub trait DualModuleImpl {
 }
 
 impl MaxUpdateLength {
-    pub fn new() -> Self {
-        Self::Unbounded
-    }
-
     pub fn merge(&mut self, max_update_length: MaxUpdateLength) {
         match self {
             Self::Unbounded => {
@@ -176,10 +174,6 @@ impl MaxUpdateLength {
 }
 
 impl GroupMaxUpdateLength {
-    pub fn new() -> Self {
-        Self::Unbounded
-    }
-
     pub fn add(&mut self, max_update_length: MaxUpdateLength) {
         match self {
             Self::Unbounded => {

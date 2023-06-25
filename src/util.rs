@@ -12,17 +12,31 @@ use std::fs::File;
 use std::io::prelude::*;
 use std::time::Instant;
 
-pub type Weight = usize; // only used as input
-pub type EdgeIndex = usize;
-pub type VertexIndex = usize;
+pub type Weight = usize; // only used as input, all internal weight representation will use `Rational`
+
+cfg_if::cfg_if! {
+    if #[cfg(feature="r64_weight")] {
+        pub type Rational = num_rational::Rational64;
+    } else {
+        pub type Rational = num_rational::BigRational;
+    }
+}
+
+cfg_if::cfg_if! {
+    if #[cfg(feature="u32_index")] {
+        pub type EdgeIndex = u32;
+        pub type VertexIndex = u32;
+    } else {
+        pub type EdgeIndex = usize;
+        pub type VertexIndex = usize;
+    }
+}
+
 pub type NodeIndex = VertexIndex;
 pub type DefectIndex = VertexIndex;
 pub type VertexNodeIndex = VertexIndex; // must be same as VertexIndex, NodeIndex, DefectIndex
 pub type VertexNum = VertexIndex;
 pub type NodeNum = VertexIndex;
-
-pub type Rational = num_rational::BigRational;
-// pub type Rational = num_rational::Rational64;
 
 #[cfg_attr(feature = "python_binding", cfg_eval)]
 #[cfg_attr(feature = "python_binding", pyclass)]
@@ -90,11 +104,11 @@ impl SolverInitializer {
     pub fn matches_subgraph_syndrome(
         &self,
         subgraph: &Subgraph,
-        defect_vertices: &Vec<VertexIndex>,
+        defect_vertices: &[VertexIndex],
     ) -> bool {
         let subgraph_defect_vertices: Vec<_> =
             self.get_subgraph_syndrome(subgraph).into_iter().collect();
-        let mut defect_vertices = defect_vertices.clone();
+        let mut defect_vertices = defect_vertices.to_owned();
         defect_vertices.sort();
         if defect_vertices.len() != subgraph_defect_vertices.len() {
             return false;
