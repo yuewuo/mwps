@@ -24,7 +24,7 @@ pub struct PrimalModuleSerial {
     /// clusters of dual nodes
     pub clusters: Vec<PrimalClusterPtr>,
     /// the indices of live clusters: those actively updating the dual module
-    pub live_clusters: BTreeSet<usize>,
+    pub live_clusters: BTreeSet<NodeIndex>,
     /// pending dual variables to grow, when using SingleCluster growing strategy
     pending_nodes: VecDeque<PrimalModuleSerialNodeWeak>,
     /// plugins
@@ -110,18 +110,18 @@ impl PrimalModuleImpl for PrimalModuleSerial {
                 "must load a fresh dual module interface, found index out of order"
             );
             assert_eq!(
-                node.index,
+                node.index as usize,
                 self.nodes.len(),
                 "must load defect nodes in order"
             );
             assert_eq!(
-                node.index,
+                node.index as usize,
                 self.live_clusters.len(),
                 "must load defect nodes in order"
             );
             // construct cluster and its parity matrix (will be reused over all iterations)
             let primal_cluster_ptr = PrimalClusterPtr::new_value(PrimalCluster {
-                cluster_index: self.clusters.len(),
+                cluster_index: self.clusters.len() as NodeIndex,
                 nodes: vec![],
                 edges: node.invalid_subgraph.hairs.clone(),
                 vertices: node.invalid_subgraph.vertices.clone(),
@@ -141,7 +141,7 @@ impl PrimalModuleImpl for PrimalModuleSerial {
                 .push(primal_node_ptr.clone());
             // add to self
             self.nodes.push(primal_node_ptr);
-            self.live_clusters.insert(self.clusters.len());
+            self.live_clusters.insert(self.clusters.len() as NodeIndex);
             self.clusters.push(primal_cluster_ptr);
         }
         if matches!(self.growing_strategy, GrowingStrategy::SingleCluster) {
@@ -187,7 +187,7 @@ impl PrimalModuleImpl for PrimalModuleSerial {
                     for dual_node_ptr in dual_nodes.iter().skip(1) {
                         self.union(dual_node_ptr_0, dual_node_ptr, &interface.decoding_graph);
                     }
-                    let cluster_ptr = self.nodes[dual_node_ptr_0.read_recursive().index]
+                    let cluster_ptr = self.nodes[dual_node_ptr_0.read_recursive().index as usize]
                         .read_recursive()
                         .cluster_weak
                         .upgrade_force();
@@ -208,7 +208,7 @@ impl PrimalModuleImpl for PrimalModuleSerial {
                     active_clusters.insert(cluster.cluster_index);
                 }
                 MaxUpdateLength::ShrinkProhibited(dual_node_ptr) => {
-                    let cluster_ptr = self.nodes[dual_node_ptr.read_recursive().index]
+                    let cluster_ptr = self.nodes[dual_node_ptr.read_recursive().index as usize]
                         .read_recursive()
                         .cluster_weak
                         .upgrade_force();
@@ -272,8 +272,8 @@ impl PrimalModuleSerial {
     ) {
         let node_index_1 = dual_node_ptr_1.read_recursive().index;
         let node_index_2 = dual_node_ptr_2.read_recursive().index;
-        let primal_node_1 = self.nodes[node_index_1].read_recursive();
-        let primal_node_2 = self.nodes[node_index_2].read_recursive();
+        let primal_node_1 = self.nodes[node_index_1 as usize].read_recursive();
+        let primal_node_2 = self.nodes[node_index_2 as usize].read_recursive();
         if primal_node_1
             .cluster_weak
             .ptr_eq(&primal_node_2.cluster_weak)
@@ -311,11 +311,11 @@ impl PrimalModuleSerial {
     /// analyze a cluster and return whether there exists an optimal solution (depending on optimization levels)
     fn resolve_cluster(
         &mut self,
-        cluster_index: usize,
+        cluster_index: NodeIndex,
         interface_ptr: &DualModuleInterfacePtr,
         dual_module: &mut impl DualModuleImpl,
     ) -> bool {
-        let cluster_ptr = self.clusters[cluster_index].clone();
+        let cluster_ptr = self.clusters[cluster_index as usize].clone();
         let mut cluster = cluster_ptr.write();
         if cluster.nodes.is_empty() {
             return true; // no longer a cluster, no need to handle

@@ -141,17 +141,17 @@ pub trait ExampleCode {
             vertices.sort();
             if existing_edges.contains_key(&vertices) {
                 let previous_idx = existing_edges[&vertices];
-                if edge.p > edges[previous_idx].p {
+                if edge.p > edges[previous_idx as usize].p {
                     remove_edges.insert(previous_idx);
                 } else {
-                    remove_edges.insert(edge_idx);
+                    remove_edges.insert(edge_idx as EdgeIndex);
                 }
             }
             existing_edges.insert(vertices, edge_idx as EdgeIndex);
         }
         let mut dedup_edges = Vec::with_capacity(edges.len());
         for (edge_idx, edge) in edges.drain(..).enumerate() {
-            if !remove_edges.contains(&edge_idx) {
+            if !remove_edges.contains(&(edge_idx as EdgeIndex)) {
                 dedup_edges.push(edge);
             }
         }
@@ -244,7 +244,7 @@ pub trait ExampleCode {
         }
         for (edge_idx, edge) in edges.iter().enumerate() {
             for vertex_index in edge.vertices.iter() {
-                let vertex = &mut vertices[*vertex_index];
+                let vertex = &mut vertices[*vertex_index as usize];
                 vertex.neighbor_edges.push(edge_idx as EdgeIndex);
             }
         }
@@ -344,9 +344,9 @@ pub trait ExampleCode {
     /// apply an error by flipping the vertices incident to it
     fn apply_error(&mut self, edge_index: EdgeIndex) {
         let (vertices, edges) = self.vertices_edges();
-        let edge = &edges[edge_index];
+        let edge = &edges[edge_index as usize];
         for vertex_index in edge.vertices.iter() {
-            let vertex = &mut vertices[*vertex_index];
+            let vertex = &mut vertices[*vertex_index as usize];
             vertex.is_defect = !vertex.is_defect;
         }
     }
@@ -375,10 +375,10 @@ pub trait ExampleCode {
             };
             if rng.next_f64() < p {
                 for vertex_index in edge.vertices.iter() {
-                    let vertex = &mut vertices[*vertex_index];
+                    let vertex = &mut vertices[*vertex_index as usize];
                     vertex.is_defect = !vertex.is_defect;
                 }
-                error_pattern.push(edge_index)
+                error_pattern.push(edge_index as EdgeIndex)
             }
         }
         (self.get_syndrome(), error_pattern)
@@ -687,27 +687,27 @@ impl CodeCapacityTailoredCode {
         let vertex_num = (d - 1) * (d - 1) + 4 * boundary_stab_num; // `d` rows
         let mut positions = Vec::new();
         let mut stabilizers = HashMap::<(usize, usize), VertexIndex>::new();
-        for i in 0..boundary_stab_num {
-            stabilizers.insert((0, 4 + 4 * i), positions.len());
+        for i in 0..boundary_stab_num as usize {
+            stabilizers.insert((0, 4 + 4 * i), positions.len() as VertexIndex);
             positions.push(VisualizePosition::new(0., (2 + 2 * i) as f64, 0.))
         }
-        for i in 0..boundary_stab_num {
-            stabilizers.insert((2 * d, 2 + 4 * i), positions.len());
+        for i in 0..boundary_stab_num as usize {
+            stabilizers.insert((2 * d as usize, 2 + 4 * i), positions.len() as VertexIndex);
             positions.push(VisualizePosition::new(d as f64, (1 + 2 * i) as f64, 0.))
         }
-        for row in 0..d - 1 {
-            for idx in 0..d {
+        for row in 0..d as usize - 1 {
+            for idx in 0..d as usize {
                 let i = 2 + 2 * row;
                 let j = 2 * idx + (if row % 2 == 0 { 0 } else { 2 });
-                stabilizers.insert((i, j), positions.len());
+                stabilizers.insert((i, j), positions.len() as VertexIndex);
                 positions.push(VisualizePosition::new((i / 2) as f64, (j / 2) as f64, 0.))
             }
         }
-        assert_eq!(positions.len(), vertex_num);
+        assert_eq!(positions.len(), vertex_num as usize);
         let mut edges = Vec::new();
         // first add Z errors
-        for di in (1..2 * d).step_by(2) {
-            for dj in (1..2 * d).step_by(2) {
+        for di in (1..2 * d as usize).step_by(2) {
+            for dj in (1..2 * d as usize).step_by(2) {
                 let mut vertices = vec![];
                 for (si, sj) in [
                     (di - 1, dj - 1),
@@ -729,8 +729,8 @@ impl CodeCapacityTailoredCode {
             (si + sj) % 4 == 2
         }
         if pxy > 0. {
-            for di in (1..2 * d).step_by(2) {
-                for dj in (1..2 * d).step_by(2) {
+            for di in (1..2 * d as usize).step_by(2) {
+                for dj in (1..2 * d as usize).step_by(2) {
                     let mut x_error_vertices = vec![];
                     let mut y_error_vertices = vec![];
                     for (si, sj) in [
@@ -822,16 +822,16 @@ impl CodeCapacityColorCode {
         let vertex_num = (d - 1) * (d + 1) / 8 * 3;
         let mut positions = Vec::new();
         let mut stabilizers = HashMap::<(usize, usize), VertexIndex>::new();
-        fn exists(d: usize, i: isize, j: isize) -> bool {
+        fn exists(d: VertexNum, i: isize, j: isize) -> bool {
             i >= 0 && j >= 0 && i + j <= (d as isize - 1) * 3 / 2
         }
-        for row in 0..(d - 1) / 2 {
-            for column in 0..(d - 1) / 2 - row {
+        for row in 0..(d as usize - 1) / 2 {
+            for column in 0..(d as usize - 1) / 2 - row {
                 let gi = 1 + row * 3;
                 let gj = column * 3;
                 for (i, j) in [(gi, gj), (gi - 1, gj + 2), (gi + 1, gj + 1)] {
                     assert!(exists(d, i as isize, j as isize));
-                    stabilizers.insert((i, j), positions.len());
+                    stabilizers.insert((i, j), positions.len() as VertexIndex);
                     let ratio = 0.7;
                     let x = (i as f64 + j as f64) * ratio;
                     let y = (j as f64 - i as f64) / 3f64.sqrt() * ratio;
@@ -839,7 +839,7 @@ impl CodeCapacityColorCode {
                 }
             }
         }
-        assert_eq!(positions.len(), vertex_num);
+        assert_eq!(positions.len(), vertex_num as usize);
         let mut edges = Vec::new();
         for di in 0..row_num as isize {
             for dj in 0..row_num as isize - di {

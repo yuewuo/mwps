@@ -25,12 +25,14 @@ pub struct HyperModelGraphVertex {
 impl HyperModelGraph {
     pub fn new(initializer: Arc<SolverInitializer>) -> Self {
         let mut vertices: Vec<HyperModelGraphVertex> =
-            vec![HyperModelGraphVertex::default(); initializer.vertex_num];
+            vec![HyperModelGraphVertex::default(); initializer.vertex_num as usize];
         for (edge_index, (incident_vertices, _weight)) in
             initializer.weighted_edges.iter().enumerate()
         {
             for &vertex_index in incident_vertices.iter() {
-                vertices[vertex_index].edges.push(edge_index);
+                vertices[vertex_index as usize]
+                    .edges
+                    .push(edge_index as EdgeIndex);
             }
         }
         Self {
@@ -40,11 +42,11 @@ impl HyperModelGraph {
     }
 
     pub fn get_edge_neighbors(&self, edge_index: EdgeIndex) -> &Vec<VertexIndex> {
-        &self.initializer.weighted_edges[edge_index].0
+        &self.initializer.weighted_edges[edge_index as usize].0
     }
 
     pub fn get_vertex_neighbors(&self, vertex_index: VertexIndex) -> &Vec<EdgeIndex> {
-        &self.vertices[vertex_index].edges
+        &self.vertices[vertex_index as usize].edges
     }
 
     pub fn get_edges_neighbors(&self, edges: &BTreeSet<EdgeIndex>) -> BTreeSet<VertexIndex> {
@@ -217,7 +219,7 @@ impl InvalidSubgraph {
         let mut vertices = BTreeSet::new();
         for &edge_index in edges.iter() {
             let (incident_vertices, _weight) =
-                &decoding_graph.model_graph.initializer.weighted_edges[edge_index];
+                &decoding_graph.model_graph.initializer.weighted_edges[edge_index as usize];
             for &vertex_index in incident_vertices.iter() {
                 vertices.insert(vertex_index);
             }
@@ -233,7 +235,7 @@ impl InvalidSubgraph {
     ) -> Self {
         let mut hairs = BTreeSet::new();
         for &vertex_index in vertices.iter() {
-            let vertex = &decoding_graph.model_graph.vertices[vertex_index];
+            let vertex = &decoding_graph.model_graph.vertices[vertex_index as usize];
             for &edge_index in vertex.edges.iter() {
                 if !edges.contains(&edge_index) {
                     hairs.insert(edge_index);
@@ -274,13 +276,13 @@ impl InvalidSubgraph {
         }
         // check if every edge is subset of its vertices
         for &edge_index in self.edges.iter() {
-            if edge_index >= decoding_graph.model_graph.initializer.weighted_edges.len() {
+            if edge_index as usize >= decoding_graph.model_graph.initializer.weighted_edges.len() {
                 return Err(format!(
                     "edge {edge_index} is not an edge in the model graph"
                 ));
             }
             let (vertices, _weight) =
-                &decoding_graph.model_graph.initializer.weighted_edges[edge_index];
+                &decoding_graph.model_graph.initializer.weighted_edges[edge_index as usize];
             for &vertex_index in vertices.iter() {
                 if !self.vertices.contains(&vertex_index) {
                     return Err(format!("hyperedge {edge_index} connects vertices {vertices:?}, but vertex {vertex_index} is not in the invalid subgraph vertices {:?}", self.vertices));

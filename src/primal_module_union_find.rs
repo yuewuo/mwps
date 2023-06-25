@@ -97,7 +97,7 @@ impl PrimalModuleImpl for PrimalModuleUnionFind {
                 "must load a fresh dual module interface, found index out of order"
             );
             assert_eq!(
-                node.index,
+                node.index as usize,
                 self.union_find.size(),
                 "must load defect nodes in order"
             );
@@ -133,14 +133,17 @@ impl PrimalModuleImpl for PrimalModuleUnionFind {
                     for dual_node_ptr in dual_nodes.iter() {
                         dual_module.set_grow_rate(dual_node_ptr, Rational::zero());
                         let node_index = dual_node_ptr.read_recursive().index;
-                        active_clusters.remove(&self.union_find.find(node_index));
-                        self.union_find.union(cluster_index, node_index);
+                        active_clusters
+                            .remove(&(self.union_find.find(node_index as usize) as NodeIndex));
+                        self.union_find
+                            .union(cluster_index as usize, node_index as usize);
                     }
                     self.union_find
-                        .get_mut(cluster_index)
+                        .get_mut(cluster_index as usize)
                         .internal_edges
                         .insert(edge_index);
-                    active_clusters.insert(self.union_find.find(cluster_index));
+                    active_clusters
+                        .insert(self.union_find.find(cluster_index as usize) as NodeIndex);
                 }
                 _ => {
                     unreachable!()
@@ -151,18 +154,24 @@ impl PrimalModuleImpl for PrimalModuleUnionFind {
             if interface_ptr
                 .read_recursive()
                 .decoding_graph
-                .is_valid_cluster_auto_vertices(&self.union_find.get(cluster_index).internal_edges)
+                .is_valid_cluster_auto_vertices(
+                    &self.union_find.get(cluster_index as usize).internal_edges,
+                )
             {
                 // do nothing
             } else {
-                let new_cluster_node_index = self.union_find.size();
+                let new_cluster_node_index = self.union_find.size() as NodeIndex;
                 self.union_find.insert(PrimalModuleUnionFindNode {
                     internal_edges: BTreeSet::new(),
                     node_index: new_cluster_node_index,
                 });
-                self.union_find.union(cluster_index, new_cluster_node_index);
+                self.union_find
+                    .union(cluster_index as usize, new_cluster_node_index as usize);
                 let invalid_subgraph = InvalidSubgraph::new_ptr(
-                    self.union_find.get(cluster_index).internal_edges.clone(),
+                    self.union_find
+                        .get(cluster_index as usize)
+                        .internal_edges
+                        .clone(),
                     &interface_ptr.read_recursive().decoding_graph,
                 );
                 interface_ptr.create_node(invalid_subgraph, dual_module);

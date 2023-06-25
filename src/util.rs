@@ -72,7 +72,7 @@ impl SolverInitializer {
     pub fn get_subgraph_total_weight(&self, subgraph: &Subgraph) -> Weight {
         let mut weight = 0;
         for &edge_index in subgraph.iter() {
-            weight += self.weighted_edges[edge_index].1;
+            weight += self.weighted_edges[edge_index as usize].1;
         }
         weight
     }
@@ -80,7 +80,7 @@ impl SolverInitializer {
     pub fn get_subgraph_syndrome(&self, subgraph: &Subgraph) -> BTreeSet<VertexIndex> {
         let mut defect_vertices = BTreeSet::new();
         for &edge_index in subgraph.iter() {
-            let (vertices, _weight) = &self.weighted_edges[edge_index];
+            let (vertices, _weight) = &self.weighted_edges[edge_index as usize];
             for &vertex_index in vertices.iter() {
                 if defect_vertices.contains(&vertex_index) {
                     defect_vertices.remove(&vertex_index);

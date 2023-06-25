@@ -554,7 +554,7 @@ impl ParityMatrix {
         }
         let mut primal_objective_value = 0;
         for &edge_index in joint_solution.iter() {
-            primal_objective_value += hypergraph.weighted_edges[edge_index].1;
+            primal_objective_value += hypergraph.weighted_edges[edge_index as usize].1;
         }
         let mut pending_flip_edge_indices = vec![];
         let mut is_local_minimum = false;
@@ -564,7 +564,7 @@ impl ParityMatrix {
             for &var_index in independent_variables.iter() {
                 pending_flip_edge_indices.clear();
                 let (edge_index, _) = self.variables[var_index];
-                let mut primal_delta = (hypergraph.weighted_edges[edge_index].1 as isize)
+                let mut primal_delta = (hypergraph.weighted_edges[edge_index as usize].1 as isize)
                     * (if joint_solution.contains(&edge_index) {
                         -1
                     } else {
@@ -576,7 +576,8 @@ impl ParityMatrix {
                         let flip_var_index = self.echelon_row_info[row];
                         debug_assert!(flip_var_index < var_index);
                         let (flip_edge_index, _) = self.variables[flip_var_index];
-                        primal_delta += (hypergraph.weighted_edges[flip_edge_index].1 as isize)
+                        primal_delta += (hypergraph.weighted_edges[flip_edge_index as usize].1
+                            as isize)
                             * (if joint_solution.contains(&flip_edge_index) {
                                 -1
                             } else {

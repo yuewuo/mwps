@@ -288,9 +288,10 @@ impl DualModuleInterfacePtr {
         interface.hashmap.clear();
     }
 
+    #[allow(clippy::unnecessary_cast)]
     pub fn get_node(&self, node_index: NodeIndex) -> Option<DualNodePtr> {
         let interface = self.read_recursive();
-        interface.nodes.get(node_index).cloned()
+        interface.nodes.get(node_index as usize).cloned()
     }
 
     /// make it private; use `load` instead
@@ -303,7 +304,7 @@ impl DualModuleInterfacePtr {
         let mut internal_vertices = BTreeSet::new();
         internal_vertices.insert(vertex_idx);
         let node_ptr = DualNodePtr::new_value(DualNode {
-            index: interface.nodes.len(),
+            index: interface.nodes.len() as NodeIndex,
             invalid_subgraph: Arc::new(InvalidSubgraph::new_complete(
                 vec![vertex_idx].into_iter().collect(),
                 BTreeSet::new(),
@@ -322,12 +323,13 @@ impl DualModuleInterfacePtr {
     }
 
     /// find existing node
+    #[allow(clippy::unnecessary_cast)]
     pub fn find_node(&self, invalid_subgraph: &Arc<InvalidSubgraph>) -> Option<DualNodePtr> {
         let interface = self.read_recursive();
         interface
             .hashmap
             .get(invalid_subgraph)
-            .map(|index| interface.nodes[*index].clone())
+            .map(|index| interface.nodes[*index as usize].clone())
     }
 
     pub fn create_node(
@@ -341,7 +343,7 @@ impl DualModuleInterfacePtr {
         );
         let mut interface = self.write();
         let node_ptr = DualNodePtr::new_value(DualNode {
-            index: interface.nodes.len(),
+            index: interface.nodes.len() as NodeIndex,
             invalid_subgraph,
             dual_variable: Rational::zero(),
             grow_rate: Rational::one(),

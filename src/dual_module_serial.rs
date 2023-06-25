@@ -95,6 +95,7 @@ impl std::fmt::Debug for EdgeWeak {
 
 impl DualModuleImpl for DualModuleSerial {
     /// initialize the dual module, which is supposed to be reused for multiple decoding tasks with the same structure
+    #[allow(clippy::unnecessary_cast)]
     fn new_empty(initializer: &SolverInitializer) -> Self {
         initializer.sanity_check().unwrap();
         // create vertices
@@ -117,12 +118,12 @@ impl DualModuleImpl for DualModuleSerial {
                 dual_nodes: vec![],
                 vertices: vertex_indices
                     .iter()
-                    .map(|i| vertices[*i].downgrade())
+                    .map(|i| vertices[*i as usize].downgrade())
                     .collect::<Vec<_>>(),
                 grow_rate: Rational::zero(),
             });
             for &vertex_index in vertex_indices.iter() {
-                vertices[vertex_index]
+                vertices[vertex_index as usize]
                     .write()
                     .edges
                     .push(edge_ptr.downgrade());
@@ -149,6 +150,7 @@ impl DualModuleImpl for DualModuleSerial {
         }
     }
 
+    #[allow(clippy::unnecessary_cast)]
     fn add_dual_node(&mut self, dual_node_ptr: &DualNodePtr) {
         // make sure the active edges are set
         let dual_node_weak = dual_node_ptr.downgrade();
@@ -159,12 +161,12 @@ impl DualModuleImpl for DualModuleSerial {
                 "defect node (without edges) should only work on a single vertex, for simplicity"
             );
             let vertex_index = dual_node.invalid_subgraph.vertices.iter().next().unwrap();
-            let mut vertex = self.vertices[*vertex_index].write();
+            let mut vertex = self.vertices[*vertex_index as usize].write();
             assert!(!vertex.is_defect, "defect should not be added twice");
             vertex.is_defect = true;
         }
         for &edge_index in dual_node.invalid_subgraph.hairs.iter() {
-            let mut edge = self.edges[edge_index].write();
+            let mut edge = self.edges[edge_index as usize].write();
             edge.grow_rate += &dual_node.grow_rate;
             edge.dual_nodes.push(dual_node_weak.clone());
             if edge.grow_rate.is_zero() {
@@ -176,6 +178,7 @@ impl DualModuleImpl for DualModuleSerial {
         self.active_nodes.insert(dual_node_ptr.clone());
     }
 
+    #[allow(clippy::unnecessary_cast)]
     fn set_grow_rate(&mut self, dual_node_ptr: &DualNodePtr, grow_rate: Rational) {
         let mut dual_node = dual_node_ptr.write();
         let grow_rate_diff = grow_rate.clone() - &dual_node.grow_rate;
@@ -183,7 +186,7 @@ impl DualModuleImpl for DualModuleSerial {
         drop(dual_node);
         let dual_node = dual_node_ptr.read_recursive();
         for &edge_index in dual_node.invalid_subgraph.hairs.iter() {
-            let mut edge = self.edges[edge_index].write();
+            let mut edge = self.edges[edge_index as usize].write();
             edge.grow_rate += &grow_rate_diff;
             if edge.grow_rate.is_zero() {
                 self.active_edges.remove(&edge_index);
@@ -207,7 +210,7 @@ impl DualModuleImpl for DualModuleSerial {
         let node = dual_node_ptr.read_recursive();
         let mut max_update_length = MaxUpdateLength::new();
         for &edge_index in node.invalid_subgraph.hairs.iter() {
-            let edge = self.edges[edge_index].read_recursive();
+            let edge = self.edges[edge_index as usize].read_recursive();
             let mut grow_rate = Rational::zero();
             if simultaneous_update {
                 // consider all dual nodes
@@ -255,7 +258,7 @@ impl DualModuleImpl for DualModuleSerial {
     fn compute_maximum_update_length(&mut self) -> GroupMaxUpdateLength {
         let mut group_max_update_length = GroupMaxUpdateLength::new();
         for &edge_index in self.active_edges.iter() {
-            let edge = self.edges[edge_index].read_recursive();
+            let edge = self.edges[edge_index as usize].read_recursive();
             let mut grow_rate = Rational::zero();
             for node_weak in edge.dual_nodes.iter() {
                 let node_ptr = node_weak.upgrade_force();
@@ -309,7 +312,7 @@ impl DualModuleImpl for DualModuleSerial {
         let node = dual_node_ptr.read_recursive();
         let grow_amount = length * node.grow_rate.clone();
         for &edge_index in node.invalid_subgraph.hairs.iter() {
-            let mut edge = self.edges[edge_index].write();
+            let mut edge = self.edges[edge_index as usize].write();
             edge.growth += grow_amount.clone();
             assert!(
                 !edge.growth.is_negative(),
@@ -337,7 +340,7 @@ impl DualModuleImpl for DualModuleSerial {
         );
         // update the active edges
         for &edge_index in self.active_edges.iter() {
-            let mut edge = self.edges[edge_index].write();
+            let mut edge = self.edges[edge_index as usize].write();
             let mut grow_rate = Rational::zero();
             for node_weak in edge.dual_nodes.iter() {
                 grow_rate += node_weak.upgrade_force().read_recursive().grow_rate.clone();
@@ -366,7 +369,7 @@ impl DualModuleImpl for DualModuleSerial {
     }
 
     fn get_edge_nodes(&self, edge_index: EdgeIndex) -> Vec<DualNodePtr> {
-        self.edges[edge_index]
+        self.edges[edge_index as usize]
             .read_recursive()
             .dual_nodes
             .iter()
@@ -375,7 +378,7 @@ impl DualModuleImpl for DualModuleSerial {
     }
 
     fn is_edge_tight(&self, edge_index: EdgeIndex) -> bool {
-        let edge = self.edges[edge_index].read_recursive();
+        let edge = self.edges[edge_index as usize].read_recursive();
         edge.growth == edge.weight
     }
 }
