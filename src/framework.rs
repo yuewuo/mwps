@@ -27,10 +27,8 @@ impl HyperModelGraph {
     pub fn new(initializer: Arc<SolverInitializer>) -> Self {
         let mut vertices: Vec<HyperModelGraphVertex> =
             vec![HyperModelGraphVertex::default(); initializer.vertex_num as usize];
-        for (edge_index, (incident_vertices, _weight)) in
-            initializer.weighted_edges.iter().enumerate()
-        {
-            for &vertex_index in incident_vertices.iter() {
+        for (edge_index, hyperedge) in initializer.weighted_edges.iter().enumerate() {
+            for &vertex_index in hyperedge.vertices.iter() {
                 vertices[vertex_index as usize]
                     .edges
                     .push(edge_index as EdgeIndex);
@@ -44,7 +42,7 @@ impl HyperModelGraph {
 
     #[allow(clippy::unnecessary_cast)]
     pub fn get_edge_neighbors(&self, edge_index: EdgeIndex) -> &Vec<VertexIndex> {
-        &self.initializer.weighted_edges[edge_index as usize].0
+        &self.initializer.weighted_edges[edge_index as usize].vertices
     }
 
     #[allow(clippy::unnecessary_cast)]
@@ -222,9 +220,9 @@ impl InvalidSubgraph {
     pub fn new(edges: BTreeSet<EdgeIndex>, decoding_graph: &HyperDecodingGraph) -> Self {
         let mut vertices = BTreeSet::new();
         for &edge_index in edges.iter() {
-            let (incident_vertices, _weight) =
+            let hyperedge =
                 &decoding_graph.model_graph.initializer.weighted_edges[edge_index as usize];
-            for &vertex_index in incident_vertices.iter() {
+            for &vertex_index in hyperedge.vertices.iter() {
                 vertices.insert(vertex_index);
             }
         }
@@ -287,11 +285,15 @@ impl InvalidSubgraph {
                     "edge {edge_index} is not an edge in the model graph"
                 ));
             }
-            let (vertices, _weight) =
+            let hyperedge =
                 &decoding_graph.model_graph.initializer.weighted_edges[edge_index as usize];
-            for &vertex_index in vertices.iter() {
+            for &vertex_index in hyperedge.vertices.iter() {
                 if !self.vertices.contains(&vertex_index) {
-                    return Err(format!("hyperedge {edge_index} connects vertices {vertices:?}, but vertex {vertex_index} is not in the invalid subgraph vertices {:?}", self.vertices));
+                    return Err(format!(
+                        "hyperedge {edge_index} connects vertices {:?}, \
+                    but vertex {vertex_index} is not in the invalid subgraph vertices {:?}",
+                        hyperedge.vertices, self.vertices
+                    ));
                 }
             }
         }
@@ -443,8 +445,8 @@ mod tests {
         println!("model_graph: {model_graph:?}");
         let mut edge_reference_initializer = 0;
         let mut edge_reference_hyper_model_graph = 0;
-        for (incident_vertices, _weight) in model_graph.initializer.weighted_edges.iter() {
-            edge_reference_initializer += incident_vertices.len();
+        for hyperedge in model_graph.initializer.weighted_edges.iter() {
+            edge_reference_initializer += hyperedge.vertices.len();
         }
         for vertex in model_graph.vertices.iter() {
             edge_reference_hyper_model_graph += vertex.edges.len();

@@ -11,6 +11,8 @@ use std::collections::BTreeSet;
 use std::fs::File;
 use std::io::prelude::*;
 use std::time::Instant;
+#[cfg(feature = "wasm_binding")]
+use wasm_bindgen::prelude::*;
 
 pub type Weight = usize; // only used as input, all internal weight representation will use `Rational`
 
@@ -41,24 +43,45 @@ pub type NodeNum = VertexIndex;
 #[cfg_attr(feature = "python_binding", cfg_eval)]
 #[cfg_attr(feature = "python_binding", pyclass)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HyperEdge {
+    /// the vertices incident to the hyperedge
+    pub vertices: Vec<VertexIndex>,
+    /// the weight of the hyperedge
+    pub weight: Weight,
+}
+
+#[cfg_attr(feature = "python_binding", cfg_eval)]
+#[cfg_attr(feature = "python_binding", pymethods)]
+impl HyperEdge {
+    #[cfg_attr(feature = "python_binding", new)]
+    pub fn new(vertices: Vec<VertexIndex>, weight: Weight) -> Self {
+        Self { vertices, weight }
+    }
+
+    #[cfg(feature = "python_binding")]
+    fn __repr__(&self) -> String {
+        format!("{:?}", self)
+    }
+}
+
+#[cfg_attr(feature = "python_binding", cfg_eval)]
+#[cfg_attr(feature = "python_binding", pyclass)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SolverInitializer {
     /// the number of vertices
     #[cfg_attr(feature = "python_binding", pyo3(get, set))]
     pub vertex_num: VertexNum,
     /// weighted edges, where vertex indices are within the range [0, vertex_num)
     #[cfg_attr(feature = "python_binding", pyo3(get, set))]
-    pub weighted_edges: Vec<(Vec<VertexIndex>, Weight)>,
+    pub weighted_edges: Vec<HyperEdge>,
 }
 
 #[cfg_attr(feature = "python_binding", cfg_eval)]
 #[cfg_attr(feature = "python_binding", pymethods)]
 impl SolverInitializer {
     #[cfg_attr(feature = "python_binding", new)]
-    pub fn new(
-        vertex_num: VertexNum,
-        weighted_edges: Vec<(Vec<VertexIndex>, Weight)>,
-    ) -> SolverInitializer {
-        SolverInitializer {
+    pub fn new(vertex_num: VertexNum, weighted_edges: Vec<HyperEdge>) -> Self {
+        Self {
             vertex_num,
             weighted_edges,
         }
@@ -73,7 +96,7 @@ impl SolverInitializer {
     pub fn get_subgraph_total_weight(&self, subgraph: &Subgraph) -> Weight {
         let mut weight = 0;
         for &edge_index in subgraph.iter() {
-            weight += self.weighted_edges[edge_index as usize].1;
+            weight += self.weighted_edges[edge_index as usize].weight;
         }
         weight
     }
@@ -82,7 +105,7 @@ impl SolverInitializer {
     pub fn get_subgraph_syndrome(&self, subgraph: &Subgraph) -> BTreeSet<VertexIndex> {
         let mut defect_vertices = BTreeSet::new();
         for &edge_index in subgraph.iter() {
-            let (vertices, _weight) = &self.weighted_edges[edge_index as usize];
+            let HyperEdge { vertices, .. } = &self.weighted_edges[edge_index as usize];
             for &vertex_index in vertices.iter() {
                 if defect_vertices.contains(&vertex_index) {
                     defect_vertices.remove(&vertex_index);
@@ -131,7 +154,7 @@ impl MWPSVisualizer for SolverInitializer {
         for _ in 0..self.vertex_num {
             vertices.push(json!({}));
         }
-        for (vertices, weight) in self.weighted_edges.iter() {
+        for HyperEdge { vertices, weight } in self.weighted_edges.iter() {
             edges.push(json!({
                 if abbrev { "w" } else { "weight" }: weight,
                 if abbrev { "v" } else { "vertices" }: vertices,

@@ -110,19 +110,20 @@ impl DualModuleImpl for DualModuleSerial {
             .collect();
         // set edges
         let mut edges = Vec::<EdgePtr>::new();
-        for (vertex_indices, weight) in initializer.weighted_edges.iter() {
+        for hyperedge in initializer.weighted_edges.iter() {
             let edge_ptr = EdgePtr::new_value(Edge {
                 edge_index: edges.len() as EdgeIndex,
                 growth: Rational::zero(),
-                weight: Rational::from_usize(*weight).unwrap(),
+                weight: Rational::from_usize(hyperedge.weight).unwrap(),
                 dual_nodes: vec![],
-                vertices: vertex_indices
+                vertices: hyperedge
+                    .vertices
                     .iter()
                     .map(|i| vertices[*i as usize].downgrade())
                     .collect::<Vec<_>>(),
                 grow_rate: Rational::zero(),
             });
-            for &vertex_index in vertex_indices.iter() {
+            for &vertex_index in hyperedge.vertices.iter() {
                 vertices[vertex_index as usize]
                     .write()
                     .edges

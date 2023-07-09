@@ -267,7 +267,7 @@ pub trait ExampleCode {
         let vertex_num = vertices.len() as VertexIndex;
         let mut weighted_edges = Vec::with_capacity(edges.len());
         for edge in edges.iter() {
-            weighted_edges.push((edge.vertices.clone(), edge.weight));
+            weighted_edges.push(HyperEdge::new(edge.vertices.clone(), edge.weight));
         }
         SolverInitializer {
             vertex_num,
@@ -980,12 +980,12 @@ impl ErrorPatternReader {
             syndrome_patterns: vec![],
             syndrome_index: 0,
         };
-        for (vertices, weight) in initializer.weighted_edges.iter() {
+        for hyperedge in initializer.weighted_edges.iter() {
             code.edges.push(CodeEdge {
-                vertices: vertices.clone(),
+                vertices: hyperedge.vertices.clone(),
                 p: 0.,  // doesn't matter
                 pe: 0., // doesn't matter
-                weight: *weight,
+                weight: hyperedge.weight,
                 is_erasure: false, // doesn't matter
             });
         }

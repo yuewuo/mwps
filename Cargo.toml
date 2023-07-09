@@ -40,19 +40,22 @@ debug = true
 
 [features]
 # to enable a feature, use `--features xxx`
-default = []
+default = ["cli"]
+cli = ["pbr"]
 r64_weight = []  # use Rational64 instead of BigRational as weight type
 u32_index = []  # use u32 instead of usize as index type, to save memory by at most half
 python_binding = ["pyo3"]  # bind to Python
+wasm_binding = ["wasm-bindgen"]  # bind to wasm
 
 [dependencies]
-pyo3 = { version =  "0.18.3", features = ["extension-module", "multiple-pymethods", "abi3-py37"], optional = true }
-serde = { version = "1.0.117", features = ["derive", "rc"] }
+pyo3 = { version = "0.18.3", features = ["extension-module", "multiple-pymethods", "abi3-py37"], optional = true }
+serde = { version = "1.0.163", features = ["derive", "rc"] }
+serde-wasm-bindgen = "0.5.0"
 serde_json = "1.0.59"
 chrono = "0.4.19"
 urlencoding = "2.1.0"
 clap = { version = "4.2.7", features = ["cargo", "derive"] }
-pbr = "1.0.4"
+pbr = { version = "1.0.4", optional = true }
 rand_xoshiro = "0.6.0"
 derivative = "2.2.0"
 parking_lot = { version = "0.12.1", features = ["hardware-lock-elision"] }
@@ -63,6 +66,8 @@ rand = "0.8.5"
 prettytable-rs = "0.10.0"
 itertools = "0.10.5"
 cfg-if = "1.0.0"
+getrandom = { version = "0.2", features = ["js"] }
+wasm-bindgen = { version = "0.2.86", optional = true}
 
 [dev-dependencies]
 test-case = "3.1.0"
