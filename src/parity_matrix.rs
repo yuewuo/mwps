@@ -627,11 +627,11 @@ impl ParityMatrix {
     ) {
         let bias_1 = self.vertices.last().map(|idx| idx + 1).unwrap_or(0);
         for (vertex_index, incident_edges) in odd_parity_checks.iter().enumerate() {
-            self.add_constraint(vertex_index + bias_1, incident_edges, true);
+            self.add_constraint(vertex_index as VertexIndex + bias_1, incident_edges, true);
         }
-        let bias_2 = bias_1 + odd_parity_checks.len();
+        let bias_2 = bias_1 + odd_parity_checks.len() as VertexIndex;
         for (vertex_index, incident_edges) in even_parity_checks.iter().enumerate() {
-            self.add_constraint(vertex_index + bias_2, incident_edges, false);
+            self.add_constraint(vertex_index as VertexIndex + bias_2, incident_edges, false);
         }
     }
 }
