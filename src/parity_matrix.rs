@@ -21,6 +21,8 @@ pub type DualVariableTag = usize;
 #[derive(Clone, Debug, Derivative)]
 #[derivative(Default(new = "true"))]
 pub struct ParityMatrix {
+    /// the vertices already maintained by this parity check
+    pub vertices: BTreeSet<VertexIndex>,
     /// the edges maintained by this parity check, mapping to the local indices
     pub edges: BTreeMap<EdgeIndex, usize>,
     /// variable index map to edge index and whether the edge is fully grown
@@ -120,12 +122,12 @@ impl ParityMatrix {
         }
     }
 
-    pub fn get_tight_edges(&self) -> Vec<EdgeIndex> {
-        let mut tight_edges = Vec::with_capacity(self.edges.len());
+    pub fn get_tight_edges(&self) -> BTreeSet<EdgeIndex> {
+        let mut tight_edges = BTreeSet::new();
         for (&edge_index, &var_index) in self.edges.iter() {
             let (_, is_tight) = self.variables[var_index];
             if is_tight && !self.phantom_edges.contains(&edge_index) {
-                tight_edges.push(edge_index);
+                tight_edges.insert(edge_index);
             }
         }
         tight_edges
@@ -137,14 +139,26 @@ impl ParityMatrix {
         vertex_index: VertexIndex,
         decoding_graph: &HyperDecodingGraph,
     ) {
+        if self.vertices.contains(&vertex_index) {
+            return; // no need to add repeat constraint
+        }
         self.is_echelon_form = false;
         let incident_edges = decoding_graph.get_vertex_neighbors(vertex_index);
         let parity = decoding_graph.is_vertex_defect(vertex_index);
-        self.add_constraint(incident_edges, parity);
+        self.add_constraint(vertex_index, incident_edges, parity);
     }
 
     /// add a parity constraint coming from a vertex
-    pub fn add_constraint(&mut self, incident_edges: &[EdgeIndex], parity: bool) {
+    pub fn add_constraint(
+        &mut self,
+        vertex_index: VertexIndex,
+        incident_edges: &[EdgeIndex],
+        parity: bool,
+    ) {
+        if self.vertices.contains(&vertex_index) {
+            return; // no need to add repeat constraint
+        }
+        self.vertices.insert(vertex_index);
         for &edge_index in incident_edges.iter() {
             if !self.edges.contains_key(&edge_index) && self.keep_phantom_edges {
                 // add variable but mark as phantom edge
@@ -604,6 +618,21 @@ impl ParityMatrix {
         }
         Some(Subgraph::new(joint_solution.into_iter().collect()))
     }
+
+    pub fn add_parity_checks(
+        &mut self,
+        odd_parity_checks: &[Vec<EdgeIndex>],
+        even_parity_checks: &[Vec<EdgeIndex>],
+    ) {
+        let bias_1 = self.vertices.last().map(|idx| idx + 1).unwrap_or(0);
+        for (vertex_index, incident_edges) in odd_parity_checks.iter().enumerate() {
+            self.add_constraint(vertex_index + bias_1, incident_edges, true);
+        }
+        let bias_2 = bias_1 + odd_parity_checks.len();
+        for (vertex_index, incident_edges) in even_parity_checks.iter().enumerate() {
+            self.add_constraint(vertex_index + bias_2, incident_edges, false);
+        }
+    }
 }
 
 impl ParityRow {
@@ -696,12 +725,12 @@ pub mod tests {
         for edge_index in 0..7 {
             matrix.add_tight_variable(edge_index);
         }
-        matrix.add_constraint(&[0, 1], true);
-        matrix.add_constraint(&[0, 2], false);
-        matrix.add_constraint(&[2, 3, 5], false);
-        matrix.add_constraint(&[1, 3, 4], false);
-        matrix.add_constraint(&[4, 6], false);
-        matrix.add_constraint(&[5, 6], true);
+        matrix.add_constraint(0, &[0, 1], true);
+        matrix.add_constraint(1, &[0, 2], false);
+        matrix.add_constraint(2, &[2, 3, 5], false);
+        matrix.add_constraint(3, &[1, 3, 4], false);
+        matrix.add_constraint(4, &[4, 6], false);
+        matrix.add_constraint(5, &[5, 6], true);
         matrix.print();
         matrix.row_echelon_form();
         matrix.print();
@@ -719,47 +748,69 @@ pub mod tests {
         matrix.print_reordered(&edges);
     }
 
-    // #[test]
-    // fn parity_matrix_basic_2() {  // cargo test parity_matrix_basic_2 -- --nocapture
-    //     let mut matrix = ParityMatrix::new();
-    //     for edge_index in 0..15 {
-    //         matrix.add_tight_variable(edge_index);
-    //     }
-    //     let odd_parity_checks = vec![vec![0,3,8,12], vec![6,7]];
-    //     let even_parity_checks = vec![vec![1,2], vec![2,3,4], vec![4,5,6], vec![0,1,14], vec![5,8,9], vec![7,9]
-    //         , vec![13,14], vec![11,12,13], vec![10,11]];
-    //     for incident_edges in odd_parity_checks.iter() {
-    //         matrix.add_constraint(incident_edges, true);
-    //     }
-    //     for incident_edges in even_parity_checks.iter() {
-    //         matrix.add_constraint(incident_edges, false);
-    //     }
-    //     let hair_edges_1 = vec![0, 3, 8, 12];
-    //     let hair_edges_2 = vec![1, 2, 4, 5, 9, 10, 11, 13, 14];
-    //     let hair_edges_3 = vec![6, 7];
-    //     println!("the first dual variable");
-    //     let implicit_shrink_edges = matrix.get_implicit_shrink_edges(&hair_edges_1).unwrap();
-    //     assert!(implicit_shrink_edges.is_empty(), "no need to add implicit shrinks");
-    //     println!("the second dual variable");
-    //     let implicit_shrink_edges = matrix.get_implicit_shrink_edges(&hair_edges_2).unwrap();
-    //     assert_eq!(implicit_shrink_edges, vec![1, 2, 10, 11, 13, 14]);
-    //     // we need to add hair edges not in the necessary hair set as implicit shrinks
-    //     //     , because there is a way to shrink them while maintaining the summation of dual
-    //     matrix.add_implicit_shrink(&implicit_shrink_edges);
-    //     let implicit_shrink_edges = matrix.get_implicit_shrink_edges(&hair_edges_2).unwrap();
-    //     assert!(implicit_shrink_edges.is_empty(), "no need to add more implicit shrinks");
-    //     println!("the third dual variable");
-    //     let implicit_shrink_edges = matrix.get_implicit_shrink_edges(&hair_edges_3).unwrap();
-    //     assert!(implicit_shrink_edges.is_empty(), "no need to add more implicit shrinks");
-    //     // one more round to check if any edges can shrink
-    //     let implicit_shrink_edges = matrix.get_implicit_shrink_edges(&hair_edges_1).unwrap();
-    //     assert_eq!(implicit_shrink_edges, vec![0, 12]);
-    //     matrix.add_implicit_shrink(&implicit_shrink_edges);
-    //     let implicit_shrink_edges = matrix.get_implicit_shrink_edges(&hair_edges_1).unwrap();
-    //     assert!(implicit_shrink_edges.is_empty(), "no need to add more implicit shrinks");
-    //     let joint_solution = matrix.get_joint_solution().unwrap();
-    //     assert_eq!(joint_solution, Subgraph::new(vec![3, 4, 6]), "we got some joint solution");
-    // }
+    #[test]
+    fn parity_matrix_basic_2() {
+        // cargo test parity_matrix_basic_2 -- --nocapture
+        let mut matrix = ParityMatrix::new();
+        for edge_index in 0..15 {
+            matrix.add_tight_variable(edge_index);
+        }
+        let odd_parity_checks = vec![vec![0, 3, 8, 12], vec![6, 7]];
+        let even_parity_checks = vec![
+            vec![1, 2],
+            vec![2, 3, 4],
+            vec![4, 5, 6],
+            vec![0, 1, 14],
+            vec![5, 8, 9],
+            vec![7, 9],
+            vec![13, 14],
+            vec![11, 12, 13],
+            vec![10, 11],
+        ];
+        matrix.add_parity_checks(&odd_parity_checks, &even_parity_checks);
+        let hair_edges_1 = vec![0, 3, 8, 12];
+        let hair_edges_2 = vec![1, 2, 4, 5, 9, 10, 11, 13, 14];
+        let hair_edges_3 = vec![6, 7];
+        println!("the first dual variable");
+        let implicit_shrink_edges = matrix.get_implicit_shrink_edges(&hair_edges_1).unwrap();
+        matrix.print();
+        assert!(
+            implicit_shrink_edges.is_empty(),
+            "no need to add implicit shrinks"
+        );
+        println!("the second dual variable");
+        let implicit_shrink_edges = matrix.get_implicit_shrink_edges(&hair_edges_2).unwrap();
+        assert_eq!(implicit_shrink_edges, vec![1, 2, 10, 11, 13, 14]);
+        // we need to add hair edges not in the necessary hair set as implicit shrinks
+        //     , because there is a way to shrink them while maintaining the summation of dual
+        matrix.add_implicit_shrink(&implicit_shrink_edges);
+        let implicit_shrink_edges = matrix.get_implicit_shrink_edges(&hair_edges_2).unwrap();
+        assert!(
+            implicit_shrink_edges.is_empty(),
+            "no need to add more implicit shrinks"
+        );
+        println!("the third dual variable");
+        let implicit_shrink_edges = matrix.get_implicit_shrink_edges(&hair_edges_3).unwrap();
+        assert!(
+            implicit_shrink_edges.is_empty(),
+            "no need to add more implicit shrinks"
+        );
+        // one more round to check if any edges can shrink
+        let implicit_shrink_edges = matrix.get_implicit_shrink_edges(&hair_edges_1).unwrap();
+        assert_eq!(implicit_shrink_edges, vec![0, 12]);
+        matrix.add_implicit_shrink(&implicit_shrink_edges);
+        let implicit_shrink_edges = matrix.get_implicit_shrink_edges(&hair_edges_1).unwrap();
+        assert!(
+            implicit_shrink_edges.is_empty(),
+            "no need to add more implicit shrinks"
+        );
+        let joint_solution = matrix.get_joint_solution().unwrap();
+        assert_eq!(
+            joint_solution,
+            Subgraph::new(vec![3, 4, 6]),
+            "we got some joint solution"
+        );
+    }
 
     /// an example where the first hair edge might be independent variable: because it has nothing to do with outside
     #[test]
@@ -771,12 +822,7 @@ pub mod tests {
         }
         let odd_parity_checks = vec![vec![0, 1], vec![3]];
         let even_parity_checks = vec![vec![0, 2], vec![1, 2, 3]];
-        for incident_edges in odd_parity_checks.iter() {
-            matrix.add_constraint(incident_edges, true);
-        }
-        for incident_edges in even_parity_checks.iter() {
-            matrix.add_constraint(incident_edges, false);
-        }
+        matrix.add_parity_checks(&odd_parity_checks, &even_parity_checks);
         matrix.print();
         matrix.row_echelon_form();
         matrix.print();
@@ -802,9 +848,7 @@ pub mod tests {
             vec![6, 11, 12, 13],
             vec![7, 8, 9, 10, 11, 12, 13],
         ];
-        for incident_edges in odd_parity_checks.iter() {
-            matrix.add_constraint(incident_edges, true);
-        }
+        matrix.add_parity_checks(&odd_parity_checks, &[]);
         matrix.print();
         matrix.row_echelon_form();
         matrix.print();

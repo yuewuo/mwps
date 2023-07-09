@@ -28,7 +28,7 @@ pub struct PrimalModuleSerial {
     /// pending dual variables to grow, when using SingleCluster growing strategy
     pending_nodes: VecDeque<PrimalModuleSerialNodeWeak>,
     /// plugins
-    pub plugins: Vec<Arc<dyn PluginImpl>>,
+    pub plugins: Arc<PluginVec>,
 }
 
 /// strategy of growing the dual variables
@@ -76,7 +76,7 @@ impl PrimalModuleImpl for PrimalModuleSerial {
             clusters: vec![],
             live_clusters: BTreeSet::new(),
             pending_nodes: VecDeque::new(),
-            plugins: vec![], // default to UF decoder, i.e., without any plugins
+            plugins: Arc::new(vec![]), // default to UF decoder, i.e., without any plugins
         }
     }
 
@@ -362,15 +362,21 @@ impl PrimalModuleSerial {
 
         // TODO: call plugins for further optimizations
         if !self.plugins.is_empty() {
-            let dual_variables: Vec<DualNodePtr> = cluster
+            let positive_dual_variables: Vec<DualNodePtr> = cluster
                 .nodes
                 .iter()
                 .map(|p| p.read_recursive().dual_node_ptr.clone())
+                .filter(|dual_node_ptr| !dual_node_ptr.read_recursive().dual_variable.is_zero())
                 .collect();
-            println!("dual_variables: {dual_variables:?}");
-            let last_matrix = cluster.matrix.clone(); // the matrix after applying the relaxers from last plugin
+            println!("positive_dual_variables: {positive_dual_variables:?}");
+            let decoding_graph = &interface_ptr.read_recursive().decoding_graph;
             for plugin in self.plugins.iter() {
-                plugin.find_relaxers(last_matrix.clone(), &dual_variables);
+                // TODO: move repetition logic to plugin manager
+                plugin.plugin.find_relaxers(
+                    decoding_graph,
+                    &cluster.matrix,
+                    &positive_dual_variables,
+                );
             }
         }
 
@@ -405,14 +411,13 @@ pub mod tests {
     use super::super::example_codes::*;
     use super::*;
     use crate::num_traits::FromPrimitive;
-    use crate::plugin_independent_single_hair::*;
 
     pub fn primal_module_serial_basic_standard_syndrome_optional_viz(
         code: impl ExampleCode,
         visualize_filename: Option<String>,
         defect_vertices: Vec<VertexIndex>,
         final_dual: Weight,
-        plugins: Vec<Arc<dyn PluginImpl>>,
+        plugins: PluginVec,
         growing_strategy: GrowingStrategy,
     ) -> (DualModuleInterfacePtr, PrimalModuleSerial, DualModuleSerial) {
         println!("{defect_vertices:?}");
@@ -435,7 +440,7 @@ pub mod tests {
         // create primal module
         let mut primal_module = PrimalModuleSerial::new_empty(&model_graph.initializer);
         primal_module.growing_strategy = growing_strategy;
-        primal_module.plugins = plugins;
+        primal_module.plugins = Arc::new(plugins);
         // try to work on a simple syndrome
         let decoding_graph = HyperDecodingGraph::new_defects(model_graph, defect_vertices.clone());
         let interface_ptr = DualModuleInterfacePtr::new(decoding_graph.model_graph.clone());
@@ -479,7 +484,7 @@ pub mod tests {
         visualize_filename: String,
         defect_vertices: Vec<VertexIndex>,
         final_dual: Weight,
-        plugins: Vec<Arc<dyn PluginImpl>>,
+        plugins: PluginVec,
         growing_strategy: GrowingStrategy,
     ) -> (DualModuleInterfacePtr, PrimalModuleSerial, DualModuleSerial) {
         primal_module_serial_basic_standard_syndrome_optional_viz(
@@ -592,22 +597,6 @@ pub mod tests {
             4,
             vec![],
             GrowingStrategy::MultipleClusters,
-        );
-    }
-
-    #[test]
-    fn primal_module_serial_basic_4_single_plug1() {
-        // cargo test primal_module_serial_basic_4_single_plug1 -- --nocapture
-        let visualize_filename = "primal_module_serial_basic_4_single_plug1.json".to_string();
-        let defect_vertices = vec![10, 11, 12, 15, 16, 17, 18];
-        let code = CodeCapacityTailoredCode::new(5, 0., 0.01, 1);
-        primal_module_serial_basic_standard_syndrome(
-            code,
-            visualize_filename,
-            defect_vertices,
-            4,
-            vec![Arc::new(PluginIndependentSingleHair::default())],
-            GrowingStrategy::SingleCluster,
         );
     }
 }

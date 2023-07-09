@@ -24,20 +24,20 @@ pub mod cli;
 pub mod dual_module;
 pub mod dual_module_serial;
 pub mod example_codes;
+pub mod framework;
 pub mod mwps_solver;
+pub mod parity_matrix;
+pub mod plugin;
+pub mod plugin_single_hair;
+pub mod plugin_union_find;
 pub mod pointers;
 pub mod primal_module;
+pub mod primal_module_serial;
 pub mod primal_module_union_find;
+pub mod relaxer_pool;
 pub mod union_find;
 pub mod util;
 pub mod visualize;
-// pub mod explore;
-pub mod framework;
-pub mod parity_matrix;
-pub mod plugin;
-pub mod plugin_independent_single_hair;
-pub mod primal_module_serial;
-pub mod relaxer_pool;
 
 #[cfg(feature = "python_binding")]
 use pyo3::prelude::*;

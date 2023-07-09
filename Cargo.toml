@@ -64,6 +64,9 @@ prettytable-rs = "0.10.0"
 itertools = "0.10.5"
 cfg-if = "1.0.0"
 
+[dev-dependencies]
+test-case = "3.1.0"
+
 [package.metadata.docs.rs]
 rustdoc-args = [ "--html-in-header", "katex-header.html" ]
 # to run locally: `RUSTDOCFLAGS="--html-in-header katex-header.html" cargo doc --no-deps`
