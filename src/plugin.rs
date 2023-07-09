@@ -19,13 +19,13 @@ pub trait PluginImpl {
         &self,
         decoding_graph: &HyperDecodingGraph,
         matrix: &ParityMatrix,
-        dual_nodes: &[DualNodePtr],
+        positive_dual_nodes: &[DualNodePtr],
     ) -> RelaxerVec;
 
     /// create a plugin entry with default settings
     fn entry() -> PluginEntry
     where
-        Self: 'static + Sized + Default,
+        Self: 'static + Send + Sync + Sized + Default,
     {
         PluginEntry {
             plugin: Arc::new(Self::default()),
@@ -51,7 +51,7 @@ pub enum RepeatStrategy {
 /// describes what plugins to enable and also the recursive strategy
 pub struct PluginEntry {
     /// the implementation of a plugin
-    pub plugin: Arc<dyn PluginImpl>,
+    pub plugin: Arc<dyn PluginImpl + Send + Sync>,
     /// repetition strategy
     pub repeat_strategy: RepeatStrategy,
 }
@@ -59,12 +59,24 @@ pub struct PluginEntry {
 pub type PluginVec = Vec<PluginEntry>;
 
 pub struct PluginManager {
-    plugins: Arc<PluginVec>,
+    pub plugins: Arc<PluginVec>,
 }
 
 impl PluginManager {
     pub fn new(plugins: Arc<PluginVec>) -> Self {
         Self { plugins }
     }
-    pub fn run(dual_nodes: &[DualNodePtr]) {}
+
+    pub fn is_empty(&self) -> bool {
+        self.plugins.is_empty()
+    }
+
+    pub fn find_relaxer(
+        &self,
+        decoding_graph: &HyperDecodingGraph,
+        matrix: &ParityMatrix,
+        positive_dual_nodes: &[DualNodePtr],
+    ) -> Option<Relaxer> {
+        None
+    }
 }

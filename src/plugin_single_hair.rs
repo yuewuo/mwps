@@ -7,9 +7,9 @@
 
 use crate::dual_module::*;
 use crate::framework::*;
-use crate::num_traits::Zero;
 use crate::parity_matrix::*;
 use crate::plugin::*;
+use crate::plugin_union_find::*;
 
 #[derive(Debug, Clone, Default)]
 pub struct PluginSingleHair {}
@@ -19,17 +19,20 @@ impl PluginImpl for PluginSingleHair {
         &self,
         decoding_graph: &HyperDecodingGraph,
         matrix: &ParityMatrix,
-        dual_nodes: &[DualNodePtr],
+        positive_dual_nodes: &[DualNodePtr],
     ) -> Vec<Relaxer> {
-        // for dual_node_ptr in dual_nodes.iter() {
-        //     let dual_node = dual_node_ptr.read_recursive();
-        //     if dual_node.dual_variable.is_zero() {
-        //         continue; // no requirement on zero dual variables
-        //     }
-        //     println!("find non-zero dual node: {}", dual_node.index);
-        //     // matrix
-        //     matrix.clear_implicit_shrink();
-        // }
+        // single hair requires the matrix to have at least one feasible solution
+        if let Some(relaxer) = PluginUnionFind::default().find_the_relaxer(decoding_graph, matrix) {
+            return vec![relaxer];
+        }
+        // then try to find more relaxers
+        let mut matrix = matrix.clone();
+        for dual_node_ptr in positive_dual_nodes.iter() {
+            let dual_node = dual_node_ptr.read_recursive();
+            println!("find non-zero dual node: {}", dual_node.index);
+            // matrix
+            matrix.clear_implicit_shrink();
+        }
         vec![]
     }
 }

@@ -8,6 +8,7 @@ use crate::framework::*;
 use crate::num_traits::{One, Zero};
 use crate::parity_matrix::*;
 use crate::plugin::*;
+use crate::plugin_union_find::*;
 use crate::pointers::*;
 use crate::primal_module::*;
 use crate::util::*;
@@ -63,6 +64,8 @@ pub struct PrimalCluster {
     pub matrix: ParityMatrix,
     /// the parity subgraph result, only valid when it's solved
     pub subgraph: Option<Subgraph>,
+    /// plugin manager helps to execute the plugin and find an executable relaxer
+    pub plugin_manager: PluginManager,
 }
 
 pub type PrimalClusterPtr = ArcRwLock<PrimalCluster>;
@@ -129,6 +132,7 @@ impl PrimalModuleImpl for PrimalModuleSerial {
                     .invalid_subgraph
                     .generate_matrix(&interface.decoding_graph),
                 subgraph: None,
+                plugin_manager: PluginManager::new(self.plugins.clone()),
             });
             // create the primal node of this defect node and insert into cluster
             let primal_node_ptr = PrimalModuleSerialNodePtr::new_value(PrimalModuleSerialNode {
@@ -331,57 +335,51 @@ impl PrimalModuleSerial {
         // update the matrix with new tight edges
         cluster.matrix.clear_implicit_shrink();
         cluster.matrix.update_with_dual_module(dual_module);
-        let tight_edges = cluster.matrix.get_tight_edges();
-        println!("tight_edges: {tight_edges:?}");
+        cluster.matrix.row_echelon_form(); // to avoid union-find module cloning the matrix
 
-        // 1. check if the cluster is valid (hypergraph union-find decoder)
-        cluster.matrix.row_echelon_form();
-        if !cluster.matrix.echelon_satisfiable {
-            let invalid_subgraph = InvalidSubgraph::new_complete_ptr(
-                cluster.vertices.clone(),
-                tight_edges.into_iter().collect(),
-                &interface_ptr.read_recursive().decoding_graph,
-            );
-            let (existing, dual_node_ptr) =
-                interface_ptr.find_or_create_node(invalid_subgraph, dual_module);
-            if existing {
-                // set it to growing
-                dual_module.set_grow_rate(&dual_node_ptr, Rational::one());
-            } else {
-                // default to growing
-                let primal_node_ptr =
-                    PrimalModuleSerialNodePtr::new_value(PrimalModuleSerialNode {
-                        dual_node_ptr: dual_node_ptr.clone(),
-                        cluster_weak: cluster_ptr.downgrade(),
-                    });
-                cluster.nodes.push(primal_node_ptr.clone());
-                self.nodes.push(primal_node_ptr);
-                return false;
-            }
-        }
-
-        // TODO: call plugins for further optimizations
-        if !self.plugins.is_empty() {
+        // find an executable relaxer from the plugin manager
+        let relaxer = if cluster.plugin_manager.is_empty() {
+            // fast path: no need to generate the `positive_dual_variables`
+            let decoding_graph = &interface_ptr.read_recursive().decoding_graph;
+            PluginUnionFind::default().find_the_relaxer(decoding_graph, &cluster.matrix)
+        } else {
             let positive_dual_variables: Vec<DualNodePtr> = cluster
                 .nodes
                 .iter()
                 .map(|p| p.read_recursive().dual_node_ptr.clone())
                 .filter(|dual_node_ptr| !dual_node_ptr.read_recursive().dual_variable.is_zero())
                 .collect();
-            println!("positive_dual_variables: {positive_dual_variables:?}");
             let decoding_graph = &interface_ptr.read_recursive().decoding_graph;
-            for plugin in self.plugins.iter() {
-                // TODO: move repetition logic to plugin manager
-                plugin.plugin.find_relaxers(
-                    decoding_graph,
-                    &cluster.matrix,
-                    &positive_dual_variables,
-                );
+            cluster.plugin_manager.find_relaxer(
+                decoding_graph,
+                &cluster.matrix,
+                &positive_dual_variables,
+            )
+        };
+
+        // if a relaxer is found, execute it and return
+        if let Some(relaxer) = relaxer {
+            for (invalid_subgraph, grow_rate) in relaxer.direction {
+                let (existing, dual_node_ptr) =
+                    interface_ptr.find_or_create_node(invalid_subgraph, dual_module);
+                if !existing {
+                    // create the corresponding primal node and add it to cluster
+                    let primal_node_ptr =
+                        PrimalModuleSerialNodePtr::new_value(PrimalModuleSerialNode {
+                            dual_node_ptr: dual_node_ptr.clone(),
+                            cluster_weak: cluster_ptr.downgrade(),
+                        });
+                    cluster.nodes.push(primal_node_ptr.clone());
+                    self.nodes.push(primal_node_ptr);
+                }
+                dual_module.set_grow_rate(&dual_node_ptr, grow_rate);
             }
+            return false;
         }
 
-        // TODO: plugins can suggest subgraph (ideally, a global maximum), if so, then it will adopt the subgraph with minimum weight from all plugins as the starting point to do local minimum
+        // TODO idea: plugins can suggest subgraph (ideally, a global maximum), if so, then it will adopt the subgraph with minimum weight from all plugins as the starting point to do local minimum
 
+        // find a local minimum (hopefully a global minimum)
         cluster.subgraph = Some(
             cluster
                 .matrix

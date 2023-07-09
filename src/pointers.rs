@@ -61,13 +61,13 @@ impl<T> WeakRwLock<T> {
     }
 }
 
-impl<T> Clone for ArcRwLock<T> {
+impl<T: Send + Sync> Clone for ArcRwLock<T> {
     fn clone(&self) -> Self {
         Self::new_ptr(Arc::clone(self.ptr()))
     }
 }
 
-impl<T> RwLockPtr<T> for ArcRwLock<T> {
+impl<T: Send + Sync> RwLockPtr<T> for ArcRwLock<T> {
     fn new_ptr(ptr: Arc<RwLock<T>>) -> Self {
         Self { ptr }
     }
@@ -84,13 +84,13 @@ impl<T> RwLockPtr<T> for ArcRwLock<T> {
     }
 }
 
-impl<T> PartialEq for ArcRwLock<T> {
+impl<T: Send + Sync> PartialEq for ArcRwLock<T> {
     fn eq(&self, other: &Self) -> bool {
         self.ptr_eq(other)
     }
 }
 
-impl<T> Eq for ArcRwLock<T> {}
+impl<T: Send + Sync> Eq for ArcRwLock<T> {}
 
 impl<T> Clone for WeakRwLock<T> {
     fn clone(&self) -> Self {

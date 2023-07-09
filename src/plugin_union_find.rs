@@ -15,28 +15,42 @@ use crate::util::*;
 #[derive(Debug, Clone, Default)]
 pub struct PluginUnionFind {}
 
-impl PluginImpl for PluginUnionFind {
+impl PluginUnionFind {
     /// check if the cluster is valid (hypergraph union-find decoder)
-    fn find_relaxers(
+    pub fn find_the_relaxer(
         &self,
         decoding_graph: &HyperDecodingGraph,
         matrix: &ParityMatrix,
-        _dual_nodes: &[DualNodePtr],
-    ) -> Vec<Relaxer> {
+    ) -> Option<Relaxer> {
         if matrix.is_echelon_form && matrix.echelon_satisfiable {
-            return vec![]; // no need to copy the matrix
+            return None; // no need to copy the matrix
         }
         let mut matrix = matrix.clone();
         matrix.row_echelon_form();
         if matrix.echelon_satisfiable {
-            return vec![]; // no findings
+            return None; // cannot find any relaxer
         }
         let invalid_subgraph = InvalidSubgraph::new_complete_ptr(
             matrix.vertices.clone(),
             matrix.get_tight_edges(),
             decoding_graph,
         );
-        vec![Relaxer::new(vec![(invalid_subgraph, Rational::one())])]
+        Some(Relaxer::new(vec![(invalid_subgraph, Rational::one())]))
+    }
+}
+
+impl PluginImpl for PluginUnionFind {
+    fn find_relaxers(
+        &self,
+        decoding_graph: &HyperDecodingGraph,
+        matrix: &ParityMatrix,
+        _positive_dual_nodes: &[DualNodePtr],
+    ) -> Vec<Relaxer> {
+        if let Some(relaxer) = self.find_the_relaxer(decoding_graph, matrix) {
+            vec![relaxer]
+        } else {
+            vec![]
+        }
     }
 }
 
