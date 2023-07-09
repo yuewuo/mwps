@@ -9,6 +9,7 @@ use crate::derivative::Derivative;
 use crate::dual_module::*;
 use crate::framework::*;
 use crate::parity_matrix::*;
+use crate::plugin_union_find::*;
 use crate::relaxer_pool::*;
 use std::sync::Arc;
 
@@ -42,7 +43,7 @@ pub enum RepeatStrategy {
     #[derivative(Default)]
     Once,
     /// repeated execution
-    Repeated {
+    Multiple {
         /// it stops after `max_repetition` repeats
         max_repetition: usize,
     },
@@ -77,6 +78,29 @@ impl PluginManager {
         matrix: &ParityMatrix,
         positive_dual_nodes: &[DualNodePtr],
     ) -> Option<Relaxer> {
+        let mut relaxer_pool = RelaxerPool::new(matrix.get_tight_edges());
+        for plugin_entry in self.plugins.iter().chain(std::iter::once(&PluginUnionFind::entry())) {
+            let mut repeat = true;
+            let mut repeat_count = 0;
+            while repeat {
+                // execute the plugin
+                let relaxers = plugin_entry.plugin.find_relaxers(decoding_graph, matrix, positive_dual_nodes);
+                relaxer_pool.extend(relaxers);
+                // determine whether repeat again
+                match plugin_entry.repeat_strategy {
+                    RepeatStrategy::Once => {
+                        repeat = false;
+                    }
+                    RepeatStrategy::Multiple { max_repetition } => {
+                        if repeat_count + 1 >= max_repetition {
+                            repeat = false;
+                        }
+                    }
+                }
+                repeat_count += 1;
+            }
+        }
+        // in the end, always check for
         None
     }
 }

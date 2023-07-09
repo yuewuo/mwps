@@ -27,19 +27,12 @@ impl HyperModelGraph {
     pub fn new(initializer: Arc<SolverInitializer>) -> Self {
         let mut vertices: Vec<HyperModelGraphVertex> =
             vec![HyperModelGraphVertex::default(); initializer.vertex_num as usize];
-        for (edge_index, (incident_vertices, _weight)) in
-            initializer.weighted_edges.iter().enumerate()
-        {
+        for (edge_index, (incident_vertices, _weight)) in initializer.weighted_edges.iter().enumerate() {
             for &vertex_index in incident_vertices.iter() {
-                vertices[vertex_index as usize]
-                    .edges
-                    .push(edge_index as EdgeIndex);
+                vertices[vertex_index as usize].edges.push(edge_index as EdgeIndex);
             }
         }
-        Self {
-            initializer,
-            vertices,
-        }
+        Self { initializer, vertices }
     }
 
     #[allow(clippy::unnecessary_cast)]
@@ -60,13 +53,8 @@ impl HyperModelGraph {
         vertices
     }
 
-    pub fn matches_subgraph_syndrome(
-        &self,
-        subgraph: &Subgraph,
-        defect_vertices: &[VertexIndex],
-    ) -> bool {
-        self.initializer
-            .matches_subgraph_syndrome(subgraph, defect_vertices)
+    pub fn matches_subgraph_syndrome(&self, subgraph: &Subgraph, defect_vertices: &[VertexIndex]) -> bool {
+        self.initializer.matches_subgraph_syndrome(subgraph, defect_vertices)
     }
 }
 
@@ -105,9 +93,8 @@ impl HyperDecodingGraph {
         self.erasures_hashset.clear();
         // reserve space for the hashset
         if self.defect_vertices_hashset.capacity() < syndrome_pattern.defect_vertices.len() {
-            self.defect_vertices_hashset.reserve(
-                syndrome_pattern.defect_vertices.len() - self.defect_vertices_hashset.capacity(),
-            )
+            self.defect_vertices_hashset
+                .reserve(syndrome_pattern.defect_vertices.len() - self.defect_vertices_hashset.capacity())
         }
         if self.erasures_hashset.capacity() < syndrome_pattern.erasures.len() {
             self.erasures_hashset
@@ -122,21 +109,11 @@ impl HyperDecodingGraph {
         }
     }
 
-    pub fn new_defects(
-        model_graph: Arc<HyperModelGraph>,
-        defect_vertices: Vec<VertexIndex>,
-    ) -> Self {
-        Self::new(
-            model_graph,
-            Arc::new(SyndromePattern::new_vertices(defect_vertices)),
-        )
+    pub fn new_defects(model_graph: Arc<HyperModelGraph>, defect_vertices: Vec<VertexIndex>) -> Self {
+        Self::new(model_graph, Arc::new(SyndromePattern::new_vertices(defect_vertices)))
     }
 
-    pub fn find_valid_subgraph(
-        &self,
-        edges: &BTreeSet<EdgeIndex>,
-        vertices: &BTreeSet<VertexIndex>,
-    ) -> Option<Subgraph> {
+    pub fn find_valid_subgraph(&self, edges: &BTreeSet<EdgeIndex>, vertices: &BTreeSet<VertexIndex>) -> Option<Subgraph> {
         let mut matrix = ParityMatrix::new_no_phantom();
         for &edge_index in edges.iter() {
             matrix.add_tight_variable(edge_index);
@@ -147,18 +124,11 @@ impl HyperDecodingGraph {
         matrix.get_joint_solution()
     }
 
-    pub fn find_valid_subgraph_auto_vertices(
-        &self,
-        edges: &BTreeSet<EdgeIndex>,
-    ) -> Option<Subgraph> {
+    pub fn find_valid_subgraph_auto_vertices(&self, edges: &BTreeSet<EdgeIndex>) -> Option<Subgraph> {
         self.find_valid_subgraph(edges, &self.get_edges_neighbors(edges))
     }
 
-    pub fn is_valid_cluster(
-        &self,
-        edges: &BTreeSet<EdgeIndex>,
-        vertices: &BTreeSet<VertexIndex>,
-    ) -> bool {
+    pub fn is_valid_cluster(&self, edges: &BTreeSet<EdgeIndex>, vertices: &BTreeSet<VertexIndex>) -> bool {
         self.find_valid_subgraph(edges, vertices).is_some()
     }
 
@@ -222,8 +192,7 @@ impl InvalidSubgraph {
     pub fn new(edges: BTreeSet<EdgeIndex>, decoding_graph: &HyperDecodingGraph) -> Self {
         let mut vertices = BTreeSet::new();
         for &edge_index in edges.iter() {
-            let (incident_vertices, _weight) =
-                &decoding_graph.model_graph.initializer.weighted_edges[edge_index as usize];
+            let (incident_vertices, _weight) = &decoding_graph.model_graph.initializer.weighted_edges[edge_index as usize];
             for &vertex_index in incident_vertices.iter() {
                 vertices.insert(vertex_index);
             }
@@ -275,20 +244,15 @@ impl InvalidSubgraph {
         // check if all vertices are valid
         for &vertex_index in self.vertices.iter() {
             if vertex_index >= decoding_graph.model_graph.initializer.vertex_num {
-                return Err(format!(
-                    "vertex {vertex_index} is not a vertex in the model graph"
-                ));
+                return Err(format!("vertex {vertex_index} is not a vertex in the model graph"));
             }
         }
         // check if every edge is subset of its vertices
         for &edge_index in self.edges.iter() {
             if edge_index as usize >= decoding_graph.model_graph.initializer.weighted_edges.len() {
-                return Err(format!(
-                    "edge {edge_index} is not an edge in the model graph"
-                ));
+                return Err(format!("edge {edge_index} is not an edge in the model graph"));
             }
-            let (vertices, _weight) =
-                &decoding_graph.model_graph.initializer.weighted_edges[edge_index as usize];
+            let (vertices, _weight) = &decoding_graph.model_graph.initializer.weighted_edges[edge_index as usize];
             for &vertex_index in vertices.iter() {
                 if !self.vertices.contains(&vertex_index) {
                     return Err(format!("hyperedge {edge_index} connects vertices {vertices:?}, but vertex {vertex_index} is not in the invalid subgraph vertices {:?}", self.vertices));
@@ -304,7 +268,12 @@ impl InvalidSubgraph {
             matrix.add_parity_check_with_decoding_graph(vertex_index, decoding_graph);
         }
         if matrix.check_is_satisfiable() {
-            return Err(format!("it's a valid subgraph because edges {:?} ⊆ {:?} can satisfy the parity requirement from vertices {:?}", matrix.get_joint_solution().unwrap(), self.edges, self.vertices));
+            return Err(format!(
+                "it's a valid subgraph because edges {:?} ⊆ {:?} can satisfy the parity requirement from vertices {:?}",
+                matrix.get_joint_solution().unwrap(),
+                self.edges,
+                self.vertices
+            ));
         }
         Ok(())
     }
@@ -400,10 +369,7 @@ impl Relaxer {
             return Err(format!("the summation of ΔyS is negative: {:?}", sum_speed));
         }
         if self.untighten_edges.is_empty() && sum_speed.is_zero() {
-            return Err(
-                "a valid relaxer must either increase overall ΔyS or untighten some edges"
-                    .to_string(),
-            );
+            return Err("a valid relaxer must either increase overall ΔyS or untighten some edges".to_string());
         }
         Ok(())
     }
@@ -423,9 +389,7 @@ mod tests {
         )
         .unwrap();
         print_visualize_link(visualize_filename);
-        visualizer
-            .snapshot_combined("code".to_string(), vec![&code])
-            .unwrap();
+        visualizer.snapshot_combined("code".to_string(), vec![&code]).unwrap();
         let model_graph = code.get_model_graph();
         (model_graph, visualizer)
     }
@@ -465,19 +429,13 @@ mod tests {
         // cargo test framework_invalid_subgraph -- --nocapture
         let visualize_filename = "framework_invalid_subgraph.json".to_string();
         let (decoding_graph, ..) = color_code_5_decoding_graph(vec![7, 1], visualize_filename);
-        let invalid_subgraph_1 =
-            InvalidSubgraph::new(vec![13].into_iter().collect(), decoding_graph.as_ref());
+        let invalid_subgraph_1 = InvalidSubgraph::new(vec![13].into_iter().collect(), decoding_graph.as_ref());
         println!("invalid_subgraph_1: {invalid_subgraph_1:?}");
-        assert_eq!(
-            invalid_subgraph_1.vertices,
-            vec![2, 6, 7].into_iter().collect()
-        );
+        assert_eq!(invalid_subgraph_1.vertices, vec![2, 6, 7].into_iter().collect());
         assert_eq!(invalid_subgraph_1.edges, vec![13].into_iter().collect());
         assert_eq!(
             invalid_subgraph_1.hairs,
-            vec![5, 6, 9, 10, 11, 12, 14, 15, 16, 17]
-                .into_iter()
-                .collect()
+            vec![5, 6, 9, 10, 11, 12, 14, 15, 16, 17].into_iter().collect()
         );
     }
 
@@ -487,8 +445,7 @@ mod tests {
         // cargo test framework_valid_subgraph -- --nocapture
         let visualize_filename = "framework_valid_subgraph.json".to_string();
         let (decoding_graph, ..) = color_code_5_decoding_graph(vec![7, 1], visualize_filename);
-        let invalid_subgraph =
-            InvalidSubgraph::new(vec![6, 10].into_iter().collect(), decoding_graph.as_ref());
+        let invalid_subgraph = InvalidSubgraph::new(vec![6, 10].into_iter().collect(), decoding_graph.as_ref());
         println!("invalid_subgraph: {invalid_subgraph:?}"); // should not print because it panics
     }
 

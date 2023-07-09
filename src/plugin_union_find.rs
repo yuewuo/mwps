@@ -17,11 +17,7 @@ pub struct PluginUnionFind {}
 
 impl PluginUnionFind {
     /// check if the cluster is valid (hypergraph union-find decoder)
-    pub fn find_the_relaxer(
-        &self,
-        decoding_graph: &HyperDecodingGraph,
-        matrix: &ParityMatrix,
-    ) -> Option<Relaxer> {
+    pub fn find_the_relaxer(&self, decoding_graph: &HyperDecodingGraph, matrix: &ParityMatrix) -> Option<Relaxer> {
         if matrix.is_echelon_form && matrix.echelon_satisfiable {
             return None; // no need to copy the matrix
         }
@@ -30,11 +26,8 @@ impl PluginUnionFind {
         if matrix.echelon_satisfiable {
             return None; // cannot find any relaxer
         }
-        let invalid_subgraph = InvalidSubgraph::new_complete_ptr(
-            matrix.vertices.clone(),
-            matrix.get_tight_edges(),
-            decoding_graph,
-        );
+        let invalid_subgraph =
+            InvalidSubgraph::new_complete_ptr(matrix.vertices.clone(), matrix.get_tight_edges(), decoding_graph);
         Some(Relaxer::new(vec![(invalid_subgraph, Rational::one())]))
     }
 }
