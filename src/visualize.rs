@@ -90,7 +90,9 @@ pub fn snapshot_fix_missing_fields(value: &mut serde_json::Value, abbrev: bool) 
         if vertex.is_null() {
             continue;
         } // vertex not present, probably currently don't care
-        let vertex = vertex.as_object_mut().expect("each vertex must be an object");
+        let vertex = vertex
+            .as_object_mut()
+            .expect("each vertex must be an object");
         let key_is_defect = if abbrev { "s" } else { "is_defect" };
         // recover
         if !vertex.contains_key(key_is_defect) {
@@ -113,7 +115,10 @@ pub fn snapshot_fix_missing_fields(value: &mut serde_json::Value, abbrev: bool) 
         let key_growth = if abbrev { "g" } else { "growth" };
         // recover
         assert!(edge.contains_key(key_weight), "missing unrecoverable field");
-        assert!(edge.contains_key(key_vertices), "missing unrecoverable field");
+        assert!(
+            edge.contains_key(key_vertices),
+            "missing unrecoverable field"
+        );
         if !edge.contains_key(key_growth) {
             edge.insert(key_growth.to_string(), json!(0)); // by default no growth
         }
@@ -162,10 +167,17 @@ pub fn snapshot_copy_remaining_fields(obj: &mut ObjectMap, obj_2: &mut ObjectMap
     }
 }
 
-pub fn snapshot_combine_values(value: &mut serde_json::Value, mut value_2: serde_json::Value, abbrev: bool) {
+pub fn snapshot_combine_values(
+    value: &mut serde_json::Value,
+    mut value_2: serde_json::Value,
+    abbrev: bool,
+) {
     let value = value.as_object_mut().expect("snapshot must be an object");
     let value_2 = value_2.as_object_mut().expect("snapshot must be an object");
-    match (value.contains_key("vertices"), value_2.contains_key("vertices")) {
+    match (
+        value.contains_key("vertices"),
+        value_2.contains_key("vertices"),
+    ) {
         (_, false) => {} // do nothing
         (false, true) => {
             value.insert("vertices".to_string(), value_2.remove("vertices").unwrap());
@@ -182,7 +194,10 @@ pub fn snapshot_combine_values(value: &mut serde_json::Value, mut value_2: serde
                 .unwrap()
                 .as_array_mut()
                 .expect("vertices must be an array");
-            assert!(vertices.len() == vertices_2.len(), "vertices must be compatible");
+            assert!(
+                vertices.len() == vertices_2.len(),
+                "vertices must be compatible"
+            );
             for (vertex_idx, vertex) in vertices.iter_mut().enumerate() {
                 let vertex_2 = &mut vertices_2[vertex_idx];
                 if vertex_2.is_null() {
@@ -193,8 +208,12 @@ pub fn snapshot_combine_values(value: &mut serde_json::Value, mut value_2: serde
                     continue;
                 }
                 // println!("vertex_idx: {vertex_idx}");
-                let vertex = vertex.as_object_mut().expect("each vertex must be an object");
-                let vertex_2 = vertex_2.as_object_mut().expect("each vertex must be an object");
+                let vertex = vertex
+                    .as_object_mut()
+                    .expect("each vertex must be an object");
+                let vertex_2 = vertex_2
+                    .as_object_mut()
+                    .expect("each vertex must be an object");
                 // list known keys
                 let key_is_virtual = if abbrev { "v" } else { "is_virtual" };
                 let key_is_defect = if abbrev { "s" } else { "is_defect" };
@@ -284,7 +303,11 @@ pub fn center_positions(mut positions: Vec<VisualizePosition>) -> Vec<VisualizeP
                 min_t = position.t;
             }
         }
-        let (ci, cj, ct) = ((max_i + min_i) / 2., (max_j + min_j) / 2., (max_t + min_t) / 2.);
+        let (ci, cj, ct) = (
+            (max_i + min_i) / 2.,
+            (max_j + min_j) / 2.,
+            (max_t + min_t) / 2.,
+        );
         for position in positions.iter_mut() {
             position.i -= ci;
             position.j -= cj;
@@ -300,7 +323,11 @@ impl Visualizer {
     /// create a new visualizer with target filename and node layout
     #[cfg_attr(feature = "python_binding", new)]
     #[cfg_attr(feature = "python_binding", pyo3(signature = (filepath, positions=vec![], center=true)))]
-    pub fn new(mut filepath: Option<String>, mut positions: Vec<VisualizePosition>, center: bool) -> std::io::Result<Self> {
+    pub fn new(
+        mut filepath: Option<String>,
+        mut positions: Vec<VisualizePosition>,
+        center: bool,
+    ) -> std::io::Result<Self> {
         if cfg!(feature = "disable_visualizer") {
             filepath = None; // do not open file
         }
@@ -314,7 +341,13 @@ impl Visualizer {
         if let Some(file) = file.as_mut() {
             file.set_len(0)?; // truncate the file
             file.seek(SeekFrom::Start(0))?; // move the cursor to the front
-            file.write_all(format!("{{\"format\":\"mwps\",\"version\":\"{}\"", env!("CARGO_PKG_VERSION")).as_bytes())?;
+            file.write_all(
+                format!(
+                    "{{\"format\":\"mwps\",\"version\":\"{}\"",
+                    env!("CARGO_PKG_VERSION")
+                )
+                .as_bytes(),
+            )?;
             file.write_all(b",\"positions\":")?;
             file.write_all(json!(positions).to_string().as_bytes())?;
             file.write_all(b",\"snapshots\":[]}")?;
@@ -329,13 +362,19 @@ impl Visualizer {
 
     #[cfg(feature = "python_binding")]
     #[pyo3(name = "snapshot_combined")]
-    pub fn snapshot_combined_py(&mut self, name: String, object_pys: Vec<&PyAny>) -> std::io::Result<()> {
+    pub fn snapshot_combined_py(
+        &mut self,
+        name: String,
+        object_pys: Vec<&PyAny>,
+    ) -> std::io::Result<()> {
         if cfg!(feature = "disable_visualizer") {
             return Ok(());
         }
         let mut values = Vec::<serde_json::Value>::with_capacity(object_pys.len());
         for object_py in object_pys.into_iter() {
-            values.push(pyobject_to_json(object_py.call_method0("snapshot")?.extract::<PyObject>()?));
+            values.push(pyobject_to_json(
+                object_py.call_method0("snapshot")?.extract::<PyObject>()?,
+            ));
         }
         self.snapshot_combined_value(name, values)
     }
@@ -352,11 +391,18 @@ impl Visualizer {
 
     #[cfg(feature = "python_binding")]
     #[pyo3(name = "snapshot_combined_value")]
-    pub fn snapshot_combined_value_py(&mut self, name: String, value_pys: Vec<PyObject>) -> std::io::Result<()> {
+    pub fn snapshot_combined_value_py(
+        &mut self,
+        name: String,
+        value_pys: Vec<PyObject>,
+    ) -> std::io::Result<()> {
         if cfg!(feature = "disable_visualizer") {
             return Ok(());
         }
-        let values: Vec<_> = value_pys.into_iter().map(|value_py| pyobject_to_json(value_py)).collect();
+        let values: Vec<_> = value_pys
+            .into_iter()
+            .map(|value_py| pyobject_to_json(value_py))
+            .collect();
         self.snapshot_combined_value(name, values)
     }
 
@@ -372,7 +418,11 @@ impl Visualizer {
 }
 
 impl Visualizer {
-    pub fn incremental_save(&mut self, name: String, value: serde_json::Value) -> std::io::Result<()> {
+    pub fn incremental_save(
+        &mut self,
+        name: String,
+        value: serde_json::Value,
+    ) -> std::io::Result<()> {
         if let Some(file) = self.file.as_mut() {
             self.snapshots.push(name.clone());
             file.seek(SeekFrom::End(-2))?; // move the cursor before the ending ]}
@@ -388,7 +438,11 @@ impl Visualizer {
     }
 
     /// append another snapshot of the mwps modules, and also update the file in case
-    pub fn snapshot_combined(&mut self, name: String, mwps_algorithms: Vec<&dyn MWPSVisualizer>) -> std::io::Result<()> {
+    pub fn snapshot_combined(
+        &mut self,
+        name: String,
+        mwps_algorithms: Vec<&dyn MWPSVisualizer>,
+    ) -> std::io::Result<()> {
         if cfg!(feature = "disable_visualizer") {
             return Ok(());
         }
@@ -404,7 +458,11 @@ impl Visualizer {
     }
 
     /// append another snapshot of the mwps modules, and also update the file in case
-    pub fn snapshot(&mut self, name: String, mwps_algorithm: &impl MWPSVisualizer) -> std::io::Result<()> {
+    pub fn snapshot(
+        &mut self,
+        name: String,
+        mwps_algorithm: &impl MWPSVisualizer,
+    ) -> std::io::Result<()> {
         if cfg!(feature = "disable_visualizer") {
             return Ok(());
         }
@@ -415,7 +473,11 @@ impl Visualizer {
         Ok(())
     }
 
-    pub fn snapshot_combined_value(&mut self, name: String, values: Vec<serde_json::Value>) -> std::io::Result<()> {
+    pub fn snapshot_combined_value(
+        &mut self,
+        name: String,
+        values: Vec<serde_json::Value>,
+    ) -> std::io::Result<()> {
         if cfg!(feature = "disable_visualizer") {
             return Ok(());
         }
@@ -429,7 +491,11 @@ impl Visualizer {
         Ok(())
     }
 
-    pub fn snapshot_value(&mut self, name: String, mut value: serde_json::Value) -> std::io::Result<()> {
+    pub fn snapshot_value(
+        &mut self,
+        name: String,
+        mut value: serde_json::Value,
+    ) -> std::io::Result<()> {
         if cfg!(feature = "disable_visualizer") {
             return Ok(());
         }
@@ -459,7 +525,11 @@ pub fn auto_visualize_data_filename() -> String {
 
 #[cfg_attr(feature = "python_binding", pyfunction)]
 pub fn print_visualize_link_with_parameters(filename: String, parameters: Vec<(String, String)>) {
-    let default_port = if cfg!(feature = "python_binding") { 51672 } else { 8072 };
+    let default_port = if cfg!(feature = "python_binding") {
+        51672
+    } else {
+        8072
+    };
     let mut link = format!("http://localhost:{}?filename={}", default_port, filename);
     for (key, value) in parameters.iter() {
         link.push('&');

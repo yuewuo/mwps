@@ -54,7 +54,10 @@ pub struct SolverInitializer {
 #[cfg_attr(feature = "python_binding", pymethods)]
 impl SolverInitializer {
     #[cfg_attr(feature = "python_binding", new)]
-    pub fn new(vertex_num: VertexNum, weighted_edges: Vec<(Vec<VertexIndex>, Weight)>) -> SolverInitializer {
+    pub fn new(
+        vertex_num: VertexNum,
+        weighted_edges: Vec<(Vec<VertexIndex>, Weight)>,
+    ) -> SolverInitializer {
         SolverInitializer {
             vertex_num,
             weighted_edges,
@@ -100,8 +103,13 @@ impl SolverInitializer {
         code.sanity_check()
     }
 
-    pub fn matches_subgraph_syndrome(&self, subgraph: &Subgraph, defect_vertices: &[VertexIndex]) -> bool {
-        let subgraph_defect_vertices: Vec<_> = self.get_subgraph_syndrome(subgraph).into_iter().collect();
+    pub fn matches_subgraph_syndrome(
+        &self,
+        subgraph: &Subgraph,
+        defect_vertices: &[VertexIndex],
+    ) -> bool {
+        let subgraph_defect_vertices: Vec<_> =
+            self.get_subgraph_syndrome(subgraph).into_iter().collect();
         let mut defect_vertices = defect_vertices.to_owned();
         defect_vertices.sort();
         if defect_vertices.len() != subgraph_defect_vertices.len() {
@@ -371,7 +379,8 @@ impl BenchmarkProfiler {
                     .unwrap()
                     .insert("solver_profile".to_string(), solver_profile);
             }
-            file.write_all(serde_json::to_string(&value).unwrap().as_bytes()).unwrap();
+            file.write_all(serde_json::to_string(&value).unwrap().as_bytes())
+                .unwrap();
             file.write_all(b"\n").unwrap();
         }
     }
@@ -409,7 +418,10 @@ impl BenchmarkProfilerEntry {
     }
     /// record the beginning of a decoding procedure
     pub fn record_begin(&mut self) {
-        assert_eq!(self.begin_time, None, "do not call `record_begin` twice on the same entry");
+        assert_eq!(
+            self.begin_time, None,
+            "do not call `record_begin` twice on the same entry"
+        );
         self.begin_time = Some(Instant::now());
     }
     /// record the ending of a decoding procedure
@@ -425,7 +437,8 @@ impl BenchmarkProfilerEntry {
             .begin_time
             .as_ref()
             .expect("make sure to call `record_begin` before calling `record_end`");
-        self.events.push((event_name, begin_time.elapsed().as_secs_f64()));
+        self.events
+            .push((event_name, begin_time.elapsed().as_secs_f64()));
     }
     pub fn is_complete(&self) -> bool {
         self.round_time.is_some()
@@ -446,7 +459,10 @@ pub fn json_to_pyobject_locked<'py>(value: serde_json::Value, py: Python<'py>) -
         }
         serde_json::Value::String(value) => value.to_object(py).into(),
         serde_json::Value::Array(array) => {
-            let elements: Vec<PyObject> = array.into_iter().map(|value| json_to_pyobject_locked(value, py)).collect();
+            let elements: Vec<PyObject> = array
+                .into_iter()
+                .map(|value| json_to_pyobject_locked(value, py))
+                .collect();
             pyo3::types::PyList::new(py, elements).into()
         }
         serde_json::Value::Object(map) => {
@@ -497,7 +513,9 @@ pub fn pyobject_to_json_locked<'py>(value: PyObject, py: Python<'py>) -> serde_j
         }
         serde_json::Value::Object(json_map)
     } else {
-        unimplemented!("unsupported python type, should be (cascaded) dict, list and basic numerical types")
+        unimplemented!(
+            "unsupported python type, should be (cascaded) dict, list and basic numerical types"
+        )
     }
 }
 

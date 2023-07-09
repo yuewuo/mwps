@@ -92,7 +92,10 @@ impl CodeEdge {
 /// default function for computing (pre-scaled) weight from probability
 #[cfg_attr(feature = "python_binding", pyfunction)]
 pub fn weight_of_p(p: f64) -> f64 {
-    assert!((0. ..=0.5).contains(&p), "p must be a reasonable value between 0 and 50%");
+    assert!(
+        (0. ..=0.5).contains(&p),
+        "p must be a reasonable value between 0 and 50%"
+    );
     ((1. - p) / p).ln()
 }
 
@@ -121,7 +124,8 @@ pub trait ExampleCode {
         // scale all weights but set the smallest to 1
         for edge in edges.iter_mut() {
             let weight = weight_of_p(edge.p);
-            let new_weight: Weight = ((weight_upper_limit as f64) * weight / max_weight).round() as Weight;
+            let new_weight: Weight =
+                ((weight_upper_limit as f64) * weight / max_weight).round() as Weight;
             edge.weight = if new_weight == 0 { 1 } else { new_weight }; // weight is required to be even
         }
     }
@@ -131,7 +135,8 @@ pub trait ExampleCode {
     fn remove_duplicate_edges(&mut self) {
         let (_vertices, edges) = self.vertices_edges();
         let mut remove_edges = HashSet::new();
-        let mut existing_edges = HashMap::<Vec<VertexIndex>, EdgeIndex>::with_capacity(edges.len() * 2);
+        let mut existing_edges =
+            HashMap::<Vec<VertexIndex>, EdgeIndex>::with_capacity(edges.len() * 2);
         for (edge_idx, edge) in edges.iter().enumerate() {
             let mut vertices = edge.vertices.clone();
             vertices.sort();
@@ -162,7 +167,8 @@ pub trait ExampleCode {
             return Err("empty graph".to_string());
         }
         // check duplicated edges
-        let mut existing_edges = HashMap::<Vec<VertexIndex>, EdgeIndex>::with_capacity(edges.len() * 2);
+        let mut existing_edges =
+            HashMap::<Vec<VertexIndex>, EdgeIndex>::with_capacity(edges.len() * 2);
         for (edge_idx, edge) in edges.iter().enumerate() {
             let mut vertices = edge.vertices.clone();
             if vertices.is_empty() {
@@ -190,11 +196,17 @@ pub trait ExampleCode {
         for (vertex_idx, vertex) in vertices.iter().enumerate() {
             let mut existing_edges = HashMap::<EdgeIndex, ()>::new();
             if vertex.neighbor_edges.is_empty() {
-                return Err(format!("vertex {} do not have any neighbor edges", vertex_idx));
+                return Err(format!(
+                    "vertex {} do not have any neighbor edges",
+                    vertex_idx
+                ));
             }
             for edge_idx in vertex.neighbor_edges.iter() {
                 if existing_edges.contains_key(edge_idx) {
-                    return Err(format!("duplicate referred edge {} from vertex {}", edge_idx, vertex_idx));
+                    return Err(format!(
+                        "duplicate referred edge {} from vertex {}",
+                        edge_idx, vertex_idx
+                    ));
                 }
                 existing_edges.insert(*edge_idx, ());
             }
@@ -701,7 +713,12 @@ impl CodeCapacityTailoredCode {
         for di in (1..2 * d as usize).step_by(2) {
             for dj in (1..2 * d as usize).step_by(2) {
                 let mut vertices = vec![];
-                for (si, sj) in [(di - 1, dj - 1), (di - 1, dj + 1), (di + 1, dj - 1), (di + 1, dj + 1)] {
+                for (si, sj) in [
+                    (di - 1, dj - 1),
+                    (di - 1, dj + 1),
+                    (di + 1, dj - 1),
+                    (di + 1, dj + 1),
+                ] {
                     if stabilizers.contains_key(&(si, sj)) {
                         vertices.push(stabilizers[&(si, sj)]);
                     }
@@ -720,7 +737,12 @@ impl CodeCapacityTailoredCode {
                 for dj in (1..2 * d as usize).step_by(2) {
                     let mut x_error_vertices = vec![];
                     let mut y_error_vertices = vec![];
-                    for (si, sj) in [(di - 1, dj - 1), (di - 1, dj + 1), (di + 1, dj - 1), (di + 1, dj + 1)] {
+                    for (si, sj) in [
+                        (di - 1, dj - 1),
+                        (di - 1, dj + 1),
+                        (di + 1, dj - 1),
+                        (di + 1, dj + 1),
+                    ] {
                         if stabilizers.contains_key(&(si, sj)) {
                             if !is_x_stab(si, sj) {
                                 // X error is only detectable by Y stabilizers
@@ -732,7 +754,10 @@ impl CodeCapacityTailoredCode {
                             }
                         }
                     }
-                    for mut edge in [CodeEdge::new(x_error_vertices), CodeEdge::new(y_error_vertices)] {
+                    for mut edge in [
+                        CodeEdge::new(x_error_vertices),
+                        CodeEdge::new(y_error_vertices),
+                    ] {
                         edge.p = pxy;
                         edges.push(edge);
                     }
@@ -903,7 +928,10 @@ impl ErrorPatternReader {
             filename = value.as_str().expect("filename string").to_string();
         }
         if !config.is_empty() {
-            panic!("unknown config keys: {:?}", config.keys().collect::<Vec<&String>>());
+            panic!(
+                "unknown config keys: {:?}",
+                config.keys().collect::<Vec<&String>>()
+            );
         }
         let file = File::open(filename).unwrap();
         let mut syndrome_patterns = vec![];
@@ -913,7 +941,10 @@ impl ErrorPatternReader {
             if let Ok(value) = line {
                 match line_index {
                     0 => {
-                        assert!(value.starts_with("Syndrome Pattern v1.0 "), "incompatible file version");
+                        assert!(
+                            value.starts_with("Syndrome Pattern v1.0 "),
+                            "incompatible file version"
+                        );
                     }
                     1 => {
                         initializer = Some(serde_json::from_str(&value).unwrap());
@@ -922,7 +953,8 @@ impl ErrorPatternReader {
                         positions = Some(serde_json::from_str(&value).unwrap());
                     }
                     _ => {
-                        let syndrome_pattern: SyndromePattern = serde_json::from_str(&value).unwrap();
+                        let syndrome_pattern: SyndromePattern =
+                            serde_json::from_str(&value).unwrap();
                         syndrome_patterns.push(syndrome_pattern);
                     }
                 }
@@ -989,7 +1021,9 @@ mod tests {
         visualizer.snapshot("code".to_string(), code).unwrap();
         for round in 0..3 {
             code.generate_random_errors(round);
-            visualizer.snapshot(format!("syndrome {}", round + 1), code).unwrap();
+            visualizer
+                .snapshot(format!("syndrome {}", round + 1), code)
+                .unwrap();
         }
     }
 
@@ -998,7 +1032,10 @@ mod tests {
         // cargo test example_code_capacity_repetition_code -- --nocapture
         let mut code = CodeCapacityRepetitionCode::new(7, 0.2, 1000);
         code.sanity_check().unwrap();
-        visualize_code(&mut code, "example_code_capacity_repetition_code.json".to_string());
+        visualize_code(
+            &mut code,
+            "example_code_capacity_repetition_code.json".to_string(),
+        );
     }
 
     #[test]
@@ -1006,7 +1043,10 @@ mod tests {
         // cargo test example_code_capacity_planar_code -- --nocapture
         let mut code = CodeCapacityPlanarCode::new(7, 0.1, 1000);
         code.sanity_check().unwrap();
-        visualize_code(&mut code, "example_code_capacity_planar_code.json".to_string());
+        visualize_code(
+            &mut code,
+            "example_code_capacity_planar_code.json".to_string(),
+        );
     }
 
     #[test]
@@ -1014,7 +1054,10 @@ mod tests {
         // cargo test example_code_capacity_tailored_code -- --nocapture
         let mut code = CodeCapacityTailoredCode::new(5, 0.001, 0.1, 1000);
         code.sanity_check().unwrap();
-        visualize_code(&mut code, "example_code_capacity_tailored_code.json".to_string());
+        visualize_code(
+            &mut code,
+            "example_code_capacity_tailored_code.json".to_string(),
+        );
     }
 
     #[test]
@@ -1022,6 +1065,9 @@ mod tests {
         // cargo test example_code_capacity_color_code -- --nocapture
         let mut code = CodeCapacityColorCode::new(7, 0.1, 1000);
         code.sanity_check().unwrap();
-        visualize_code(&mut code, "example_code_capacity_color_code.json".to_string());
+        visualize_code(
+            &mut code,
+            "example_code_capacity_color_code.json".to_string(),
+        );
     }
 }

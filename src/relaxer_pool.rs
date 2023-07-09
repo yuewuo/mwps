@@ -3,7 +3,9 @@
 //! Maintain several lists of relaxers
 //!
 
+use crate::dual_module::*;
 use crate::framework::*;
+use crate::pointers::RwLockPtr;
 use crate::util::*;
 use std::collections::BTreeSet;
 use std::sync::Arc;
@@ -14,15 +16,21 @@ pub type RelaxerVec = Vec<Relaxer>;
 pub struct RelaxerPool {
     /// keep track of the remaining tight edges for quick validation
     pub tight_edges: BTreeSet<EdgeIndex>,
+    /// keep track of all positive dual variables, all others are yS = 0
+    pub positive_dual_nodes: BTreeSet<NodeIndex>,
     /// existing relaxers in a structural
     pub lists: Vec<Arc<Relaxer>>,
 }
 
 impl RelaxerPool {
-    pub fn new(tight_edges: BTreeSet<EdgeIndex>) -> Self {
+    pub fn new(tight_edges: BTreeSet<EdgeIndex>, positive_dual_nodes: &[DualNodePtr]) -> Self {
         Self {
             tight_edges,
             lists: vec![],
+            positive_dual_nodes: positive_dual_nodes
+                .iter()
+                .map(|ptr| ptr.read_recursive().index)
+                .collect(),
         }
     }
 
@@ -32,7 +40,9 @@ impl RelaxerPool {
         // a relaxer cannot grow any tight edge
         for (edge_index, _) in relaxer.growing_edges.iter() {
             if self.tight_edges.contains(edge_index) {
-                return Err(format!("invalid relaxer try to grow a tight edge {edge_index}"));
+                return Err(format!(
+                    "invalid relaxer try to grow a tight edge {edge_index}"
+                ));
             }
         }
         Ok(())

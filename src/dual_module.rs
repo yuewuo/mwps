@@ -41,7 +41,9 @@ impl std::fmt::Debug for DualNodeWeak {
 
 impl Ord for DualNodePtr {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.read_recursive().index.cmp(&other.read_recursive().index)
+        self.read_recursive()
+            .index
+            .cmp(&other.read_recursive().index)
     }
 }
 
@@ -240,19 +242,31 @@ impl DualModuleInterfacePtr {
         Self::new_value(DualModuleInterface {
             nodes: Vec::new(),
             hashmap: HashMap::new(),
-            decoding_graph: HyperDecodingGraph::new(model_graph, Arc::new(SyndromePattern::new_empty())),
+            decoding_graph: HyperDecodingGraph::new(
+                model_graph,
+                Arc::new(SyndromePattern::new_empty()),
+            ),
         })
     }
 
     /// a dual module interface MUST be created given a concrete implementation of the dual module
-    pub fn new_load(decoding_graph: HyperDecodingGraph, dual_module_impl: &mut impl DualModuleImpl) -> Self {
+    pub fn new_load(
+        decoding_graph: HyperDecodingGraph,
+        dual_module_impl: &mut impl DualModuleImpl,
+    ) -> Self {
         let interface_ptr = Self::new(decoding_graph.model_graph.clone());
         interface_ptr.load(decoding_graph.syndrome_pattern, dual_module_impl);
         interface_ptr
     }
 
-    pub fn load(&self, syndrome_pattern: Arc<SyndromePattern>, dual_module_impl: &mut impl DualModuleImpl) {
-        self.write().decoding_graph.set_syndrome(syndrome_pattern.clone());
+    pub fn load(
+        &self,
+        syndrome_pattern: Arc<SyndromePattern>,
+        dual_module_impl: &mut impl DualModuleImpl,
+    ) {
+        self.write()
+            .decoding_graph
+            .set_syndrome(syndrome_pattern.clone());
         for vertex_idx in syndrome_pattern.defect_vertices.iter() {
             self.create_defect_node(*vertex_idx, dual_module_impl);
         }
@@ -281,7 +295,11 @@ impl DualModuleInterfacePtr {
     }
 
     /// make it private; use `load` instead
-    fn create_defect_node(&self, vertex_idx: VertexIndex, dual_module: &mut impl DualModuleImpl) -> DualNodePtr {
+    fn create_defect_node(
+        &self,
+        vertex_idx: VertexIndex,
+        dual_module: &mut impl DualModuleImpl,
+    ) -> DualNodePtr {
         let interface = self.read_recursive();
         let mut internal_vertices = BTreeSet::new();
         internal_vertices.insert(vertex_idx);
@@ -314,7 +332,11 @@ impl DualModuleInterfacePtr {
             .map(|index| interface.nodes[*index as usize].clone())
     }
 
-    pub fn create_node(&self, invalid_subgraph: Arc<InvalidSubgraph>, dual_module: &mut impl DualModuleImpl) -> DualNodePtr {
+    pub fn create_node(
+        &self,
+        invalid_subgraph: Arc<InvalidSubgraph>,
+        dual_module: &mut impl DualModuleImpl,
+    ) -> DualNodePtr {
         debug_assert!(
             self.find_node(&invalid_subgraph).is_none(),
             "do not create the same node twice"
@@ -347,7 +369,11 @@ impl DualModuleInterfacePtr {
 
 // shortcuts for easier code writing at debugging
 impl DualModuleInterfacePtr {
-    pub fn create_node_vec(&self, edges: &[EdgeIndex], dual_module: &mut impl DualModuleImpl) -> DualNodePtr {
+    pub fn create_node_vec(
+        &self,
+        edges: &[EdgeIndex],
+        dual_module: &mut impl DualModuleImpl,
+    ) -> DualNodePtr {
         let invalid_subgraph = Arc::new(InvalidSubgraph::new(
             edges.iter().cloned().collect(),
             &self.read_recursive().decoding_graph,

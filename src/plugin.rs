@@ -78,13 +78,20 @@ impl PluginManager {
         matrix: &ParityMatrix,
         positive_dual_nodes: &[DualNodePtr],
     ) -> Option<Relaxer> {
-        let mut relaxer_pool = RelaxerPool::new(matrix.get_tight_edges());
-        for plugin_entry in self.plugins.iter().chain(std::iter::once(&PluginUnionFind::entry())) {
+        let mut relaxer_pool = RelaxerPool::new(matrix.get_tight_edges(), positive_dual_nodes);
+        for plugin_entry in self
+            .plugins
+            .iter()
+            .chain(std::iter::once(&PluginUnionFind::entry()))
+        {
             let mut repeat = true;
             let mut repeat_count = 0;
             while repeat {
                 // execute the plugin
-                let relaxers = plugin_entry.plugin.find_relaxers(decoding_graph, matrix, positive_dual_nodes);
+                let relaxers =
+                    plugin_entry
+                        .plugin
+                        .find_relaxers(decoding_graph, matrix, positive_dual_nodes);
                 relaxer_pool.extend(relaxers);
                 // determine whether repeat again
                 match plugin_entry.repeat_strategy {

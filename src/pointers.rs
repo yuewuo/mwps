@@ -94,7 +94,9 @@ impl<T: Send + Sync> Eq for ArcRwLock<T> {}
 
 impl<T> Clone for WeakRwLock<T> {
     fn clone(&self) -> Self {
-        Self { ptr: self.ptr.clone() }
+        Self {
+            ptr: self.ptr.clone(),
+        }
     }
 }
 
