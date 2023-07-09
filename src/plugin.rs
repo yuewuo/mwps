@@ -10,7 +10,7 @@ use crate::dual_module::*;
 use crate::framework::*;
 use crate::parity_matrix::*;
 use crate::plugin_union_find::*;
-use crate::relaxer_pool::*;
+use crate::relaxer_forest::*;
 use std::sync::Arc;
 
 /// common trait that must be implemented for each plugin
@@ -78,7 +78,7 @@ impl PluginManager {
         matrix: &ParityMatrix,
         positive_dual_nodes: &[DualNodePtr],
     ) -> Option<Relaxer> {
-        let mut relaxer_pool = RelaxerPool::new(matrix.get_tight_edges(), positive_dual_nodes);
+        let mut relaxer_forest = RelaxerForest::new(matrix.get_tight_edges(), positive_dual_nodes);
         for plugin_entry in self
             .plugins
             .iter()
@@ -92,7 +92,7 @@ impl PluginManager {
                     plugin_entry
                         .plugin
                         .find_relaxers(decoding_graph, matrix, positive_dual_nodes);
-                relaxer_pool.extend(relaxers);
+                relaxer_forest.extend(relaxers);
                 // determine whether repeat again
                 match plugin_entry.repeat_strategy {
                     RepeatStrategy::Once => {
@@ -107,7 +107,6 @@ impl PluginManager {
                 repeat_count += 1;
             }
         }
-        // in the end, always check for
         None
     }
 }

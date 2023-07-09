@@ -34,7 +34,7 @@ pub mod pointers;
 pub mod primal_module;
 pub mod primal_module_serial;
 pub mod primal_module_union_find;
-pub mod relaxer_pool;
+pub mod relaxer_forest;
 pub mod union_find;
 pub mod util;
 pub mod visualize;
