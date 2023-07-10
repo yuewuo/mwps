@@ -28,13 +28,13 @@ impl PluginUnionFind {
             return None; // no need to copy the matrix
         }
         let mut matrix = matrix.clone();
-        matrix.row_echelon_form();
-        if matrix.echelon_satisfiable {
+        let echelon = EchelonView::new(&mut matrix);
+        if echelon.satisfiable() {
             return None; // cannot find any relaxer
         }
         let invalid_subgraph = InvalidSubgraph::new_complete_ptr(
-            matrix.vertices.clone(),
-            matrix.get_tight_edges(),
+            echelon.matrix.vertices.clone(),
+            echelon.matrix.get_tight_edges(),
             decoding_graph,
         );
         Some(Relaxer::new_vec(vec![(invalid_subgraph, Rational::one())]))

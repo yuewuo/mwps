@@ -341,7 +341,6 @@ impl PrimalModuleSerial {
         // update the matrix with new tight edges
         cluster.matrix.clear_implicit_shrink();
         cluster.matrix.update_with_dual_module(dual_module);
-        cluster.matrix.row_echelon_form(); // to avoid union-find module cloning the matrix
 
         // find an executable relaxer from the plugin manager
         let relaxer = if cluster.plugin_manager.is_empty() {
