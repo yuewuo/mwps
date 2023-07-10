@@ -6,7 +6,7 @@ use std::collections::BTreeSet;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
-/// the invalid subgraph is the core of the framework, $S = (V_S, E_S)$
+/// an invalid subgraph $S = (V_S, E_S)$, also store the hair $\delta(S)$
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct InvalidSubgraph {
     /// the hash value calculated by other fields
@@ -173,9 +173,9 @@ mod tests {
     use crate::hyper_decoding_graph::tests::*;
 
     #[test]
-    fn framework_invalid_subgraph() {
-        // cargo test framework_invalid_subgraph -- --nocapture
-        let visualize_filename = "framework_invalid_subgraph.json".to_string();
+    fn invalid_subgraph_good() {
+        // cargo test invalid_subgraph_good -- --nocapture
+        let visualize_filename = "invalid_subgraph_good.json".to_string();
         let (decoding_graph, ..) = color_code_5_decoding_graph(vec![7, 1], visualize_filename);
         let invalid_subgraph_1 =
             InvalidSubgraph::new(vec![13].into_iter().collect(), decoding_graph.as_ref());
@@ -195,9 +195,9 @@ mod tests {
 
     #[test]
     #[should_panic]
-    fn framework_valid_subgraph() {
-        // cargo test framework_valid_subgraph -- --nocapture
-        let visualize_filename = "framework_valid_subgraph.json".to_string();
+    fn invalid_subgraph_bad() {
+        // cargo test invalid_subgraph_bad -- --nocapture
+        let visualize_filename = "invalid_subgraph_bad.json".to_string();
         let (decoding_graph, ..) = color_code_5_decoding_graph(vec![7, 1], visualize_filename);
         let invalid_subgraph =
             InvalidSubgraph::new(vec![6, 10].into_iter().collect(), decoding_graph.as_ref());

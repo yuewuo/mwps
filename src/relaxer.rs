@@ -90,9 +90,9 @@ mod tests {
     use std::collections::BTreeSet;
 
     #[test]
-    fn framework_good_relaxer() {
-        // cargo test framework_good_relaxer -- --nocapture
-        let visualize_filename = "framework_good_relaxer.json".to_string();
+    fn relaxer_good() {
+        // cargo test relaxer_good -- --nocapture
+        let visualize_filename = "relaxer_good.json".to_string();
         let (decoding_graph, ..) = color_code_5_decoding_graph(vec![7, 1], visualize_filename);
         let invalid_subgraph = Arc::new(InvalidSubgraph::new_complete(
             vec![7].into_iter().collect(),
@@ -107,9 +107,9 @@ mod tests {
 
     #[test]
     #[should_panic]
-    fn framework_bad_relaxer() {
-        // cargo test framework_bad_relaxer -- --nocapture
-        let visualize_filename = "framework_bad_relaxer.json".to_string();
+    fn relaxer_bad() {
+        // cargo test relaxer_bad -- --nocapture
+        let visualize_filename = "relaxer_bad.json".to_string();
         let (decoding_graph, ..) = color_code_5_decoding_graph(vec![7, 1], visualize_filename);
         let invalid_subgraph = Arc::new(InvalidSubgraph::new_complete(
             vec![7].into_iter().collect(),
