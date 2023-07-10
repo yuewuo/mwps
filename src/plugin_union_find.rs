@@ -37,7 +37,7 @@ impl PluginUnionFind {
             matrix.get_tight_edges(),
             decoding_graph,
         );
-        Some(Relaxer::new(vec![(invalid_subgraph, Rational::one())]))
+        Some(Relaxer::new_vec(vec![(invalid_subgraph, Rational::one())]))
     }
 }
 

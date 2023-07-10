@@ -11,8 +11,6 @@ use std::collections::BTreeSet;
 use std::fs::File;
 use std::io::prelude::*;
 use std::time::Instant;
-#[cfg(feature = "wasm_binding")]
-use wasm_bindgen::prelude::*;
 
 pub type Weight = usize; // only used as input, all internal weight representation will use `Rational`
 

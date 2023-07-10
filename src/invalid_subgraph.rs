@@ -1,6 +1,7 @@
 use crate::hyper_decoding_graph::*;
 use crate::parity_matrix::*;
 use crate::util::*;
+use std::cmp::Ordering;
 use std::collections::hash_map::DefaultHasher;
 use std::collections::BTreeSet;
 use std::hash::{Hash, Hasher};
@@ -22,6 +23,29 @@ pub struct InvalidSubgraph {
 impl Hash for InvalidSubgraph {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.hash_value.hash(state);
+    }
+}
+
+impl Ord for InvalidSubgraph {
+    fn cmp(&self, other: &Self) -> Ordering {
+        if self == other {
+            Ordering::Equal
+        } else if self.hash_value != other.hash_value {
+            self.hash_value.cmp(&other.hash_value)
+        } else {
+            // rare cases: same hash value but different state
+            (&self.vertices, &self.edges, &self.hairs).cmp(&(
+                &other.vertices,
+                &other.edges,
+                &other.hairs,
+            ))
+        }
+    }
+}
+
+impl PartialOrd for InvalidSubgraph {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
     }
 }
 
@@ -56,13 +80,23 @@ impl InvalidSubgraph {
                 }
             }
         }
+        let invalid_subgraph = Self::new_raw(vertices, edges, hairs);
+        debug_assert_eq!(invalid_subgraph.sanity_check(decoding_graph), Ok(()));
+        invalid_subgraph
+    }
+
+    /// create $S = (V_S, E_S)$ and $\delta(S)$ directly, without any checks
+    pub fn new_raw(
+        vertices: BTreeSet<VertexIndex>,
+        edges: BTreeSet<EdgeIndex>,
+        hairs: BTreeSet<EdgeIndex>,
+    ) -> Self {
         let mut invalid_subgraph = Self {
             hash_value: 0,
             vertices,
             edges,
             hairs,
         };
-        debug_assert_eq!(invalid_subgraph.sanity_check(decoding_graph), Ok(()));
         invalid_subgraph.update_hash();
         invalid_subgraph
     }
@@ -168,7 +202,7 @@ impl InvalidSubgraph {
 }
 
 #[cfg(test)]
-mod tests {
+pub mod tests {
     use super::*;
     use crate::hyper_decoding_graph::tests::*;
 
@@ -202,5 +236,57 @@ mod tests {
         let invalid_subgraph =
             InvalidSubgraph::new(vec![6, 10].into_iter().collect(), decoding_graph.as_ref());
         println!("invalid_subgraph: {invalid_subgraph:?}"); // should not print because it panics
+    }
+
+    pub fn get_default_hash_value(object: &impl Hash) -> u64 {
+        let mut hasher = DefaultHasher::new();
+        object.hash(&mut hasher);
+        hasher.finish()
+    }
+
+    #[test]
+    fn invalid_subgraph_hash() {
+        // cargo test invalid_subgraph_hash -- --nocapture
+        let vertices: BTreeSet<VertexIndex> = [1, 2, 3].into();
+        let edges: BTreeSet<EdgeIndex> = [4, 5].into();
+        let hairs: BTreeSet<EdgeIndex> = [6, 7, 8].into();
+        let invalid_subgraph_1 =
+            InvalidSubgraph::new_raw(vertices.clone(), edges.clone(), hairs.clone());
+        let invalid_subgraph_2 =
+            InvalidSubgraph::new_raw(vertices.clone(), edges.clone(), hairs.clone());
+        assert_eq!(invalid_subgraph_1, invalid_subgraph_2);
+        // they should have the same hash value
+        assert_eq!(
+            get_default_hash_value(&invalid_subgraph_1),
+            get_default_hash_value(&invalid_subgraph_1.hash_value)
+        );
+        assert_eq!(
+            get_default_hash_value(&invalid_subgraph_1),
+            get_default_hash_value(&invalid_subgraph_2)
+        );
+        // the pointer should also have the same hash value
+        let ptr_1 = Arc::new(invalid_subgraph_1.clone());
+        let ptr_2 = Arc::new(invalid_subgraph_2);
+        assert_eq!(
+            get_default_hash_value(&ptr_1),
+            get_default_hash_value(&ptr_1.hash_value)
+        );
+        assert_eq!(
+            get_default_hash_value(&ptr_1),
+            get_default_hash_value(&ptr_2)
+        );
+        // any different value would generate a different invalid subgraph
+        assert_ne!(
+            invalid_subgraph_1,
+            InvalidSubgraph::new_raw([1, 2].into(), edges.clone(), hairs.clone())
+        );
+        assert_ne!(
+            invalid_subgraph_1,
+            InvalidSubgraph::new_raw(vertices.clone(), [4, 5, 6].into(), hairs.clone())
+        );
+        assert_ne!(
+            invalid_subgraph_1,
+            InvalidSubgraph::new_raw(vertices.clone(), edges.clone(), [6, 7].into())
+        );
     }
 }

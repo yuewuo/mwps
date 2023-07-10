@@ -426,13 +426,3 @@ impl MWPSVisualizer for DualModuleInterfacePtr {
         })
     }
 }
-
-#[cfg(test)]
-pub mod tests {
-    use super::*;
-
-    #[test]
-    fn dual_module_create_or_find_node() {
-        //TODO: test finding the same node given two identical Arc<InvalidSubgraph>
-    }
-}

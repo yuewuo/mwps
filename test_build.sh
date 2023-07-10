@@ -15,4 +15,4 @@ cargo test --no-run --features r64_weight --release
 # cargo test --no-run --features python_binding
 # cargo test --no-run --features python_binding --release
 
-wasm-pack build --no-default-features --features wasm_binding
+wasm-pack build --no-default-features --features wasm_binding,u32_index
