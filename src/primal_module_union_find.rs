@@ -8,7 +8,7 @@
 
 use crate::derivative::Derivative;
 use crate::dual_module::*;
-use crate::framework::*;
+use crate::invalid_subgraph::*;
 use crate::num_traits::Zero;
 use crate::pointers::*;
 use crate::primal_module::*;

@@ -442,9 +442,9 @@ impl MWPSVisualizer for DualModuleSerial {
 
 #[cfg(test)]
 mod tests {
-    use super::super::example_codes::*;
     use super::*;
-    use crate::framework::*;
+    use crate::example_codes::*;
+    use crate::hyper_decoding_graph::*;
 
     #[test]
     fn dual_module_serial_basics_1() {

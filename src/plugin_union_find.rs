@@ -6,10 +6,12 @@
 //!
 
 use crate::dual_module::*;
-use crate::framework::*;
+use crate::hyper_decoding_graph::*;
+use crate::invalid_subgraph::*;
 use crate::num_traits::One;
 use crate::parity_matrix::*;
 use crate::plugin::*;
+use crate::relaxer::*;
 use crate::util::*;
 
 #[derive(Debug, Clone, Default)]

@@ -4,7 +4,7 @@
 //!
 
 use crate::dual_module::*;
-use crate::framework::*;
+use crate::hyper_decoding_graph::*;
 use crate::num_traits::{One, Zero};
 use crate::parity_matrix::*;
 use crate::plugin::*;

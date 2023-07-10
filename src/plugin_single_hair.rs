@@ -6,10 +6,11 @@
 //!
 
 use crate::dual_module::*;
-use crate::framework::*;
+use crate::hyper_decoding_graph::*;
 use crate::parity_matrix::*;
 use crate::plugin::*;
 use crate::plugin_union_find::*;
+use crate::relaxer::*;
 
 #[derive(Debug, Clone, Default)]
 pub struct PluginSingleHair {}

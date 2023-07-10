@@ -4,7 +4,9 @@
 //!
 
 use crate::derivative::Derivative;
-use crate::framework::*;
+use crate::hyper_decoding_graph::*;
+use crate::hyper_model_graph::*;
+use crate::invalid_subgraph::*;
 use crate::num_traits::{One, ToPrimitive, Zero};
 use crate::pointers::*;
 use crate::util::*;

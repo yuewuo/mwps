@@ -6,10 +6,11 @@
 use num_traits::Signed;
 
 use crate::dual_module::*;
-use crate::framework::*;
+use crate::invalid_subgraph::*;
 use crate::pointers::RwLockPtr;
+use crate::relaxer::*;
 use crate::util::*;
-use std::collections::{BTreeSet, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::sync::Arc;
 
 pub type RelaxerVec = Vec<Relaxer>;
@@ -20,19 +21,25 @@ pub struct RelaxerForest {
     pub tight_edges: BTreeSet<EdgeIndex>,
     /// keep track of all positive dual variables, all others are yS = 0
     pub positive_dual_nodes: HashSet<Arc<InvalidSubgraph>>,
-    /// existing relaxers in a structural
-    pub lists: Vec<Arc<Relaxer>>,
+    /// each untightened edge corresponds to a relaxer with speed:
+    /// to untighten the edge for a unit length, how much should a relaxer be executed
+    pub edge_untightener: HashMap<EdgeIndex, (Arc<Relaxer>, Rational)>,
+    /// expanded relaxer results, as part of the dynamic programming:
+    /// the expanded relaxer is a valid relaxer only growing of initial untight edges,
+    /// not any edges untightened by other relaxers
+    pub expanded_relaxers: HashMap<Arc<Relaxer>, Relaxer>,
 }
 
 impl RelaxerForest {
     pub fn new(tight_edges: BTreeSet<EdgeIndex>, positive_dual_nodes: &[DualNodePtr]) -> Self {
         Self {
             tight_edges,
-            lists: vec![],
             positive_dual_nodes: positive_dual_nodes
                 .iter()
                 .map(|ptr| ptr.read_recursive().invalid_subgraph.clone())
                 .collect(),
+            edge_untightener: HashMap::new(),
+            expanded_relaxers: HashMap::new(),
         }
     }
 

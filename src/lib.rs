@@ -28,7 +28,9 @@ pub mod cli;
 pub mod dual_module;
 pub mod dual_module_serial;
 pub mod example_codes;
-pub mod framework;
+pub mod hyper_decoding_graph;
+pub mod hyper_model_graph;
+pub mod invalid_subgraph;
 pub mod mwps_solver;
 pub mod parity_matrix;
 pub mod plugin;
@@ -38,6 +40,7 @@ pub mod pointers;
 pub mod primal_module;
 pub mod primal_module_serial;
 pub mod primal_module_union_find;
+pub mod relaxer;
 pub mod relaxer_forest;
 pub mod union_find;
 pub mod util;
@@ -63,7 +66,7 @@ pub fn get_version() -> String {
     use dual_module::*;
     use dual_module_serial::*;
     use example_codes::*;
-    use framework::*;
+    use hyper_decoding_graph::*;
     use primal_module::*;
     use primal_module_serial::*;
     // TODO: I'm just testing basic funcationality

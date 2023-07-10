@@ -7,7 +7,7 @@
 //!
 
 use crate::dual_module::*;
-use crate::framework::*;
+use crate::hyper_decoding_graph::*;
 use crate::prettytable::*;
 use crate::util::*;
 use derivative::Derivative;
@@ -620,6 +620,7 @@ impl ParityMatrix {
         Some(Subgraph::new(joint_solution.into_iter().collect()))
     }
 
+    /// a helper function to quickly add a few constraints, mainly used in tests
     pub fn add_parity_checks(
         &mut self,
         odd_parity_checks: &[Vec<EdgeIndex>],
