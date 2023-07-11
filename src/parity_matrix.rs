@@ -37,7 +37,7 @@ impl<'a> EchelonView<'a> {
 
     pub fn new_reordered(matrix: &'a mut ParityMatrix, edges: Vec<EdgeIndex>) -> Self {
         matrix.row_echelon_form_reordered(&edges);
-        matrix.is_echelon_form = false;
+        matrix.is_echelon_form = true;
         Self { matrix, edges }
     }
 
@@ -181,18 +181,18 @@ pub struct ParityMatrix {
     /// the edges maintained by this parity check, mapping to the local indices
     pub edges: BTreeMap<EdgeIndex, usize>,
     /// variable index map to edge index and whether the edge is fully grown
-    variables: Vec<(EdgeIndex, bool)>,
+    pub variables: Vec<(EdgeIndex, bool)>,
     /// the constraints
-    constraints: Vec<ParityRow>,
+    pub constraints: Vec<ParityRow>,
     /// information about the matrix when it's formatted into the Echelon form:
     /// (is_dependent, if dependent the only "1" position row)
-    echelon_column_info: Vec<(bool, usize)>,
+    pub echelon_column_info: Vec<(bool, usize)>,
     /// the number of effective rows
-    echelon_effective_rows: usize,
+    pub echelon_effective_rows: usize,
     /// whether it's a satisfiable matrix, only valid when `is_echelon_form` is true
-    echelon_satisfiable: bool,
+    pub echelon_satisfiable: bool,
     /// the leading "1" position column
-    echelon_row_info: Vec<usize>,
+    pub echelon_row_info: Vec<usize>,
     /// whether it's in an echelon form (generally set by `EchelonView` and used by print function)
     is_echelon_form: bool,
     /// edges that are affected by any implicit shrink event
@@ -247,11 +247,6 @@ impl ParityMatrix {
         matrix
     }
 
-    pub fn add_variable_tightness(&mut self, edge_index: EdgeIndex, is_tight: bool) {
-        self.add_variable(edge_index);
-        self.update_edge_tightness(edge_index, is_tight);
-    }
-
     pub fn add_variable(&mut self, edge_index: EdgeIndex) {
         // must remove from phantom edge no matter whether the edge is already in `self.edge` or not
         self.phantom_edges.remove(&edge_index); // mark as explicitly added edge
@@ -269,6 +264,11 @@ impl ParityMatrix {
             }
         }
         self.echelon_column_info.push((false, 0));
+    }
+
+    pub fn add_variable_tightness(&mut self, edge_index: EdgeIndex, is_tight: bool) {
+        self.add_variable(edge_index);
+        self.update_edge_tightness(edge_index, is_tight);
     }
 
     pub fn add_tight_variable(&mut self, edge_index: EdgeIndex) {
@@ -357,16 +357,6 @@ impl ParityMatrix {
         self.echelon_effective_rows = self.constraints.len(); // by default all constraints are taking effect
     }
 
-    /// print the whole parity check matrix, excluding partial edges
-    pub fn print(&self) {
-        let edges: Vec<_> = self
-            .variables
-            .iter()
-            .map(|(edge_index, _)| *edge_index)
-            .collect();
-        self.print_reordered(&edges);
-    }
-
     pub fn display_table_reordered(&self, edges: &[EdgeIndex]) -> Table {
         let mut var_indices = Vec::with_capacity(edges.len());
         for &edge_index in edges.iter() {
@@ -386,9 +376,23 @@ impl ParityMatrix {
         let mut table = Table::new();
         let table_format = table.get_format();
         table_format.padding(0, 0);
-        table_format.column_separator('\u{254E}');
+        table_format.column_separator('\u{250A}');
+        table_format.borders('\u{250A}');
+        use format::LinePosition::*;
+        let separators = [
+            (Intern, ['\u{2500}', '\u{253C}', '\u{251C}', '\u{2524}']),
+            (Top, ['\u{2500}', '\u{252C}', '\u{250C}', '\u{2510}']),
+            (Bottom, ['\u{2500}', '\u{2534}', '\u{2514}', '\u{2518}']),
+            (Title, ['\u{2550}', '\u{256A}', '\u{255E}', '\u{2561}']),
+        ];
+        for (position, s) in separators {
+            table_format.separators(
+                &[position],
+                format::LineSeparator::new(s[0], s[1], s[2], s[3]),
+            )
+        }
         let mut title_row = Row::empty();
-        title_row.add_cell(Cell::new(""));
+        title_row.add_cell(Cell::new(if self.is_echelon_form { "Ec" } else { "" }));
         for &var_index in var_indices.iter() {
             let (edge_index, _) = self.variables[var_index];
             // make sure edge index is a single column, to save space and be consistent
@@ -402,8 +406,7 @@ impl ParityMatrix {
         }
         title_row.add_cell(Cell::new(" = "));
         if self.is_echelon_form {
-            title_row.add_cell(Cell::new("-"));
-            title_row.add_cell(Cell::new("v"));
+            title_row.add_cell(Cell::new("\u{25BC}"));
         }
         table.set_titles(title_row);
         for (row_index, row) in self.constraints.iter().enumerate() {
@@ -416,21 +419,16 @@ impl ParityMatrix {
                 table_row.add_cell(Cell::new(if row.get_left(var_index) { "1" } else { " " }));
             }
             table_row.add_cell(Cell::new(if row.get_right() { " 1 " } else { "   " }));
-            if self.is_echelon_form {
-                table_row.add_cell(Cell::new("-"));
-                if row_index < self.echelon_effective_rows {
-                    table_row.add_cell(Cell::new(
-                        format!("{}", self.variables[self.echelon_row_info[row_index]].0).as_str(),
-                    ));
-                } else {
-                    table_row.add_cell(Cell::new("-"));
-                }
+            if self.is_echelon_form && row_index < self.echelon_effective_rows {
+                table_row.add_cell(Cell::new(
+                    format!("{}", self.variables[self.echelon_row_info[row_index]].0).as_str(),
+                ));
             }
             table.add_row(table_row);
         }
         if self.is_echelon_form {
             let mut table_row = Row::empty();
-            table_row.add_cell(Cell::new(""));
+            table_row.add_cell(Cell::new(" \u{25B6}"));
             for &var_index in var_indices.iter() {
                 let (is_dependent, dependent_row) = self.echelon_column_info[var_index];
                 let dependent_row_name = format!("{dependent_row}");
@@ -440,11 +438,21 @@ impl ParityMatrix {
                     "?"
                 }));
             }
-            table_row.add_cell(Cell::new("<--"));
-            table_row.add_cell(Cell::new("-"));
+            table_row.add_cell(Cell::new("\u{25C0}  "));
+            table_row.add_cell(Cell::new("\u{25B2}"));
             table.add_row(table_row);
         }
         table
+    }
+
+    /// print the whole parity check matrix, excluding partial edges
+    pub fn print(&self) {
+        let edges: Vec<_> = self
+            .variables
+            .iter()
+            .map(|(edge_index, _)| *edge_index)
+            .collect();
+        self.print_reordered(&edges);
     }
 
     /// print edges (maybe a subset of edges)
@@ -631,6 +639,7 @@ impl ParityMatrix {
         }
     }
 
+    /// deprecated
     /// return a set of edges that can shrink when needed, i.e. they can be view as not-tight edges
     ///     , None if this is already invalid cluster: indicating it's time to execute the previous implicit edges1
     pub fn get_implicit_shrink_edges(
