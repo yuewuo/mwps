@@ -19,7 +19,7 @@ pub type DualVariableTag = usize;
 
 pub struct EchelonView<'a> {
     /// the corresponding matrix, immutable until the EchelonView is dropped
-    pub matrix: &'a ParityMatrix,
+    matrix: &'a mut ParityMatrix,
     /// reordered edges in this view
     pub edges: Vec<EdgeIndex>,
 }
@@ -37,7 +37,20 @@ impl<'a> EchelonView<'a> {
 
     pub fn new_reordered(matrix: &'a mut ParityMatrix, edges: Vec<EdgeIndex>) -> Self {
         matrix.row_echelon_form_reordered(&edges);
+        matrix.is_echelon_form = false;
         Self { matrix, edges }
+    }
+
+    pub fn get_matrix(&'a self) -> &'a ParityMatrix {
+        self.matrix
+    }
+
+    pub fn get_tight_edges(&self) -> BTreeSet<EdgeIndex> {
+        self.matrix.get_tight_edges()
+    }
+
+    pub fn get_vertices(&self) -> BTreeSet<VertexIndex> {
+        self.matrix.vertices.clone()
     }
 
     pub fn satisfiable(&self) -> bool {
@@ -152,6 +165,13 @@ impl<'a> EchelonView<'a> {
     }
 }
 
+impl<'a> Drop for EchelonView<'a> {
+    fn drop(&mut self) {
+        // out of the echelon view
+        self.matrix.is_echelon_form = false
+    }
+}
+
 /// the parity matrix that is necessary to satisfy parity requirement
 #[derive(Clone, Debug, Derivative)]
 #[derivative(Default(new = "true"))]
@@ -170,11 +190,11 @@ pub struct ParityMatrix {
     /// the number of effective rows
     echelon_effective_rows: usize,
     /// whether it's a satisfiable matrix, only valid when `is_echelon_form` is true
-    pub echelon_satisfiable: bool,
+    echelon_satisfiable: bool,
     /// the leading "1" position column
     echelon_row_info: Vec<usize>,
-    /// whether it's already in an echelon form
-    pub is_echelon_form: bool,
+    /// whether it's in an echelon form (generally set by `EchelonView` and used by print function)
+    is_echelon_form: bool,
     /// edges that are affected by any implicit shrink event
     pub implicit_shrunk_edges: BTreeSet<EdgeIndex>,
     /// edges that are not visible to outside, e.g. implicitly added to keep the constraints complete;
@@ -183,6 +203,30 @@ pub struct ParityMatrix {
     /// whether to keep phantom edges or not, default to True; needed when dynamically changing tight edges
     #[derivative(Default(value = "true"))]
     pub keep_phantom_edges: bool,
+}
+
+/// a plugin is only allowed to modify the parity matrix in a constrained manner
+pub struct ParityMatrixProtected<'a> {
+    /// the parity matrix instance
+    matrix: &'a mut ParityMatrix,
+}
+
+impl<'a> ParityMatrixProtected<'a> {
+    pub fn new(matrix: &'a mut ParityMatrix) -> Self {
+        Self { matrix }
+    }
+
+    pub fn get_matrix(&'a self) -> &'a ParityMatrix {
+        self.matrix
+    }
+
+    pub fn echelon_view(&'a mut self) -> EchelonView<'a> {
+        EchelonView::new(self.matrix)
+    }
+
+    pub fn echelon_view_reordered(&'a mut self, edges: Vec<EdgeIndex>) -> EchelonView<'a> {
+        EchelonView::new_reordered(self.matrix, edges)
+    }
 }
 
 /// optimize for small clusters where there are no more than 63 edges
@@ -225,7 +269,6 @@ impl ParityMatrix {
             }
         }
         self.echelon_column_info.push((false, 0));
-        self.is_echelon_form = false;
     }
 
     pub fn add_tight_variable(&mut self, edge_index: EdgeIndex) {
@@ -233,7 +276,6 @@ impl ParityMatrix {
     }
 
     pub fn update_edge_tightness(&mut self, edge_index: EdgeIndex, is_tight: bool) {
-        self.is_echelon_form = false;
         let var_index = *self
             .edges
             .get(&edge_index)
@@ -242,7 +284,6 @@ impl ParityMatrix {
     }
 
     pub fn update_edges_tightness(&mut self, edges: &[EdgeIndex], is_tight: bool) {
-        self.is_echelon_form = false;
         for edge_index in edges.iter() {
             let var_index = *self.edges.get(edge_index).expect("edge must be a variable");
             self.variables[var_index].1 = is_tight;
@@ -251,7 +292,6 @@ impl ParityMatrix {
 
     /// update the parity matrix with tight edges in the dual module
     pub fn update_with_dual_module(&mut self, dual_module: &impl DualModuleImpl) {
-        self.is_echelon_form = false;
         for (edge_index, is_tight) in self.variables.iter_mut() {
             *is_tight = dual_module.is_edge_tight(*edge_index);
         }
@@ -261,7 +301,10 @@ impl ParityMatrix {
         let mut tight_edges = BTreeSet::new();
         for (&edge_index, &var_index) in self.edges.iter() {
             let (_, is_tight) = self.variables[var_index];
-            if is_tight && !self.phantom_edges.contains(&edge_index) {
+            if is_tight
+                && !self.implicit_shrunk_edges.contains(&edge_index)
+                && !self.phantom_edges.contains(&edge_index)
+            {
                 tight_edges.insert(edge_index);
             }
         }
@@ -277,7 +320,6 @@ impl ParityMatrix {
         if self.vertices.contains(&vertex_index) {
             return; // no need to add repeat constraint
         }
-        self.is_echelon_form = false;
         let incident_edges = decoding_graph.get_vertex_neighbors(vertex_index);
         let parity = decoding_graph.is_vertex_defect(vertex_index);
         self.add_constraint(vertex_index, incident_edges, parity);
@@ -313,7 +355,6 @@ impl ParityMatrix {
         self.constraints.push(row);
         self.echelon_row_info.push(0);
         self.echelon_effective_rows = self.constraints.len(); // by default all constraints are taking effect
-        self.is_echelon_form = false;
     }
 
     /// print the whole parity check matrix, excluding partial edges
@@ -432,7 +473,6 @@ impl ParityMatrix {
 
     /// use the new EchelonView to access this function
     fn row_echelon_form_reordered(&mut self, edges: &[EdgeIndex]) {
-        self.is_echelon_form = true;
         self.echelon_satisfiable = false;
         if self.constraints.is_empty() {
             // no parity requirement
@@ -525,7 +565,6 @@ impl ParityMatrix {
             for j in 0..height {
                 if j != r && self.constraints[j].get_left(var_indices[lead]) {
                     self.xor_row(j, r);
-                    self.is_echelon_form = true; // because `xor_row` will set it to false
                 }
             }
             self.echelon_row_info[r] = var_indices[lead];
@@ -579,7 +618,6 @@ impl ParityMatrix {
     }
 
     pub fn xor_row(&mut self, target_row: usize, source_row: usize) {
-        self.is_echelon_form = false;
         if target_row < source_row {
             let (slice_1, slice_2) = self.constraints.split_at_mut(source_row);
             let source = &slice_2[0];
@@ -635,14 +673,12 @@ impl ParityMatrix {
 
     /// these edges can shrink when needed, and record the possible shrink operation by `shrink_tag`
     pub fn add_implicit_shrink(&mut self, shrink_edges: &[EdgeIndex]) {
-        self.is_echelon_form = false;
         for &edge_index in shrink_edges.iter() {
             self.implicit_shrunk_edges.insert(edge_index);
         }
     }
 
     pub fn clear_implicit_shrink(&mut self) {
-        self.is_echelon_form = false;
         self.implicit_shrunk_edges.clear();
     }
 
@@ -773,18 +809,22 @@ pub mod tests {
         matrix.print();
         let echelon = EchelonView::new(&mut matrix);
         echelon.print();
+        drop(echelon);
         // focus on the middle dual, by letting them to be independent variables as much as possible
         let edges = vec![0, 1, 5, 6, 2, 3, 4];
-        matrix.row_echelon_form_reordered(&edges);
-        matrix.print_reordered(&edges);
+        let echelon = EchelonView::new_reordered(&mut matrix, edges);
+        echelon.print();
+        drop(echelon);
         // focus on the first dual, by letting them to be independent variables as much as possible
         let edges = vec![2, 3, 4, 5, 6, 0, 1];
-        matrix.row_echelon_form_reordered(&edges);
-        matrix.print_reordered(&edges);
+        let echelon = EchelonView::new_reordered(&mut matrix, edges);
+        echelon.print();
+        drop(echelon);
         // try a different order
         let edges = vec![2, 3, 4, 1, 0, 6, 5];
-        matrix.row_echelon_form_reordered(&edges);
-        matrix.print_reordered(&edges);
+        let echelon = EchelonView::new_reordered(&mut matrix, edges);
+        echelon.print();
+        drop(echelon);
     }
 
     #[test]
@@ -866,6 +906,7 @@ pub mod tests {
         matrix.print();
         let echelon = EchelonView::new(&mut matrix);
         echelon.print();
+        drop(echelon);
         let hair_edges = vec![2, 3];
         matrix.get_implicit_shrink_edges(&hair_edges);
     }
@@ -893,6 +934,7 @@ pub mod tests {
         matrix.print();
         let echelon = EchelonView::new(&mut matrix);
         echelon.print();
+        drop(echelon);
         let hair_edges = vec![7, 8, 9, 10, 11, 12, 13];
         matrix.get_implicit_shrink_edges(&hair_edges);
         let hair_edges = vec![0, 1, 2, 3, 4, 5, 6];

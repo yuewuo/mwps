@@ -355,11 +355,10 @@ impl PrimalModuleSerial {
                 .filter(|dual_node_ptr| !dual_node_ptr.read_recursive().dual_variable.is_zero())
                 .collect();
             let decoding_graph = &interface_ptr.read_recursive().decoding_graph;
-            cluster.plugin_manager.find_relaxer(
-                decoding_graph,
-                &cluster.matrix,
-                &positive_dual_variables,
-            )
+            let cluster_mut = &mut *cluster; // must first get mutable reference
+            let plugin_manager = &mut cluster_mut.plugin_manager;
+            let matrix = &mut cluster_mut.matrix;
+            plugin_manager.find_relaxer(decoding_graph, matrix, &positive_dual_variables)
         };
 
         // if a relaxer is found, execute it and return

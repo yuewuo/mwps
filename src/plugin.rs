@@ -74,11 +74,12 @@ impl PluginManager {
     }
 
     pub fn find_relaxer(
-        &self,
+        &mut self,
         decoding_graph: &HyperDecodingGraph,
-        matrix: &ParityMatrix,
+        matrix: &mut ParityMatrix,
         positive_dual_nodes: &[DualNodePtr],
     ) -> Option<Relaxer> {
+        matrix.clear_implicit_shrink();
         let mut relaxer_forest = RelaxerForest::new(matrix.get_tight_edges(), positive_dual_nodes);
         for plugin_entry in self
             .plugins

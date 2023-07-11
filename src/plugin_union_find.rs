@@ -24,17 +24,14 @@ impl PluginUnionFind {
         decoding_graph: &HyperDecodingGraph,
         matrix: &ParityMatrix,
     ) -> Option<Relaxer> {
-        if matrix.is_echelon_form && matrix.echelon_satisfiable {
-            return None; // no need to copy the matrix
-        }
         let mut matrix = matrix.clone();
         let echelon = EchelonView::new(&mut matrix);
         if echelon.satisfiable() {
             return None; // cannot find any relaxer
         }
         let invalid_subgraph = InvalidSubgraph::new_complete_ptr(
-            echelon.matrix.vertices.clone(),
-            echelon.matrix.get_tight_edges(),
+            echelon.get_vertices(),
+            echelon.get_tight_edges(),
             decoding_graph,
         );
         Some(Relaxer::new_vec(vec![(invalid_subgraph, Rational::one())]))
