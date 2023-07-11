@@ -346,7 +346,10 @@ impl PrimalModuleSerial {
         let relaxer = if cluster.plugin_manager.is_empty() {
             // fast path: no need to generate the `positive_dual_variables`
             let decoding_graph = &interface_ptr.read_recursive().decoding_graph;
-            PluginUnionFind::default().find_the_relaxer(decoding_graph, &cluster.matrix)
+            PluginUnionFind::find_single_relaxer(
+                decoding_graph,
+                &mut ParityMatrixProtected::new(&mut cluster.matrix),
+            )
         } else {
             let positive_dual_variables: Vec<DualNodePtr> = cluster
                 .nodes

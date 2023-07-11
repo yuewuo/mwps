@@ -17,10 +17,10 @@ use std::sync::Arc;
 /// common trait that must be implemented for each plugin
 pub trait PluginImpl {
     /// given the tight edges and parity constraints, find relaxers
-    fn find_relaxers(
+    fn find_relaxers<'a>(
         &self,
         decoding_graph: &HyperDecodingGraph,
-        matrix: &ParityMatrix,
+        matrix: &'a mut ParityMatrixProtected<'a>,
         positive_dual_nodes: &[DualNodePtr],
     ) -> RelaxerVec;
 
@@ -90,10 +90,11 @@ impl PluginManager {
             let mut repeat_count = 0;
             while repeat {
                 // execute the plugin
-                let relaxers =
-                    plugin_entry
-                        .plugin
-                        .find_relaxers(decoding_graph, matrix, positive_dual_nodes);
+                let relaxers = plugin_entry.plugin.find_relaxers(
+                    decoding_graph,
+                    &mut ParityMatrixProtected::new(matrix),
+                    positive_dual_nodes,
+                );
                 relaxer_forest.extend(relaxers);
                 // determine whether repeat again
                 match plugin_entry.repeat_strategy {
