@@ -98,12 +98,7 @@ impl<'a> EchelonView<'a> {
         }
         let mut independent_variables = vec![];
         for var_index in 0..self.matrix.variables.len() {
-            let (_, is_tight) = self.matrix.variables[var_index];
-            let (edge_index, _) = self.matrix.variables[var_index];
-            if !is_tight
-                || self.matrix.implicit_shrunk_edges.contains(&edge_index)
-                || self.matrix.phantom_edges.contains(&edge_index)
-            {
+            if !self.matrix.is_tight(var_index) {
                 continue; // ignore this edge
             }
             let (is_dependent, _) = self.matrix.echelon_column_info[var_index];
@@ -300,11 +295,7 @@ impl ParityMatrix {
     pub fn get_tight_edges(&self) -> BTreeSet<EdgeIndex> {
         let mut tight_edges = BTreeSet::new();
         for (&edge_index, &var_index) in self.edges.iter() {
-            let (_, is_tight) = self.variables[var_index];
-            if is_tight
-                && !self.implicit_shrunk_edges.contains(&edge_index)
-                && !self.phantom_edges.contains(&edge_index)
-            {
+            if self.is_tight(var_index) {
                 tight_edges.insert(edge_index);
             }
         }
@@ -357,22 +348,7 @@ impl ParityMatrix {
         self.echelon_effective_rows = self.constraints.len(); // by default all constraints are taking effect
     }
 
-    pub fn display_table_reordered(&self, edges: &[EdgeIndex]) -> Table {
-        let mut var_indices = Vec::with_capacity(edges.len());
-        for &edge_index in edges.iter() {
-            let var_index = *self
-                .edges
-                .get(&edge_index)
-                .expect("edge must be a variable");
-            let (_, is_tight) = self.variables[var_index];
-            if is_tight
-                && !self.implicit_shrunk_edges.contains(&edge_index)
-                && !self.phantom_edges.contains(&edge_index)
-            {
-                var_indices.push(var_index);
-            }
-        }
-        // print
+    fn nice_look_table() -> Table {
         let mut table = Table::new();
         let table_format = table.get_format();
         table_format.padding(0, 0);
@@ -391,6 +367,22 @@ impl ParityMatrix {
                 format::LineSeparator::new(s[0], s[1], s[2], s[3]),
             )
         }
+        table
+    }
+
+    pub fn display_table_reordered(&self, edges: &[EdgeIndex]) -> Table {
+        let mut var_indices = Vec::with_capacity(edges.len());
+        for &edge_index in edges.iter() {
+            let var_index = *self
+                .edges
+                .get(&edge_index)
+                .expect("edge must be a variable");
+            if self.is_tight(var_index) {
+                var_indices.push(var_index);
+            }
+        }
+        // print
+        let mut table = Self::nice_look_table();
         let mut title_row = Row::empty();
         title_row.add_cell(Cell::new(if self.is_echelon_form { "Ec" } else { "" }));
         for &var_index in var_indices.iter() {
@@ -435,7 +427,7 @@ impl ParityMatrix {
                 table_row.add_cell(Cell::new(if is_dependent {
                     dependent_row_name.as_str()
                 } else {
-                    "?"
+                    "*"
                 }));
             }
             table_row.add_cell(Cell::new("\u{25C0}  "));
@@ -494,11 +486,7 @@ impl ParityMatrix {
                 .edges
                 .get(&edge_index)
                 .expect("edge must be a variable");
-            let (_, is_tight) = self.variables[var_index];
-            if is_tight
-                && !self.implicit_shrunk_edges.contains(&edge_index)
-                && !self.phantom_edges.contains(&edge_index)
-            {
+            if self.is_tight(var_index) {
                 var_indices.push(var_index);
             }
         }
@@ -599,12 +587,8 @@ impl ParityMatrix {
             hair_edges_set.insert(*hair_edge);
         }
         let mut edges = Vec::with_capacity(self.variables.len());
-        for &(edge_index, is_tight) in self.variables.iter() {
-            if is_tight
-                && !self.implicit_shrunk_edges.contains(&edge_index)
-                && !self.phantom_edges.contains(&edge_index)
-                && !hair_edges.contains(&edge_index)
-            {
+        for (&edge_index, &var_index) in self.edges.iter() {
+            if self.is_tight(var_index) && !hair_edges.contains(&edge_index) {
                 edges.push(edge_index);
             }
         }
@@ -614,11 +598,7 @@ impl ParityMatrix {
                 .edges
                 .get(&edge_index)
                 .expect("edge must be a variable");
-            let (_, is_tight) = self.variables[var_index];
-            if is_tight
-                && !self.implicit_shrunk_edges.contains(&edge_index)
-                && !self.phantom_edges.contains(&edge_index)
-            {
+            if self.is_tight(var_index) {
                 edges.push(edge_index);
             }
         }
@@ -689,6 +669,14 @@ impl ParityMatrix {
 
     pub fn clear_implicit_shrink(&mut self) {
         self.implicit_shrunk_edges.clear();
+    }
+
+    #[allow(clippy::unnecessary_cast)]
+    fn is_tight(&self, var_index: EdgeIndex) -> bool {
+        let (edge_index, is_tight) = self.variables[var_index as usize];
+        is_tight
+            && !self.implicit_shrunk_edges.contains(&edge_index)
+            && !self.phantom_edges.contains(&edge_index)
     }
 
     pub fn get_joint_solution(&mut self) -> Option<Subgraph> {
