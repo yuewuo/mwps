@@ -467,18 +467,18 @@ impl BenchmarkProfilerEntry {
 }
 
 #[cfg(feature = "python_binding")]
-pub fn json_to_pyobject_locked<'py>(value: serde_json::Value, py: Python<'py>) -> PyObject {
+pub fn json_to_pyobject_locked(value: serde_json::Value, py: Python) -> PyObject {
     match value {
         serde_json::Value::Null => py.None(),
-        serde_json::Value::Bool(value) => value.to_object(py).into(),
+        serde_json::Value::Bool(value) => value.to_object(py),
         serde_json::Value::Number(value) => {
             if value.is_i64() {
-                value.as_i64().to_object(py).into()
+                value.as_i64().to_object(py)
             } else {
-                value.as_f64().to_object(py).into()
+                value.as_f64().to_object(py)
             }
         }
-        serde_json::Value::String(value) => value.to_object(py).into(),
+        serde_json::Value::String(value) => value.to_object(py),
         serde_json::Value::Array(array) => {
             let elements: Vec<PyObject> = array
                 .into_iter()
@@ -503,7 +503,7 @@ pub fn json_to_pyobject(value: serde_json::Value) -> PyObject {
 }
 
 #[cfg(feature = "python_binding")]
-pub fn pyobject_to_json_locked<'py>(value: PyObject, py: Python<'py>) -> serde_json::Value {
+pub fn pyobject_to_json_locked(value: PyObject, py: Python) -> serde_json::Value {
     let value: &PyAny = value.as_ref(py);
     if value.is_none() {
         serde_json::Value::Null

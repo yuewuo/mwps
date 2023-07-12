@@ -399,10 +399,7 @@ impl Visualizer {
         if cfg!(feature = "disable_visualizer") {
             return Ok(());
         }
-        let values: Vec<_> = value_pys
-            .into_iter()
-            .map(|value_py| pyobject_to_json(value_py))
-            .collect();
+        let values: Vec<_> = value_pys.into_iter().map(pyobject_to_json).collect();
         self.snapshot_combined_value(name, values)
     }
 

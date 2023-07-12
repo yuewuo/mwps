@@ -11,6 +11,8 @@ use crate::hyper_decoding_graph::*;
 use crate::prettytable::*;
 use crate::util::*;
 use derivative::Derivative;
+#[cfg(feature = "python_binding")]
+use pyo3::prelude::*;
 use std::collections::{BTreeMap, BTreeSet};
 
 pub type BitArrayUnit = usize;
@@ -170,33 +172,47 @@ impl<'a> Drop for EchelonView<'a> {
 /// the parity matrix that is necessary to satisfy parity requirement
 #[derive(Clone, Debug, Derivative)]
 #[derivative(Default(new = "true"))]
+#[cfg_attr(feature = "python_binding", cfg_eval)]
+#[cfg_attr(feature = "python_binding", pyclass)]
 pub struct ParityMatrix {
     /// the vertices already maintained by this parity check
+    #[cfg_attr(feature = "python_binding", pyo3(get, set))]
     pub vertices: BTreeSet<VertexIndex>,
     /// the edges maintained by this parity check, mapping to the local indices
+    #[cfg_attr(feature = "python_binding", pyo3(get, set))]
     pub edges: BTreeMap<EdgeIndex, usize>,
     /// variable index map to edge index and whether the edge is fully grown
+    #[cfg_attr(feature = "python_binding", pyo3(get, set))]
     pub variables: Vec<(EdgeIndex, bool)>,
     /// the constraints
+    #[cfg_attr(feature = "python_binding", pyo3(get, set))]
     pub constraints: Vec<ParityRow>,
     /// information about the matrix when it's formatted into the Echelon form:
     /// (is_dependent, if dependent the only "1" position row)
+    #[cfg_attr(feature = "python_binding", pyo3(get, set))]
     pub echelon_column_info: Vec<(bool, usize)>,
     /// the number of effective rows
+    #[cfg_attr(feature = "python_binding", pyo3(get, set))]
     pub echelon_effective_rows: usize,
     /// whether it's a satisfiable matrix, only valid when `is_echelon_form` is true
+    #[cfg_attr(feature = "python_binding", pyo3(get, set))]
     pub echelon_satisfiable: bool,
     /// the leading "1" position column
+    #[cfg_attr(feature = "python_binding", pyo3(get, set))]
     pub echelon_row_info: Vec<usize>,
     /// whether it's in an echelon form (generally set by `EchelonView` and used by print function)
+    #[cfg_attr(feature = "python_binding", pyo3(get, set))]
     is_echelon_form: bool,
     /// edges that are affected by any implicit shrink event
+    #[cfg_attr(feature = "python_binding", pyo3(get, set))]
     pub implicit_shrunk_edges: BTreeSet<EdgeIndex>,
     /// edges that are not visible to outside, e.g. implicitly added to keep the constraints complete;
     /// these edges must be explicitly added to remove from phantom edges
+    #[cfg_attr(feature = "python_binding", pyo3(get, set))]
     pub phantom_edges: BTreeSet<EdgeIndex>,
     /// whether to keep phantom edges or not, default to True; needed when dynamically changing tight edges
     #[derivative(Default(value = "true"))]
+    #[cfg_attr(feature = "python_binding", pyo3(get, set))]
     pub keep_phantom_edges: bool,
 }
 
@@ -227,15 +243,27 @@ impl<'a> ParityMatrixProtected<'a> {
 /// optimize for small clusters where there are no more than 63 edges
 #[derive(Clone, Debug, Derivative)]
 #[derivative(Default(new = "true"))]
+#[cfg_attr(feature = "python_binding", cfg_eval)]
+#[cfg_attr(feature = "python_binding", pyclass)]
 pub struct ParityRow {
     /// the first BIT_UNIT_LENGTH-1 edges are stored here, and the last bit is used the right hand bit value
+    #[cfg_attr(feature = "python_binding", pyo3(get, set))]
     first: BitArrayUnit,
     /// the other edges
+    #[cfg_attr(feature = "python_binding", pyo3(get, set))]
     others: Vec<BitArrayUnit>,
 }
 
+#[cfg_attr(feature = "python_binding", cfg_eval)]
+#[cfg_attr(feature = "python_binding", pymethods)]
 impl ParityMatrix {
+    #[cfg_attr(feature = "python_binding", new)]
+    pub fn new_py() -> Self {
+        Self::new()
+    }
+
     /// when you're sure no phantom edges will be dynamically included, then this matrix is faster; otherwise it might panic
+    #[cfg_attr(feature = "python_binding", staticmethod)]
     pub fn new_no_phantom() -> Self {
         let mut matrix = Self::new();
         matrix.keep_phantom_edges = false;
@@ -278,6 +306,137 @@ impl ParityMatrix {
         self.variables[var_index].1 = is_tight;
     }
 
+    #[cfg(feature = "python_binding")]
+    #[pyo3(name = "update_edges_tightness")]
+    pub fn update_edges_tightness_py(&mut self, edges: Vec<EdgeIndex>, is_tight: bool) {
+        self.update_edges_tightness(&edges, is_tight)
+    }
+
+    pub fn get_tight_edges(&self) -> BTreeSet<EdgeIndex> {
+        let mut tight_edges = BTreeSet::new();
+        for (&edge_index, &var_index) in self.edges.iter() {
+            if self.is_tight(var_index) {
+                tight_edges.insert(edge_index);
+            }
+        }
+        tight_edges
+    }
+
+    #[cfg(feature = "python_binding")]
+    #[pyo3(name = "add_constraint")]
+    pub fn add_constraint_py(
+        &mut self,
+        vertex_index: VertexIndex,
+        incident_edges: Vec<EdgeIndex>,
+        parity: bool,
+    ) {
+        self.add_constraint(vertex_index, &incident_edges, parity)
+    }
+
+    pub fn get_edge_indices(&self) -> Vec<EdgeIndex> {
+        self.variables
+            .iter()
+            .map(|(edge_index, _)| *edge_index)
+            .collect()
+    }
+
+    /// print the whole parity check matrix, excluding partial edges
+    pub fn print(&self) {
+        let edges = self.get_edge_indices();
+        self.print_reordered(&edges);
+    }
+
+    #[cfg(feature = "python_binding")]
+    #[pyo3(name = "print_reordered")]
+    pub fn print_reordered_py(&self, edges: Vec<EdgeIndex>) {
+        self.print_reordered(&edges)
+    }
+
+    #[cfg(feature = "python_binding")]
+    #[pyo3(name = "to_visualize_json")]
+    pub fn to_visualize_json_py(&self, hair_edges: Vec<EdgeIndex>, abbrev: bool) -> PyObject {
+        json_to_pyobject(self.to_visualize_json(&hair_edges, abbrev))
+    }
+
+    #[cfg(feature = "python_binding")]
+    #[pyo3(name = "row_echelon_form_reordered")]
+    pub fn row_echelon_form_reordered_py(&mut self, edges: Vec<EdgeIndex>) {
+        self.row_echelon_form_reordered(&edges)
+    }
+
+    pub fn check_is_satisfiable(&mut self) -> bool {
+        EchelonView::new(self).satisfiable()
+    }
+
+    #[cfg(feature = "python_binding")]
+    #[pyo3(name = "hair_edges_to_reorder")]
+    pub fn hair_edges_to_reorder_py(&self, hair_edges: Vec<EdgeIndex>) -> (Vec<EdgeIndex>, usize) {
+        self.hair_edges_to_reorder(&hair_edges)
+    }
+
+    pub fn xor_row(&mut self, target_row: usize, source_row: usize) {
+        if target_row < source_row {
+            let (slice_1, slice_2) = self.constraints.split_at_mut(source_row);
+            let source = &slice_2[0];
+            let target = &mut slice_1[target_row];
+            target.add(source);
+        } else {
+            let (slice_1, slice_2) = self.constraints.split_at_mut(target_row);
+            let source = &slice_1[source_row];
+            let target = &mut slice_2[0];
+            target.add(source);
+        }
+    }
+
+    #[cfg(feature = "python_binding")]
+    #[pyo3(name = "add_implicit_shrink")]
+    pub fn add_implicit_shrink_py(&mut self, shrink_edges: Vec<EdgeIndex>) {
+        self.add_implicit_shrink(&shrink_edges)
+    }
+
+    pub fn clear_implicit_shrink(&mut self) {
+        self.implicit_shrunk_edges.clear();
+    }
+
+    #[allow(clippy::unnecessary_cast)]
+    fn is_tight(&self, var_index: usize) -> bool {
+        let (edge_index, is_tight) = self.variables[var_index as usize];
+        is_tight
+            && !self.implicit_shrunk_edges.contains(&edge_index)
+            && !self.phantom_edges.contains(&edge_index)
+    }
+
+    pub fn get_joint_solution(&mut self) -> Option<Subgraph> {
+        EchelonView::new(self).get_joint_solution()
+    }
+
+    pub fn get_joint_solution_local_minimum(
+        &mut self,
+        hypergraph: &SolverInitializer,
+    ) -> Option<Subgraph> {
+        EchelonView::new(self).get_joint_solution_local_minimum(hypergraph)
+    }
+
+    #[cfg(feature = "python_binding")]
+    #[pyo3(name = "add_parity_checks")]
+    pub fn add_parity_checks_py(
+        &mut self,
+        odd_parity_checks: Vec<Vec<EdgeIndex>>,
+        even_parity_checks: Vec<Vec<EdgeIndex>>,
+    ) {
+        self.add_parity_checks(&odd_parity_checks, &even_parity_checks)
+    }
+
+    #[cfg(feature = "python_binding")]
+    fn __repr__(&self) -> String {
+        // TODO: check IPython environment and use better display
+        let edges = self.get_edge_indices();
+        let table = self.display_table_reordered(&edges);
+        format!("{table}")
+    }
+}
+
+impl ParityMatrix {
     pub fn update_edges_tightness(&mut self, edges: &[EdgeIndex], is_tight: bool) {
         for edge_index in edges.iter() {
             let var_index = *self.edges.get(edge_index).expect("edge must be a variable");
@@ -290,16 +449,6 @@ impl ParityMatrix {
         for (edge_index, is_tight) in self.variables.iter_mut() {
             *is_tight = dual_module.is_edge_tight(*edge_index);
         }
-    }
-
-    pub fn get_tight_edges(&self) -> BTreeSet<EdgeIndex> {
-        let mut tight_edges = BTreeSet::new();
-        for (&edge_index, &var_index) in self.edges.iter() {
-            if self.is_tight(var_index) {
-                tight_edges.insert(edge_index);
-            }
-        }
-        tight_edges
     }
 
     /// add a row to the parity matrix from a given vertex, automatically add phantom edges corresponding to this parity check
@@ -348,28 +497,6 @@ impl ParityMatrix {
         self.echelon_effective_rows = self.constraints.len(); // by default all constraints are taking effect
     }
 
-    fn nice_look_table() -> Table {
-        let mut table = Table::new();
-        let table_format = table.get_format();
-        table_format.padding(0, 0);
-        table_format.column_separator('\u{250A}');
-        table_format.borders('\u{250A}');
-        use format::LinePosition::*;
-        let separators = [
-            (Intern, ['\u{2500}', '\u{253C}', '\u{251C}', '\u{2524}']),
-            (Top, ['\u{2500}', '\u{252C}', '\u{250C}', '\u{2510}']),
-            (Bottom, ['\u{2500}', '\u{2534}', '\u{2514}', '\u{2518}']),
-            (Title, ['\u{2550}', '\u{256A}', '\u{255E}', '\u{2561}']),
-        ];
-        for (position, s) in separators {
-            table_format.separators(
-                &[position],
-                format::LineSeparator::new(s[0], s[1], s[2], s[3]),
-            )
-        }
-        table
-    }
-
     pub fn display_table_reordered(&self, edges: &[EdgeIndex]) -> Table {
         let mut var_indices = Vec::with_capacity(edges.len());
         for &edge_index in edges.iter() {
@@ -382,7 +509,7 @@ impl ParityMatrix {
             }
         }
         // print
-        let mut table = Self::nice_look_table();
+        let mut table = nice_look_table();
         let mut title_row = Row::empty();
         title_row.add_cell(Cell::new(if self.is_echelon_form { "Ec" } else { "" }));
         for &var_index in var_indices.iter() {
@@ -435,16 +562,6 @@ impl ParityMatrix {
             table.add_row(table_row);
         }
         table
-    }
-
-    /// print the whole parity check matrix, excluding partial edges
-    pub fn print(&self) {
-        let edges: Vec<_> = self
-            .variables
-            .iter()
-            .map(|(edge_index, _)| *edge_index)
-            .collect();
-        self.print_reordered(&edges);
     }
 
     /// print edges (maybe a subset of edges)
@@ -575,10 +692,6 @@ impl ParityMatrix {
         self.echelon_satisfiable = true;
     }
 
-    pub fn check_is_satisfiable(&mut self) -> bool {
-        EchelonView::new(self).satisfiable()
-    }
-
     /// create the reorder edges and also the starting index of hair edges
     pub fn hair_edges_to_reorder(&self, hair_edges: &[EdgeIndex]) -> (Vec<EdgeIndex>, usize) {
         let mut hair_edges_set = BTreeSet::new();
@@ -603,20 +716,6 @@ impl ParityMatrix {
             }
         }
         (edges, start_index)
-    }
-
-    pub fn xor_row(&mut self, target_row: usize, source_row: usize) {
-        if target_row < source_row {
-            let (slice_1, slice_2) = self.constraints.split_at_mut(source_row);
-            let source = &slice_2[0];
-            let target = &mut slice_1[target_row];
-            target.add(source);
-        } else {
-            let (slice_1, slice_2) = self.constraints.split_at_mut(target_row);
-            let source = &slice_1[source_row];
-            let target = &mut slice_2[0];
-            target.add(source);
-        }
     }
 
     /// deprecated
@@ -667,29 +766,6 @@ impl ParityMatrix {
         }
     }
 
-    pub fn clear_implicit_shrink(&mut self) {
-        self.implicit_shrunk_edges.clear();
-    }
-
-    #[allow(clippy::unnecessary_cast)]
-    fn is_tight(&self, var_index: EdgeIndex) -> bool {
-        let (edge_index, is_tight) = self.variables[var_index as usize];
-        is_tight
-            && !self.implicit_shrunk_edges.contains(&edge_index)
-            && !self.phantom_edges.contains(&edge_index)
-    }
-
-    pub fn get_joint_solution(&mut self) -> Option<Subgraph> {
-        EchelonView::new(self).get_joint_solution()
-    }
-
-    pub fn get_joint_solution_local_minimum(
-        &mut self,
-        hypergraph: &SolverInitializer,
-    ) -> Option<Subgraph> {
-        EchelonView::new(self).get_joint_solution_local_minimum(hypergraph)
-    }
-
     /// a helper function to quickly add a few constraints, mainly used in tests
     pub fn add_parity_checks(
         &mut self,
@@ -705,6 +781,28 @@ impl ParityMatrix {
             self.add_constraint(vertex_index as VertexIndex + bias_2, incident_edges, false);
         }
     }
+}
+
+fn nice_look_table() -> Table {
+    let mut table = Table::new();
+    let table_format = table.get_format();
+    table_format.padding(0, 0);
+    table_format.column_separator('\u{250A}');
+    table_format.borders('\u{250A}');
+    use format::LinePosition::*;
+    let separators = [
+        (Intern, ['\u{2500}', '\u{253C}', '\u{251C}', '\u{2524}']),
+        (Top, ['\u{2500}', '\u{252C}', '\u{250C}', '\u{2510}']),
+        (Bottom, ['\u{2500}', '\u{2534}', '\u{2514}', '\u{2518}']),
+        (Title, ['\u{2550}', '\u{256A}', '\u{255E}', '\u{2561}']),
+    ];
+    for (position, s) in separators {
+        table_format.separators(
+            &[position],
+            format::LineSeparator::new(s[0], s[1], s[2], s[3]),
+        )
+    }
+    table
 }
 
 impl ParityRow {
@@ -784,6 +882,14 @@ impl ParityRow {
         }
         true
     }
+}
+
+#[cfg(feature = "python_binding")]
+#[pyfunction]
+pub(crate) fn register(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
+    m.add_class::<ParityMatrix>()?;
+    m.add_class::<ParityRow>()?;
+    Ok(())
 }
 
 #[cfg(test)]

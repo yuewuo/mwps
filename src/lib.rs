@@ -55,6 +55,7 @@ fn mwps(py: Python<'_>, m: &PyModule) -> PyResult<()> {
     util::register(py, m)?;
     visualize::register(py, m)?;
     example_codes::register(py, m)?;
+    parity_matrix::register(py, m)?;
     Ok(())
 }
 
