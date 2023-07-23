@@ -33,6 +33,7 @@ pub mod hyper_model_graph;
 pub mod invalid_subgraph;
 pub mod mwps_solver;
 pub mod parity_matrix;
+pub mod parity_matrix_visualize;
 pub mod plugin;
 pub mod plugin_single_hair;
 pub mod plugin_union_find;
