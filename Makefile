@@ -46,3 +46,8 @@ python: clean-env
 
 wasm: clean-env
 	wasm-pack build --no-default-features --features wasm_binding,u32_index
+
+# test code coverage: see https://lib.rs/crates/cargo-llvm-cov
+coverage:
+	cargo llvm-cov --html
+	# open target/llvm-cov/html/index.html
