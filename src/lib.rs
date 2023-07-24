@@ -34,7 +34,7 @@ pub mod hyper_decoding_graph;
 pub mod hyper_model_graph;
 pub mod invalid_subgraph;
 pub mod mwps_solver;
-pub mod parity_matrix;
+pub mod old_parity_matrix;
 pub mod parity_matrix_new;
 pub mod parity_matrix_visualize;
 pub mod plugin;
@@ -59,7 +59,7 @@ fn mwps(py: Python<'_>, m: &PyModule) -> PyResult<()> {
     util::register(py, m)?;
     visualize::register(py, m)?;
     example_codes::register(py, m)?;
-    parity_matrix::register(py, m)?;
+    old_parity_matrix::register(py, m)?;
     Ok(())
 }
 

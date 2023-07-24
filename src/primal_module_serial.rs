@@ -6,7 +6,7 @@
 use crate::dual_module::*;
 use crate::hyper_decoding_graph::*;
 use crate::num_traits::{One, Zero};
-use crate::parity_matrix::*;
+use crate::old_parity_matrix::*;
 use crate::plugin::*;
 use crate::plugin_union_find::*;
 use crate::pointers::*;
@@ -91,11 +91,7 @@ impl PrimalModuleImpl for PrimalModuleSerial {
     }
 
     #[allow(clippy::unnecessary_cast)]
-    fn load<D: DualModuleImpl>(
-        &mut self,
-        interface_ptr: &DualModuleInterfacePtr,
-        dual_module: &mut D,
-    ) {
+    fn load<D: DualModuleImpl>(&mut self, interface_ptr: &DualModuleInterfacePtr, dual_module: &mut D) {
         let interface = interface_ptr.read_recursive();
         for index in 0..interface.nodes.len() as NodeIndex {
             let dual_node_ptr = &interface.nodes[index as usize];
@@ -112,11 +108,7 @@ impl PrimalModuleImpl for PrimalModuleSerial {
                 node.index, index,
                 "must load a fresh dual module interface, found index out of order"
             );
-            assert_eq!(
-                node.index as usize,
-                self.nodes.len(),
-                "must load defect nodes in order"
-            );
+            assert_eq!(node.index as usize, self.nodes.len(), "must load defect nodes in order");
             assert_eq!(
                 node.index as usize,
                 self.live_clusters.len(),
@@ -128,9 +120,7 @@ impl PrimalModuleImpl for PrimalModuleSerial {
                 nodes: vec![],
                 edges: node.invalid_subgraph.hairs.clone(),
                 vertices: node.invalid_subgraph.vertices.clone(),
-                matrix: node
-                    .invalid_subgraph
-                    .generate_matrix(&interface.decoding_graph),
+                matrix: node.invalid_subgraph.generate_matrix(&interface.decoding_graph),
                 subgraph: None,
                 plugin_manager: PluginManager::new(self.plugins.clone()),
             });
@@ -139,10 +129,7 @@ impl PrimalModuleImpl for PrimalModuleSerial {
                 dual_node_ptr: dual_node_ptr.clone(),
                 cluster_weak: primal_cluster_ptr.downgrade(),
             });
-            primal_cluster_ptr
-                .write()
-                .nodes
-                .push(primal_node_ptr.clone());
+            primal_cluster_ptr.write().nodes.push(primal_node_ptr.clone());
             // add to self
             self.nodes.push(primal_node_ptr);
             self.live_clusters.insert(self.clusters.len() as NodeIndex);
@@ -171,10 +158,7 @@ impl PrimalModuleImpl for PrimalModuleSerial {
         interface_ptr: &DualModuleInterfacePtr,
         dual_module: &mut impl DualModuleImpl,
     ) {
-        debug_assert!(
-            !group_max_update_length.is_unbounded()
-                && group_max_update_length.get_valid_growth().is_none()
-        );
+        debug_assert!(!group_max_update_length.is_unbounded() && group_max_update_length.get_valid_growth().is_none());
         let mut active_clusters = BTreeSet::<NodeIndex>::new();
         let interface = interface_ptr.read_recursive();
         let decoding_graph = &interface.decoding_graph;
@@ -240,8 +224,7 @@ impl PrimalModuleImpl for PrimalModuleSerial {
                 let primal_node_ptr = primal_node_weak.upgrade_force();
                 let primal_node = primal_node_ptr.read_recursive();
                 let cluster_ptr = primal_node.cluster_weak.upgrade_force();
-                self.live_clusters
-                    .insert(cluster_ptr.read_recursive().cluster_index);
+                self.live_clusters.insert(cluster_ptr.read_recursive().cluster_index);
                 if cluster_ptr.read_recursive().subgraph.is_none() {
                     dual_module.set_grow_rate(&primal_node.dual_node_ptr, Rational::one());
                     break;
@@ -250,11 +233,7 @@ impl PrimalModuleImpl for PrimalModuleSerial {
         }
     }
 
-    fn subgraph(
-        &mut self,
-        _interface: &DualModuleInterfacePtr,
-        _dual_module: &mut impl DualModuleImpl,
-    ) -> Subgraph {
+    fn subgraph(&mut self, _interface: &DualModuleInterfacePtr, _dual_module: &mut impl DualModuleImpl) -> Subgraph {
         let mut subgraph = Subgraph::new_empty();
         for cluster_ptr in self.clusters.iter() {
             let cluster = cluster_ptr.read_recursive();
@@ -276,20 +255,12 @@ impl PrimalModuleImpl for PrimalModuleSerial {
 impl PrimalModuleSerial {
     // union the cluster of two dual nodes
     #[allow(clippy::unnecessary_cast)]
-    pub fn union(
-        &self,
-        dual_node_ptr_1: &DualNodePtr,
-        dual_node_ptr_2: &DualNodePtr,
-        decoding_graph: &HyperDecodingGraph,
-    ) {
+    pub fn union(&self, dual_node_ptr_1: &DualNodePtr, dual_node_ptr_2: &DualNodePtr, decoding_graph: &HyperDecodingGraph) {
         let node_index_1 = dual_node_ptr_1.read_recursive().index;
         let node_index_2 = dual_node_ptr_2.read_recursive().index;
         let primal_node_1 = self.nodes[node_index_1 as usize].read_recursive();
         let primal_node_2 = self.nodes[node_index_2 as usize].read_recursive();
-        if primal_node_1
-            .cluster_weak
-            .ptr_eq(&primal_node_2.cluster_weak)
-        {
+        if primal_node_1.cluster_weak.ptr_eq(&primal_node_2.cluster_weak) {
             return; // already in the same cluster
         }
         let cluster_ptr_1 = primal_node_1.cluster_weak.upgrade_force();
@@ -346,10 +317,7 @@ impl PrimalModuleSerial {
         let relaxer = if cluster.plugin_manager.is_empty() {
             // fast path: no need to generate the `positive_dual_variables`
             let decoding_graph = &interface_ptr.read_recursive().decoding_graph;
-            PluginUnionFind::find_single_relaxer(
-                decoding_graph,
-                &mut ParityMatrixProtected::new(&mut cluster.matrix),
-            )
+            PluginUnionFind::find_single_relaxer(decoding_graph, &mut ParityMatrixProtected::new(&mut cluster.matrix))
         } else {
             let positive_dual_variables: Vec<DualNodePtr> = cluster
                 .nodes
@@ -367,15 +335,13 @@ impl PrimalModuleSerial {
         // if a relaxer is found, execute it and return
         if let Some(relaxer) = relaxer {
             for (invalid_subgraph, grow_rate) in relaxer.direction {
-                let (existing, dual_node_ptr) =
-                    interface_ptr.find_or_create_node(invalid_subgraph, dual_module);
+                let (existing, dual_node_ptr) = interface_ptr.find_or_create_node(invalid_subgraph, dual_module);
                 if !existing {
                     // create the corresponding primal node and add it to cluster
-                    let primal_node_ptr =
-                        PrimalModuleSerialNodePtr::new_value(PrimalModuleSerialNode {
-                            dual_node_ptr: dual_node_ptr.clone(),
-                            cluster_weak: cluster_ptr.downgrade(),
-                        });
+                    let primal_node_ptr = PrimalModuleSerialNodePtr::new_value(PrimalModuleSerialNode {
+                        dual_node_ptr: dual_node_ptr.clone(),
+                        cluster_weak: cluster_ptr.downgrade(),
+                    });
                     cluster.nodes.push(primal_node_ptr.clone());
                     self.nodes.push(primal_node_ptr);
                 }
@@ -391,12 +357,7 @@ impl PrimalModuleSerial {
             cluster
                 .matrix
                 .get_joint_solution_local_minimum(
-                    interface_ptr
-                        .read_recursive()
-                        .decoding_graph
-                        .model_graph
-                        .initializer
-                        .as_ref(),
+                    interface_ptr.read_recursive().decoding_graph.model_graph.initializer.as_ref(),
                 )
                 .expect("satisfiable"),
         );
@@ -455,8 +416,7 @@ pub mod tests {
             &mut dual_module,
             visualizer.as_mut(),
         );
-        let (subgraph, weight_range) =
-            primal_module.subgraph_range(&interface_ptr, &mut dual_module);
+        let (subgraph, weight_range) = primal_module.subgraph_range(&interface_ptr, &mut dual_module);
         if let Some(visualizer) = visualizer.as_mut() {
             visualizer
                 .snapshot_combined(

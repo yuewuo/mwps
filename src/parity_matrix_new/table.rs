@@ -20,10 +20,10 @@ pub struct VizTable {
 }
 
 impl VizTable {
-    pub fn new(basic_matrix: &BasicMatrix, var_indices: &[usize]) -> Self {
+    pub fn new(parity_matrix: &ParityMatrix, var_indices: &[usize]) -> Self {
         Self {
-            title: Self::build_title(basic_matrix, var_indices),
-            rows: Self::build_rows(basic_matrix, var_indices),
+            title: Self::build_title(parity_matrix, var_indices),
+            rows: Self::build_rows(parity_matrix, var_indices),
         }
     }
 
@@ -35,11 +35,11 @@ impl VizTable {
             .collect()
     }
 
-    pub fn build_title(basic_matrix: &BasicMatrix, var_indices: &[usize]) -> Row {
+    pub fn build_title(parity_matrix: &ParityMatrix, var_indices: &[usize]) -> Row {
         let mut title_row = Row::empty();
         title_row.add_cell(Cell::new(""));
         for &var_index in var_indices.iter() {
-            let edge_index = basic_matrix.variables[var_index].edge_index;
+            let edge_index = parity_matrix.variables[var_index].edge_index;
             let edge_index_str = Self::force_single_column(edge_index.to_string().as_str());
             title_row.add_cell(Cell::new(edge_index_str.as_str()).style_spec("brFr"));
         }
@@ -47,9 +47,9 @@ impl VizTable {
         title_row
     }
 
-    pub fn build_rows(basic_matrix: &BasicMatrix, var_indices: &[usize]) -> Vec<Row> {
+    pub fn build_rows(parity_matrix: &ParityMatrix, var_indices: &[usize]) -> Vec<Row> {
         let mut rows: Vec<Row> = vec![];
-        for (row_index, row) in basic_matrix.constraints.iter().enumerate() {
+        for (row_index, row) in parity_matrix.constraints.iter().enumerate() {
             let mut table_row = Row::empty();
             table_row.add_cell(Cell::new(row_index.to_string().as_str()).style_spec("brFb"));
             for &var_index in var_indices.iter() {
@@ -139,14 +139,14 @@ pub mod tests {
     #[test]
     fn parity_matrix_table_1() {
         // cargo test --features=colorful parity_matrix_table_1 -- --nocapture
-        let mut basic_matrix = BasicMatrix::new();
+        let mut parity_matrix = ParityMatrix::new();
         for edge_index in 0..4 {
-            basic_matrix.add_tight_variable(edge_index * 11);
+            parity_matrix.add_tight_variable(edge_index * 11);
         }
         let odd_parity_checks = vec![vec![0, 11], vec![33]];
         let even_parity_checks = vec![vec![11, 12], vec![11, 22, 33]];
-        basic_matrix.add_parity_checks(&odd_parity_checks, &even_parity_checks);
-        basic_matrix.printstd();
+        parity_matrix.add_parity_checks(&odd_parity_checks, &even_parity_checks);
+        parity_matrix.printstd();
         let expected_result = "\
 ┌─┬─┬─┬─┬─┬───┐
 ┊ ┊0┊1┊2┊3┊ = ┊
@@ -161,8 +161,8 @@ pub mod tests {
 ┊3┊ ┊1┊1┊1┊   ┊
 └─┴─┴─┴─┴─┴───┘
 ";
-        assert_eq!(basic_matrix.printstd_str(), expected_result);
-        let viz_table: VizTable = basic_matrix.viz_table();
+        assert_eq!(parity_matrix.printstd_str(), expected_result);
+        let viz_table: VizTable = parity_matrix.viz_table();
         assert_eq!(viz_table.printstd_str(), expected_result);
         let cloned = viz_table.clone();
         assert_eq!(cloned.printstd_str(), expected_result);

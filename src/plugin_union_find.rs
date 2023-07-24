@@ -9,7 +9,7 @@ use crate::dual_module::*;
 use crate::hyper_decoding_graph::*;
 use crate::invalid_subgraph::*;
 use crate::num_traits::One;
-use crate::parity_matrix::*;
+use crate::old_parity_matrix::*;
 use crate::plugin::*;
 use crate::relaxer::*;
 use crate::util::*;
@@ -27,11 +27,8 @@ impl PluginUnionFind {
         if echelon.satisfiable() {
             return None; // cannot find any relaxer
         }
-        let invalid_subgraph = InvalidSubgraph::new_complete_ptr(
-            echelon.get_vertices(),
-            echelon.get_tight_edges(),
-            decoding_graph,
-        );
+        let invalid_subgraph =
+            InvalidSubgraph::new_complete_ptr(echelon.get_vertices(), echelon.get_tight_edges(), decoding_graph);
         Some(Relaxer::new_vec(vec![(invalid_subgraph, Rational::one())]))
     }
 }

@@ -1,5 +1,5 @@
 use crate::hyper_decoding_graph::*;
-use crate::parity_matrix::*;
+use crate::old_parity_matrix::*;
 use crate::util::*;
 use std::cmp::Ordering;
 use std::collections::hash_map::DefaultHasher;
@@ -34,11 +34,7 @@ impl Ord for InvalidSubgraph {
             self.hash_value.cmp(&other.hash_value)
         } else {
             // rare cases: same hash value but different state
-            (&self.vertices, &self.edges, &self.hairs).cmp(&(
-                &other.vertices,
-                &other.edges,
-                &other.hairs,
-            ))
+            (&self.vertices, &self.edges, &self.hairs).cmp(&(&other.vertices, &other.edges, &other.hairs))
         }
     }
 }
@@ -55,8 +51,7 @@ impl InvalidSubgraph {
     pub fn new(edges: BTreeSet<EdgeIndex>, decoding_graph: &HyperDecodingGraph) -> Self {
         let mut vertices = BTreeSet::new();
         for &edge_index in edges.iter() {
-            let hyperedge =
-                &decoding_graph.model_graph.initializer.weighted_edges[edge_index as usize];
+            let hyperedge = &decoding_graph.model_graph.initializer.weighted_edges[edge_index as usize];
             for &vertex_index in hyperedge.vertices.iter() {
                 vertices.insert(vertex_index);
             }
@@ -86,11 +81,7 @@ impl InvalidSubgraph {
     }
 
     /// create $S = (V_S, E_S)$ and $\delta(S)$ directly, without any checks
-    pub fn new_raw(
-        vertices: BTreeSet<VertexIndex>,
-        edges: BTreeSet<EdgeIndex>,
-        hairs: BTreeSet<EdgeIndex>,
-    ) -> Self {
+    pub fn new_raw(vertices: BTreeSet<VertexIndex>, edges: BTreeSet<EdgeIndex>, hairs: BTreeSet<EdgeIndex>) -> Self {
         let mut invalid_subgraph = Self {
             hash_value: 0,
             vertices,
@@ -118,20 +109,15 @@ impl InvalidSubgraph {
         // check if all vertices are valid
         for &vertex_index in self.vertices.iter() {
             if vertex_index >= decoding_graph.model_graph.initializer.vertex_num {
-                return Err(format!(
-                    "vertex {vertex_index} is not a vertex in the model graph"
-                ));
+                return Err(format!("vertex {vertex_index} is not a vertex in the model graph"));
             }
         }
         // check if every edge is subset of its vertices
         for &edge_index in self.edges.iter() {
             if edge_index as usize >= decoding_graph.model_graph.initializer.weighted_edges.len() {
-                return Err(format!(
-                    "edge {edge_index} is not an edge in the model graph"
-                ));
+                return Err(format!("edge {edge_index} is not an edge in the model graph"));
             }
-            let hyperedge =
-                &decoding_graph.model_graph.initializer.weighted_edges[edge_index as usize];
+            let hyperedge = &decoding_graph.model_graph.initializer.weighted_edges[edge_index as usize];
             for &vertex_index in hyperedge.vertices.iter() {
                 if !self.vertices.contains(&vertex_index) {
                     return Err(format!(
@@ -211,19 +197,13 @@ pub mod tests {
         // cargo test invalid_subgraph_good -- --nocapture
         let visualize_filename = "invalid_subgraph_good.json".to_string();
         let (decoding_graph, ..) = color_code_5_decoding_graph(vec![7, 1], visualize_filename);
-        let invalid_subgraph_1 =
-            InvalidSubgraph::new(vec![13].into_iter().collect(), decoding_graph.as_ref());
+        let invalid_subgraph_1 = InvalidSubgraph::new(vec![13].into_iter().collect(), decoding_graph.as_ref());
         println!("invalid_subgraph_1: {invalid_subgraph_1:?}");
-        assert_eq!(
-            invalid_subgraph_1.vertices,
-            vec![2, 6, 7].into_iter().collect()
-        );
+        assert_eq!(invalid_subgraph_1.vertices, vec![2, 6, 7].into_iter().collect());
         assert_eq!(invalid_subgraph_1.edges, vec![13].into_iter().collect());
         assert_eq!(
             invalid_subgraph_1.hairs,
-            vec![5, 6, 9, 10, 11, 12, 14, 15, 16, 17]
-                .into_iter()
-                .collect()
+            vec![5, 6, 9, 10, 11, 12, 14, 15, 16, 17].into_iter().collect()
         );
     }
 
@@ -233,8 +213,7 @@ pub mod tests {
         // cargo test invalid_subgraph_bad -- --nocapture
         let visualize_filename = "invalid_subgraph_bad.json".to_string();
         let (decoding_graph, ..) = color_code_5_decoding_graph(vec![7, 1], visualize_filename);
-        let invalid_subgraph =
-            InvalidSubgraph::new(vec![6, 10].into_iter().collect(), decoding_graph.as_ref());
+        let invalid_subgraph = InvalidSubgraph::new(vec![6, 10].into_iter().collect(), decoding_graph.as_ref());
         println!("invalid_subgraph: {invalid_subgraph:?}"); // should not print because it panics
     }
 
@@ -250,10 +229,8 @@ pub mod tests {
         let vertices: BTreeSet<VertexIndex> = [1, 2, 3].into();
         let edges: BTreeSet<EdgeIndex> = [4, 5].into();
         let hairs: BTreeSet<EdgeIndex> = [6, 7, 8].into();
-        let invalid_subgraph_1 =
-            InvalidSubgraph::new_raw(vertices.clone(), edges.clone(), hairs.clone());
-        let invalid_subgraph_2 =
-            InvalidSubgraph::new_raw(vertices.clone(), edges.clone(), hairs.clone());
+        let invalid_subgraph_1 = InvalidSubgraph::new_raw(vertices.clone(), edges.clone(), hairs.clone());
+        let invalid_subgraph_2 = InvalidSubgraph::new_raw(vertices.clone(), edges.clone(), hairs.clone());
         assert_eq!(invalid_subgraph_1, invalid_subgraph_2);
         // they should have the same hash value
         assert_eq!(
@@ -267,14 +244,8 @@ pub mod tests {
         // the pointer should also have the same hash value
         let ptr_1 = Arc::new(invalid_subgraph_1.clone());
         let ptr_2 = Arc::new(invalid_subgraph_2);
-        assert_eq!(
-            get_default_hash_value(&ptr_1),
-            get_default_hash_value(&ptr_1.hash_value)
-        );
-        assert_eq!(
-            get_default_hash_value(&ptr_1),
-            get_default_hash_value(&ptr_2)
-        );
+        assert_eq!(get_default_hash_value(&ptr_1), get_default_hash_value(&ptr_1.hash_value));
+        assert_eq!(get_default_hash_value(&ptr_1), get_default_hash_value(&ptr_2));
         // any different value would generate a different invalid subgraph
         assert_ne!(
             invalid_subgraph_1,

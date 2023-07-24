@@ -8,7 +8,7 @@
 use crate::derivative::Derivative;
 use crate::dual_module::*;
 use crate::hyper_decoding_graph::*;
-use crate::parity_matrix::*;
+use crate::old_parity_matrix::*;
 use crate::plugin_union_find::*;
 use crate::relaxer::*;
 use crate::relaxer_forest::*;
@@ -81,11 +81,7 @@ impl PluginManager {
     ) -> Option<Relaxer> {
         matrix.clear_implicit_shrink();
         let mut relaxer_forest = RelaxerForest::new(matrix.get_tight_edges(), positive_dual_nodes);
-        for plugin_entry in self
-            .plugins
-            .iter()
-            .chain(std::iter::once(&PluginUnionFind::entry()))
-        {
+        for plugin_entry in self.plugins.iter().chain(std::iter::once(&PluginUnionFind::entry())) {
             let mut repeat = true;
             let mut repeat_count = 0;
             while repeat {

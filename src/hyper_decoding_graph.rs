@@ -1,5 +1,5 @@
 use crate::hyper_model_graph::*;
-use crate::parity_matrix::*;
+use crate::old_parity_matrix::*;
 use crate::util::*;
 use crate::visualize::*;
 use std::collections::{BTreeSet, HashSet};
@@ -34,9 +34,8 @@ impl HyperDecodingGraph {
         self.erasures_hashset.clear();
         // reserve space for the hashset
         if self.defect_vertices_hashset.capacity() < syndrome_pattern.defect_vertices.len() {
-            self.defect_vertices_hashset.reserve(
-                syndrome_pattern.defect_vertices.len() - self.defect_vertices_hashset.capacity(),
-            )
+            self.defect_vertices_hashset
+                .reserve(syndrome_pattern.defect_vertices.len() - self.defect_vertices_hashset.capacity())
         }
         if self.erasures_hashset.capacity() < syndrome_pattern.erasures.len() {
             self.erasures_hashset
@@ -51,21 +50,11 @@ impl HyperDecodingGraph {
         }
     }
 
-    pub fn new_defects(
-        model_graph: Arc<HyperModelGraph>,
-        defect_vertices: Vec<VertexIndex>,
-    ) -> Self {
-        Self::new(
-            model_graph,
-            Arc::new(SyndromePattern::new_vertices(defect_vertices)),
-        )
+    pub fn new_defects(model_graph: Arc<HyperModelGraph>, defect_vertices: Vec<VertexIndex>) -> Self {
+        Self::new(model_graph, Arc::new(SyndromePattern::new_vertices(defect_vertices)))
     }
 
-    pub fn find_valid_subgraph(
-        &self,
-        edges: &BTreeSet<EdgeIndex>,
-        vertices: &BTreeSet<VertexIndex>,
-    ) -> Option<Subgraph> {
+    pub fn find_valid_subgraph(&self, edges: &BTreeSet<EdgeIndex>, vertices: &BTreeSet<VertexIndex>) -> Option<Subgraph> {
         let mut matrix = ParityMatrix::new_no_phantom();
         for &edge_index in edges.iter() {
             matrix.add_tight_variable(edge_index);
@@ -76,18 +65,11 @@ impl HyperDecodingGraph {
         matrix.get_joint_solution()
     }
 
-    pub fn find_valid_subgraph_auto_vertices(
-        &self,
-        edges: &BTreeSet<EdgeIndex>,
-    ) -> Option<Subgraph> {
+    pub fn find_valid_subgraph_auto_vertices(&self, edges: &BTreeSet<EdgeIndex>) -> Option<Subgraph> {
         self.find_valid_subgraph(edges, &self.get_edges_neighbors(edges))
     }
 
-    pub fn is_valid_cluster(
-        &self,
-        edges: &BTreeSet<EdgeIndex>,
-        vertices: &BTreeSet<VertexIndex>,
-    ) -> bool {
+    pub fn is_valid_cluster(&self, edges: &BTreeSet<EdgeIndex>, vertices: &BTreeSet<VertexIndex>) -> bool {
         self.find_valid_subgraph(edges, vertices).is_some()
     }
 

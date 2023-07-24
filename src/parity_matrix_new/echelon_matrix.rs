@@ -1,13 +1,8 @@
 use super::*;
-use crate::dual_module::*;
-use crate::hyper_decoding_graph::*;
-use crate::parity_matrix_visualize::*;
-use crate::prettytable::*;
 use crate::util::*;
 use derivative::Derivative;
 #[cfg(feature = "python_binding")]
 use pyo3::prelude::*;
-use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Clone, Debug, Derivative)]
 #[derivative(Default(new = "true"))]
@@ -32,14 +27,14 @@ pub struct EchelonInfo {
 #[derivative(Default(new = "true"))]
 #[cfg_attr(feature = "python_binding", cfg_eval)]
 #[cfg_attr(feature = "python_binding", pyclass)]
-pub struct ParityMatrix {
+pub struct EchelonMatrix {
     /// matrix itself
-    pub matrix: BasicMatrix,
+    pub matrix: ParityMatrix,
     /// information about the matrix when it's formatted into the Echelon form;
     echelon_info: EchelonInfo,
 }
 
-impl ParityMatrix {
+impl EchelonMatrix {
     pub fn add_variable(&mut self, edge_index: EdgeIndex) {
         self.matrix.add_variable(edge_index);
         self.echelon_info.echelon_column_info.push((false, 0));
@@ -48,18 +43,19 @@ impl ParityMatrix {
     pub fn add_constraint(&mut self, vertex_index: VertexIndex, incident_edges: &[EdgeIndex], parity: bool) {
         self.matrix.add_constraint(vertex_index, incident_edges, parity);
         self.echelon_info.echelon_row_info.push(0);
-        self.echelon_info.echelon_effective_rows = self.constraints.len(); // by default all constraints are taking effect
+        // by default all constraints are taking effect
+        self.echelon_info.echelon_effective_rows = self.matrix.constraints.len();
     }
 }
 
-impl std::ops::Deref for ParityMatrix {
-    type Target = BasicMatrix;
+impl std::ops::Deref for EchelonMatrix {
+    type Target = ParityMatrix;
     fn deref(&self) -> &Self::Target {
         &self.matrix
     }
 }
 
-impl std::ops::DerefMut for ParityMatrix {
+impl std::ops::DerefMut for EchelonMatrix {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.matrix
     }

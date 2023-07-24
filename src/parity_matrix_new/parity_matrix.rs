@@ -19,7 +19,7 @@ pub struct Variable {
 #[derivative(Default(new = "true"))]
 #[cfg_attr(feature = "python_binding", cfg_eval)]
 #[cfg_attr(feature = "python_binding", pyclass)]
-pub struct BasicMatrix {
+pub struct ParityMatrix {
     /// the vertices already maintained by this parity check
     #[cfg_attr(feature = "python_binding", pyo3(get, set))]
     pub vertices: BTreeSet<VertexIndex>,
@@ -47,7 +47,7 @@ pub struct BasicMatrix {
 
 #[cfg_attr(feature = "python_binding", cfg_eval)]
 #[cfg_attr(feature = "python_binding", pymethods)]
-impl BasicMatrix {
+impl ParityMatrix {
     pub fn add_variable(&mut self, edge_index: EdgeIndex) {
         // must remove from phantom edge no matter whether the edge is already in `self.edge` or not
         self.phantom_edges.remove(&edge_index); // mark as explicitly added edge
@@ -103,7 +103,7 @@ impl BasicMatrix {
 // simple helper functions
 #[cfg_attr(feature = "python_binding", cfg_eval)]
 #[cfg_attr(feature = "python_binding", pymethods)]
-impl BasicMatrix {
+impl ParityMatrix {
     pub fn add_variable_with_tightness(&mut self, edge_index: EdgeIndex, is_tight: bool) {
         self.add_variable(edge_index);
         self.update_edge_tightness(edge_index, is_tight);
@@ -133,7 +133,7 @@ impl BasicMatrix {
 }
 
 // simple internal functions
-impl BasicMatrix {
+impl ParityMatrix {
     #[inline]
     pub fn edge_to_var_index(&self, edge_index: EdgeIndex) -> usize {
         *self.edges.get(&edge_index).expect("edge must be a variable")
@@ -163,7 +163,7 @@ impl BasicMatrix {
     }
 }
 
-impl BasicMatrix {
+impl ParityMatrix {
     pub fn update_edges_tightness(&mut self, edges: &[EdgeIndex], is_tight: bool) {
         for &edge_index in edges.iter() {
             let var_index = self.edge_to_var_index(edge_index);
@@ -197,7 +197,7 @@ impl BasicMatrix {
     }
 }
 
-impl VizTrait for BasicMatrix {
+impl VizTrait for ParityMatrix {
     fn viz_table(&self) -> VizTable {
         let edges = self.get_edge_indices();
         let var_indices = self.edge_to_tight_var_indices(&edges);
@@ -212,7 +212,7 @@ pub mod tests {
     #[test]
     fn parity_matrix_basic_matrix_1() {
         // cargo test --features=colorful parity_matrix_basic_matrix_1 -- --nocapture
-        let mut basic_matrix: BasicMatrix = BasicMatrix::new();
+        let mut basic_matrix: ParityMatrix = ParityMatrix::new();
         basic_matrix.printstd();
         assert_eq!(
             basic_matrix.printstd_str(),
