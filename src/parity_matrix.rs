@@ -381,7 +381,7 @@ impl ParityMatrix {
     #[cfg(feature = "python_binding")]
     #[pyo3(name = "to_visualize_json")]
     pub fn to_visualize_json_py(&self) -> PyObject {
-        json_to_pyobject(self.to_visualize_json())
+        json_to_pyobject(self.to_visualize_json(true))
     }
 
     #[cfg(feature = "python_binding")]

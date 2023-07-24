@@ -20,7 +20,10 @@ pub struct ParityRow {
     others: Vec<BitArrayUnit>,
 }
 
+#[cfg_attr(feature = "python_binding", cfg_eval)]
+#[cfg_attr(feature = "python_binding", pymethods)]
 impl ParityRow {
+    #[cfg_attr(feature = "python_binding", new)]
     pub fn new_length(variable_count: usize) -> Self {
         let mut row = ParityRow::new();
         let others_len = variable_count / BIT_UNIT_LENGTH;
