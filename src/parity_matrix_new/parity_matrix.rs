@@ -5,7 +5,6 @@ use derivative::Derivative;
 use pyo3::prelude::*;
 use std::collections::{BTreeMap, BTreeSet};
 
-/// the parity matrix that is necessary to satisfy parity requirement
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "python_binding", cfg_eval)]
 #[cfg_attr(feature = "python_binding", pyclass)]
@@ -139,14 +138,21 @@ impl ParityMatrix {
         *self.edges.get(&edge_index).expect("edge must be a variable")
     }
 
-    pub fn edge_to_tight_var_indices(&self, edges: &[EdgeIndex]) -> Vec<usize> {
-        let mut var_indices = Vec::with_capacity(edges.len());
+    /// internal function to reduce memory allocation when working on the echelon matrix
+    #[inline]
+    pub fn edge_to_tight_var_indices_load(&self, edges: &[EdgeIndex], var_indices: &mut Vec<usize>) {
+        var_indices.clear();
         for &edge_index in edges.iter() {
             let var_index = self.edge_to_var_index(edge_index);
             if self.is_tight(var_index) {
                 var_indices.push(var_index);
             }
         }
+    }
+
+    pub fn edge_to_tight_var_indices(&self, edges: &[EdgeIndex]) -> Vec<usize> {
+        let mut var_indices = Vec::with_capacity(edges.len());
+        self.edge_to_tight_var_indices_load(edges, &mut var_indices);
         var_indices
     }
 
@@ -210,12 +216,12 @@ pub mod tests {
     use super::*;
 
     #[test]
-    fn parity_matrix_basic_matrix_1() {
-        // cargo test --features=colorful parity_matrix_basic_matrix_1 -- --nocapture
-        let mut basic_matrix: ParityMatrix = ParityMatrix::new();
-        basic_matrix.printstd();
+    fn parity_matrix_parity_matrix_1() {
+        // cargo test --features=colorful parity_matrix_parity_matrix_1 -- --nocapture
+        let parity_matrix: ParityMatrix = ParityMatrix::new();
+        parity_matrix.printstd();
         assert_eq!(
-            basic_matrix.printstd_str(),
+            parity_matrix.printstd_str(),
             "\
 ┌┬───┐
 ┊┊ = ┊
