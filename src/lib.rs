@@ -8,6 +8,8 @@ extern crate chrono;
 extern crate clap;
 extern crate derivative;
 extern crate itertools;
+#[macro_use]
+extern crate lazy_static;
 extern crate more_asserts;
 extern crate num_rational;
 extern crate num_traits;

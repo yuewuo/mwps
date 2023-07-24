@@ -1,3 +1,8 @@
+//! Parity Matrix Row
+//!
+//! A single row in the parity matrix, providing operations in Z_2 linear system
+//!
+
 use derivative::Derivative;
 #[cfg(feature = "python_binding")]
 use pyo3::prelude::*;
@@ -98,6 +103,25 @@ impl ParityRow {
     }
 }
 
+impl ParityRow {
+    /// only trigger updates when the new `variable_count` is enough;
+    #[inline]
+    fn add_one_variable_should_append(variable_count: usize) -> bool {
+        variable_count % BIT_UNIT_LENGTH == 0
+    }
+
+    /// make sure this function is called exactly once when adding a new variable
+    pub(super) fn add_one_variable(rows: &mut [Self], variable_count: usize) {
+        if Self::add_one_variable_should_append(variable_count) {
+            let others_len = variable_count / BIT_UNIT_LENGTH;
+            for row in rows {
+                debug_assert_eq!(row.others.len() + 1, others_len);
+                row.others.push(0);
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 pub mod tests {
     use super::*;
@@ -133,6 +157,14 @@ pub mod tests {
         }
         fn is_left_all_zero(&self) -> bool {
             !self.lhs.iter().any(|x| *x)
+        }
+        fn add_one_variable(&mut self) {
+            self.variable_count += 1;
+            self.lhs.push(false);
+            // update row
+            let mut new_rows = [self.row.clone()];
+            ParityRow::add_one_variable(&mut new_rows, self.variable_count);
+            self.row = new_rows[0].clone();
         }
     }
 
@@ -260,6 +292,27 @@ pub mod tests {
             for _ in 0..500 {
                 tester.add(&RowTester::new_length(variable_count).randomize().row);
             }
+        }
+    }
+
+    #[test]
+    fn parity_matrix_row_6() {
+        // cargo test parity_matrix_row_6 -- --nocapture
+        let mut rng = rand::thread_rng();
+        let mut tester = RowTester::new_length(0);
+        for variable_count in 0..2000 {
+            // a few random operations
+            for _ in 0..20 {
+                let value = rng.gen();
+                let var_index = rng.gen::<usize>() % (variable_count + 1);
+                if var_index < variable_count {
+                    tester.set_left(var_index, value);
+                } else {
+                    tester.set_right(value);
+                }
+            }
+            // add a new variable
+            tester.add_one_variable();
         }
     }
 }

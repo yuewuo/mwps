@@ -25,7 +25,10 @@ pub trait MatrixView {
     }
 
     fn printstd(&self) {
+        #[cfg(feature = "colorful")]
         self.display_table().printstd();
+        #[cfg(not(feature = "colorful"))]
+        println!("{}", self.display_table());
     }
 
     fn printstd_str(&self) -> String {

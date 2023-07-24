@@ -1,6 +1,7 @@
 pub mod basic_matrix;
 pub mod matrix;
 pub mod row;
+pub mod table;
 
 #[cfg(feature = "python_binding")]
 use pyo3::prelude::*;

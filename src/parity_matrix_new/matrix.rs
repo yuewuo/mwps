@@ -37,18 +37,19 @@ pub struct ParityMatrix {
     pub matrix: BasicMatrix,
     /// information about the matrix when it's formatted into the Echelon form;
     echelon_info: EchelonInfo,
+}
 
-    /// edges that are affected by any implicit shrink event
-    #[cfg_attr(feature = "python_binding", pyo3(get, set))]
-    pub implicit_shrunk_edges: BTreeSet<EdgeIndex>,
-    /// edges that are not visible to outside, e.g. implicitly added to keep the constraints complete;
-    /// these edges must be explicitly added to remove from phantom edges
-    #[cfg_attr(feature = "python_binding", pyo3(get, set))]
-    pub phantom_edges: BTreeSet<EdgeIndex>,
-    /// whether to keep phantom edges or not, default to True; needed when dynamically changing tight edges
-    #[derivative(Default(value = "true"))]
-    #[cfg_attr(feature = "python_binding", pyo3(get, set))]
-    pub keep_phantom_edges: bool,
+impl ParityMatrix {
+    pub fn add_variable(&mut self, edge_index: EdgeIndex) {
+        self.matrix.add_variable(edge_index);
+        self.echelon_info.echelon_column_info.push((false, 0));
+    }
+
+    pub fn add_constraint(&mut self, vertex_index: VertexIndex, incident_edges: &[EdgeIndex], parity: bool) {
+        self.matrix.add_constraint(vertex_index, incident_edges, parity);
+        self.echelon_info.echelon_row_info.push(0);
+        self.echelon_info.echelon_effective_rows = self.constraints.len(); // by default all constraints are taking effect
+    }
 }
 
 impl std::ops::Deref for ParityMatrix {

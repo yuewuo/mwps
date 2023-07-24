@@ -877,7 +877,7 @@ pub mod tests {
 
     #[test]
     fn parity_matrix_basic_1() {
-        // cargo test parity_matrix_basic_1 -- --nocapture
+        // cargo test --features=colorful parity_matrix_basic_1 -- --nocapture
         let mut matrix = ParityMatrix::new();
         for edge_index in 0..7 {
             matrix.add_tight_variable(edge_index);
@@ -911,7 +911,7 @@ pub mod tests {
 
     #[test]
     fn parity_matrix_basic_2() {
-        // cargo test parity_matrix_basic_2 -- --nocapture
+        // cargo test --features=colorful parity_matrix_basic_2 -- --nocapture
         let mut matrix = ParityMatrix::new();
         for edge_index in 0..15 {
             matrix.add_tight_variable(edge_index);
@@ -965,7 +965,7 @@ pub mod tests {
     /// an example where the first hair edge might be independent variable: because it has nothing to do with outside
     #[test]
     fn parity_matrix_basic_3() {
-        // cargo test parity_matrix_basic_3 -- --nocapture
+        // cargo test --features=colorful parity_matrix_basic_3 -- --nocapture
         let mut matrix = ParityMatrix::new();
         for edge_index in 0..4 {
             matrix.add_tight_variable(edge_index);
@@ -985,7 +985,7 @@ pub mod tests {
     /// variable has single-hair solution, they don't have a joint single-hair solution
     #[test]
     fn parity_matrix_basic_4() {
-        // cargo test parity_matrix_basic_4 -- --nocapture
+        // cargo test --features=colorful parity_matrix_basic_4 -- --nocapture
         let mut matrix = ParityMatrix::new();
         for edge_index in 0..14 {
             matrix.add_tight_variable(edge_index);
