@@ -8,6 +8,7 @@ use pyo3::prelude::*;
 
 pub use basic_matrix::BasicMatrix;
 pub use row::ParityRow;
+pub use table::{VizTable, VizTrait};
 
 #[cfg(feature = "python_binding")]
 #[pyfunction]

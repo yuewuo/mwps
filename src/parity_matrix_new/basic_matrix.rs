@@ -1,4 +1,4 @@
-use super::row::*;
+use super::*;
 use crate::util::*;
 use derivative::Derivative;
 #[cfg(feature = "python_binding")]
@@ -135,8 +135,31 @@ impl BasicMatrix {
 // simple internal functions
 impl BasicMatrix {
     #[inline]
-    pub(super) fn edge_to_var_index(&self, edge_index: EdgeIndex) -> usize {
+    pub fn edge_to_var_index(&self, edge_index: EdgeIndex) -> usize {
         *self.edges.get(&edge_index).expect("edge must be a variable")
+    }
+
+    pub fn edge_to_tight_var_indices(&self, edges: &[EdgeIndex]) -> Vec<usize> {
+        let mut var_indices = Vec::with_capacity(edges.len());
+        for &edge_index in edges.iter() {
+            let var_index = self.edge_to_var_index(edge_index);
+            if self.is_tight(var_index) {
+                var_indices.push(var_index);
+            }
+        }
+        var_indices
+    }
+
+    /// a helper function to quickly add a few constraints, mainly used in tests
+    pub fn add_parity_checks(&mut self, odd_parity_checks: &[Vec<EdgeIndex>], even_parity_checks: &[Vec<EdgeIndex>]) {
+        let bias_1 = self.vertices.last().map(|idx| idx + 1).unwrap_or(0);
+        for (vertex_index, incident_edges) in odd_parity_checks.iter().enumerate() {
+            self.add_constraint(vertex_index as VertexIndex + bias_1, incident_edges, true);
+        }
+        let bias_2 = bias_1 + odd_parity_checks.len() as VertexIndex;
+        for (vertex_index, incident_edges) in even_parity_checks.iter().enumerate() {
+            self.add_constraint(vertex_index as VertexIndex + bias_2, incident_edges, false);
+        }
     }
 }
 
@@ -174,13 +197,31 @@ impl BasicMatrix {
     }
 }
 
+impl VizTrait for BasicMatrix {
+    fn viz_table(&self) -> VizTable {
+        let edges = self.get_edge_indices();
+        let var_indices = self.edge_to_tight_var_indices(&edges);
+        VizTable::new(self, &var_indices)
+    }
+}
+
 #[cfg(test)]
 pub mod tests {
     use super::*;
 
     #[test]
     fn parity_matrix_basic_matrix_1() {
-        // cargo test parity_matrix_basic_matrix_1 -- --nocapture
+        // cargo test --features=colorful parity_matrix_basic_matrix_1 -- --nocapture
         let mut basic_matrix: BasicMatrix = BasicMatrix::new();
+        basic_matrix.printstd();
+        assert_eq!(
+            basic_matrix.printstd_str(),
+            "\
+┌┬───┐
+┊┊ = ┊
+╞╪═══╡
+└┴───┘
+"
+        );
     }
 }

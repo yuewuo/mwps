@@ -13,7 +13,7 @@ use prettytable::*;
 #[cfg(feature = "python_binding")]
 use pyo3::prelude::*;
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct VizTable {
     pub title: Row,
     pub rows: Vec<Row>,
@@ -63,7 +63,7 @@ impl VizTable {
 }
 
 lazy_static! {
-    pub static ref DEFAULT_FORMAT: TableFormat = {
+    pub static ref DEFAULT_TABLE_FORMAT: TableFormat = {
         let mut format = TableFormat::new();
         format.padding(0, 0);
         format.column_separator('\u{250A}');
@@ -80,4 +80,103 @@ lazy_static! {
         }
         format
     };
+}
+
+impl From<VizTable> for Table {
+    fn from(viz_table: VizTable) -> Table {
+        let mut table = Table::new();
+        table.set_format(*DEFAULT_TABLE_FORMAT);
+        table.set_titles(viz_table.title.clone());
+        for row in viz_table.rows.iter() {
+            table.add_row(row.clone());
+        }
+        table
+    }
+}
+
+impl From<VizTable> for serde_json::Value {
+    fn from(viz_table: VizTable) -> serde_json::Value {
+        let mut table_json = vec![];
+        let mut title_json = vec![];
+        for cell in viz_table.title.iter() {
+            title_json.push(cell.get_content());
+        }
+        table_json.push(title_json);
+        for row in viz_table.rows.iter() {
+            let mut row_json = vec![];
+            for cell in row {
+                row_json.push(cell.get_content());
+            }
+            table_json.push(row_json);
+        }
+        json!(table_json)
+    }
+}
+
+pub trait VizTrait {
+    fn viz_table(&self) -> VizTable;
+    fn printstd_str(&self) -> String {
+        Table::from(self.viz_table()).to_string()
+    }
+    fn printstd(&self) {
+        #[cfg(feature = "colorful")]
+        Table::from(self.viz_table()).printstd();
+        #[cfg(not(feature = "colorful"))]
+        println!("{}", Table::from(self.viz_table()));
+    }
+}
+
+impl VizTrait for VizTable {
+    fn viz_table(&self) -> VizTable {
+        self.clone()
+    }
+}
+
+#[cfg(test)]
+pub mod tests {
+    use super::*;
+
+    #[test]
+    fn parity_matrix_table_1() {
+        // cargo test --features=colorful parity_matrix_table_1 -- --nocapture
+        let mut basic_matrix = BasicMatrix::new();
+        for edge_index in 0..4 {
+            basic_matrix.add_tight_variable(edge_index * 11);
+        }
+        let odd_parity_checks = vec![vec![0, 11], vec![33]];
+        let even_parity_checks = vec![vec![11, 12], vec![11, 22, 33]];
+        basic_matrix.add_parity_checks(&odd_parity_checks, &even_parity_checks);
+        basic_matrix.printstd();
+        let expected_result = "\
+┌─┬─┬─┬─┬─┬───┐
+┊ ┊0┊1┊2┊3┊ = ┊
+┊ ┊ ┊1┊2┊3┊   ┊
+╞═╪═╪═╪═╪═╪═══╡
+┊0┊1┊1┊ ┊ ┊ 1 ┊
+├─┼─┼─┼─┼─┼───┤
+┊1┊ ┊ ┊ ┊1┊ 1 ┊
+├─┼─┼─┼─┼─┼───┤
+┊2┊ ┊1┊ ┊ ┊   ┊
+├─┼─┼─┼─┼─┼───┤
+┊3┊ ┊1┊1┊1┊   ┊
+└─┴─┴─┴─┴─┴───┘
+";
+        assert_eq!(basic_matrix.printstd_str(), expected_result);
+        let viz_table: VizTable = basic_matrix.viz_table();
+        assert_eq!(viz_table.printstd_str(), expected_result);
+        let cloned = viz_table.clone();
+        assert_eq!(cloned.printstd_str(), expected_result);
+        let json_value: serde_json::Value = viz_table.into();
+        println!("{json_value}");
+        assert_eq!(
+            json_value,
+            json!([
+                ["", "0", "1\n1", "2\n2", "3\n3", " = "],
+                ["0", "1", "1", " ", " ", " 1 "],
+                ["1", " ", " ", " ", "1", " 1 "],
+                ["2", " ", "1", " ", " ", "   "],
+                ["3", " ", "1", "1", "1", "   "]
+            ])
+        );
+    }
 }
