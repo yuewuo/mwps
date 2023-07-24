@@ -185,9 +185,9 @@ pub mod tests {
                 self.print();
             }
             for i in 0..self.variable_count {
-                assert_eq!(self.lhs[i], self.row.get_left(i), "different at i={i}");
+                assert_eq!(self.lhs[i], self.row.get_left(i));
             }
-            assert_eq!(self.rhs, self.row.get_right(), "rhs differ");
+            assert_eq!(self.rhs, self.row.get_right());
             assert_eq!(self.is_left_all_zero(), self.row.is_left_all_zero());
         }
         fn print(&self) {
@@ -197,11 +197,7 @@ pub mod tests {
             println!("={}", if self.rhs { 1 } else { 0 });
         }
         fn c2b(c: char) -> bool {
-            match c {
-                '0' => false,
-                '1' => true,
-                _ => unreachable!(),
-            }
+            c == '1'
         }
         fn load_from_str(lhs: &str, rhs: char) -> Self {
             let mut tester = Self::new_length(lhs.len());
@@ -226,8 +222,8 @@ pub mod tests {
     }
 
     #[test]
-    fn parity_matrix_row_1() {
-        // cargo test parity_matrix_row_1 -- --nocapture
+    fn parity_matrix_row_simple_case() {
+        // cargo test parity_matrix_row_simple_case -- --nocapture
         let mut tester = RowTester::new_length(8);
         println!("{:?}", tester.row.clone());
         tester.verbose = true;
@@ -244,8 +240,8 @@ pub mod tests {
     }
 
     #[test]
-    fn parity_matrix_row_2() {
-        // cargo test parity_matrix_row_2 -- --nocapture
+    fn parity_matrix_row_random_operations() {
+        // cargo test parity_matrix_row_random_operations -- --nocapture
         let mut rng = rand::thread_rng();
         for variable_count in 0..200 {
             let mut tester = RowTester::new_length(variable_count);
@@ -268,16 +264,16 @@ pub mod tests {
     ///     self.others[others_idx] &= (!0x01) << bit_idx;  # wrong!!!
     ///     self.others[others_idx] &= !(0x01 << bit_idx);
     #[test]
-    fn parity_matrix_row_3() {
-        // cargo test parity_matrix_row_3 -- --nocapture
+    fn parity_matrix_row_random_failed_1() {
+        // cargo test parity_matrix_row_random_failed_1 -- --nocapture
         let mut tester = RowTester::load_from_str("01110011010001101000001110000011111110111010010010111111010011111", '0');
         tester.verbose = true;
         tester.set_left(tester.variable_count - 1, false);
     }
 
     #[test]
-    fn parity_matrix_row_4() {
-        // cargo test parity_matrix_row_4 -- --nocapture
+    fn parity_matrix_row_simple_add() {
+        // cargo test parity_matrix_row_simple_add -- --nocapture
         let mut tester = RowTester::new_length(8);
         tester.randomize();
         tester.verbose = true;
@@ -285,8 +281,8 @@ pub mod tests {
     }
 
     #[test]
-    fn parity_matrix_row_5() {
-        // cargo test parity_matrix_row_5 -- --nocapture
+    fn parity_matrix_row_random_adds() {
+        // cargo test parity_matrix_row_random_adds -- --nocapture
         for variable_count in 0..200 {
             let mut tester = RowTester::new_length(variable_count);
             for _ in 0..500 {
@@ -296,8 +292,8 @@ pub mod tests {
     }
 
     #[test]
-    fn parity_matrix_row_6() {
-        // cargo test parity_matrix_row_6 -- --nocapture
+    fn parity_matrix_row_add_variables() {
+        // cargo test parity_matrix_row_add_variables -- --nocapture
         let mut rng = rand::thread_rng();
         let mut tester = RowTester::new_length(0);
         for variable_count in 0..2000 {
@@ -314,5 +310,14 @@ pub mod tests {
             // add a new variable
             tester.add_one_variable();
         }
+    }
+
+    #[test]
+    #[should_panic(expected = "size must be the same")]
+    fn parity_matrix_row_add_different_length() {
+        // cargo test parity_matrix_row_add_different_length -- --nocapture
+        let mut row1 = ParityRow::new_length(10);
+        let row2 = ParityRow::new_length(BIT_UNIT_LENGTH + 10);
+        row1.add(&row2);
     }
 }
