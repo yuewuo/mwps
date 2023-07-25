@@ -161,14 +161,10 @@ impl ParityMatrix {
     }
 
     /// a helper function to quickly add a few constraints, mainly used in tests
-    pub fn add_parity_checks(&mut self, odd_parity_checks: &[Vec<EdgeIndex>], even_parity_checks: &[Vec<EdgeIndex>]) {
-        let bias_1 = self.vertices.last().map(|idx| idx + 1).unwrap_or(0);
-        for (vertex_index, incident_edges) in odd_parity_checks.iter().enumerate() {
-            self.add_constraint(vertex_index as VertexIndex + bias_1, incident_edges, true);
-        }
-        let bias_2 = bias_1 + odd_parity_checks.len() as VertexIndex;
-        for (vertex_index, incident_edges) in even_parity_checks.iter().enumerate() {
-            self.add_constraint(vertex_index as VertexIndex + bias_2, incident_edges, false);
+    pub fn add_parity_checks(&mut self, constraints: &[(Vec<EdgeIndex>, bool)]) {
+        let bias = self.vertices.last().map(|idx| idx + 1).unwrap_or(0);
+        for (idx, (lhs, rhs)) in constraints.iter().enumerate() {
+            self.add_constraint(idx as VertexIndex + bias, lhs, *rhs);
         }
     }
 }

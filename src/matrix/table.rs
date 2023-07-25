@@ -143,9 +143,13 @@ pub mod tests {
         for edge_index in 0..4 {
             parity_matrix.add_tight_variable(edge_index * 11);
         }
-        let odd_parity_checks = vec![vec![0, 11], vec![33]];
-        let even_parity_checks = vec![vec![11, 12], vec![11, 22, 33]];
-        parity_matrix.add_parity_checks(&odd_parity_checks, &even_parity_checks);
+        let parity_checks = vec![
+            (vec![0, 11], true),
+            (vec![33], true),
+            (vec![11, 12], false),
+            (vec![11, 22, 33], false),
+        ];
+        parity_matrix.add_parity_checks(&parity_checks);
         parity_matrix.printstd();
         let expected_result = "\
 ┌─┬─┬─┬─┬─┬───┐

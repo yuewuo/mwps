@@ -49,17 +49,22 @@ pub struct EchelonInfo {
 }
 
 impl EchelonMatrix {
+    pub fn row_echelon_form(&mut self) {
+        self.row_echelon_form_reordered(&self.get_edge_indices());
+    }
+
     /// use the new EchelonView to access this function
     pub fn row_echelon_form_reordered(&mut self, edges: &[EdgeIndex]) {
-        self.info.satisfiable = false;
+        // always load var indices
+        self.matrix.edge_to_tight_var_indices_load(edges, &mut self.var_indices);
         if self.constraints.is_empty() {
             // no parity requirement
             self.info.satisfiable = true;
             self.info.effective_rows = 0;
             return;
         }
+        self.info.satisfiable = false;
         let height = self.constraints.len();
-        self.matrix.edge_to_tight_var_indices_load(edges, &mut self.var_indices);
         if self.var_indices.is_empty() {
             // no variable to satisfy any requirement
             // if any RHS=1, it cannot be satisfied
@@ -185,6 +190,17 @@ impl EchelonMatrix {
         }
     }
 
+    fn sync_row(&mut self) {
+        let length = self.matrix.constraints.len() - self.info.rows.len();
+        for _ in 0..length {
+            self.info.rows.push(0);
+        }
+        if length > 0 {
+            // by default all constraints are taking effect
+            self.info.effective_rows = self.matrix.constraints.len();
+        }
+    }
+
     pub fn add_variable(&mut self, edge_index: EdgeIndex) {
         self.matrix.add_variable(edge_index);
         self.sync_column();
@@ -203,9 +219,13 @@ impl EchelonMatrix {
     pub fn add_constraint(&mut self, vertex_index: VertexIndex, incident_edges: &[EdgeIndex], parity: bool) {
         self.matrix.add_constraint(vertex_index, incident_edges, parity);
         self.sync_column();
-        self.info.rows.push(0);
-        // by default all constraints are taking effect
-        self.info.effective_rows = self.matrix.constraints.len();
+        self.sync_row();
+    }
+
+    pub fn add_parity_checks(&mut self, constraints: &[(Vec<EdgeIndex>, bool)]) {
+        self.matrix.add_parity_checks(constraints);
+        self.sync_column();
+        self.sync_row();
     }
 }
 
@@ -227,6 +247,8 @@ pub mod tests {
         for edge_index in 0..7 {
             echelon.add_tight_variable(edge_index);
         }
+        echelon.row_echelon_form();
+        echelon.printstd();
         echelon.add_constraint(0, &[0, 1], true);
         println!("{}", echelon.info.columns.len());
         echelon.add_constraint(1, &[0, 2], false);
@@ -255,8 +277,7 @@ pub mod tests {
 └─┴─┴─┴─┴─┴─┴─┴─┴───┘
 "
         );
-        let edges = echelon.get_edge_indices();
-        echelon.row_echelon_form_reordered(&edges);
+        echelon.row_echelon_form();
         echelon.printstd();
         assert_eq!(
             echelon.printstd_str(),
@@ -301,9 +322,8 @@ pub mod tests {
         for edge_index in 0..5 {
             echelon.add_variable_with_tightness(edge_index, false); // no tight edges
         }
-        let edges = echelon.get_edge_indices();
-        assert_eq!(edges.len(), 5);
-        echelon.row_echelon_form_reordered(&edges);
+        assert_eq!(echelon.get_edge_indices().len(), 5);
+        echelon.row_echelon_form();
         echelon.printstd();
         assert_eq!(
             echelon.printstd_str(),
@@ -327,9 +347,8 @@ pub mod tests {
                 echelon.add_variable_with_tightness(edge_index, false); // no tight edges
             }
             echelon.add_constraint(0, &[0, 1, 3], rhs);
-            let edges = echelon.get_edge_indices();
-            assert_eq!(edges.len(), 5);
-            echelon.row_echelon_form_reordered(&edges);
+            assert_eq!(echelon.get_edge_indices().len(), 5);
+            echelon.row_echelon_form();
             echelon.printstd();
             // when rhs=1, it is not satisfiable
             assert!(echelon.info.satisfiable != rhs);
@@ -348,7 +367,7 @@ pub mod tests {
             echelon.add_constraint(1, &[1, 2], true);
             echelon.add_constraint(2, &[2], true);
             echelon.add_constraint(3, &[1], rhs);
-            echelon.row_echelon_form_reordered(&echelon.get_edge_indices());
+            echelon.row_echelon_form();
             echelon.printstd();
             assert!(echelon.info.satisfiable != rhs);
         }
@@ -365,7 +384,7 @@ pub mod tests {
             echelon.add_constraint(4, &[0, 1, 2], false);
             echelon.add_constraint(5, &[0, 1, 2], false);
             echelon.add_constraint(6, &[2], true);
-            echelon.row_echelon_form_reordered(&echelon.get_edge_indices());
+            echelon.row_echelon_form();
             echelon.printstd();
         }
     }
@@ -379,7 +398,7 @@ pub mod tests {
         }
         echelon.add_constraint(0, &[0, 1], false);
         echelon.add_constraint(1, &[1, 2], true);
-        echelon.row_echelon_form_reordered(&echelon.get_edge_indices());
+        echelon.row_echelon_form();
         echelon.printstd();
         assert_eq!(
             echelon.printstd_str(),
@@ -395,5 +414,52 @@ pub mod tests {
         );
     }
 
-    fn parity_matrix_echelon_matrix_random_tests() {}
+    fn generate_random_parity_checks(
+        rng: &mut DeterministicRng,
+        variable_count: usize,
+        constraint_count: usize,
+    ) -> Vec<(Vec<EdgeIndex>, bool)> {
+        let mut parity_checks = vec![];
+        for _ in 0..constraint_count {
+            let rhs: bool = rng.gen();
+            let lhs = (0..variable_count).filter(|_| rng.gen()).collect();
+            parity_checks.push((lhs, rhs))
+        }
+        parity_checks
+    }
+
+    #[test]
+    fn parity_matrix_echelon_matrix_random_tests() {
+        // cargo test --features=colorful parity_matrix_echelon_matrix_random_tests -- --nocapture
+        let mut rng = DeterministicRng::seed_from_u64(123);
+        let repeat = 50;
+        for variable_count in 0..31 {
+            for constraint_count in 0..31 {
+                for _ in 0..repeat {
+                    let mut echelon = EchelonMatrix::new();
+                    for edge_index in 0..variable_count {
+                        echelon.add_tight_variable(edge_index);
+                    }
+                    let parity_checks = generate_random_parity_checks(&mut rng, variable_count, constraint_count);
+                    echelon.add_parity_checks(&parity_checks);
+                    echelon.row_echelon_form();
+                    // echelon.printstd();
+                    //
+                }
+            }
+        }
+    }
+
+    /// panicked at 'index out of bounds: the len is 0 but the index is 0', src/matrix/echelon_matrix.rs:148:13
+    #[test]
+    fn parity_matrix_echelon_matrix_debug_1() {
+        // cargo test --features=colorful parity_matrix_echelon_matrix_debug_1 -- --nocapture
+        let mut echelon = EchelonMatrix::new();
+        echelon.add_tight_variable(0);
+        echelon.add_tight_variable(1);
+        let parity_checks = vec![(vec![0], true), (vec![0, 1], true), (vec![], true)];
+        echelon.add_parity_checks(&parity_checks);
+        echelon.row_echelon_form();
+        echelon.printstd();
+    }
 }
