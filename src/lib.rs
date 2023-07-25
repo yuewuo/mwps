@@ -25,6 +25,9 @@ extern crate urlencoding;
 #[cfg(feature = "wasm_binding")]
 extern crate wasm_bindgen;
 
+#[cfg(test)]
+extern crate peroxide;
+
 #[cfg(feature = "cli")]
 pub mod cli;
 pub mod dual_module;

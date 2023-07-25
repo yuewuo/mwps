@@ -4,6 +4,21 @@ use derivative::Derivative;
 #[cfg(feature = "python_binding")]
 use pyo3::prelude::*;
 
+#[derive(Clone, Debug, Derivative)]
+#[derivative(Default(new = "true"))]
+#[cfg_attr(feature = "python_binding", cfg_eval)]
+#[cfg_attr(feature = "python_binding", pyclass)]
+pub struct EchelonMatrix {
+    /// matrix itself
+    #[cfg_attr(feature = "python_binding", pyo3(get, set))]
+    pub matrix: ParityMatrix,
+    /// information about the matrix when it's formatted into the Echelon form;
+    #[cfg_attr(feature = "python_binding", pyo3(get, set))]
+    pub info: EchelonInfo,
+    /// variable indices of the echelon view
+    #[cfg_attr(feature = "python_binding", pyo3(get, set))]
+    pub var_indices: Vec<usize>,
+}
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "python_binding", cfg_eval)]
 #[cfg_attr(feature = "python_binding", pyclass)]
@@ -33,36 +48,31 @@ pub struct EchelonInfo {
     pub rows: Vec<usize>,
 }
 
-#[derive(Clone, Debug, Derivative)]
-#[derivative(Default(new = "true"))]
-#[cfg_attr(feature = "python_binding", cfg_eval)]
-#[cfg_attr(feature = "python_binding", pyclass)]
-pub struct EchelonMatrix {
-    /// matrix itself
-    #[cfg_attr(feature = "python_binding", pyo3(get, set))]
-    pub matrix: ParityMatrix,
-    /// information about the matrix when it's formatted into the Echelon form;
-    #[cfg_attr(feature = "python_binding", pyo3(get, set))]
-    pub info: EchelonInfo,
-    /// variable indices of the echelon view
-    #[cfg_attr(feature = "python_binding", pyo3(get, set))]
-    pub var_indices: Vec<usize>,
-}
-
 impl EchelonMatrix {
     /// use the new EchelonView to access this function
-    fn row_echelon_form_reordered(&mut self, edges: &[EdgeIndex]) {
+    pub fn row_echelon_form_reordered(&mut self, edges: &[EdgeIndex]) {
         self.info.satisfiable = false;
         if self.constraints.is_empty() {
             // no parity requirement
             self.info.satisfiable = true;
+            self.info.effective_rows = 0;
             return;
         }
         let height = self.constraints.len();
         self.matrix.edge_to_tight_var_indices_load(edges, &mut self.var_indices);
         if self.var_indices.is_empty() {
             // no variable to satisfy any requirement
-            self.info.satisfiable = !self.constraints.iter().any(|x| x.get_right()); // if any RHS=1, it cannot be satisfied
+            // if any RHS=1, it cannot be satisfied
+            for row in 0..height {
+                if self.constraints[row].get_right() {
+                    self.info.satisfiable = false;
+                    self.swap_row(0, row);
+                    self.info.effective_rows = 1;
+                    return;
+                }
+            }
+            self.info.satisfiable = true;
+            self.info.effective_rows = 0;
             return;
         }
         let width = self.var_indices.len();
@@ -80,8 +90,7 @@ impl EchelonMatrix {
                         // make sure display is reasonable: RHS=1 and all LHS=0
                         for row in r + 1..height {
                             if self.constraints[row].get_right() {
-                                let (slice_1, slice_2) = self.constraints.split_at_mut(r + 1);
-                                std::mem::swap(&mut slice_1[r], &mut slice_2[row - r - 1]);
+                                self.swap_row(r, row);
                                 break;
                             }
                         }
@@ -112,8 +121,7 @@ impl EchelonMatrix {
                                 // make sure display is reasonable: RHS=1 and all LHS=0
                                 for row in r + 1..height {
                                     if self.constraints[row].get_right() {
-                                        let (slice_1, slice_2) = self.constraints.split_at_mut(r + 1);
-                                        std::mem::swap(&mut slice_1[r], &mut slice_2[row - r - 1]);
+                                        self.swap_row(r, row);
                                         break;
                                     }
                                 }
@@ -125,8 +133,7 @@ impl EchelonMatrix {
             }
             if i != r {
                 // implies r < i
-                let (slice_1, slice_2) = self.constraints.split_at_mut(i);
-                std::mem::swap(&mut slice_1[r], &mut slice_2[0]);
+                self.swap_row(r, i);
             }
             for j in 0..height {
                 if j != r && self.constraints[j].get_left(self.var_indices[lead]) {
@@ -202,24 +209,35 @@ impl EchelonMatrix {
     }
 }
 
-#[test]
-fn parity_matrix_echelon_matrix_1() {
-    // cargo test --features=colorful parity_matrix_echelon_matrix_1 -- --nocapture
-    let mut matrix = EchelonMatrix::new();
-    for edge_index in 0..7 {
-        matrix.add_tight_variable(edge_index);
+impl VizTrait for EchelonMatrix {
+    fn viz_table(&self) -> VizTable {
+        VizTable::new(self, &self.var_indices)
     }
-    matrix.add_constraint(0, &[0, 1], true);
-    println!("{}", matrix.info.columns.len());
-    matrix.add_constraint(1, &[0, 2], false);
-    matrix.add_constraint(2, &[2, 3, 5], false);
-    matrix.add_constraint(3, &[1, 3, 4], false);
-    matrix.add_constraint(4, &[4, 6], false);
-    matrix.add_constraint(5, &[5, 6], true);
-    matrix.printstd();
-    assert_eq!(
-        matrix.printstd_str(),
-        "\
+}
+
+#[cfg(test)]
+pub mod tests {
+    use super::*;
+    use peroxide::prelude::*;
+
+    #[test]
+    fn parity_matrix_echelon_matrix_1() {
+        // cargo test --features=colorful parity_matrix_echelon_matrix_1 -- --nocapture
+        let mut echelon = EchelonMatrix::new();
+        for edge_index in 0..7 {
+            echelon.add_tight_variable(edge_index);
+        }
+        echelon.add_constraint(0, &[0, 1], true);
+        println!("{}", echelon.info.columns.len());
+        echelon.add_constraint(1, &[0, 2], false);
+        echelon.add_constraint(2, &[2, 3, 5], false);
+        echelon.add_constraint(3, &[1, 3, 4], false);
+        echelon.add_constraint(4, &[4, 6], false);
+        echelon.add_constraint(5, &[5, 6], true);
+        echelon.matrix.printstd();
+        assert_eq!(
+            echelon.matrix.printstd_str(),
+            "\
 ┌─┬─┬─┬─┬─┬─┬─┬─┬───┐
 ┊ ┊0┊1┊2┊3┊4┊5┊6┊ = ┊
 ╞═╪═╪═╪═╪═╪═╪═╪═╪═══╡
@@ -236,13 +254,13 @@ fn parity_matrix_echelon_matrix_1() {
 ┊5┊ ┊ ┊ ┊ ┊ ┊1┊1┊ 1 ┊
 └─┴─┴─┴─┴─┴─┴─┴─┴───┘
 "
-    );
-    let edges = matrix.get_edge_indices();
-    matrix.row_echelon_form_reordered(&edges);
-    matrix.printstd();
-    assert_eq!(
-        matrix.printstd_str(),
-        "\
+        );
+        let edges = echelon.get_edge_indices();
+        echelon.row_echelon_form_reordered(&edges);
+        echelon.printstd();
+        assert_eq!(
+            echelon.printstd_str(),
+            "\
 ┌─┬─┬─┬─┬─┬─┬─┬─┬───┐
 ┊ ┊0┊1┊2┊3┊4┊5┊6┊ = ┊
 ╞═╪═╪═╪═╪═╪═╪═╪═╪═══╡
@@ -259,5 +277,123 @@ fn parity_matrix_echelon_matrix_1() {
 ┊5┊ ┊ ┊ ┊ ┊ ┊ ┊ ┊   ┊
 └─┴─┴─┴─┴─┴─┴─┴─┴───┘
 "
-    );
+        );
+        assert_eq!(echelon.info.effective_rows, 5);
+        let is_dependent_vec = [true, true, true, false, true, true, false];
+        let corresponding_row = [0, 1, 2, usize::MAX, 3, 4, usize::MAX];
+        for (i, &is_dependent) in is_dependent_vec.iter().enumerate() {
+            assert_eq!(echelon.info.columns[i].is_dependent, is_dependent);
+            if is_dependent {
+                assert_eq!(echelon.info.columns[i].row, corresponding_row[i]);
+            }
+        }
+        let corresponding_column = [0, 1, 2, 4, 5];
+        for (i, &column) in corresponding_column.iter().enumerate() {
+            assert_eq!(echelon.info.rows[i], column);
+        }
+        assert!(echelon.info.satisfiable);
+    }
+
+    #[test]
+    fn parity_matrix_echelon_matrix_empty_is_satisfiable() {
+        // cargo test --features=colorful parity_matrix_echelon_matrix_empty_is_satisfiable -- --nocapture
+        let mut echelon = EchelonMatrix::new();
+        for edge_index in 0..5 {
+            echelon.add_variable_with_tightness(edge_index, false); // no tight edges
+        }
+        let edges = echelon.get_edge_indices();
+        assert_eq!(edges.len(), 5);
+        echelon.row_echelon_form_reordered(&edges);
+        echelon.printstd();
+        assert_eq!(
+            echelon.printstd_str(),
+            "\
+┌┬───┐
+┊┊ = ┊
+╞╪═══╡
+└┴───┘
+"
+        );
+        assert_eq!(format!("{:?}", echelon), format!("{:?}", echelon.clone()));
+        assert!(echelon.info.satisfiable);
+    }
+
+    #[test]
+    fn parity_matrix_echelon_matrix_no_variable_is_unsatisfiable() {
+        // cargo test --features=colorful parity_matrix_echelon_matrix_no_variable_is_unsatisfiable -- --nocapture
+        for rhs in [false, true] {
+            let mut echelon = EchelonMatrix::new();
+            for edge_index in 0..5 {
+                echelon.add_variable_with_tightness(edge_index, false); // no tight edges
+            }
+            echelon.add_constraint(0, &[0, 1, 3], rhs);
+            let edges = echelon.get_edge_indices();
+            assert_eq!(edges.len(), 5);
+            echelon.row_echelon_form_reordered(&edges);
+            echelon.printstd();
+            // when rhs=1, it is not satisfiable
+            assert!(echelon.info.satisfiable != rhs);
+        }
+    }
+
+    #[test]
+    fn parity_matrix_echelon_matrix_lead_larger_than_width() {
+        // cargo test --features=colorful parity_matrix_echelon_matrix_lead_larger_than_width -- --nocapture
+        for rhs in [false, true] {
+            let mut echelon = EchelonMatrix::new();
+            for edge_index in 0..3 {
+                echelon.add_tight_variable(edge_index);
+            }
+            echelon.add_constraint(0, &[0, 1], false);
+            echelon.add_constraint(1, &[1, 2], true);
+            echelon.add_constraint(2, &[2], true);
+            echelon.add_constraint(3, &[1], rhs);
+            echelon.row_echelon_form_reordered(&echelon.get_edge_indices());
+            echelon.printstd();
+            assert!(echelon.info.satisfiable != rhs);
+        }
+        // also try to enter the branch where it needs to search more rows
+        {
+            let mut echelon = EchelonMatrix::new();
+            for edge_index in 0..3 {
+                echelon.add_tight_variable(edge_index);
+            }
+            echelon.add_constraint(0, &[0, 1], false);
+            echelon.add_constraint(1, &[1, 2], true);
+            echelon.add_constraint(2, &[0, 1, 2], false);
+            echelon.add_constraint(3, &[0, 1, 2], false);
+            echelon.add_constraint(4, &[0, 1, 2], false);
+            echelon.add_constraint(5, &[0, 1, 2], false);
+            echelon.add_constraint(6, &[2], true);
+            echelon.row_echelon_form_reordered(&echelon.get_edge_indices());
+            echelon.printstd();
+        }
+    }
+
+    #[test]
+    fn parity_matrix_echelon_matrix_lead_smaller_than_width() {
+        // cargo test --features=colorful parity_matrix_echelon_matrix_lead_smaller_than_width -- --nocapture
+        let mut echelon = EchelonMatrix::new();
+        for edge_index in 0..5 {
+            echelon.add_tight_variable(edge_index);
+        }
+        echelon.add_constraint(0, &[0, 1], false);
+        echelon.add_constraint(1, &[1, 2], true);
+        echelon.row_echelon_form_reordered(&echelon.get_edge_indices());
+        echelon.printstd();
+        assert_eq!(
+            echelon.printstd_str(),
+            "\
+┌─┬─┬─┬─┬─┬─┬───┐
+┊ ┊0┊1┊2┊3┊4┊ = ┊
+╞═╪═╪═╪═╪═╪═╪═══╡
+┊0┊1┊ ┊1┊ ┊ ┊ 1 ┊
+├─┼─┼─┼─┼─┼─┼───┤
+┊1┊ ┊1┊1┊ ┊ ┊ 1 ┊
+└─┴─┴─┴─┴─┴─┴───┘
+"
+        );
+    }
+
+    fn parity_matrix_echelon_matrix_random_tests() {}
 }

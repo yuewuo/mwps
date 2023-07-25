@@ -129,6 +129,10 @@ impl ParityMatrix {
             target.add(source);
         }
     }
+
+    pub fn swap_row(&mut self, target_row: usize, source_row: usize) {
+        self.constraints.swap(target_row, source_row);
+    }
 }
 
 // simple internal functions

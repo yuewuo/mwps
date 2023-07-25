@@ -10,12 +10,7 @@ homepage = "https://hyper-mwps.com"
 repository = "https://github.com/yuewuo/mwps"
 keywords = ["QEC", "quantum-computing", "error-correction", "visualization"]
 categories = ["science"]
-exclude = [
-    "tutorial/*",
-    "benchmark/*",
-    "visualize/data/persist/*",
-    ".github/*",
-]
+exclude = ["tutorial/*", "benchmark/*", "visualize/data/persist/*", ".github/*"]
 
 # see https://doc.rust-lang.org/1.39.0/cargo/reference/manifest.html#the-documentation-field-optional
 [badges]
@@ -42,14 +37,19 @@ debug = true
 # to enable a feature, use `--features xxx`
 default = ["cli"]
 cli = ["pbr"]
-r64_weight = []  # use Rational64 instead of BigRational as weight type
-u32_index = []  # use u32 instead of usize as index type, to save memory by at most half
-python_binding = ["pyo3"]  # bind to Python
-wasm_binding = ["wasm-bindgen"]  # bind to wasm
-colorful = []  # enable colorful output in case terminal exists
+r64_weight = [] # use Rational64 instead of BigRational as weight type
+u32_index = [
+] # use u32 instead of usize as index type, to save memory by at most half
+python_binding = ["pyo3"] # bind to Python
+wasm_binding = ["wasm-bindgen"] # bind to wasm
+colorful = [] # enable colorful output in case terminal exists
 
 [dependencies]
-pyo3 = { version = "0.18.3", features = ["extension-module", "multiple-pymethods", "abi3-py37"], optional = true }
+pyo3 = { version = "0.18.3", features = [
+    "extension-module",
+    "multiple-pymethods",
+    "abi3-py37",
+], optional = true }
 serde = { version = "1.0.163", features = ["derive", "rc"] }
 serde-wasm-bindgen = "0.5.0"
 serde_json = "1.0.59"
@@ -68,12 +68,13 @@ prettytable-rs = "0.10.0"
 itertools = "0.11.0"
 cfg-if = "1.0.0"
 getrandom = { version = "0.2", features = ["js"] }
-wasm-bindgen = { version = "0.2.86", optional = true}
+wasm-bindgen = { version = "0.2.86", optional = true }
 lazy_static = "1.4.0"
 
 [dev-dependencies]
 test-case = "3.1.0"
+peroxide = "0.34.0"
 
 [package.metadata.docs.rs]
-rustdoc-args = [ "--html-in-header", "katex-header.html" ]
+rustdoc-args = ["--html-in-header", "katex-header.html"]
 # to run locally: `RUSTDOCFLAGS="--html-in-header katex-header.html" cargo doc --no-deps`
