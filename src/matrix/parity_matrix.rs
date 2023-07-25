@@ -167,6 +167,15 @@ impl ParityMatrix {
             self.add_constraint(idx as VertexIndex + bias, lhs, *rhs);
         }
     }
+
+    pub fn get_lhs(&self, i: usize, j: usize) -> bool {
+        debug_assert!(j < self.variables.len());
+        self.constraints[i].get_left(j)
+    }
+
+    pub fn get_rhs(&self, i: usize) -> bool {
+        self.constraints[i].get_right()
+    }
 }
 
 impl ParityMatrix {

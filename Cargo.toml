@@ -73,7 +73,6 @@ lazy_static = "1.4.0"
 
 [dev-dependencies]
 test-case = "3.1.0"
-peroxide = "0.34.0"
 
 [package.metadata.docs.rs]
 rustdoc-args = ["--html-in-header", "katex-header.html"]

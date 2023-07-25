@@ -49,6 +49,14 @@ pub struct EchelonInfo {
 }
 
 impl EchelonMatrix {
+    pub fn load_var_indices(&mut self) {
+        self.load_var_indices_reordered(&self.get_edge_indices());
+    }
+
+    pub fn load_var_indices_reordered(&mut self, edges: &[EdgeIndex]) {
+        self.matrix.edge_to_tight_var_indices_load(edges, &mut self.var_indices);
+    }
+
     pub fn row_echelon_form(&mut self) {
         self.row_echelon_form_reordered(&self.get_edge_indices());
     }
@@ -56,7 +64,7 @@ impl EchelonMatrix {
     /// use the new EchelonView to access this function
     pub fn row_echelon_form_reordered(&mut self, edges: &[EdgeIndex]) {
         // always load var indices
-        self.matrix.edge_to_tight_var_indices_load(edges, &mut self.var_indices);
+        self.load_var_indices_reordered(edges);
         if self.constraints.is_empty() {
             // no parity requirement
             self.info.satisfiable = true;
@@ -238,7 +246,7 @@ impl VizTrait for EchelonMatrix {
 #[cfg(test)]
 pub mod tests {
     use super::*;
-    use peroxide::prelude::*;
+    use crate::rand::{Rng, SeedableRng};
 
     #[test]
     fn parity_matrix_echelon_matrix_1() {
@@ -428,6 +436,145 @@ pub mod tests {
         parity_checks
     }
 
+    struct YetAnotherRowEchelon {
+        matrix: Vec<Vec<bool>>,
+    }
+
+    impl YetAnotherRowEchelon {
+        fn new(echelon: &EchelonMatrix) -> Self {
+            let mut matrix = vec![];
+            for constraint in echelon.matrix.constraints.iter() {
+                let mut row = vec![];
+                for &var_index in echelon.var_indices.iter() {
+                    row.push(constraint.get_left(var_index));
+                }
+                row.push(constraint.get_right());
+                matrix.push(row);
+            }
+            Self { matrix }
+        }
+
+        // https://rosettacode.org/wiki/Reduced_row_echelon_form#Rust
+        fn reduced_row_echelon_form(&mut self) {
+            let matrix = &mut self.matrix;
+            let mut pivot = 0;
+            let row_count = matrix.len();
+            if row_count == 0 {
+                return;
+            }
+            let column_count = matrix[0].len();
+            'outer: for r in 0..row_count {
+                if column_count <= pivot {
+                    break;
+                }
+                let mut i = r;
+                while !matrix[i][pivot] {
+                    i += 1;
+                    if i == row_count {
+                        i = r;
+                        pivot += 1;
+                        if column_count == pivot {
+                            break 'outer;
+                        }
+                    }
+                }
+                for j in 0..column_count {
+                    let temp = matrix[r][j];
+                    matrix[r][j] = matrix[i][j];
+                    matrix[i][j] = temp;
+                }
+                for i in 0..row_count {
+                    if i != r && matrix[i][pivot] {
+                        for k in 0..column_count {
+                            matrix[i][k] ^= matrix[r][k];
+                        }
+                    }
+                }
+                pivot += 1;
+            }
+        }
+
+        fn print(&self) {
+            for row in self.matrix.iter() {
+                for &e in row.iter() {
+                    print!("{}", if e { 1 } else { 0 });
+                }
+                println!();
+            }
+        }
+
+        fn is_satisfiable(&self) -> bool {
+            'outer: for row in self.matrix.iter() {
+                if row[row.len() - 1] {
+                    for &e in row.iter().take(row.len() - 1) {
+                        if e {
+                            continue 'outer;
+                        }
+                    }
+                    return false;
+                }
+            }
+            true
+        }
+
+        fn effective_rows(&self) -> usize {
+            let mut effective_rows = 0;
+            for (i, row) in self.matrix.iter().enumerate() {
+                for &e in row.iter() {
+                    if e {
+                        effective_rows = i + 1;
+                    }
+                }
+            }
+            effective_rows
+        }
+
+        fn assert_eq(&self, echelon: &EchelonMatrix) {
+            let satisfiable = self.is_satisfiable();
+            assert_eq!(satisfiable, echelon.info.satisfiable);
+            if !satisfiable {
+                // assert effective_rows is the line where it fails
+                return;
+            }
+            let effective_rows = self.effective_rows();
+            assert_eq!(echelon.info.effective_rows, effective_rows);
+            for (i, row) in self.matrix.iter().enumerate() {
+                for (j, &e) in row.iter().enumerate() {
+                    if j < row.len() - 1 {
+                        assert_eq!(e, echelon.get_lhs(i, j));
+                    } else {
+                        assert_eq!(e, echelon.get_rhs(i));
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn parity_matrix_echelon_matrix_another_echelon() {
+        // cargo test --features=colorful parity_matrix_echelon_matrix_another_echelon -- --nocapture
+        let mut echelon = EchelonMatrix::new();
+        for edge_index in 0..7 {
+            echelon.add_tight_variable(edge_index);
+        }
+        echelon.add_constraint(0, &[0, 1], true);
+        echelon.add_constraint(1, &[0, 2], false);
+        echelon.add_constraint(2, &[2, 3, 5], false);
+        echelon.add_constraint(3, &[1, 3, 4], false);
+        echelon.add_constraint(4, &[4, 6], false);
+        echelon.add_constraint(5, &[5, 6], true);
+        echelon.load_var_indices();
+        echelon.printstd();
+        let mut another = YetAnotherRowEchelon::new(&echelon);
+        another.print();
+        // both go to echelon form
+        echelon.row_echelon_form();
+        echelon.printstd();
+        another.reduced_row_echelon_form();
+        another.print();
+        another.assert_eq(&echelon);
+    }
+
     #[test]
     fn parity_matrix_echelon_matrix_random_tests() {
         // cargo test --features=colorful parity_matrix_echelon_matrix_random_tests -- --nocapture
@@ -442,9 +589,16 @@ pub mod tests {
                     }
                     let parity_checks = generate_random_parity_checks(&mut rng, variable_count, constraint_count);
                     echelon.add_parity_checks(&parity_checks);
-                    echelon.row_echelon_form();
+                    echelon.load_var_indices();
                     // echelon.printstd();
-                    //
+                    let mut another = YetAnotherRowEchelon::new(&echelon);
+                    if variable_count > 0 {
+                        another.reduced_row_echelon_form();
+                        echelon.row_echelon_form();
+                        // echelon.printstd();
+                        // another.print();
+                        another.assert_eq(&echelon);
+                    }
                 }
             }
         }
