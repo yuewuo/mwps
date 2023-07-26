@@ -37,12 +37,12 @@ debug = true
 # to enable a feature, use `--features xxx`
 default = ["cli"]
 cli = ["pbr"]
-r64_weight = [] # use Rational64 instead of BigRational as weight type
-u32_index = [
-] # use u32 instead of usize as index type, to save memory by at most half
-python_binding = ["pyo3"] # bind to Python
+r64_weight = []                 # use Rational64 instead of BigRational as weight type
+u32_index = []                  # use u32 instead of usize as index type, to save memory
+unsafe_pointer = []             # use unsafe Rust to improve speed (theoretically safe)
+python_binding = ["pyo3"]       # bind to Python
 wasm_binding = ["wasm-bindgen"] # bind to wasm
-colorful = [] # enable colorful output in case terminal exists
+colorful = []                   # enable colorful output in case terminal exists
 
 [dependencies]
 pyo3 = { version = "0.18.3", features = [

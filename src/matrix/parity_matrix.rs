@@ -47,35 +47,10 @@ pub struct ParityMatrix {
 #[cfg_attr(feature = "python_binding", cfg_eval)]
 #[cfg_attr(feature = "python_binding", pymethods)]
 impl ParityMatrix {
-    pub fn add_variable(&mut self, edge_index: EdgeIndex) {
-        // must remove from phantom edge no matter whether the edge is already in `self.edge` or not
-        self.phantom_edges.remove(&edge_index); // mark as explicitly added edge
-        if self.edges.contains_key(&edge_index) {
-            return; // variable already exists
-        }
-        self.edges.insert(edge_index, self.variables.len());
-        self.variables.push(Variable {
-            edge_index,
-            is_tight: false,
-        });
-        ParityRow::add_one_variable(&mut self.constraints, self.variables.len());
-    }
-
-    pub fn update_edge_tightness(&mut self, edge_index: EdgeIndex, is_tight: bool) {
-        let var_index = self.edge_to_var_index(edge_index);
-        self.variables[var_index].is_tight = is_tight;
-    }
-
     #[cfg(feature = "python_binding")]
     #[pyo3(name = "update_edges_tightness")]
     pub fn update_edges_tightness_py(&mut self, edges: Vec<EdgeIndex>, is_tight: bool) {
         self.update_edges_tightness(&edges, is_tight)
-    }
-
-    #[allow(clippy::unnecessary_cast)]
-    fn is_tight(&self, var_index: usize) -> bool {
-        let Variable { edge_index, is_tight } = self.variables[var_index as usize];
-        is_tight && !self.implicit_shrunk_edges.contains(&edge_index) && !self.phantom_edges.contains(&edge_index)
     }
 
     pub fn get_tight_edges(&self) -> BTreeSet<EdgeIndex> {
@@ -99,19 +74,36 @@ impl ParityMatrix {
     }
 }
 
+impl MatrixImpl for ParityMatrix {
+    fn add_variable(&mut self, edge_index: EdgeIndex) {
+        // must remove from phantom edge no matter whether the edge is already in `self.edge` or not
+        self.phantom_edges.remove(&edge_index); // mark as explicitly added edge
+        if self.edges.contains_key(&edge_index) {
+            return; // variable already exists
+        }
+        self.edges.insert(edge_index, self.variables.len());
+        self.variables.push(Variable {
+            edge_index,
+            is_tight: false,
+        });
+        ParityRow::add_one_variable(&mut self.constraints, self.variables.len());
+    }
+
+    fn update_edge_tightness(&mut self, edge_index: EdgeIndex, is_tight: bool) {
+        let var_index = self.edge_to_var_index(edge_index);
+        self.variables[var_index].is_tight = is_tight;
+    }
+
+    fn is_tight(&self, var_index: usize) -> bool {
+        let Variable { edge_index, is_tight } = self.variables[var_index];
+        is_tight && !self.implicit_shrunk_edges.contains(&edge_index) && !self.phantom_edges.contains(&edge_index)
+    }
+}
+
 // simple helper functions
 #[cfg_attr(feature = "python_binding", cfg_eval)]
 #[cfg_attr(feature = "python_binding", pymethods)]
 impl ParityMatrix {
-    pub fn add_variable_with_tightness(&mut self, edge_index: EdgeIndex, is_tight: bool) {
-        self.add_variable(edge_index);
-        self.update_edge_tightness(edge_index, is_tight);
-    }
-
-    pub fn add_tight_variable(&mut self, edge_index: EdgeIndex) {
-        self.add_variable_with_tightness(edge_index, true)
-    }
-
     pub fn get_edge_indices(&self) -> Vec<EdgeIndex> {
         self.variables.iter().map(|variable| variable.edge_index).collect()
     }
