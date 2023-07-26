@@ -352,7 +352,7 @@ pub mod tests {
         for rhs in [false, true] {
             let mut echelon = EchelonMatrix::new();
             for edge_index in 0..5 {
-                echelon.add_variable_with_tightness(edge_index, false); // no tight edges
+                echelon.add_variable(edge_index); // no tight edges
             }
             echelon.add_constraint(0, &[0, 1, 3], rhs);
             assert_eq!(echelon.get_edge_indices().len(), 5);
@@ -534,11 +534,17 @@ pub mod tests {
             assert_eq!(satisfiable, echelon.info.satisfiable);
             if !satisfiable {
                 // assert effective_rows is the line where it fails
+                let row = echelon.info.effective_rows - 1;
+                for j in 0..echelon.var_indices.len() {
+                    assert!(!echelon.get_lhs(row, j))
+                }
+                assert!(echelon.get_rhs(row));
                 return;
             }
             let effective_rows = self.effective_rows();
             assert_eq!(echelon.info.effective_rows, effective_rows);
             for (i, row) in self.matrix.iter().enumerate() {
+                assert_eq!(echelon.var_indices.len(), row.len() - 1);
                 for (j, &e) in row.iter().enumerate() {
                     if j < row.len() - 1 {
                         assert_eq!(e, echelon.get_lhs(i, j));
@@ -546,7 +552,49 @@ pub mod tests {
                         assert_eq!(e, echelon.get_rhs(i));
                     }
                 }
+                if i >= echelon.info.effective_rows {
+                    // any row below the effective ones are totally zero
+                    for j in 0..row.len() - 1 {
+                        assert!(!echelon.get_lhs(i, j));
+                    }
+                    assert!(!echelon.get_rhs(i));
+                } else {
+                    // an effective row must contain at least one 1
+                    let any_one = (0..row.len() - 1).fold(false, |acc, j| acc | echelon.get_lhs(i, j));
+                    assert!(any_one | echelon.get_rhs(i));
+                }
             }
+            // check column and row information
+            let mut column_info: Vec<_> = echelon
+                .var_indices
+                .iter()
+                .map(|_| ColumnInfo {
+                    is_dependent: false,
+                    row: 0,
+                })
+                .collect();
+            let mut row_info: Vec<_> = (0..echelon.info.effective_rows).map(|_| usize::MAX).collect();
+            for (i, row) in row_info.iter_mut().enumerate() {
+                for (j, column) in column_info.iter_mut().enumerate() {
+                    if echelon.get_lhs(i, j) {
+                        assert!(!column.is_dependent);
+                        column.row = i;
+                        column.is_dependent = true;
+                        *row = j;
+                        break;
+                    }
+                }
+            }
+            for (j, column) in column_info.iter().enumerate() {
+                assert_eq!(column.is_dependent, echelon.info.columns[j].is_dependent);
+                if column.is_dependent {
+                    assert_eq!(column.row, echelon.info.columns[j].row);
+                }
+            }
+            for (i, &row) in row_info.iter().enumerate() {
+                assert_eq!(row, echelon.info.rows[i]);
+            }
+            // check row information
         }
     }
 
