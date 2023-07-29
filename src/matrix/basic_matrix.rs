@@ -195,4 +195,88 @@ pub mod tests {
 "
         );
     }
+
+    #[test]
+    fn basic_matrix_row_operations() {
+        // cargo test --features=colorful basic_matrix_row_operations -- --nocapture
+        let mut matrix = BasicMatrix::new();
+        matrix.add_constraint(0, &[1, 4, 6], true);
+        matrix.add_constraint(1, &[4, 9], false);
+        matrix.add_constraint(2, &[1, 9], true);
+        matrix.printstd();
+        assert_eq!(
+            matrix.clone().printstd_str(),
+            "\
+┌─┬─┬─┬─┬─┬───┐
+┊ ┊1┊4┊6┊9┊ = ┊
+╞═╪═╪═╪═╪═╪═══╡
+┊0┊1┊1┊1┊ ┊ 1 ┊
+├─┼─┼─┼─┼─┼───┤
+┊1┊ ┊1┊ ┊1┊   ┊
+├─┼─┼─┼─┼─┼───┤
+┊2┊1┊ ┊ ┊1┊ 1 ┊
+└─┴─┴─┴─┴─┴───┘
+"
+        );
+        matrix.swap_row(2, 1);
+        matrix.printstd();
+        assert_eq!(
+            matrix.clone().printstd_str(),
+            "\
+┌─┬─┬─┬─┬─┬───┐
+┊ ┊1┊4┊6┊9┊ = ┊
+╞═╪═╪═╪═╪═╪═══╡
+┊0┊1┊1┊1┊ ┊ 1 ┊
+├─┼─┼─┼─┼─┼───┤
+┊1┊1┊ ┊ ┊1┊ 1 ┊
+├─┼─┼─┼─┼─┼───┤
+┊2┊ ┊1┊ ┊1┊   ┊
+└─┴─┴─┴─┴─┴───┘
+"
+        );
+        matrix.xor_row(0, 1);
+        matrix.printstd();
+        assert_eq!(
+            matrix.clone().printstd_str(),
+            "\
+┌─┬─┬─┬─┬─┬───┐
+┊ ┊1┊4┊6┊9┊ = ┊
+╞═╪═╪═╪═╪═╪═══╡
+┊0┊ ┊1┊1┊1┊   ┊
+├─┼─┼─┼─┼─┼───┤
+┊1┊1┊ ┊ ┊1┊ 1 ┊
+├─┼─┼─┼─┼─┼───┤
+┊2┊ ┊1┊ ┊1┊   ┊
+└─┴─┴─┴─┴─┴───┘
+"
+        );
+    }
+
+    #[test]
+    fn basic_matrix_manual_echelon() {
+        // cargo test --features=colorful basic_matrix_manual_echelon -- --nocapture
+        let mut matrix = BasicMatrix::new();
+        matrix.add_constraint(0, &[1, 4, 6], true);
+        matrix.add_constraint(1, &[4, 9], false);
+        matrix.add_constraint(2, &[1, 9], true);
+        matrix.xor_row(2, 0);
+        matrix.xor_row(0, 1);
+        matrix.xor_row(2, 1);
+        matrix.xor_row(0, 2);
+        matrix.printstd();
+        assert_eq!(
+            matrix.clone().printstd_str(),
+            "\
+┌─┬─┬─┬─┬─┬───┐
+┊ ┊1┊4┊6┊9┊ = ┊
+╞═╪═╪═╪═╪═╪═══╡
+┊0┊1┊ ┊ ┊1┊ 1 ┊
+├─┼─┼─┼─┼─┼───┤
+┊1┊ ┊1┊ ┊1┊   ┊
+├─┼─┼─┼─┼─┼───┤
+┊2┊ ┊ ┊1┊ ┊   ┊
+└─┴─┴─┴─┴─┴───┘
+"
+        );
+    }
 }
