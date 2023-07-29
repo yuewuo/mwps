@@ -65,12 +65,17 @@ pub trait MatrixBasic {
     fn var_to_edge_index(&self, var_index: VarIndex) -> EdgeIndex;
 
     fn edge_to_var_index(&self, edge_index: EdgeIndex) -> Option<VarIndex>;
+
+    fn exists_edge(&self, edge_index: EdgeIndex) -> bool {
+        self.edge_to_var_index(edge_index).is_some()
+    }
 }
 
 pub trait MatrixView: MatrixBasic {
     /// the number of columns: to get the `var_index` of each column,
-    /// use `var_of()`
-    fn columns(&self) -> usize;
+    /// use `column_to_var_index()`; here the mutable reference enables
+    /// lazy update of the internal data structure
+    fn columns(&mut self) -> usize;
 
     /// get the `var_index` in the basic matrix
     fn column_to_var_index(&self, column: ColumnIndex) -> VarIndex;
@@ -83,7 +88,7 @@ pub trait MatrixView: MatrixBasic {
     /// the number of rows: rows always have indices 0..rows
     fn rows(&self) -> usize;
 
-    fn get_view_edges(&self) -> Vec<EdgeIndex> {
+    fn get_view_edges(&mut self) -> Vec<EdgeIndex> {
         (0..self.columns())
             .map(|column: usize| {
                 let var_index = self.column_to_var_index(column);
@@ -92,11 +97,11 @@ pub trait MatrixView: MatrixBasic {
             .collect()
     }
 
-    fn var_to_column_index(&self, var_index: VarIndex) -> Option<ColumnIndex> {
+    fn var_to_column_index(&mut self, var_index: VarIndex) -> Option<ColumnIndex> {
         (0..self.columns()).find(|&column| self.column_to_var_index(column) == var_index)
     }
 
-    fn edge_to_column_index(&self, edge_index: EdgeIndex) -> Option<ColumnIndex> {
+    fn edge_to_column_index(&mut self, edge_index: EdgeIndex) -> Option<ColumnIndex> {
         let var_index = self.edge_to_var_index(edge_index)?;
         self.var_to_column_index(var_index)
     }

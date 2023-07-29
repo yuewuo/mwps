@@ -99,7 +99,7 @@ impl MatrixBasic for BasicMatrix {
 }
 
 impl MatrixView for BasicMatrix {
-    fn columns(&self) -> usize {
+    fn columns(&mut self) -> usize {
         self.variables.len()
     }
 
@@ -113,7 +113,7 @@ impl MatrixView for BasicMatrix {
 }
 
 impl VizTrait for BasicMatrix {
-    fn viz_table(&self) -> VizTable {
+    fn viz_table(&mut self) -> VizTable {
         VizTable::from(self)
     }
 }

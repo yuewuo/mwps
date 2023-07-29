@@ -205,7 +205,7 @@ impl ParityMatrix {
 }
 
 impl VizTrait for ParityMatrix {
-    fn viz_table(&self) -> VizTable {
+    fn viz_table(&mut self) -> VizTable {
         let edges = self.get_edge_indices();
         let var_indices = self.edge_to_tight_var_indices(&edges);
         VizTable::new(self, &var_indices)
@@ -219,7 +219,7 @@ pub mod tests {
     #[test]
     fn parity_matrix_parity_matrix_1() {
         // cargo test --features=colorful parity_matrix_parity_matrix_1 -- --nocapture
-        let parity_matrix: ParityMatrix = ParityMatrix::new();
+        let mut parity_matrix: ParityMatrix = ParityMatrix::new();
         parity_matrix.printstd();
         assert_eq!(
             parity_matrix.printstd_str(),

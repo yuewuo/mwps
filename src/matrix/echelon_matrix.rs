@@ -238,7 +238,7 @@ impl EchelonMatrix {
 }
 
 impl VizTrait for EchelonMatrix {
-    fn viz_table(&self) -> VizTable {
+    fn viz_table(&mut self) -> VizTable {
         VizTable::new(self, &self.var_indices)
     }
 }

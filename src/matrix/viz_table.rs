@@ -83,8 +83,8 @@ lazy_static! {
     };
 }
 
-impl<M: MatrixBasic + MatrixView> From<&M> for VizTable {
-    fn from(matrix: &M) -> VizTable {
+impl<M: MatrixView> From<&mut M> for VizTable {
+    fn from(matrix: &mut M) -> VizTable {
         // create title
         let mut title = Row::empty();
         title.add_cell(Cell::new(""));
@@ -143,11 +143,11 @@ impl From<VizTable> for serde_json::Value {
 }
 
 pub trait VizTrait {
-    fn viz_table(&self) -> VizTable;
-    fn printstd_str(&self) -> String {
+    fn viz_table(&mut self) -> VizTable;
+    fn printstd_str(&mut self) -> String {
         Table::from(self.viz_table()).to_string()
     }
-    fn printstd(&self) {
+    fn printstd(&mut self) {
         #[cfg(feature = "colorful")]
         Table::from(self.viz_table()).printstd();
         #[cfg(not(feature = "colorful"))]
@@ -156,7 +156,7 @@ pub trait VizTrait {
 }
 
 impl VizTrait for VizTable {
-    fn viz_table(&self) -> VizTable {
+    fn viz_table(&mut self) -> VizTable {
         self.clone()
     }
 }
@@ -195,9 +195,9 @@ pub mod tests {
 └─┴─┴─┴─┴─┴───┘
 ";
         assert_eq!(parity_matrix.printstd_str(), expected_result);
-        let viz_table: VizTable = parity_matrix.viz_table();
+        let mut viz_table: VizTable = parity_matrix.viz_table();
         assert_eq!(viz_table.printstd_str(), expected_result);
-        let cloned = viz_table.clone();
+        let mut cloned = viz_table.clone();
         assert_eq!(cloned.printstd_str(), expected_result);
         let json_value: serde_json::Value = viz_table.into();
         println!("{json_value}");
