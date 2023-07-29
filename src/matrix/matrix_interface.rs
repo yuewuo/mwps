@@ -20,6 +20,7 @@
 //!
 
 use crate::util::*;
+use derivative::Derivative;
 use std::collections::HashSet;
 
 pub type VarIndex = usize;
@@ -118,4 +119,69 @@ pub trait MatrixTail {
     fn get_tail_edges_mut(&mut self) -> &mut HashSet<EdgeIndex>;
 }
 
-pub trait MatrixEchelon {}
+pub trait MatrixEchelon {
+    fn get_echelon_info(&mut self) -> &EchelonInfo;
+}
+
+#[derive(Clone, Debug, Derivative)]
+#[derivative(Default(new = "true"))]
+#[cfg_attr(feature = "python_binding", cfg_eval)]
+#[cfg_attr(feature = "python_binding", pyclass)]
+pub struct EchelonInfo {
+    /// whether it's a satisfiable matrix, only valid when `is_echelon_form` is true
+    #[cfg_attr(feature = "python_binding", pyo3(get, set))]
+    pub satisfiable: bool,
+    /// (is_dependent, if dependent the only "1" position row)
+    #[cfg_attr(feature = "python_binding", pyo3(get, set))]
+    pub columns: Vec<ColumnInfo>,
+    /// the number of effective rows
+    #[cfg_attr(feature = "python_binding", pyo3(get, set))]
+    pub effective_rows: usize,
+    /// the leading "1" position column
+    #[cfg_attr(feature = "python_binding", pyo3(get, set))]
+    pub rows: Vec<RowInfo>,
+}
+
+#[derive(Clone, Copy, Debug, Derivative)]
+#[derivative(Default(new = "true"))]
+#[cfg_attr(feature = "python_binding", cfg_eval)]
+#[cfg_attr(feature = "python_binding", pyclass)]
+pub struct ColumnInfo {
+    #[cfg_attr(feature = "python_binding", pyo3(get, set))]
+    pub row: RowIndex,
+}
+
+impl ColumnInfo {
+    pub fn set(&mut self, row: RowIndex) {
+        debug_assert!(row != RowIndex::MAX);
+        self.row = row;
+    }
+    pub fn is_dependent(&self) -> bool {
+        self.row != RowIndex::MAX
+    }
+    pub fn set_not_dependent(&mut self) {
+        self.row = RowIndex::MAX;
+    }
+}
+
+#[derive(Clone, Copy, Debug, Derivative)]
+#[derivative(Default(new = "true"))]
+#[cfg_attr(feature = "python_binding", cfg_eval)]
+#[cfg_attr(feature = "python_binding", pyclass)]
+pub struct RowInfo {
+    #[cfg_attr(feature = "python_binding", pyo3(get, set))]
+    pub column: ColumnIndex,
+}
+
+impl RowInfo {
+    pub fn set(&mut self, column: ColumnIndex) {
+        debug_assert!(column != ColumnIndex::MAX);
+        self.column = column;
+    }
+    pub fn has_leading(&self) -> bool {
+        self.column != ColumnIndex::MAX
+    }
+    pub fn set_no_leading(&mut self) {
+        self.column = ColumnIndex::MAX;
+    }
+}

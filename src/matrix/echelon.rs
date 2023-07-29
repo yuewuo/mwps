@@ -24,69 +24,6 @@ impl<M> Echelon<M> {
     }
 }
 
-#[derive(Clone, Debug, Derivative)]
-#[derivative(Default(new = "true"))]
-#[cfg_attr(feature = "python_binding", cfg_eval)]
-#[cfg_attr(feature = "python_binding", pyclass)]
-pub struct EchelonInfo {
-    /// whether it's a satisfiable matrix, only valid when `is_echelon_form` is true
-    #[cfg_attr(feature = "python_binding", pyo3(get, set))]
-    pub satisfiable: bool,
-    /// (is_dependent, if dependent the only "1" position row)
-    #[cfg_attr(feature = "python_binding", pyo3(get, set))]
-    pub columns: Vec<ColumnInfo>,
-    /// the number of effective rows
-    #[cfg_attr(feature = "python_binding", pyo3(get, set))]
-    pub effective_rows: usize,
-    /// the leading "1" position column
-    #[cfg_attr(feature = "python_binding", pyo3(get, set))]
-    pub rows: Vec<RowInfo>,
-}
-
-#[derive(Clone, Copy, Debug, Derivative)]
-#[derivative(Default(new = "true"))]
-#[cfg_attr(feature = "python_binding", cfg_eval)]
-#[cfg_attr(feature = "python_binding", pyclass)]
-pub struct ColumnInfo {
-    #[cfg_attr(feature = "python_binding", pyo3(get, set))]
-    pub row: RowIndex,
-}
-
-impl ColumnInfo {
-    pub fn set(&mut self, row: RowIndex) {
-        debug_assert!(row != RowIndex::MAX);
-        self.row = row;
-    }
-    pub fn is_dependent(&self) -> bool {
-        self.row != RowIndex::MAX
-    }
-    pub fn set_not_dependent(&mut self) {
-        self.row = RowIndex::MAX;
-    }
-}
-
-#[derive(Clone, Copy, Debug, Derivative)]
-#[derivative(Default(new = "true"))]
-#[cfg_attr(feature = "python_binding", cfg_eval)]
-#[cfg_attr(feature = "python_binding", pyclass)]
-pub struct RowInfo {
-    #[cfg_attr(feature = "python_binding", pyo3(get, set))]
-    pub column: ColumnIndex,
-}
-
-impl RowInfo {
-    pub fn set(&mut self, column: ColumnIndex) {
-        debug_assert!(column != ColumnIndex::MAX);
-        self.column = column;
-    }
-    pub fn has_leading(&self) -> bool {
-        self.column != ColumnIndex::MAX
-    }
-    pub fn set_no_leading(&mut self) {
-        self.column = ColumnIndex::MAX;
-    }
-}
-
 impl<M: MatrixTail> MatrixTail for Echelon<M> {
     fn get_tail_edges(&self) -> &HashSet<EdgeIndex> {
         self.base.get_tail_edges()
@@ -261,8 +198,10 @@ impl<M: MatrixView> Echelon<M> {
             self.is_info_outdated = false;
         }
     }
+}
 
-    pub fn get_info(&mut self) -> &EchelonInfo {
+impl<M: MatrixView> MatrixEchelon for Echelon<M> {
+    fn get_echelon_info(&mut self) -> &EchelonInfo {
         self.echelon_info_lazy_update();
         &self.info
     }
@@ -288,7 +227,7 @@ impl<M: MatrixView> MatrixView for Echelon<M> {
 impl<M: MatrixView> VizTrait for Echelon<M> {
     fn viz_table(&mut self) -> VizTable {
         // self will be mutably borrowed, so clone the necessary information
-        let info = self.get_info().clone();
+        let info = self.get_echelon_info().clone();
         let leading_edges: Vec<Option<EdgeIndex>> = info
             .rows
             .iter()
@@ -356,5 +295,22 @@ pub mod tests {
             matrix.update_edge_tightness(edge_index, true);
         }
         matrix.printstd();
+        assert_eq!(
+            matrix.clone().printstd_str(),
+            "\
+┌──┬─┬─┬─┬─┬───┬─┐
+┊ E┊1┊4┊6┊9┊ = ┊▼┊
+╞══╪═╪═╪═╪═╪═══╪═╡
+┊ 0┊1┊ ┊ ┊1┊ 1 ┊1┊
+├──┼─┼─┼─┼─┼───┼─┤
+┊ 1┊ ┊1┊ ┊1┊   ┊4┊
+├──┼─┼─┼─┼─┼───┼─┤
+┊ 2┊ ┊ ┊1┊ ┊   ┊6┊
+├──┼─┼─┼─┼─┼───┼─┤
+┊ ▶┊0┊1┊2┊*┊◀  ┊▲┊
+└──┴─┴─┴─┴─┴───┴─┘
+"
+        );
+        // matrix.
     }
 }
