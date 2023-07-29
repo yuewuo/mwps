@@ -94,6 +94,7 @@ impl<M: MatrixView> Echelon<M> {
             // no parity requirement
             self.info.satisfiable = true;
             self.info.effective_rows = 0;
+            self.info.rows.truncate(0);
             return;
         }
         if width == 0 {
@@ -104,11 +105,14 @@ impl<M: MatrixView> Echelon<M> {
                     self.info.satisfiable = false;
                     self.base.swap_row(0, row); // make it the first row
                     self.info.effective_rows = 1;
+                    self.info.rows.truncate(1);
+                    self.info.rows[0].set_no_leading();
                     return;
                 }
             }
             self.info.satisfiable = true;
             self.info.effective_rows = 0;
+            self.info.rows.truncate(0);
             return;
         }
         // prepare info
@@ -120,6 +124,7 @@ impl<M: MatrixView> Echelon<M> {
                 self.info.satisfiable = (r..height).all(|row| !self.base.get_rhs(row));
                 if self.info.satisfiable {
                     self.info.effective_rows = r;
+                    self.info.rows.truncate(r);
                     return;
                 }
                 // find an unsatisfiable row with rhs=1 and make it the row[r]
@@ -127,7 +132,6 @@ impl<M: MatrixView> Echelon<M> {
                     for row in r + 1..height {
                         if self.base.get_rhs(row) {
                             self.base.swap_row(r, row);
-                            self.info.rows[r].set_no_leading();
                             break;
                         }
                     }
@@ -135,6 +139,8 @@ impl<M: MatrixView> Echelon<M> {
                 debug_assert!(self.base.get_rhs(r));
                 debug_assert!(!self.info.satisfiable);
                 self.info.effective_rows = r + 1;
+                self.info.rows.truncate(r + 1);
+                self.info.rows[r].set_no_leading();
                 return;
             }
             let mut i = r;
@@ -150,6 +156,7 @@ impl<M: MatrixView> Echelon<M> {
                         self.info.satisfiable = (r..height).all(|row| !self.base.get_rhs(row));
                         if self.info.satisfiable {
                             self.info.effective_rows = r;
+                            self.info.rows.truncate(r);
                             return;
                         }
                         // find a row with rhs=1 and swap with r row
@@ -158,7 +165,6 @@ impl<M: MatrixView> Echelon<M> {
                             for row in r + 1..height {
                                 if self.base.get_rhs(row) {
                                     self.base.swap_row(r, row);
-                                    self.info.rows[r].set_no_leading();
                                     break;
                                 }
                             }
@@ -166,6 +172,8 @@ impl<M: MatrixView> Echelon<M> {
                         debug_assert!(self.base.get_rhs(r));
                         debug_assert!(!self.info.satisfiable);
                         self.info.effective_rows = r + 1;
+                        self.info.rows.truncate(r + 1);
+                        self.info.rows[r].set_no_leading();
                         return;
                     }
                 }
@@ -188,6 +196,7 @@ impl<M: MatrixView> Echelon<M> {
             self.info.columns[lead].set_not_dependent();
             lead += 1;
         }
+        self.info.rows.truncate(self.info.effective_rows);
         self.info.satisfiable = true;
     }
 
@@ -227,6 +236,7 @@ impl<M: MatrixView> VizTrait for Echelon<M> {
     fn viz_table(&mut self) -> VizTable {
         // self will be mutably borrowed, so clone the necessary information
         let info = self.get_echelon_info().clone();
+        assert_eq!(info.rows.len(), info.effective_rows);
         let leading_edges: Vec<Option<EdgeIndex>> = info
             .rows
             .iter()
@@ -241,17 +251,20 @@ impl<M: MatrixView> VizTrait for Echelon<M> {
         let mut table = VizTable::from(self);
         // add echelon mark
         assert!(table.title.get_cell(0).unwrap().get_content().is_empty());
-        table.title.set_cell(Cell::new("E").style_spec("brFg"), 0).unwrap();
+        if info.satisfiable {
+            table.title.set_cell(Cell::new("E").style_spec("brFg"), 0).unwrap();
+        } else {
+            table.title.set_cell(Cell::new("X").style_spec("brFr"), 0).unwrap();
+        }
         assert_eq!(table.title.len(), info.columns.len() + 2);
         assert_eq!(table.rows.len(), info.effective_rows);
-        assert_eq!(leading_edges.len(), info.effective_rows);
         // add row information on the right
         table.title.add_cell(Cell::new("\u{25BC}"));
         for (row, edge_index) in leading_edges.iter().enumerate() {
             let cell = if let Some(edge_index) = edge_index {
-                Cell::new(edge_index.to_string().as_str()).style_spec("irFr")
+                Cell::new(edge_index.to_string().as_str()).style_spec("irFm")
             } else {
-                Cell::new("*").style_spec("irFm")
+                Cell::new("*").style_spec("rFr")
             };
             table.rows[row].add_cell(cell);
         }
@@ -262,7 +275,7 @@ impl<M: MatrixView> VizTrait for Echelon<M> {
             let cell = if column_info.is_dependent() {
                 Cell::new(column_info.row.to_string().as_str()).style_spec("irFb")
             } else {
-                Cell::new("*").style_spec("irFm")
+                Cell::new("*").style_spec("rFr")
             };
             bottom_row.add_cell(cell);
         }
@@ -346,5 +359,24 @@ pub mod tests {
 └──┴─┴─┴─┴─┴───┴─┘
 "
         );
+        matrix.update_edge_tightness(6, false);
+        matrix.printstd();
+        assert_eq!(
+            matrix.clone().printstd_str(),
+            "\
+┌──┬─┬─┬─┬───┬─┐
+┊ E┊1┊9┊4┊ = ┊▼┊
+╞══╪═╪═╪═╪═══╪═╡
+┊ 0┊1┊ ┊1┊ 1 ┊1┊
+├──┼─┼─┼─┼───┼─┤
+┊ 1┊ ┊1┊1┊   ┊9┊
+├──┼─┼─┼─┼───┼─┤
+┊ ▶┊0┊1┊*┊◀  ┊▲┊
+└──┴─┴─┴─┴───┴─┘
+"
+        );
+        matrix.update_edge_tightness(1, false);
+        matrix.update_edge_tightness(9, false);
+        matrix.printstd();
     }
 }
