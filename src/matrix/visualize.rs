@@ -7,7 +7,7 @@
 //! Some of my functionalities require a flexible operation on the title row.
 //!
 
-use super::matrix_interface::*;
+use super::interface::*;
 use super::*;
 use prettytable::format::TableFormat;
 use prettytable::*;

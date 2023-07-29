@@ -1,20 +1,20 @@
-pub mod basic_matrix;
+pub mod basic;
 pub mod echelon;
-pub mod matrix_interface;
+pub mod interface;
 pub mod row;
 pub mod tail;
 pub mod tight;
-pub mod viz_table;
+pub mod visualize;
 
 #[cfg(feature = "python_binding")]
 use pyo3::prelude::*;
 
-pub use basic_matrix::BasicMatrix;
+pub use basic::BasicMatrix;
 pub use echelon::Echelon;
-pub use matrix_interface::*;
+pub use interface::*;
 pub use tail::Tail;
 pub use tight::Tight;
-pub use viz_table::{VizTable, VizTrait};
+pub use visualize::{VizTable, VizTrait};
 
 #[cfg(feature = "python_binding")]
 #[pyfunction]

@@ -226,7 +226,7 @@ impl std::fmt::Debug for RowInfo {
 
 #[cfg(test)]
 pub mod tests {
-    use super::super::basic_matrix::*;
+    use super::super::basic::*;
     use super::super::tight::*;
     use super::*;
     use crate::matrix::VizTrait;

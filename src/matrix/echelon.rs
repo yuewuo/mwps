@@ -1,5 +1,5 @@
-use super::matrix_interface::*;
-use super::viz_table::*;
+use super::interface::*;
+use super::visualize::*;
 use crate::util::*;
 use core::panic;
 use derivative::Derivative;
@@ -275,7 +275,7 @@ impl<M: MatrixView> VizTrait for Echelon<M> {
 
 #[cfg(test)]
 pub mod tests {
-    use super::super::basic_matrix::*;
+    use super::super::basic::*;
     use super::super::tail::*;
     use super::super::tight::*;
     use super::*;

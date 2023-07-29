@@ -1,7 +1,6 @@
 use crate::clap;
 use crate::clap::{Parser, Subcommand, ValueEnum};
 use crate::example_codes::*;
-use crate::matrix::matrix_interface::{MatrixBasic, MatrixTight};
 use crate::matrix::*;
 use crate::mwps_solver::*;
 use crate::util::*;

@@ -1,6 +1,6 @@
-use super::matrix_interface::*;
+use super::interface::*;
 use super::row::*;
-use super::viz_table::*;
+use super::visualize::*;
 use crate::util::*;
 use derivative::Derivative;
 use std::collections::{BTreeMap, BTreeSet};
