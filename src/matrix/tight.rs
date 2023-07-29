@@ -1,4 +1,3 @@
-use super::basic_matrix::*;
 use super::matrix_interface::*;
 use crate::util::*;
 use derivative::Derivative;
@@ -6,8 +5,8 @@ use std::collections::HashSet;
 
 #[derive(Clone, Debug, Derivative)]
 #[derivative(Default(new = "true"))]
-pub struct TightMatrix {
-    pub base: BasicMatrix,
+pub struct Tight<M> {
+    pub base: M,
     /// the set of tight edges: should be a relatively small set
     #[cfg_attr(feature = "python_binding", pyo3(get, set))]
     pub tight_edges: HashSet<EdgeIndex>,
@@ -18,7 +17,7 @@ pub struct TightMatrix {
     var_indices: KnownSafeRefCell<Vec<VarIndex>>,
 }
 
-impl MatrixTight for TightMatrix {
+impl<M> MatrixTight for Tight<M> {
     fn update_edge_tightness(&mut self, edge_index: EdgeIndex, is_tight: bool) {
         self.is_var_indices_outdated = true;
         if is_tight {
@@ -33,7 +32,7 @@ impl MatrixTight for TightMatrix {
     }
 }
 
-impl MatrixBasic for TightMatrix {
+impl<M: MatrixBasic> MatrixBasic for Tight<M> {
     /// add an edge to the basic matrix, return the `var_index` if newly created
     fn add_variable(&mut self, edge_index: EdgeIndex) -> Option<VarIndex> {
         self.base.add_variable(edge_index)
@@ -63,7 +62,7 @@ impl MatrixBasic for TightMatrix {
     }
 }
 
-impl TightMatrix {
+impl<M: MatrixBasic + MatrixView> Tight<M> {
     fn force_update_var_indices(&self) {
         let mut var_indices = self.var_indices.borrow_mut();
         var_indices.clear();
@@ -76,6 +75,7 @@ impl TightMatrix {
         }
     }
 
+    #[inline]
     fn use_var_indices(&self) {
         if self.is_var_indices_outdated {
             self.force_update_var_indices()
@@ -83,14 +83,14 @@ impl TightMatrix {
     }
 }
 
-impl MatrixView for TightMatrix {
+impl<M: MatrixBasic + MatrixView> MatrixView for Tight<M> {
     fn columns(&self) -> usize {
         self.use_var_indices();
         self.var_indices.borrow().len()
     }
 
     fn column_to_var_index(&self, column: ColumnIndex) -> VarIndex {
-        self.use_var_indices();
+        debug_assert!(self.is_var_indices_outdated); // performance critical
         self.var_indices.borrow()[column]
     }
 
@@ -100,10 +100,5 @@ impl MatrixView for TightMatrix {
 
     fn var_to_edge_index(&self, var_index: VarIndex) -> EdgeIndex {
         self.base.var_to_edge_index(var_index)
-    }
-
-    fn get_view_lhs(&self, row: RowIndex, column: ColumnIndex) -> bool {
-        let var_index = self.column_to_var_index(column);
-        self.base.get_lhs(row, var_index)
     }
 }

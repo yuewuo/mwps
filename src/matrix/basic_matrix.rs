@@ -1,10 +1,11 @@
 use super::matrix_interface::*;
 use super::row::*;
+use super::table::*;
 use crate::util::*;
 use derivative::Derivative;
 use std::collections::{HashMap, HashSet};
 
-#[derive(Clone, Debug, Derivative)]
+#[derive(Clone, Derivative)]
 #[derivative(Default(new = "true"))]
 pub struct BasicMatrix {
     /// the vertices already maintained by this parity check
@@ -90,23 +91,108 @@ impl MatrixBasic for BasicMatrix {
 }
 
 impl MatrixView for BasicMatrix {
+    #[inline]
     fn columns(&self) -> usize {
         self.variables.len()
     }
 
+    #[inline]
     fn column_to_var_index(&self, column: ColumnIndex) -> VarIndex {
         column
     }
 
+    #[inline]
     fn rows(&self) -> usize {
         self.constraints.len()
     }
 
+    #[inline]
     fn var_to_edge_index(&self, var_index: VarIndex) -> EdgeIndex {
-        self.edges[&var_index]
+        self.variables[var_index]
+    }
+}
+
+impl VizTrait for BasicMatrix {
+    fn viz_table(&self) -> VizTable {
+        VizTable::from(self)
+    }
+}
+
+#[cfg(test)]
+pub mod tests {
+    use super::*;
+
+    #[test]
+    fn basic_matrix_1() {
+        // cargo test --features=colorful basic_matrix_1 -- --nocapture
+        let mut matrix = BasicMatrix::new();
+        matrix.printstd();
+        assert_eq!(
+            matrix.printstd_str(),
+            "\
+┌┬───┐
+┊┊ = ┊
+╞╪═══╡
+└┴───┘
+"
+        );
+        matrix.add_variable(1);
+        matrix.add_variable(4);
+        matrix.add_variable(12);
+        matrix.add_variable(345);
+        matrix.printstd();
+        assert_eq!(
+            matrix.printstd_str(),
+            "\
+┌┬─┬─┬─┬─┬───┐
+┊┊1┊4┊1┊3┊ = ┊
+┊┊ ┊ ┊2┊4┊   ┊
+┊┊ ┊ ┊ ┊5┊   ┊
+╞╪═╪═╪═╪═╪═══╡
+└┴─┴─┴─┴─┴───┘
+"
+        );
+        matrix.add_constraint(0, &[1, 4, 12], true);
+        matrix.add_constraint(1, &[4, 345], false);
+        matrix.add_constraint(2, &[1, 345], true);
+        matrix.printstd();
+        assert_eq!(
+            matrix.clone().printstd_str(),
+            "\
+┌─┬─┬─┬─┬─┬───┐
+┊ ┊1┊4┊1┊3┊ = ┊
+┊ ┊ ┊ ┊2┊4┊   ┊
+┊ ┊ ┊ ┊ ┊5┊   ┊
+╞═╪═╪═╪═╪═╪═══╡
+┊0┊1┊1┊1┊ ┊ 1 ┊
+├─┼─┼─┼─┼─┼───┤
+┊1┊ ┊1┊ ┊1┊   ┊
+├─┼─┼─┼─┼─┼───┤
+┊2┊1┊ ┊ ┊1┊ 1 ┊
+└─┴─┴─┴─┴─┴───┘
+"
+        );
     }
 
-    fn get_view_lhs(&self, row: RowIndex, column: ColumnIndex) -> bool {
-        self.get_lhs(row, column)
+    #[test]
+    fn basic_matrix_should_not_add_repeated_constraint() {
+        // cargo test --features=colorful basic_matrix_should_not_add_repeated_constraint -- --nocapture
+        let mut matrix = BasicMatrix::new();
+        assert_eq!(matrix.add_constraint(0, &[1, 4, 8], false), Some(vec![0, 1, 2]));
+        assert_eq!(matrix.add_constraint(1, &[4, 8], true), None);
+        assert_eq!(matrix.add_constraint(0, &[4], true), None); // repeated
+        matrix.printstd();
+        assert_eq!(
+            matrix.clone().printstd_str(),
+            "\
+┌─┬─┬─┬─┬───┐
+┊ ┊1┊4┊8┊ = ┊
+╞═╪═╪═╪═╪═══╡
+┊0┊1┊1┊1┊   ┊
+├─┼─┼─┼─┼───┤
+┊1┊ ┊1┊1┊ 1 ┊
+└─┴─┴─┴─┴───┘
+"
+        );
     }
 }

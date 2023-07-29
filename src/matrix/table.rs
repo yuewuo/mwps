@@ -7,6 +7,7 @@
 //! Some of my functionalities require a flexible operation on the title row.
 //!
 
+use super::matrix_interface::*;
 use super::*;
 use prettytable::format::TableFormat;
 use prettytable::*;
@@ -80,6 +81,34 @@ lazy_static! {
         }
         format
     };
+}
+
+impl<M: MatrixBasic + MatrixView> From<&M> for VizTable {
+    fn from(matrix: &M) -> VizTable {
+        // create title
+        let mut title = Row::empty();
+        title.add_cell(Cell::new(""));
+        for column in 0..matrix.columns() {
+            let var_index = matrix.column_to_var_index(column);
+            let edge_index = matrix.var_to_edge_index(var_index);
+            let edge_index_str = Self::force_single_column(edge_index.to_string().as_str());
+            title.add_cell(Cell::new(edge_index_str.as_str()).style_spec("brFr"));
+        }
+        title.add_cell(Cell::new(" = "));
+        // create body rows
+        let mut rows: Vec<Row> = vec![];
+        for row in 0..matrix.rows() {
+            let mut table_row = Row::empty();
+            table_row.add_cell(Cell::new(row.to_string().as_str()).style_spec("brFb"));
+            for column in 0..matrix.columns() {
+                let var_index = matrix.column_to_var_index(column);
+                table_row.add_cell(Cell::new(if matrix.get_lhs(row, var_index) { "1" } else { " " }));
+            }
+            table_row.add_cell(Cell::new(if matrix.get_rhs(row) { " 1 " } else { "   " }));
+            rows.push(table_row);
+        }
+        VizTable { title, rows }
+    }
 }
 
 impl From<VizTable> for Table {

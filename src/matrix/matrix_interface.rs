@@ -18,10 +18,8 @@
 //! columns in the basic matrix. When it comes to operating the matrix, we'll always
 //! use the `var_index` to avoid duplicated translation (at least one translation is necessary).
 //!
-//! Each
 
 use crate::util::*;
-use std::collections::BTreeSet;
 
 pub type VarIndex = usize;
 pub type RowIndex = usize;
@@ -86,9 +84,6 @@ pub trait MatrixView {
             })
             .collect()
     }
-
-    /// only left-hand-side has different order
-    fn get_view_lhs(&self, row: RowIndex, column: ColumnIndex) -> bool;
 }
 
 pub trait MatrixTight {

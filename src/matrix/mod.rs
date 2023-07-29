@@ -4,7 +4,7 @@ pub mod matrix_interface;
 pub mod parity_matrix;
 pub mod row;
 pub mod table;
-pub mod tight_matrix;
+pub mod tight;
 
 #[cfg(feature = "python_binding")]
 use pyo3::prelude::*;
