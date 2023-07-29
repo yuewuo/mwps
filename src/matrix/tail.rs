@@ -19,6 +19,12 @@ pub struct Tail<M> {
     tail_var_indices: Vec<VarIndex>,
 }
 
+impl<M> Tail<M> {
+    pub fn get_base(&self) -> &M {
+        &self.base
+    }
+}
+
 impl<M> MatrixTail for Tail<M> {
     fn get_tail_edges(&self) -> &HashSet<EdgeIndex> {
         &self.tail_edges
@@ -34,7 +40,6 @@ impl<M: MatrixTight> MatrixTight for Tail<M> {
         self.is_var_indices_outdated = true;
         self.base.update_edge_tightness(edge_index, is_tight)
     }
-
     fn is_tight(&self, edge_index: usize) -> bool {
         self.base.is_tight(edge_index)
     }
@@ -62,16 +67,16 @@ impl<M: MatrixBasic> MatrixBasic for Tail<M> {
         self.base.swap_row(a, b)
     }
     fn get_lhs(&self, row: RowIndex, var_index: VarIndex) -> bool {
-        self.base.get_lhs(row, var_index)
+        self.get_base().get_lhs(row, var_index)
     }
     fn get_rhs(&self, row: RowIndex) -> bool {
-        self.base.get_rhs(row)
+        self.get_base().get_rhs(row)
     }
     fn var_to_edge_index(&self, var_index: VarIndex) -> EdgeIndex {
-        self.base.var_to_edge_index(var_index)
+        self.get_base().var_to_edge_index(var_index)
     }
     fn edge_to_var_index(&self, edge_index: EdgeIndex) -> Option<VarIndex> {
-        self.base.edge_to_var_index(edge_index)
+        self.get_base().edge_to_var_index(edge_index)
     }
 }
 

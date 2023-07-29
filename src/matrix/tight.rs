@@ -17,6 +17,12 @@ pub struct Tight<M> {
     var_indices: Vec<VarIndex>,
 }
 
+impl<M> Tight<M> {
+    pub fn get_base(&self) -> &M {
+        &self.base
+    }
+}
+
 impl<M: MatrixBasic> MatrixTight for Tight<M> {
     fn update_edge_tightness(&mut self, edge_index: EdgeIndex, is_tight: bool) {
         debug_assert!(self.exists_edge(edge_index));
@@ -55,16 +61,16 @@ impl<M: MatrixBasic> MatrixBasic for Tight<M> {
         self.base.swap_row(a, b)
     }
     fn get_lhs(&self, row: RowIndex, var_index: VarIndex) -> bool {
-        self.base.get_lhs(row, var_index)
+        self.get_base().get_lhs(row, var_index)
     }
     fn get_rhs(&self, row: RowIndex) -> bool {
-        self.base.get_rhs(row)
+        self.get_base().get_rhs(row)
     }
     fn var_to_edge_index(&self, var_index: VarIndex) -> EdgeIndex {
-        self.base.var_to_edge_index(var_index)
+        self.get_base().var_to_edge_index(var_index)
     }
     fn edge_to_var_index(&self, edge_index: EdgeIndex) -> Option<VarIndex> {
-        self.base.edge_to_var_index(edge_index)
+        self.get_base().edge_to_var_index(edge_index)
     }
 }
 

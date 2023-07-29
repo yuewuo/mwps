@@ -1,4 +1,5 @@
 pub mod basic_matrix;
+pub mod echelon;
 pub mod echelon_matrix;
 pub mod matrix_interface;
 pub mod parity_matrix;
