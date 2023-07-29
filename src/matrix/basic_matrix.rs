@@ -1,6 +1,6 @@
 use super::matrix_interface::*;
 use super::row::*;
-use super::table::*;
+use super::viz_table::*;
 use crate::util::*;
 use derivative::Derivative;
 use std::collections::{HashMap, HashSet};
@@ -88,27 +88,27 @@ impl MatrixBasic for BasicMatrix {
     fn get_rhs(&self, row: RowIndex) -> bool {
         self.constraints[row].get_right()
     }
+
+    fn var_to_edge_index(&self, var_index: VarIndex) -> EdgeIndex {
+        self.variables[var_index]
+    }
+
+    fn edge_to_var_index(&self, edge_index: EdgeIndex) -> Option<VarIndex> {
+        self.edges.get(&edge_index).cloned()
+    }
 }
 
 impl MatrixView for BasicMatrix {
-    #[inline]
     fn columns(&self) -> usize {
         self.variables.len()
     }
 
-    #[inline]
     fn column_to_var_index(&self, column: ColumnIndex) -> VarIndex {
         column
     }
 
-    #[inline]
     fn rows(&self) -> usize {
         self.constraints.len()
-    }
-
-    #[inline]
-    fn var_to_edge_index(&self, var_index: VarIndex) -> EdgeIndex {
-        self.variables[var_index]
     }
 }
 

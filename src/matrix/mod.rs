@@ -3,8 +3,8 @@ pub mod echelon_matrix;
 pub mod matrix_interface;
 pub mod parity_matrix;
 pub mod row;
-pub mod table;
 pub mod tight;
+pub mod viz_table;
 
 #[cfg(feature = "python_binding")]
 use pyo3::prelude::*;
@@ -13,7 +13,7 @@ pub use echelon_matrix::EchelonMatrix;
 pub use matrix_interface::{MatrixImpl, VarIndex};
 pub use parity_matrix::ParityMatrix;
 pub use row::ParityRow;
-pub use table::{VizTable, VizTrait};
+pub use viz_table::{VizTable, VizTrait};
 
 #[cfg(feature = "python_binding")]
 #[pyfunction]
