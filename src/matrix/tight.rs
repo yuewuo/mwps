@@ -99,7 +99,7 @@ impl<M: MatrixView> MatrixView for Tight<M> {
         self.var_indices[column]
     }
 
-    fn rows(&self) -> usize {
+    fn rows(&mut self) -> usize {
         self.base.rows()
     }
 }

@@ -87,7 +87,7 @@ pub trait MatrixView: MatrixBasic {
     }
 
     /// the number of rows: rows always have indices 0..rows
-    fn rows(&self) -> usize;
+    fn rows(&mut self) -> usize;
 
     fn get_view_edges(&mut self) -> Vec<EdgeIndex> {
         (0..self.columns())
@@ -117,3 +117,5 @@ pub trait MatrixTail {
     fn get_tail_edges(&self) -> &HashSet<EdgeIndex>;
     fn get_tail_edges_mut(&mut self) -> &mut HashSet<EdgeIndex>;
 }
+
+pub trait MatrixEchelon {}

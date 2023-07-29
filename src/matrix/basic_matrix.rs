@@ -107,7 +107,7 @@ impl MatrixView for BasicMatrix {
         column
     }
 
-    fn rows(&self) -> usize {
+    fn rows(&mut self) -> usize {
         self.constraints.len()
     }
 }

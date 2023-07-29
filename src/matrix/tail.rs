@@ -110,7 +110,7 @@ impl<M: MatrixView> MatrixView for Tail<M> {
         self.var_indices[column]
     }
 
-    fn rows(&self) -> usize {
+    fn rows(&mut self) -> usize {
         self.base.rows()
     }
 }
