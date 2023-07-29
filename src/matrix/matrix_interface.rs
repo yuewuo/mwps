@@ -20,6 +20,7 @@
 //!
 
 use crate::util::*;
+use std::collections::HashSet;
 
 pub type VarIndex = usize;
 pub type RowIndex = usize;
@@ -108,9 +109,11 @@ pub trait MatrixView: MatrixBasic {
 }
 
 pub trait MatrixTight {
-    /// update the edges' tightness
     fn update_edge_tightness(&mut self, edge_index: EdgeIndex, is_tight: bool);
-
-    /// this function is generally slow given that
     fn is_tight(&self, edge_index: usize) -> bool;
+}
+
+pub trait MatrixTail {
+    fn get_tail_edges(&self) -> &HashSet<EdgeIndex>;
+    fn get_tail_edges_mut(&mut self) -> &mut HashSet<EdgeIndex>;
 }

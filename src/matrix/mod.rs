@@ -3,6 +3,7 @@ pub mod echelon_matrix;
 pub mod matrix_interface;
 pub mod parity_matrix;
 pub mod row;
+pub mod tail;
 pub mod tight;
 pub mod viz_table;
 

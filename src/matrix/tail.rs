@@ -6,36 +6,43 @@ use std::collections::HashSet;
 
 #[derive(Clone, Derivative)]
 #[derivative(Default(new = "true"))]
-pub struct Tight<M> {
+pub struct Tail<M> {
     base: M,
-    /// the set of tight edges: should be a relatively small set
-    tight_edges: HashSet<EdgeIndex>,
-    /// tight matrix gives a view of only tight edges, with sorted indices
+    /// the set of edges that should be placed at the end, if any
+    tail_edges: HashSet<EdgeIndex>,
+    /// var indices are outdated on any changes to the underlying matrix
     #[derivative(Default(value = "true"))]
     is_var_indices_outdated: bool,
     /// the internal store of var indices
     var_indices: Vec<VarIndex>,
+    /// internal cache for reducing memory allocation
+    tail_var_indices: Vec<VarIndex>,
 }
 
-impl<M: MatrixBasic> MatrixTight for Tight<M> {
-    fn update_edge_tightness(&mut self, edge_index: EdgeIndex, is_tight: bool) {
-        debug_assert!(self.exists_edge(edge_index));
+impl<M> MatrixTail for Tail<M> {
+    fn get_tail_edges(&self) -> &HashSet<EdgeIndex> {
+        &self.tail_edges
+    }
+    fn get_tail_edges_mut(&mut self) -> &mut HashSet<EdgeIndex> {
         self.is_var_indices_outdated = true;
-        if is_tight {
-            self.tight_edges.insert(edge_index);
-        } else {
-            self.tight_edges.remove(&edge_index);
-        }
+        &mut self.tail_edges
+    }
+}
+
+impl<M: MatrixTight> MatrixTight for Tail<M> {
+    fn update_edge_tightness(&mut self, edge_index: EdgeIndex, is_tight: bool) {
+        self.is_var_indices_outdated = true;
+        self.base.update_edge_tightness(edge_index, is_tight)
     }
 
     fn is_tight(&self, edge_index: usize) -> bool {
-        debug_assert!(self.exists_edge(edge_index));
-        self.tight_edges.contains(&edge_index)
+        self.base.is_tight(edge_index)
     }
 }
 
-impl<M: MatrixBasic> MatrixBasic for Tight<M> {
+impl<M: MatrixBasic> MatrixBasic for Tail<M> {
     fn add_variable(&mut self, edge_index: EdgeIndex) -> Option<VarIndex> {
+        self.is_var_indices_outdated = true;
         self.base.add_variable(edge_index)
     }
 
@@ -68,16 +75,20 @@ impl<M: MatrixBasic> MatrixBasic for Tight<M> {
     }
 }
 
-impl<M: MatrixView> Tight<M> {
+impl<M: MatrixView> Tail<M> {
     fn force_update_var_indices(&mut self) {
         self.var_indices.clear();
+        self.tail_var_indices.clear();
         for column in 0..self.base.columns() {
             let var_index = self.base.column_to_var_index(column);
             let edge_index = self.base.var_to_edge_index(var_index);
-            if self.is_tight(edge_index) {
+            if self.tail_edges.contains(&edge_index) {
+                self.tail_var_indices.push(var_index);
+            } else {
                 self.var_indices.push(var_index);
             }
         }
+        self.var_indices.append(&mut self.tail_var_indices)
     }
 
     fn var_indices_lazy_update(&mut self) {
@@ -88,7 +99,7 @@ impl<M: MatrixView> Tight<M> {
     }
 }
 
-impl<M: MatrixView> MatrixView for Tight<M> {
+impl<M: MatrixView> MatrixView for Tail<M> {
     fn columns(&mut self) -> usize {
         self.var_indices_lazy_update();
         self.var_indices.len()
@@ -104,7 +115,7 @@ impl<M: MatrixView> MatrixView for Tight<M> {
     }
 }
 
-impl<M: MatrixView> VizTrait for Tight<M> {
+impl<M: MatrixView> VizTrait for Tail<M> {
     fn viz_table(&mut self) -> VizTable {
         VizTable::from(self)
     }
@@ -113,19 +124,20 @@ impl<M: MatrixView> VizTrait for Tight<M> {
 #[cfg(test)]
 pub mod tests {
     use super::super::basic_matrix::*;
+    use super::super::tight::*;
     use super::*;
 
-    type TightMatrix = Tight<BasicMatrix>;
+    type TailMatrix = Tail<Tight<BasicMatrix>>;
 
     #[test]
-    fn tight_matrix_1() {
-        // cargo test --features=colorful tight_matrix_1 -- --nocapture
-        let mut matrix = TightMatrix::new();
+    fn tail_matrix_1() {
+        // cargo test --features=colorful tail_matrix_1 -- --nocapture
+        let mut matrix = TailMatrix::new();
         matrix.add_constraint(0, &[1, 4, 6], true);
         matrix.add_constraint(1, &[4, 9], false);
         matrix.add_constraint(2, &[1, 9], true);
+        assert_eq!(matrix.edge_to_var_index(4), Some(1));
         matrix.printstd();
-        // this is because by default all edges are not tight
         assert_eq!(
             matrix.clone().printstd_str(),
             "\
@@ -140,63 +152,65 @@ pub mod tests {
 └─┴───┘
 "
         );
-        matrix.update_edge_tightness(4, true);
-        matrix.update_edge_tightness(9, true);
+        for edge_index in [1, 4, 6, 9] {
+            matrix.update_edge_tightness(edge_index, true);
+        }
         matrix.printstd();
         assert_eq!(
             matrix.clone().printstd_str(),
             "\
-┌─┬─┬─┬───┐
-┊ ┊4┊9┊ = ┊
-╞═╪═╪═╪═══╡
-┊0┊1┊ ┊ 1 ┊
-├─┼─┼─┼───┤
-┊1┊1┊1┊   ┊
-├─┼─┼─┼───┤
-┊2┊ ┊1┊ 1 ┊
-└─┴─┴─┴───┘
+┌─┬─┬─┬─┬─┬───┐
+┊ ┊1┊4┊6┊9┊ = ┊
+╞═╪═╪═╪═╪═╪═══╡
+┊0┊1┊1┊1┊ ┊ 1 ┊
+├─┼─┼─┼─┼─┼───┤
+┊1┊ ┊1┊ ┊1┊   ┊
+├─┼─┼─┼─┼─┼───┤
+┊2┊1┊ ┊ ┊1┊ 1 ┊
+└─┴─┴─┴─┴─┴───┘
 "
         );
-        matrix.update_edge_tightness(9, false);
+        let tail_edges = matrix.get_tail_edges_mut();
+        tail_edges.clear();
+        tail_edges.insert(6);
+        tail_edges.insert(1);
         matrix.printstd();
         assert_eq!(
             matrix.clone().printstd_str(),
             "\
-┌─┬─┬───┐
-┊ ┊4┊ = ┊
-╞═╪═╪═══╡
-┊0┊1┊ 1 ┊
-├─┼─┼───┤
-┊1┊1┊   ┊
-├─┼─┼───┤
-┊2┊ ┊ 1 ┊
-└─┴─┴───┘
+┌─┬─┬─┬─┬─┬───┐
+┊ ┊4┊9┊1┊6┊ = ┊
+╞═╪═╪═╪═╪═╪═══╡
+┊0┊1┊ ┊1┊1┊ 1 ┊
+├─┼─┼─┼─┼─┼───┤
+┊1┊1┊1┊ ┊ ┊   ┊
+├─┼─┼─┼─┼─┼───┤
+┊2┊ ┊1┊1┊ ┊ 1 ┊
+└─┴─┴─┴─┴─┴───┘
 "
         );
+        assert_eq!(matrix.get_tail_edges().len(), 2);
+        assert!(matrix.get_tail_edges().contains(&1));
+        assert!(matrix.get_tail_edges().contains(&6));
+        assert_eq!(matrix.edge_to_var_index(4), Some(1));
     }
 
     #[test]
     #[should_panic]
-    fn tight_matrix_cannot_set_nonexistent_edge() {
-        // cargo test tight_matrix_cannot_set_nonexistent_edge -- --nocapture
-        let mut matrix = TightMatrix::new();
+    fn tail_matrix_cannot_call_dirty_column() {
+        // cargo test tail_matrix_cannot_call_dirty_column -- --nocapture
+        let mut matrix = TailMatrix::new();
         matrix.add_constraint(0, &[1, 4, 6], true);
-        matrix.update_edge_tightness(2, true);
+        matrix.update_edge_tightness(1, true);
+        // even though there is indeed such a column, we forbid such dangerous calls
+        // always call `columns()` before accessing any column
+        matrix.column_to_var_index(0);
     }
 
     #[test]
-    #[should_panic]
-    fn tight_matrix_cannot_read_nonexistent_edge() {
-        // cargo test tight_matrix_cannot_read_nonexistent_edge -- --nocapture
-        let mut matrix = TightMatrix::new();
-        matrix.add_constraint(0, &[1, 4, 6], true);
-        matrix.is_tight(2);
-    }
-
-    #[test]
-    fn tight_matrix_basic_trait() {
-        // cargo test --features=colorful tight_matrix_basic_trait -- --nocapture
-        let mut matrix = TightMatrix::new();
+    fn tail_matrix_basic_trait() {
+        // cargo test --features=colorful tail_matrix_basic_trait -- --nocapture
+        let mut matrix = TailMatrix::new();
         matrix.add_variable(3); // untight edges will not show
         matrix.add_constraint(0, &[1, 4, 6], true);
         matrix.add_constraint(1, &[4, 9], false);
@@ -221,52 +235,7 @@ pub mod tests {
 └─┴─┴─┴─┴─┴───┘
 "
         );
-    }
-
-    #[test]
-    fn tight_matrix_rebuild_var_indices() {
-        // cargo test --features=colorful tight_matrix_rebuild_var_indices -- --nocapture
-        let mut matrix = TightMatrix::new();
-        matrix.add_variable(3); // untight edges will not show
-        matrix.add_constraint(0, &[1, 4, 6], true);
-        assert_eq!(matrix.columns(), 0);
-        for edge_index in [1, 4, 6] {
-            matrix.update_edge_tightness(edge_index, true);
-        }
-        assert_eq!(matrix.columns(), 3);
-        assert_eq!(matrix.columns(), 3); // should only update var_indices_once
-        matrix.add_constraint(1, &[4, 9], false);
-        matrix.add_constraint(2, &[1, 9], true);
-        matrix.update_edge_tightness(9, true);
-        matrix.update_edge_tightness(4, false);
-        matrix.update_edge_tightness(6, false);
-        assert_eq!(matrix.columns(), 2);
-        matrix.printstd();
-        assert_eq!(
-            matrix.clone().printstd_str(),
-            "\
-┌─┬─┬─┬───┐
-┊ ┊1┊9┊ = ┊
-╞═╪═╪═╪═══╡
-┊0┊1┊ ┊ 1 ┊
-├─┼─┼─┼───┤
-┊1┊ ┊1┊   ┊
-├─┼─┼─┼───┤
-┊2┊1┊1┊ 1 ┊
-└─┴─┴─┴───┘
-"
-        );
-    }
-
-    #[test]
-    #[should_panic]
-    fn tight_matrix_cannot_call_dirty_column() {
-        // cargo test tight_matrix_cannot_call_dirty_column -- --nocapture
-        let mut matrix = TightMatrix::new();
-        matrix.add_constraint(0, &[1, 4, 6], true);
-        matrix.update_edge_tightness(1, true);
-        // even though there is indeed such a column, we forbid such dangerous calls
-        // always call `columns()` before accessing any column
-        matrix.column_to_var_index(0);
+        assert!(matrix.is_tight(1));
+        assert_eq!(matrix.edge_to_var_index(4), Some(2));
     }
 }
