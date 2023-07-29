@@ -191,9 +191,7 @@ pub mod tests {
 └─┴─┴─┴─┴─┴───┘
 "
         );
-        assert_eq!(matrix.get_tail_edges().len(), 2);
-        assert!(matrix.get_tail_edges().contains(&1));
-        assert!(matrix.get_tail_edges().contains(&6));
+        assert_eq!(matrix.get_tail_edges_vec(), [1, 6]);
         assert_eq!(matrix.edge_to_var_index(4), Some(1));
     }
 

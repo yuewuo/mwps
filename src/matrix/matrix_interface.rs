@@ -128,6 +128,12 @@ pub trait MatrixTail {
             tail_edges.insert(edge_index);
         }
     }
+
+    fn get_tail_edges_vec(&self) -> Vec<EdgeIndex> {
+        let mut edges: Vec<EdgeIndex> = self.get_tail_edges().iter().cloned().collect();
+        edges.sort();
+        edges
+    }
 }
 
 pub trait MatrixEchelon {
@@ -153,7 +159,7 @@ pub struct EchelonInfo {
     pub rows: Vec<RowInfo>,
 }
 
-#[derive(Clone, Copy, Debug, Derivative)]
+#[derive(Clone, Copy, Debug, Derivative, PartialEq, Eq)]
 #[derivative(Default(new = "true"))]
 #[cfg_attr(feature = "python_binding", cfg_eval)]
 #[cfg_attr(feature = "python_binding", pyclass)]
@@ -163,6 +169,9 @@ pub struct ColumnInfo {
 }
 
 impl ColumnInfo {
+    pub fn not_dependent() -> Self {
+        Self { row: RowIndex::MAX }
+    }
     pub fn set(&mut self, row: RowIndex) {
         debug_assert!(row != RowIndex::MAX);
         self.row = row;
@@ -175,7 +184,7 @@ impl ColumnInfo {
     }
 }
 
-#[derive(Clone, Copy, Debug, Derivative)]
+#[derive(Clone, Copy, Debug, Derivative, PartialEq, Eq)]
 #[derivative(Default(new = "true"))]
 #[cfg_attr(feature = "python_binding", cfg_eval)]
 #[cfg_attr(feature = "python_binding", pyclass)]
@@ -185,6 +194,11 @@ pub struct RowInfo {
 }
 
 impl RowInfo {
+    pub fn no_leading() -> Self {
+        Self {
+            column: ColumnIndex::MAX,
+        }
+    }
     pub fn set(&mut self, column: ColumnIndex) {
         debug_assert!(column != ColumnIndex::MAX);
         self.column = column;
