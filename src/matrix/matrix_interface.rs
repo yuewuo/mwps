@@ -117,6 +117,17 @@ pub trait MatrixTight {
 pub trait MatrixTail {
     fn get_tail_edges(&self) -> &HashSet<EdgeIndex>;
     fn get_tail_edges_mut(&mut self) -> &mut HashSet<EdgeIndex>;
+
+    fn set_tail_edges<'a, Iter>(&mut self, iter: Iter)
+    where
+        Iter: Iterator<Item = &'a EdgeIndex>,
+    {
+        let tail_edges = self.get_tail_edges_mut();
+        tail_edges.clear();
+        for &edge_index in iter {
+            tail_edges.insert(edge_index);
+        }
+    }
 }
 
 pub trait MatrixEchelon {

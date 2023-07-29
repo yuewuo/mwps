@@ -60,10 +60,10 @@ impl<M: MatrixBasic> MatrixBasic for Echelon<M> {
         self.base.add_constraint(vertex_index, incident_edges, parity)
     }
 
-    fn xor_row(&mut self, target: RowIndex, source: RowIndex) {
+    fn xor_row(&mut self, _target: RowIndex, _source: RowIndex) {
         panic!("xor operation on an echelon matrix is forbidden");
     }
-    fn swap_row(&mut self, a: RowIndex, b: RowIndex) {
+    fn swap_row(&mut self, _a: RowIndex, _b: RowIndex) {
         panic!("swap operation on an echelon matrix is forbidden");
     }
     fn get_lhs(&self, row: RowIndex, var_index: VarIndex) -> bool {
@@ -90,7 +90,6 @@ impl<M: MatrixView> Echelon<M> {
         if height != self.info.rows.len() {
             self.info.rows.resize_with(height, Default::default);
         }
-        println!("width: {width}, height: {height}");
         if height == 0 {
             // no parity requirement
             self.info.satisfiable = true;
@@ -145,7 +144,7 @@ impl<M: MatrixView> Echelon<M> {
                 if i == height {
                     i = r;
                     // couldn't find a leading 1 in this column, indicating this variable is an independent variable
-                    self.info.columns[self.base.column_to_var_index(lead)].set_not_dependent();
+                    self.info.columns[lead].set_not_dependent();
                     lead += 1; // consider the next lead
                     if lead >= width {
                         self.info.satisfiable = (r..height).all(|row| !self.base.get_rhs(row));
@@ -311,6 +310,41 @@ pub mod tests {
 └──┴─┴─┴─┴─┴───┴─┘
 "
         );
-        // matrix.
+        matrix.set_tail_edges([1, 6].iter());
+        matrix.printstd();
+        assert_eq!(
+            matrix.clone().printstd_str(),
+            "\
+┌──┬─┬─┬─┬─┬───┬─┐
+┊ E┊4┊9┊1┊6┊ = ┊▼┊
+╞══╪═╪═╪═╪═╪═══╪═╡
+┊ 0┊1┊ ┊1┊ ┊ 1 ┊4┊
+├──┼─┼─┼─┼─┼───┼─┤
+┊ 1┊ ┊1┊1┊ ┊ 1 ┊9┊
+├──┼─┼─┼─┼─┼───┼─┤
+┊ 2┊ ┊ ┊ ┊1┊   ┊6┊
+├──┼─┼─┼─┼─┼───┼─┤
+┊ ▶┊0┊1┊*┊2┊◀  ┊▲┊
+└──┴─┴─┴─┴─┴───┴─┘
+"
+        );
+        matrix.set_tail_edges([4].iter());
+        matrix.printstd();
+        assert_eq!(
+            matrix.clone().printstd_str(),
+            "\
+┌──┬─┬─┬─┬─┬───┬─┐
+┊ E┊1┊6┊9┊4┊ = ┊▼┊
+╞══╪═╪═╪═╪═╪═══╪═╡
+┊ 0┊1┊ ┊ ┊1┊ 1 ┊1┊
+├──┼─┼─┼─┼─┼───┼─┤
+┊ 1┊ ┊1┊ ┊ ┊   ┊6┊
+├──┼─┼─┼─┼─┼───┼─┤
+┊ 2┊ ┊ ┊1┊1┊   ┊9┊
+├──┼─┼─┼─┼─┼───┼─┤
+┊ ▶┊0┊1┊2┊*┊◀  ┊▲┊
+└──┴─┴─┴─┴─┴───┴─┘
+"
+        );
     }
 }

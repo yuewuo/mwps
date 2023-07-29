@@ -175,10 +175,7 @@ pub mod tests {
 └─┴─┴─┴─┴─┴───┘
 "
         );
-        let tail_edges = matrix.get_tail_edges_mut();
-        tail_edges.clear();
-        tail_edges.insert(6);
-        tail_edges.insert(1);
+        matrix.set_tail_edges([1, 6].iter());
         matrix.printstd();
         assert_eq!(
             matrix.clone().printstd_str(),
