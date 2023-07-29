@@ -27,22 +27,6 @@ pub type VarIndex = usize;
 pub type RowIndex = usize;
 pub type ColumnIndex = usize;
 
-/// deprecated
-pub trait MatrixImpl {
-    fn add_variable(&mut self, edge_index: EdgeIndex);
-    fn update_edge_tightness(&mut self, edge_index: EdgeIndex, is_tight: bool);
-    fn is_tight(&self, var_index: usize) -> bool;
-
-    fn add_variable_with_tightness(&mut self, edge_index: EdgeIndex, is_tight: bool) {
-        self.add_variable(edge_index);
-        self.update_edge_tightness(edge_index, is_tight);
-    }
-
-    fn add_tight_variable(&mut self, edge_index: EdgeIndex) {
-        self.add_variable_with_tightness(edge_index, true)
-    }
-}
-
 pub trait MatrixBasic {
     /// add an edge to the basic matrix, return the `var_index` if newly created
     fn add_variable(&mut self, edge_index: EdgeIndex) -> Option<VarIndex>;
@@ -109,9 +93,18 @@ pub trait MatrixView: MatrixBasic {
     }
 }
 
-pub trait MatrixTight {
+pub trait MatrixTight: MatrixBasic {
     fn update_edge_tightness(&mut self, edge_index: EdgeIndex, is_tight: bool);
     fn is_tight(&self, edge_index: usize) -> bool;
+
+    fn add_variable_with_tightness(&mut self, edge_index: EdgeIndex, is_tight: bool) {
+        self.add_variable(edge_index);
+        self.update_edge_tightness(edge_index, is_tight);
+    }
+
+    fn add_tight_variable(&mut self, edge_index: EdgeIndex) {
+        self.add_variable_with_tightness(edge_index, true)
+    }
 }
 
 pub trait MatrixTail {
@@ -159,7 +152,7 @@ pub struct EchelonInfo {
     pub rows: Vec<RowInfo>,
 }
 
-#[derive(Clone, Copy, Debug, Derivative, PartialEq, Eq)]
+#[derive(Clone, Copy, Derivative, PartialEq, Eq)]
 #[derivative(Default(new = "true"))]
 #[cfg_attr(feature = "python_binding", cfg_eval)]
 #[cfg_attr(feature = "python_binding", pyclass)]
@@ -184,7 +177,17 @@ impl ColumnInfo {
     }
 }
 
-#[derive(Clone, Copy, Debug, Derivative, PartialEq, Eq)]
+impl std::fmt::Debug for ColumnInfo {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        if !self.is_dependent() {
+            write!(f, "Row(*)")
+        } else {
+            write!(f, "Row({})", self.row)
+        }
+    }
+}
+
+#[derive(Clone, Copy, Derivative, PartialEq, Eq)]
 #[derivative(Default(new = "true"))]
 #[cfg_attr(feature = "python_binding", cfg_eval)]
 #[cfg_attr(feature = "python_binding", pyclass)]
@@ -208,5 +211,65 @@ impl RowInfo {
     }
     pub fn set_no_leading(&mut self) {
         self.column = ColumnIndex::MAX;
+    }
+}
+
+impl std::fmt::Debug for RowInfo {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        if !self.has_leading() {
+            write!(f, "Col(*)")
+        } else {
+            write!(f, "Col({})", self.column)
+        }
+    }
+}
+
+#[cfg(test)]
+pub mod tests {
+    use super::super::basic_matrix::*;
+    use super::super::tight::*;
+    use super::*;
+    use crate::matrix::VizTrait;
+
+    type TightMatrix = Tight<BasicMatrix>;
+
+    #[test]
+    fn matrix_interface_simple() {
+        // cargo test --features=colorful matrix_interface_simple -- --nocapture
+        let mut matrix = TightMatrix::new();
+        matrix.add_tight_variable(233);
+        matrix.add_tight_variable(14);
+        matrix.add_variable(68);
+        matrix.add_tight_variable(75);
+        matrix.printstd();
+        assert_eq!(matrix.get_view_edges(), [233, 14, 75]);
+        assert_eq!(matrix.var_to_column_index(0), Some(0));
+        assert_eq!(matrix.var_to_column_index(1), Some(1));
+        assert_eq!(matrix.var_to_column_index(2), None);
+        assert_eq!(matrix.var_to_column_index(3), Some(2));
+        assert_eq!(matrix.edge_to_column_index(233), Some(0));
+        assert_eq!(matrix.edge_to_column_index(14), Some(1));
+        assert_eq!(matrix.edge_to_column_index(68), None);
+        assert_eq!(matrix.edge_to_column_index(75), Some(2));
+        assert_eq!(matrix.edge_to_column_index(666), None);
+    }
+
+    #[test]
+    fn matrix_interface_echelon_info() {
+        // cargo test matrix_interface_echelon_info -- --nocapture
+        let mut column_info = ColumnInfo::new();
+        column_info.set(13);
+        assert_eq!(format!("{column_info:?}"), "Row(13)");
+        column_info.set_not_dependent();
+        assert_eq!(format!("{column_info:?}"), "Row(*)");
+        assert_eq!(format!("{:?}", column_info.clone()), "Row(*)");
+        let mut row_info = RowInfo::new();
+        row_info.set(13);
+        assert_eq!(format!("{row_info:?}"), "Col(13)");
+        row_info.set_no_leading();
+        assert_eq!(format!("{row_info:?}"), "Col(*)");
+        assert_eq!(format!("{:?}", row_info.clone()), "Col(*)");
+        let echelon_info = EchelonInfo::new();
+        println!("echelon_info: {echelon_info:?}");
     }
 }

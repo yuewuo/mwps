@@ -149,7 +149,6 @@ pub struct MatrixSpeedParameters {
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum, Serialize, Debug)]
 pub enum MatrixSpeedClass {
-    Legacy,
     EchelonTailTight,
     EchelonTight,
     Echelon,
@@ -158,20 +157,17 @@ pub enum MatrixSpeedClass {
 impl MatrixSpeedClass {
     pub fn run(&self, parameters: MatrixSpeedParameters, samples: Vec<Vec<(Vec<usize>, bool)>>) {
         match *self {
-            MatrixSpeedClass::Legacy => Self::run_on_legacy(parameters, samples),
             MatrixSpeedClass::EchelonTailTight => {
                 let mut matrix = Echelon::<Tail<Tight<BasicMatrix>>>::new();
                 for edge_index in 0..parameters.width {
-                    matrix.add_variable(edge_index);
-                    matrix.update_edge_tightness(edge_index, true);
+                    matrix.add_tight_variable(edge_index);
                 }
                 Self::run_on_matrix_interface(&matrix, samples)
             }
             MatrixSpeedClass::EchelonTight => {
                 let mut matrix = Echelon::<Tight<BasicMatrix>>::new();
                 for edge_index in 0..parameters.width {
-                    matrix.add_variable(edge_index);
-                    matrix.update_edge_tightness(edge_index, true);
+                    matrix.add_tight_variable(edge_index);
                 }
                 Self::run_on_matrix_interface(&matrix, samples)
             }
@@ -194,19 +190,6 @@ impl MatrixSpeedClass {
             // for a MatrixView, visiting the columns and rows is sufficient to update its internal state
             matrix.columns();
             matrix.rows();
-        }
-    }
-
-    pub fn run_on_legacy(parameters: MatrixSpeedParameters, samples: Vec<Vec<(Vec<usize>, bool)>>) {
-        let mut echelon: EchelonMatrix = EchelonMatrix::new();
-        for edge_index in 0..parameters.width {
-            echelon.add_tight_variable(edge_index);
-        }
-        for parity_checks in samples.iter() {
-            let mut echelon = echelon.clone();
-            echelon.add_parity_checks(parity_checks);
-            echelon.load_var_indices();
-            echelon.row_echelon_form();
         }
     }
 }

@@ -21,45 +21,12 @@ pub struct VizTable {
 }
 
 impl VizTable {
-    pub fn new(parity_matrix: &ParityMatrix, var_indices: &[usize]) -> Self {
-        Self {
-            title: Self::build_title(parity_matrix, var_indices),
-            rows: Self::build_rows(parity_matrix, var_indices),
-        }
-    }
-
     pub fn force_single_column(long_str: &str) -> String {
         long_str
             .chars()
             .enumerate()
             .flat_map(|(idx, c)| if idx == 0 { vec![c] } else { vec!['\n', c] })
             .collect()
-    }
-
-    pub fn build_title(parity_matrix: &ParityMatrix, var_indices: &[usize]) -> Row {
-        let mut title_row = Row::empty();
-        title_row.add_cell(Cell::new(""));
-        for &var_index in var_indices.iter() {
-            let edge_index = parity_matrix.variables[var_index].edge_index;
-            let edge_index_str = Self::force_single_column(edge_index.to_string().as_str());
-            title_row.add_cell(Cell::new(edge_index_str.as_str()).style_spec("brFr"));
-        }
-        title_row.add_cell(Cell::new(" = "));
-        title_row
-    }
-
-    pub fn build_rows(parity_matrix: &ParityMatrix, var_indices: &[usize]) -> Vec<Row> {
-        let mut rows: Vec<Row> = vec![];
-        for (row_index, row) in parity_matrix.constraints.iter().enumerate() {
-            let mut table_row = Row::empty();
-            table_row.add_cell(Cell::new(row_index.to_string().as_str()).style_spec("brFb"));
-            for &var_index in var_indices.iter() {
-                table_row.add_cell(Cell::new(if row.get_left(var_index) { "1" } else { " " }));
-            }
-            table_row.add_cell(Cell::new(if row.get_right() { " 1 " } else { "   " }));
-            rows.push(table_row);
-        }
-        rows
     }
 }
 
@@ -166,50 +133,27 @@ pub mod tests {
     use super::*;
 
     #[test]
-    fn parity_matrix_table_1() {
-        // cargo test --features=colorful parity_matrix_table_1 -- --nocapture
-        let mut parity_matrix = ParityMatrix::new();
-        for edge_index in 0..4 {
-            parity_matrix.add_tight_variable(edge_index * 11);
-        }
-        let parity_checks = vec![
-            (vec![0, 11], true),
-            (vec![33], true),
-            (vec![11, 12], false),
-            (vec![11, 22, 33], false),
-        ];
-        parity_matrix.add_parity_checks(&parity_checks);
-        parity_matrix.printstd();
-        let expected_result = "\
-┌─┬─┬─┬─┬─┬───┐
-┊ ┊0┊1┊2┊3┊ = ┊
-┊ ┊ ┊1┊2┊3┊   ┊
-╞═╪═╪═╪═╪═╪═══╡
-┊0┊1┊1┊ ┊ ┊ 1 ┊
-├─┼─┼─┼─┼─┼───┤
-┊1┊ ┊ ┊ ┊1┊ 1 ┊
-├─┼─┼─┼─┼─┼───┤
-┊2┊ ┊1┊ ┊ ┊   ┊
-├─┼─┼─┼─┼─┼───┤
-┊3┊ ┊1┊1┊1┊   ┊
-└─┴─┴─┴─┴─┴───┘
-";
-        assert_eq!(parity_matrix.printstd_str(), expected_result);
-        let mut viz_table: VizTable = parity_matrix.viz_table();
-        assert_eq!(viz_table.printstd_str(), expected_result);
-        let mut cloned = viz_table.clone();
-        assert_eq!(cloned.printstd_str(), expected_result);
-        let json_value: serde_json::Value = viz_table.into();
-        println!("{json_value}");
+    fn viz_table_1() {
+        // cargo test --features=colorful viz_table_1 -- --nocapture
+        let mut matrix = BasicMatrix::new();
+        matrix.add_constraint(0, &[1, 4, 16], true);
+        matrix.add_constraint(1, &[4, 23], false);
+        matrix.add_constraint(2, &[1, 23], true);
+        matrix.printstd();
         assert_eq!(
-            json_value,
-            json!([
-                ["", "0", "1\n1", "2\n2", "3\n3", " = "],
-                ["0", "1", "1", " ", " ", " 1 "],
-                ["1", " ", " ", " ", "1", " 1 "],
-                ["2", " ", "1", " ", " ", "   "],
-                ["3", " ", "1", "1", "1", "   "]
-            ])
+            matrix.clone().printstd_str(),
+            "\
+┌─┬─┬─┬─┬─┬───┐
+┊ ┊1┊4┊1┊2┊ = ┊
+┊ ┊ ┊ ┊6┊3┊   ┊
+╞═╪═╪═╪═╪═╪═══╡
+┊0┊1┊1┊1┊ ┊ 1 ┊
+├─┼─┼─┼─┼─┼───┤
+┊1┊ ┊1┊ ┊1┊   ┊
+├─┼─┼─┼─┼─┼───┤
+┊2┊1┊ ┊ ┊1┊ 1 ┊
+└─┴─┴─┴─┴─┴───┘
+"
         );
     }
 }

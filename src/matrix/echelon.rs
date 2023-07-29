@@ -393,7 +393,7 @@ pub mod tests {
     fn echelon_matrix_basic_trait() {
         // cargo test --features=colorful echelon_matrix_basic_trait -- --nocapture
         let mut matrix = EchelonMatrix::new();
-        matrix.add_variable(3); // untight edges will not show
+        matrix.add_variable(3); // un-tight edges will not show
         matrix.add_constraint(0, &[1, 4, 6], true);
         matrix.add_constraint(1, &[4, 9], false);
         matrix.add_constraint(2, &[1, 9], true);
@@ -739,8 +739,7 @@ pub mod tests {
         // cargo test --features=colorful echelon_matrix_another_echelon_simple -- --nocapture
         let mut echelon = EchelonMatrix::new();
         for edge_index in 0..7 {
-            echelon.add_variable(edge_index);
-            echelon.update_edge_tightness(edge_index, true);
+            echelon.add_tight_variable(edge_index);
         }
         echelon.add_constraint(0, &[0, 1], true);
         echelon.add_constraint(1, &[0, 2], false);
@@ -757,11 +756,6 @@ pub mod tests {
         another.assert_eq(&echelon);
     }
 
-    /// the old implementation (singleton design) costs 7.61s
-    /// the new trait design costs 8.75s: roughly 15% overhead to use abstraction
-    ///
-    /// in release mode:
-    /// new: 9.13s/10, old: 5.44/10: that's roughly 65% overhead!!!! need to figure out why
     #[test]
     fn echelon_matrix_another_random_tests() {
         // cargo test --features=colorful echelon_matrix_another_random_tests -- --nocapture
@@ -773,8 +767,7 @@ pub mod tests {
                 for _ in 0..repeat {
                     let mut echelon = EchelonMatrix::new();
                     for edge_index in 0..variable_count {
-                        echelon.add_variable(edge_index);
-                        echelon.update_edge_tightness(edge_index, true);
+                        echelon.add_tight_variable(edge_index);
                     }
                     let parity_checks = generate_random_parity_checks(&mut rng, variable_count, constraint_count);
                     // println!("variable_count: {variable_count}, parity_checks: {parity_checks:?}");
@@ -798,8 +791,7 @@ pub mod tests {
     fn debug_echelon_matrix_case(variable_count: usize, parity_checks: Vec<(Vec<usize>, bool)>) -> EchelonMatrix {
         let mut echelon = EchelonMatrix::new();
         for edge_index in 0..variable_count {
-            echelon.add_variable(edge_index);
-            echelon.update_edge_tightness(edge_index, true);
+            echelon.add_tight_variable(edge_index);
         }
         for (vertex_index, (incident_edges, parity)) in parity_checks.iter().enumerate() {
             echelon.add_constraint(vertex_index, incident_edges, *parity);
