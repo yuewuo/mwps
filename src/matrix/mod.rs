@@ -11,10 +11,15 @@ pub mod viz_table;
 #[cfg(feature = "python_binding")]
 use pyo3::prelude::*;
 
+pub use basic_matrix::BasicMatrix;
+pub use echelon::Echelon;
 pub use echelon_matrix::EchelonMatrix;
+pub use matrix_interface::MatrixView;
 pub use matrix_interface::{MatrixImpl, VarIndex};
 pub use parity_matrix::ParityMatrix;
 pub use row::ParityRow;
+pub use tail::Tail;
+pub use tight::Tight;
 pub use viz_table::{VizTable, VizTrait};
 
 #[cfg(feature = "python_binding")]

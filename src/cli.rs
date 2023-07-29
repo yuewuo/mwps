@@ -1,13 +1,15 @@
 use crate::clap;
 use crate::clap::{Parser, Subcommand, ValueEnum};
 use crate::example_codes::*;
+use crate::matrix::matrix_interface::{MatrixBasic, MatrixTight};
+use crate::matrix::*;
 use crate::mwps_solver::*;
 use crate::util::*;
 use crate::visualize::*;
 use more_asserts::assert_le;
 use num_traits::FromPrimitive;
 use pbr::ProgressBar;
-use rand::{thread_rng, Rng};
+use rand::{thread_rng, Rng, SeedableRng};
 use serde::Serialize;
 use std::env;
 
@@ -29,6 +31,8 @@ pub struct Cli {
 enum Commands {
     /// benchmark the speed (and also correctness if enabled)
     Benchmark(BenchmarkParameters),
+    /// benchmark the matrix speed
+    MatrixSpeed(MatrixSpeedParameters),
 }
 
 #[derive(Parser, Clone)]
@@ -127,6 +131,86 @@ pub enum Verifier {
     StrictActualError,
 }
 
+#[derive(Parser, Clone)]
+pub struct MatrixSpeedParameters {
+    #[clap(short = 'c', long, value_enum, default_value_t = MatrixSpeedClass::EchelonTailTight)]
+    matrix_type: MatrixSpeedClass,
+    #[clap(long, default_value_t = 50)]
+    width: usize,
+    #[clap(long, default_value_t = 50)]
+    height: usize,
+    #[clap(long, default_value_t = 0.1)]
+    one_density: f64,
+    #[clap(short = 'r', long, default_value_t = 100000)]
+    total_rounds: usize,
+    #[clap(long)]
+    deterministic_seed: Option<u64>,
+}
+
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum, Serialize, Debug)]
+pub enum MatrixSpeedClass {
+    Legacy,
+    EchelonTailTight,
+    EchelonTight,
+    Echelon,
+}
+
+impl MatrixSpeedClass {
+    pub fn run(&self, parameters: MatrixSpeedParameters, samples: Vec<Vec<(Vec<usize>, bool)>>) {
+        match *self {
+            MatrixSpeedClass::Legacy => Self::run_on_legacy(parameters, samples),
+            MatrixSpeedClass::EchelonTailTight => {
+                let mut matrix = Echelon::<Tail<Tight<BasicMatrix>>>::new();
+                for edge_index in 0..parameters.width {
+                    matrix.add_variable(edge_index);
+                    matrix.update_edge_tightness(edge_index, true);
+                }
+                Self::run_on_matrix_interface(&matrix, samples)
+            }
+            MatrixSpeedClass::EchelonTight => {
+                let mut matrix = Echelon::<Tight<BasicMatrix>>::new();
+                for edge_index in 0..parameters.width {
+                    matrix.add_variable(edge_index);
+                    matrix.update_edge_tightness(edge_index, true);
+                }
+                Self::run_on_matrix_interface(&matrix, samples)
+            }
+            MatrixSpeedClass::Echelon => {
+                let mut matrix = Echelon::<BasicMatrix>::new();
+                for edge_index in 0..parameters.width {
+                    matrix.add_variable(edge_index);
+                }
+                Self::run_on_matrix_interface(&matrix, samples)
+            }
+        }
+    }
+
+    pub fn run_on_matrix_interface<M: MatrixView + Clone>(matrix: &M, samples: Vec<Vec<(Vec<usize>, bool)>>) {
+        for parity_checks in samples.iter() {
+            let mut matrix = matrix.clone();
+            for (vertex_index, (incident_edges, parity)) in parity_checks.iter().enumerate() {
+                matrix.add_constraint(vertex_index, incident_edges, *parity);
+            }
+            // for a MatrixView, visiting the columns and rows is sufficient to update its internal state
+            matrix.columns();
+            matrix.rows();
+        }
+    }
+
+    pub fn run_on_legacy(parameters: MatrixSpeedParameters, samples: Vec<Vec<(Vec<usize>, bool)>>) {
+        let mut echelon: EchelonMatrix = EchelonMatrix::new();
+        for edge_index in 0..parameters.width {
+            echelon.add_tight_variable(edge_index);
+        }
+        for parity_checks in samples.iter() {
+            let mut echelon = echelon.clone();
+            echelon.add_parity_checks(parity_checks);
+            echelon.load_var_indices();
+            echelon.row_echelon_form();
+        }
+    }
+}
+
 impl Cli {
     pub fn run(self) {
         match self.command {
@@ -152,8 +236,7 @@ impl Cli {
             }) => {
                 // whether to disable progress bar, useful when running jobs in background
                 let disable_progress_bar = env::var("DISABLE_PROGRESS_BAR").is_ok();
-                let mut code: Box<dyn ExampleCode> =
-                    code_type.build(d, p, noisy_measurements, max_weight, code_config);
+                let mut code: Box<dyn ExampleCode> = code_type.build(d, p, noisy_measurements, max_weight, code_config);
                 if pe != 0. {
                     code.set_erasure_probability(pe);
                 }
@@ -163,11 +246,9 @@ impl Cli {
                 }
                 // create initializer and solver
                 let initializer = code.get_initializer();
-                let mut primal_dual_solver =
-                    primal_dual_type.build(&initializer, &*code, primal_dual_config);
+                let mut primal_dual_solver = primal_dual_type.build(&initializer, &*code, primal_dual_config);
                 let mut result_verifier = verifier.build(&initializer);
-                let mut benchmark_profiler =
-                    BenchmarkProfiler::new(noisy_measurements, benchmark_profiler_output);
+                let mut benchmark_profiler = BenchmarkProfiler::new(noisy_measurements, benchmark_profiler_output);
                 // prepare progress bar display
                 let mut pb = if !disable_progress_bar {
                     let mut pb = ProgressBar::on(std::io::stderr(), total_rounds as u64);
@@ -182,11 +263,7 @@ impl Cli {
                 let mut rng = thread_rng();
                 for round in (starting_iteration as u64)..(total_rounds as u64) {
                     pb.as_mut().map(|pb| pb.set(round));
-                    let seed = if use_deterministic_seed {
-                        round
-                    } else {
-                        rng.gen()
-                    };
+                    let seed = if use_deterministic_seed { round } else { rng.gen() };
                     let (syndrome_pattern, error_pattern) = code.generate_random_errors(seed);
                     if print_syndrome_pattern {
                         println!("syndrome_pattern: {:?}", syndrome_pattern);
@@ -198,9 +275,7 @@ impl Cli {
                     let mut visualizer = None;
                     if enable_visualizer {
                         let new_visualizer = Visualizer::new(
-                            Some(
-                                visualize_data_folder() + static_visualize_data_filename().as_str(),
-                            ),
+                            Some(visualize_data_folder() + static_visualize_data_filename().as_str()),
                             code.get_positions(),
                             true,
                         )
@@ -235,6 +310,32 @@ impl Cli {
                     println!();
                 }
             }
+            Commands::MatrixSpeed(parameters) => {
+                let MatrixSpeedParameters {
+                    matrix_type,
+                    width,
+                    height,
+                    one_density,
+                    total_rounds,
+                    deterministic_seed,
+                } = parameters.clone();
+                // fist generate the parity samples
+                let mut samples = Vec::with_capacity(total_rounds);
+                let deterministic_seed = deterministic_seed.unwrap_or_else(|| rand::thread_rng().gen());
+                let mut rng = DeterministicRng::seed_from_u64(deterministic_seed);
+                for _ in 0..total_rounds {
+                    let mut parity_checks: Vec<(Vec<usize>, bool)> = Vec::with_capacity(height);
+                    for _ in 0..height {
+                        parity_checks.push((
+                            (0..width).filter(|_| rng.next_f64() < one_density).collect(),
+                            rng.next_f64() < one_density,
+                        ))
+                    }
+                    samples.push(parity_checks);
+                }
+                // call the matrix operation
+                matrix_type.run(parameters, samples);
+            }
         }
     }
 }
@@ -259,9 +360,7 @@ impl ExampleCodeType {
             }
             Self::CodeCapacityTailoredCode => {
                 let mut pxy = 0.; // default to infinite bias
-                let config = code_config
-                    .as_object_mut()
-                    .expect("config must be JSON object");
+                let config = code_config.as_object_mut().expect("config must be JSON object");
                 if let Some(value) = config.remove("pxy") {
                     pxy = value.as_f64().expect("code_count number");
                 }
@@ -293,11 +392,7 @@ impl PrimalDualType {
                 // assert_eq!(primal_dual_config, json!({}));
                 // Box::new(SolverSerial::new(initializer))
             }
-            Self::ErrorPatternLogger => Box::new(SolverErrorPatternLogger::new(
-                initializer,
-                code,
-                primal_dual_config,
-            )),
+            Self::ErrorPatternLogger => Box::new(SolverErrorPatternLogger::new(initializer, code, primal_dual_config)),
         }
     }
 }
@@ -377,9 +472,7 @@ impl ResultVerifier for VerifierActualError {
         if !syndrome_pattern.erasures.is_empty() {
             unimplemented!()
         }
-        let actual_weight =
-            Rational::from_usize(self.initializer.get_subgraph_total_weight(error_pattern))
-                .unwrap();
+        let actual_weight = Rational::from_usize(self.initializer.get_subgraph_total_weight(error_pattern)).unwrap();
         let (subgraph, weight_range) = primal_dual_solver.subgraph_range_visualizer(visualizer);
         assert!(
             self.initializer
@@ -392,9 +485,7 @@ impl ResultVerifier for VerifierActualError {
             "the lower bound of weight range is larger than the actual weight"
         );
         if self.is_strict {
-            let subgraph_weight =
-                Rational::from_usize(self.initializer.get_subgraph_total_weight(&subgraph))
-                    .unwrap();
+            let subgraph_weight = Rational::from_usize(self.initializer.get_subgraph_total_weight(&subgraph)).unwrap();
             assert_le!(subgraph_weight, actual_weight, "it's not a minimum-weight parity subgraph: the actual error pattern has smaller weight, range: {weight_range:?}");
             assert_eq!(
                 weight_range.lower, weight_range.upper,
