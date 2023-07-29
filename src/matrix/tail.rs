@@ -2,14 +2,14 @@ use super::matrix_interface::*;
 use super::viz_table::*;
 use crate::util::*;
 use derivative::Derivative;
-use std::collections::HashSet;
+use std::collections::BTreeSet;
 
 #[derive(Clone, Derivative)]
 #[derivative(Default(new = "true"))]
 pub struct Tail<M> {
     base: M,
     /// the set of edges that should be placed at the end, if any
-    tail_edges: HashSet<EdgeIndex>,
+    tail_edges: BTreeSet<EdgeIndex>,
     /// var indices are outdated on any changes to the underlying matrix
     #[derivative(Default(value = "true"))]
     is_var_indices_outdated: bool,
@@ -26,10 +26,10 @@ impl<M> Tail<M> {
 }
 
 impl<M> MatrixTail for Tail<M> {
-    fn get_tail_edges(&self) -> &HashSet<EdgeIndex> {
+    fn get_tail_edges(&self) -> &BTreeSet<EdgeIndex> {
         &self.tail_edges
     }
-    fn get_tail_edges_mut(&mut self) -> &mut HashSet<EdgeIndex> {
+    fn get_tail_edges_mut(&mut self) -> &mut BTreeSet<EdgeIndex> {
         self.is_var_indices_outdated = true;
         &mut self.tail_edges
     }

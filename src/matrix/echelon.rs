@@ -1,11 +1,10 @@
 use super::matrix_interface::*;
 use super::viz_table::*;
-use crate::matrix::echelon;
 use crate::util::*;
 use core::panic;
 use derivative::Derivative;
 use prettytable::*;
-use std::collections::HashSet;
+use std::collections::BTreeSet;
 
 #[derive(Clone, Derivative)]
 #[derivative(Default(new = "true"))]
@@ -25,10 +24,10 @@ impl<M> Echelon<M> {
 }
 
 impl<M: MatrixTail> MatrixTail for Echelon<M> {
-    fn get_tail_edges(&self) -> &HashSet<EdgeIndex> {
+    fn get_tail_edges(&self) -> &BTreeSet<EdgeIndex> {
         self.base.get_tail_edges()
     }
-    fn get_tail_edges_mut(&mut self) -> &mut HashSet<EdgeIndex> {
+    fn get_tail_edges_mut(&mut self) -> &mut BTreeSet<EdgeIndex> {
         self.is_info_outdated = true;
         self.base.get_tail_edges_mut()
     }

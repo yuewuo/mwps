@@ -21,7 +21,7 @@
 
 use crate::util::*;
 use derivative::Derivative;
-use std::collections::HashSet;
+use std::collections::BTreeSet;
 
 pub type VarIndex = usize;
 pub type RowIndex = usize;
@@ -115,8 +115,8 @@ pub trait MatrixTight {
 }
 
 pub trait MatrixTail {
-    fn get_tail_edges(&self) -> &HashSet<EdgeIndex>;
-    fn get_tail_edges_mut(&mut self) -> &mut HashSet<EdgeIndex>;
+    fn get_tail_edges(&self) -> &BTreeSet<EdgeIndex>;
+    fn get_tail_edges_mut(&mut self) -> &mut BTreeSet<EdgeIndex>;
 
     fn set_tail_edges<'a, Iter>(&mut self, iter: Iter)
     where

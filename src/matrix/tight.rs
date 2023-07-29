@@ -2,14 +2,14 @@ use super::matrix_interface::*;
 use super::viz_table::*;
 use crate::util::*;
 use derivative::Derivative;
-use std::collections::HashSet;
+use std::collections::BTreeSet;
 
 #[derive(Clone, Derivative)]
 #[derivative(Default(new = "true"))]
 pub struct Tight<M> {
     base: M,
     /// the set of tight edges: should be a relatively small set
-    tight_edges: HashSet<EdgeIndex>,
+    tight_edges: BTreeSet<EdgeIndex>,
     /// tight matrix gives a view of only tight edges, with sorted indices
     #[derivative(Default(value = "true"))]
     is_var_indices_outdated: bool,

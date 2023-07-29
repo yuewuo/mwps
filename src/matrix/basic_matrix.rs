@@ -3,17 +3,17 @@ use super::row::*;
 use super::viz_table::*;
 use crate::util::*;
 use derivative::Derivative;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Clone, Derivative)]
 #[derivative(Default(new = "true"))]
 pub struct BasicMatrix {
     /// the vertices already maintained by this parity check
     #[cfg_attr(feature = "python_binding", pyo3(get, set))]
-    pub vertices: HashSet<VertexIndex>,
+    pub vertices: BTreeSet<VertexIndex>,
     /// the edges maintained by this parity check, mapping to the local indices
     #[cfg_attr(feature = "python_binding", pyo3(get, set))]
-    pub edges: HashMap<EdgeIndex, VarIndex>,
+    pub edges: BTreeMap<EdgeIndex, VarIndex>,
     /// variable index map to edge index
     #[cfg_attr(feature = "python_binding", pyo3(get, set))]
     pub variables: Vec<EdgeIndex>,
