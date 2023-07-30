@@ -29,6 +29,9 @@ pub struct RelaxerForest {
     pub expanded_relaxers: HashMap<Arc<Relaxer>, Relaxer>,
 }
 
+pub const FOREST_ERR_MSG_GROW_TIGHT_EDGE: &str = "invalid relaxer: try to grow a tight edge";
+pub const FOREST_ERR_MSG_UNSHRINKABLE: &str = "invalid relaxer: try to shrink a unshrinkable subgraph";
+
 impl RelaxerForest {
     pub fn new<IterEdge, IterSubgraph>(tight_edges: IterEdge, shrinkable_subgraphs: IterSubgraph) -> Self
     where
@@ -50,16 +53,14 @@ impl RelaxerForest {
         relaxer.sanity_check()?;
         // a relaxer cannot grow any tight edge
         for (edge_index, _) in relaxer.growing_edges.iter() {
-            if self.tight_edges.contains(edge_index) {
-                return Err(format!("invalid relaxer: try to grow a tight edge {edge_index}"));
+            if self.tight_edges.contains(edge_index) && !self.edge_untightener.contains_key(edge_index) {
+                return Err(format!("{FOREST_ERR_MSG_GROW_TIGHT_EDGE}: {edge_index}"));
             }
         }
         // a relaxer cannot shrink any zero dual variable
         for (invalid_subgraph, grow_ratio) in relaxer.direction.iter() {
             if grow_ratio.is_negative() && !self.shrinkable_subgraphs.contains(invalid_subgraph) {
-                return Err(format!(
-                    "invalid relaxer: try to shrink a zero dual node {invalid_subgraph:?}"
-                ));
+                return Err(format!("{FOREST_ERR_MSG_UNSHRINKABLE}: {invalid_subgraph:?}"));
             }
         }
         Ok(())
@@ -82,10 +83,71 @@ impl RelaxerForest {
 #[cfg(test)]
 pub mod tests {
     use super::*;
+    use crate::num_traits::One;
 
     #[test]
     fn relaxer_forest_validate() {
-        // cargo test --features=colorful relaxer_forest_validate -- --nocapture
-        let tight_edges: BTreeSet<EdgeIndex> = [0, 1, 2, 3, 4, 5, 6].into();
+        // cargo test relaxer_forest_validate -- --nocapture
+        let tight_edges = [0, 1, 2, 3, 4, 5, 6];
+        let shrinkable_subgraphs = [
+            Arc::new(InvalidSubgraph::new_raw([1].into(), [].into(), [1, 2].into())),
+            Arc::new(InvalidSubgraph::new_raw([].into(), [].into(), [].into())),
+        ];
+        let relaxer_forest = RelaxerForest::new(tight_edges.into_iter(), shrinkable_subgraphs.iter().cloned());
+        println!("relaxer_forest: {:?}", relaxer_forest.shrinkable_subgraphs);
+        // invalid relaxer is forbidden
+        let invalid_relaxer = Relaxer::new_raw(
+            [(
+                Arc::new(InvalidSubgraph::new_raw([].into(), [].into(), [].into())),
+                -Rational::one(),
+            )]
+            .into(),
+        );
+        let error_message = relaxer_forest.validate(&invalid_relaxer).expect_err("should panic");
+        assert_eq!(
+            &error_message[..RELAXER_ERR_MSG_NEGATIVE_SUMMATION.len()],
+            RELAXER_ERR_MSG_NEGATIVE_SUMMATION
+        );
+        // relaxer that increases a tight edge is forbidden
+        let relaxer = Relaxer::new_raw(
+            [(
+                Arc::new(InvalidSubgraph::new_raw([].into(), [].into(), [1].into())),
+                Rational::one(),
+            )]
+            .into(),
+        );
+        let error_message = relaxer_forest.validate(&relaxer).expect_err("should panic");
+        assert_eq!(
+            &error_message[..FOREST_ERR_MSG_GROW_TIGHT_EDGE.len()],
+            FOREST_ERR_MSG_GROW_TIGHT_EDGE
+        );
+        // relaxer that shrinks a zero dual variable is forbidden
+        let relaxer = Relaxer::new_raw(
+            [
+                (
+                    Arc::new(InvalidSubgraph::new_raw([].into(), [].into(), [9].into())),
+                    Rational::one(),
+                ),
+                (
+                    Arc::new(InvalidSubgraph::new_raw([].into(), [].into(), [2, 3].into())),
+                    -Rational::one(),
+                ),
+            ]
+            .into(),
+        );
+        let error_message = relaxer_forest.validate(&relaxer).expect_err("should panic");
+        assert_eq!(
+            &error_message[..FOREST_ERR_MSG_UNSHRINKABLE.len()],
+            FOREST_ERR_MSG_UNSHRINKABLE
+        );
+        // otherwise a relaxer is ok
+        let relaxer = Relaxer::new_raw(
+            [(
+                Arc::new(InvalidSubgraph::new_raw([].into(), [].into(), [9].into())),
+                Rational::one(),
+            )]
+            .into(),
+        );
+        relaxer_forest.validate(&relaxer).unwrap();
     }
 }

@@ -25,12 +25,21 @@ impl Hash for Relaxer {
     }
 }
 
+pub const RELAXER_ERR_MSG_NEGATIVE_SUMMATION: &str = "the summation of ΔyS is negative";
+pub const RELAXER_ERR_MSG_USEFUL: &str = "a valid relaxer must either increase overall ΔyS or untighten some edges";
+
 impl Relaxer {
     pub fn new_vec(direction: Vec<(Arc<InvalidSubgraph>, Rational)>) -> Self {
         Self::new(direction.into_iter().collect())
     }
 
     pub fn new(direction: BTreeMap<Arc<InvalidSubgraph>, Rational>) -> Self {
+        let relaxer = Self::new_raw(direction);
+        debug_assert_eq!(relaxer.sanity_check(), Ok(()));
+        relaxer
+    }
+
+    pub fn new_raw(direction: BTreeMap<Arc<InvalidSubgraph>, Rational>) -> Self {
         let mut edges = BTreeMap::new();
         for (invalid_subgraph, speed) in direction.iter() {
             for &edge_index in invalid_subgraph.hairs.iter() {
@@ -56,7 +65,6 @@ impl Relaxer {
             untighten_edges,
             growing_edges,
         };
-        debug_assert_eq!(relaxer.sanity_check(), Ok(()));
         relaxer.update_hash();
         relaxer
     }
@@ -68,10 +76,10 @@ impl Relaxer {
             sum_speed += speed;
         }
         if sum_speed.is_negative() {
-            return Err(format!("the summation of ΔyS is negative: {:?}", sum_speed));
+            return Err(format!("{RELAXER_ERR_MSG_NEGATIVE_SUMMATION}: {sum_speed:?}"));
         }
         if self.untighten_edges.is_empty() && sum_speed.is_zero() {
-            return Err("a valid relaxer must either increase overall ΔyS or untighten some edges".to_string());
+            return Err(RELAXER_ERR_MSG_USEFUL.to_string());
         }
         Ok(())
     }

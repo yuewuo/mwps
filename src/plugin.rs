@@ -12,7 +12,6 @@ use crate::matrix::*;
 use crate::plugin_union_find::*;
 use crate::relaxer::*;
 use crate::relaxer_forest::*;
-use std::collections::BTreeSet;
 use std::sync::Arc;
 
 pub type EchelonMatrix = Echelon<Tail<Tight<BasicMatrix>>>;
