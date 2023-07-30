@@ -154,5 +154,15 @@ pub mod tests {
 └─┴─┴─┴─┴─┴───┘
 "
         );
+        let mut viz_table = matrix.viz_table();
+        assert_eq!(
+            serde_json::Value::from(viz_table.viz_table()),
+            json!([
+                ["", "1", "4", "1\n6", "2\n3", " = "],
+                ["0", "1", "1", "1", " ", " 1 "],
+                ["1", " ", "1", " ", "1", "   "],
+                ["2", "1", " ", " ", "1", " 1 "]
+            ])
+        )
     }
 }
