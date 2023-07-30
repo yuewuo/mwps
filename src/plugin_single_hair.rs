@@ -18,7 +18,7 @@ pub struct PluginSingleHair {}
 impl PluginImpl for PluginSingleHair {
     fn find_relaxers<'a>(
         &self,
-        decoding_graph: &HyperDecodingGraph,
+        decoding_graph: &DecodingHyperGraph,
         matrix: &'a mut ParityMatrixProtected<'a>,
         positive_dual_nodes: &[DualNodePtr],
     ) -> Vec<Relaxer> {

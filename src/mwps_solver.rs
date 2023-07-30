@@ -22,18 +22,11 @@ use std::sync::Arc;
 
 pub trait PrimalDualSolver {
     fn clear(&mut self);
-    fn solve_visualizer(
-        &mut self,
-        syndrome_pattern: &SyndromePattern,
-        visualizer: Option<&mut Visualizer>,
-    );
+    fn solve_visualizer(&mut self, syndrome_pattern: &SyndromePattern, visualizer: Option<&mut Visualizer>);
     fn solve(&mut self, syndrome_pattern: &SyndromePattern) {
         self.solve_visualizer(syndrome_pattern, None)
     }
-    fn subgraph_range_visualizer(
-        &mut self,
-        visualizer: Option<&mut Visualizer>,
-    ) -> (Subgraph, WeightRange);
+    fn subgraph_range_visualizer(&mut self, visualizer: Option<&mut Visualizer>) -> (Subgraph, WeightRange);
     fn subgraph_range(&mut self) -> (Subgraph, WeightRange) {
         self.subgraph_range_visualizer(None)
     }
@@ -50,7 +43,7 @@ pub struct SolverUnionFind {
     dual_module: DualModuleSerial,
     primal_module: PrimalModuleUnionFind,
     interface_ptr: DualModuleInterfacePtr,
-    model_graph: Arc<HyperModelGraph>,
+    model_graph: Arc<ModelHyperGraph>,
 }
 
 impl MWPSVisualizer for SolverUnionFind {
@@ -67,13 +60,13 @@ impl MWPSVisualizer for SolverUnionFind {
 impl SolverUnionFind {
     #[cfg_attr(feature = "python_binding", new)]
     pub fn new(initializer: &SolverInitializer) -> Self {
-        let model_graph = Arc::new(HyperModelGraph::new(Arc::new(initializer.clone())));
+        let model_graph = Arc::new(ModelHyperGraph::new(Arc::new(initializer.clone())));
         Self::new_model_graph(model_graph)
     }
 }
 
 impl SolverUnionFind {
-    pub fn new_model_graph(model_graph: Arc<HyperModelGraph>) -> Self {
+    pub fn new_model_graph(model_graph: Arc<ModelHyperGraph>) -> Self {
         Self {
             dual_module: DualModuleSerial::new_empty(model_graph.initializer.as_ref()),
             primal_module: PrimalModuleUnionFind::new_empty(model_graph.initializer.as_ref()),
@@ -89,11 +82,7 @@ impl PrimalDualSolver for SolverUnionFind {
         self.dual_module.clear();
         self.interface_ptr.clear();
     }
-    fn solve_visualizer(
-        &mut self,
-        syndrome_pattern: &SyndromePattern,
-        visualizer: Option<&mut Visualizer>,
-    ) {
+    fn solve_visualizer(&mut self, syndrome_pattern: &SyndromePattern, visualizer: Option<&mut Visualizer>) {
         let syndrome_pattern = Arc::new(syndrome_pattern.clone());
         if !syndrome_pattern.erasures.is_empty() {
             unimplemented!();
@@ -113,23 +102,13 @@ impl PrimalDualSolver for SolverUnionFind {
             "the subgraph does not generate the syndrome"
         );
     }
-    fn subgraph_range_visualizer(
-        &mut self,
-        visualizer: Option<&mut Visualizer>,
-    ) -> (Subgraph, WeightRange) {
-        let (subgraph, weight_range) = self
-            .primal_module
-            .subgraph_range(&self.interface_ptr, &mut self.dual_module);
+    fn subgraph_range_visualizer(&mut self, visualizer: Option<&mut Visualizer>) -> (Subgraph, WeightRange) {
+        let (subgraph, weight_range) = self.primal_module.subgraph_range(&self.interface_ptr, &mut self.dual_module);
         if let Some(visualizer) = visualizer {
             visualizer
                 .snapshot_combined(
                     "subgraph".to_string(),
-                    vec![
-                        &self.interface_ptr,
-                        &self.dual_module,
-                        &subgraph,
-                        &weight_range,
-                    ],
+                    vec![&self.interface_ptr, &self.dual_module, &subgraph, &weight_range],
                 )
                 .unwrap();
         }
@@ -217,21 +196,14 @@ pub struct SolverErrorPatternLogger {
 }
 
 impl SolverErrorPatternLogger {
-    pub fn new(
-        initializer: &SolverInitializer,
-        code: &dyn ExampleCode,
-        mut config: serde_json::Value,
-    ) -> Self {
+    pub fn new(initializer: &SolverInitializer, code: &dyn ExampleCode, mut config: serde_json::Value) -> Self {
         let mut filename = "tmp/syndrome_patterns.txt".to_string();
         let config = config.as_object_mut().expect("config must be JSON object");
         if let Some(value) = config.remove("filename") {
             filename = value.as_str().expect("filename string").to_string();
         }
         if !config.is_empty() {
-            panic!(
-                "unknown config keys: {:?}",
-                config.keys().collect::<Vec<&String>>()
-            );
+            panic!("unknown config keys: {:?}", config.keys().collect::<Vec<&String>>());
         }
         let file = File::create(filename).unwrap();
         let mut file = BufWriter::new(file);
@@ -247,11 +219,7 @@ impl SolverErrorPatternLogger {
 
 impl PrimalDualSolver for SolverErrorPatternLogger {
     fn clear(&mut self) {}
-    fn solve_visualizer(
-        &mut self,
-        syndrome_pattern: &SyndromePattern,
-        _visualizer: Option<&mut Visualizer>,
-    ) {
+    fn solve_visualizer(&mut self, syndrome_pattern: &SyndromePattern, _visualizer: Option<&mut Visualizer>) {
         self.file
             .write_all(
                 serde_json::to_string(&serde_json::json!(syndrome_pattern))
@@ -261,10 +229,7 @@ impl PrimalDualSolver for SolverErrorPatternLogger {
             .unwrap();
         self.file.write_all(b"\n").unwrap();
     }
-    fn subgraph_range_visualizer(
-        &mut self,
-        _visualizer: Option<&mut Visualizer>,
-    ) -> (Subgraph, WeightRange) {
+    fn subgraph_range_visualizer(&mut self, _visualizer: Option<&mut Visualizer>) -> (Subgraph, WeightRange) {
         panic!("error pattern logger do not actually solve the problem, please use Verifier::None by `--verifier none`")
     }
     fn sum_dual_variables(&self) -> Rational {

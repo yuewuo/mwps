@@ -469,7 +469,7 @@ impl ParityMatrix {
     }
 
     /// add a row to the parity matrix from a given vertex, automatically add phantom edges corresponding to this parity check
-    pub fn add_parity_check_with_decoding_graph(&mut self, vertex_index: VertexIndex, decoding_graph: &HyperDecodingGraph) {
+    pub fn add_parity_check_with_decoding_graph(&mut self, vertex_index: VertexIndex, decoding_graph: &DecodingHyperGraph) {
         if self.vertices.contains(&vertex_index) {
             return; // no need to add repeat constraint
         }

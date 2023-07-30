@@ -19,7 +19,7 @@ pub trait PluginImpl {
     /// given the tight edges and parity constraints, find relaxers
     fn find_relaxers<'a>(
         &self,
-        decoding_graph: &HyperDecodingGraph,
+        decoding_graph: &DecodingHyperGraph,
         matrix: &'a mut ParityMatrixProtected<'a>,
         positive_dual_nodes: &[DualNodePtr],
     ) -> RelaxerVec;
@@ -75,7 +75,7 @@ impl PluginManager {
 
     pub fn find_relaxer(
         &mut self,
-        decoding_graph: &HyperDecodingGraph,
+        decoding_graph: &DecodingHyperGraph,
         matrix: &mut ParityMatrix,
         positive_dual_nodes: &[DualNodePtr],
     ) -> Option<Relaxer> {

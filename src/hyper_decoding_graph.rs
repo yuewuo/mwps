@@ -6,9 +6,9 @@ use std::collections::{BTreeSet, HashSet};
 use std::sync::Arc;
 
 #[derive(Debug, Clone)]
-pub struct HyperDecodingGraph {
+pub struct DecodingHyperGraph {
     /// model graph
-    pub model_graph: Arc<HyperModelGraph>,
+    pub model_graph: Arc<ModelHyperGraph>,
     /// syndrome
     pub syndrome_pattern: Arc<SyndromePattern>,
     /// fast check whether a vertex is defect
@@ -17,8 +17,8 @@ pub struct HyperDecodingGraph {
     pub erasures_hashset: HashSet<EdgeIndex>,
 }
 
-impl HyperDecodingGraph {
-    pub fn new(model_graph: Arc<HyperModelGraph>, syndrome_pattern: Arc<SyndromePattern>) -> Self {
+impl DecodingHyperGraph {
+    pub fn new(model_graph: Arc<ModelHyperGraph>, syndrome_pattern: Arc<SyndromePattern>) -> Self {
         let mut decoding_graph = Self {
             model_graph,
             syndrome_pattern: syndrome_pattern.clone(),
@@ -50,7 +50,7 @@ impl HyperDecodingGraph {
         }
     }
 
-    pub fn new_defects(model_graph: Arc<HyperModelGraph>, defect_vertices: Vec<VertexIndex>) -> Self {
+    pub fn new_defects(model_graph: Arc<ModelHyperGraph>, defect_vertices: Vec<VertexIndex>) -> Self {
         Self::new(model_graph, Arc::new(SyndromePattern::new_vertices(defect_vertices)))
     }
 
@@ -97,7 +97,7 @@ impl HyperDecodingGraph {
     }
 }
 
-impl MWPSVisualizer for HyperDecodingGraph {
+impl MWPSVisualizer for DecodingHyperGraph {
     fn snapshot(&self, abbrev: bool) -> serde_json::Value {
         let mut value = self.model_graph.initializer.snapshot(abbrev);
         let mut vertices = Vec::<serde_json::Value>::new();
@@ -119,10 +119,10 @@ pub mod tests {
     pub fn color_code_5_decoding_graph(
         defect_vertices: Vec<VertexIndex>,
         visualize_filename: String,
-    ) -> (Arc<HyperDecodingGraph>, Visualizer) {
+    ) -> (Arc<DecodingHyperGraph>, Visualizer) {
         let (model_graph, mut visualizer) = color_code_5_model_graph(visualize_filename);
         let syndrome_pattern = Arc::new(SyndromePattern::new_vertices(defect_vertices));
-        let decoding_graph = Arc::new(HyperDecodingGraph::new(model_graph, syndrome_pattern));
+        let decoding_graph = Arc::new(DecodingHyperGraph::new(model_graph, syndrome_pattern));
         visualizer
             .snapshot_combined("syndrome".to_string(), vec![decoding_graph.as_ref()])
             .unwrap();

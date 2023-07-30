@@ -124,10 +124,7 @@ impl DualModuleImpl for DualModuleSerial {
                 grow_rate: Rational::zero(),
             });
             for &vertex_index in hyperedge.vertices.iter() {
-                vertices[vertex_index as usize]
-                    .write()
-                    .edges
-                    .push(edge_ptr.downgrade());
+                vertices[vertex_index as usize].write().edges.push(edge_ptr.downgrade());
             }
             edges.push(edge_ptr);
         }
@@ -231,16 +228,14 @@ impl DualModuleImpl for DualModuleSerial {
             } else if grow_rate.is_negative() {
                 if edge.growth.is_zero() {
                     if node.grow_rate.is_negative() {
-                        max_update_length
-                            .merge(MaxUpdateLength::ShrinkProhibited(dual_node_ptr.clone()));
+                        max_update_length.merge(MaxUpdateLength::ShrinkProhibited(dual_node_ptr.clone()));
                     } else {
                         // find a negatively growing edge
                         let mut found = false;
                         for node_weak in edge.dual_nodes.iter() {
                             let node_ptr = node_weak.upgrade_force();
                             if node_ptr.read_recursive().grow_rate.is_negative() {
-                                max_update_length
-                                    .merge(MaxUpdateLength::ShrinkProhibited(node_ptr));
+                                max_update_length.merge(MaxUpdateLength::ShrinkProhibited(node_ptr));
                                 found = true;
                                 break;
                             }
@@ -248,8 +243,7 @@ impl DualModuleImpl for DualModuleSerial {
                         assert!(found, "unreachable");
                     }
                 } else {
-                    max_update_length
-                        .merge(MaxUpdateLength::ValidGrow(-edge.growth.clone() / grow_rate));
+                    max_update_length.merge(MaxUpdateLength::ValidGrow(-edge.growth.clone() / grow_rate));
                 }
             }
         }
@@ -278,15 +272,13 @@ impl DualModuleImpl for DualModuleSerial {
                 if edge_remain.is_zero() {
                     group_max_update_length.add(MaxUpdateLength::Conflicting(edge_index));
                 } else {
-                    group_max_update_length
-                        .add(MaxUpdateLength::ValidGrow(edge_remain / grow_rate));
+                    group_max_update_length.add(MaxUpdateLength::ValidGrow(edge_remain / grow_rate));
                 }
             } else if grow_rate.is_negative() {
                 if edge.growth.is_zero() {
                     // it will be reported when iterating active dual nodes
                 } else {
-                    group_max_update_length
-                        .add(MaxUpdateLength::ValidGrow(-edge.growth.clone() / grow_rate));
+                    group_max_update_length.add(MaxUpdateLength::ValidGrow(-edge.growth.clone() / grow_rate));
                 }
             }
         }
@@ -298,8 +290,7 @@ impl DualModuleImpl for DualModuleSerial {
                         -node.dual_variable.clone() / node.grow_rate.clone(),
                     ));
                 } else {
-                    group_max_update_length
-                        .add(MaxUpdateLength::ShrinkProhibited(node_ptr.clone()));
+                    group_max_update_length.add(MaxUpdateLength::ShrinkProhibited(node_ptr.clone()));
                 }
             }
         }
@@ -367,8 +358,7 @@ impl DualModuleImpl for DualModuleSerial {
         // update dual variables
         for node_ptr in self.active_nodes.iter() {
             let mut node = node_ptr.write();
-            node.dual_variable =
-                node.dual_variable.clone() + length.clone() * node.grow_rate.clone();
+            node.dual_variable = node.dual_variable.clone() + length.clone() * node.grow_rate.clone();
         }
     }
 
@@ -463,7 +453,7 @@ mod tests {
         let model_graph = code.get_model_graph();
         let mut dual_module = DualModuleSerial::new_empty(&model_graph.initializer);
         // try to work on a simple syndrome
-        let decoding_graph = HyperDecodingGraph::new_defects(model_graph, vec![3, 12]);
+        let decoding_graph = DecodingHyperGraph::new_defects(model_graph, vec![3, 12]);
         let interface_ptr = DualModuleInterfacePtr::new_load(decoding_graph, &mut dual_module);
         visualizer
             .snapshot_combined("syndrome".to_string(), vec![&interface_ptr, &dual_module])
@@ -485,10 +475,7 @@ mod tests {
         // the result subgraph
         let subgraph = Subgraph::new(vec![15, 20]);
         visualizer
-            .snapshot_combined(
-                "subgraph".to_string(),
-                vec![&interface_ptr, &dual_module, &subgraph],
-            )
+            .snapshot_combined("subgraph".to_string(), vec![&interface_ptr, &dual_module, &subgraph])
             .unwrap();
     }
 
@@ -509,7 +496,7 @@ mod tests {
         let model_graph = code.get_model_graph();
         let mut dual_module = DualModuleSerial::new_empty(&model_graph.initializer);
         // try to work on a simple syndrome
-        let decoding_graph = HyperDecodingGraph::new_defects(model_graph, vec![23, 24, 29, 30]);
+        let decoding_graph = DecodingHyperGraph::new_defects(model_graph, vec![23, 24, 29, 30]);
         let interface_ptr = DualModuleInterfacePtr::new_load(decoding_graph, &mut dual_module);
         visualizer
             .snapshot_combined("syndrome".to_string(), vec![&interface_ptr, &dual_module])
@@ -529,10 +516,7 @@ mod tests {
         // the result subgraph
         let subgraph = Subgraph::new(vec![24]);
         visualizer
-            .snapshot_combined(
-                "subgraph".to_string(),
-                vec![&interface_ptr, &dual_module, &subgraph],
-            )
+            .snapshot_combined("subgraph".to_string(), vec![&interface_ptr, &dual_module, &subgraph])
             .unwrap();
     }
 
@@ -554,7 +538,7 @@ mod tests {
         let model_graph = code.get_model_graph();
         let mut dual_module = DualModuleSerial::new_empty(&model_graph.initializer);
         // try to work on a simple syndrome
-        let decoding_graph = HyperDecodingGraph::new_defects(model_graph, vec![17, 23, 29, 30]);
+        let decoding_graph = DecodingHyperGraph::new_defects(model_graph, vec![17, 23, 29, 30]);
         let interface_ptr = DualModuleInterfacePtr::new_load(decoding_graph, &mut dual_module);
         visualizer
             .snapshot_combined("syndrome".to_string(), vec![&interface_ptr, &dual_module])
@@ -582,20 +566,14 @@ mod tests {
         // create bigger cluster
         interface_ptr.create_node_vec(&[18, 23, 24, 31], &mut dual_module);
         let dual_node_bigger_cluster_ptr = interface_ptr.read_recursive().nodes[5].clone();
-        dual_module.grow_dual_node(
-            &dual_node_bigger_cluster_ptr,
-            Rational::from_i64(120).unwrap(),
-        );
+        dual_module.grow_dual_node(&dual_node_bigger_cluster_ptr, Rational::from_i64(120).unwrap());
         visualizer
             .snapshot_combined("solved".to_string(), vec![&interface_ptr, &dual_module])
             .unwrap();
         // the result subgraph
         let subgraph = Subgraph::new(vec![82, 24]);
         visualizer
-            .snapshot_combined(
-                "subgraph".to_string(),
-                vec![&interface_ptr, &dual_module, &subgraph],
-            )
+            .snapshot_combined("subgraph".to_string(), vec![&interface_ptr, &dual_module, &subgraph])
             .unwrap();
     }
 
@@ -616,9 +594,8 @@ mod tests {
         let model_graph = code.get_model_graph();
         let mut dual_module = DualModuleSerial::new_empty(&model_graph.initializer);
         // try to work on a simple syndrome
-        let decoding_graph = HyperDecodingGraph::new_defects(model_graph, vec![3, 12]);
-        let interface_ptr =
-            DualModuleInterfacePtr::new_load(decoding_graph.clone(), &mut dual_module);
+        let decoding_graph = DecodingHyperGraph::new_defects(model_graph, vec![3, 12]);
+        let interface_ptr = DualModuleInterfacePtr::new_load(decoding_graph.clone(), &mut dual_module);
         visualizer
             .snapshot_combined("syndrome".to_string(), vec![&interface_ptr, &dual_module])
             .unwrap();
@@ -632,10 +609,7 @@ mod tests {
             .find_valid_subgraph_auto_vertices(&vec![9, 15, 20, 21].into_iter().collect())
             .unwrap();
         visualizer
-            .snapshot_combined(
-                "subgraph".to_string(),
-                vec![&interface_ptr, &dual_module, &subgraph],
-            )
+            .snapshot_combined("subgraph".to_string(), vec![&interface_ptr, &dual_module, &subgraph])
             .unwrap();
     }
 }

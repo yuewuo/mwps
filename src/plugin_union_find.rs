@@ -20,7 +20,7 @@ pub struct PluginUnionFind {}
 impl PluginUnionFind {
     /// check if the cluster is valid (hypergraph union-find decoder)
     pub fn find_single_relaxer<'a>(
-        decoding_graph: &HyperDecodingGraph,
+        decoding_graph: &DecodingHyperGraph,
         matrix: &'a mut ParityMatrixProtected<'a>,
     ) -> Option<Relaxer> {
         let echelon: EchelonView = matrix.echelon_view();
@@ -36,7 +36,7 @@ impl PluginUnionFind {
 impl PluginImpl for PluginUnionFind {
     fn find_relaxers<'a>(
         &self,
-        decoding_graph: &HyperDecodingGraph,
+        decoding_graph: &DecodingHyperGraph,
         matrix: &'a mut ParityMatrixProtected<'a>,
         _positive_dual_nodes: &[DualNodePtr],
     ) -> Vec<Relaxer> {

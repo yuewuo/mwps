@@ -48,7 +48,7 @@ impl PartialOrd for InvalidSubgraph {
 impl InvalidSubgraph {
     /// construct an invalid subgraph using only $E_S$, and constructing the $V_S$ by $\cup E_S$
     #[allow(clippy::unnecessary_cast)]
-    pub fn new(edges: BTreeSet<EdgeIndex>, decoding_graph: &HyperDecodingGraph) -> Self {
+    pub fn new(edges: BTreeSet<EdgeIndex>, decoding_graph: &DecodingHyperGraph) -> Self {
         let mut vertices = BTreeSet::new();
         for &edge_index in edges.iter() {
             let hyperedge = &decoding_graph.model_graph.initializer.weighted_edges[edge_index as usize];
@@ -64,7 +64,7 @@ impl InvalidSubgraph {
     pub fn new_complete(
         vertices: BTreeSet<VertexIndex>,
         edges: BTreeSet<EdgeIndex>,
-        decoding_graph: &HyperDecodingGraph,
+        decoding_graph: &DecodingHyperGraph,
     ) -> Self {
         let mut hairs = BTreeSet::new();
         for &vertex_index in vertices.iter() {
@@ -102,7 +102,7 @@ impl InvalidSubgraph {
 
     // check whether this invalid subgraph is indeed invalid, this is costly and should be disabled in release runs
     #[allow(clippy::unnecessary_cast)]
-    pub fn sanity_check(&self, decoding_graph: &HyperDecodingGraph) -> Result<(), String> {
+    pub fn sanity_check(&self, decoding_graph: &DecodingHyperGraph) -> Result<(), String> {
         if self.vertices.is_empty() {
             return Err("an invalid subgraph must contain at least one vertex".to_string());
         }
@@ -147,7 +147,7 @@ impl InvalidSubgraph {
         Ok(())
     }
 
-    pub fn generate_matrix(&self, decoding_graph: &HyperDecodingGraph) -> ParityMatrix {
+    pub fn generate_matrix(&self, decoding_graph: &DecodingHyperGraph) -> ParityMatrix {
         let mut matrix = ParityMatrix::new();
         for &edge_index in self.hairs.iter() {
             matrix.add_variable(edge_index);
@@ -161,23 +161,23 @@ impl InvalidSubgraph {
 
 // shortcuts for easier code writing at debugging
 impl InvalidSubgraph {
-    pub fn new_ptr(edges: BTreeSet<EdgeIndex>, decoding_graph: &HyperDecodingGraph) -> Arc<Self> {
+    pub fn new_ptr(edges: BTreeSet<EdgeIndex>, decoding_graph: &DecodingHyperGraph) -> Arc<Self> {
         Arc::new(Self::new(edges, decoding_graph))
     }
-    pub fn new_vec_ptr(edges: &[EdgeIndex], decoding_graph: &HyperDecodingGraph) -> Arc<Self> {
+    pub fn new_vec_ptr(edges: &[EdgeIndex], decoding_graph: &DecodingHyperGraph) -> Arc<Self> {
         Self::new_ptr(edges.iter().cloned().collect(), decoding_graph)
     }
     pub fn new_complete_ptr(
         vertices: BTreeSet<VertexIndex>,
         edges: BTreeSet<EdgeIndex>,
-        decoding_graph: &HyperDecodingGraph,
+        decoding_graph: &DecodingHyperGraph,
     ) -> Arc<Self> {
         Arc::new(Self::new_complete(vertices, edges, decoding_graph))
     }
     pub fn new_complete_vec_ptr(
         vertices: BTreeSet<VertexIndex>,
         edges: &[EdgeIndex],
-        decoding_graph: &HyperDecodingGraph,
+        decoding_graph: &DecodingHyperGraph,
     ) -> Arc<Self> {
         Self::new_complete_ptr(
             vertices.iter().cloned().collect(),

@@ -5,35 +5,30 @@ use std::sync::Arc;
 
 /// hyper model graph that contains static information regardless of the syndrome
 #[derive(Debug, Clone)]
-pub struct HyperModelGraph {
+pub struct ModelHyperGraph {
     /// initializer
     pub initializer: Arc<SolverInitializer>,
     /// the data structure for each vertex
-    pub vertices: Vec<HyperModelGraphVertex>,
+    pub vertices: Vec<ModelHyperGraphVertex>,
 }
 
 #[derive(Default, Debug, Clone)]
-pub struct HyperModelGraphVertex {
+pub struct ModelHyperGraphVertex {
     /// the incident edges
     pub edges: Vec<EdgeIndex>,
 }
 
-impl HyperModelGraph {
+impl ModelHyperGraph {
     #[allow(clippy::unnecessary_cast)]
     pub fn new(initializer: Arc<SolverInitializer>) -> Self {
-        let mut vertices: Vec<HyperModelGraphVertex> =
-            vec![HyperModelGraphVertex::default(); initializer.vertex_num as usize];
+        let mut vertices: Vec<ModelHyperGraphVertex> =
+            vec![ModelHyperGraphVertex::default(); initializer.vertex_num as usize];
         for (edge_index, hyperedge) in initializer.weighted_edges.iter().enumerate() {
             for &vertex_index in hyperedge.vertices.iter() {
-                vertices[vertex_index as usize]
-                    .edges
-                    .push(edge_index as EdgeIndex);
+                vertices[vertex_index as usize].edges.push(edge_index as EdgeIndex);
             }
         }
-        Self {
-            initializer,
-            vertices,
-        }
+        Self { initializer, vertices }
     }
 
     #[allow(clippy::unnecessary_cast)]
@@ -54,17 +49,12 @@ impl HyperModelGraph {
         vertices
     }
 
-    pub fn matches_subgraph_syndrome(
-        &self,
-        subgraph: &Subgraph,
-        defect_vertices: &[VertexIndex],
-    ) -> bool {
-        self.initializer
-            .matches_subgraph_syndrome(subgraph, defect_vertices)
+    pub fn matches_subgraph_syndrome(&self, subgraph: &Subgraph, defect_vertices: &[VertexIndex]) -> bool {
+        self.initializer.matches_subgraph_syndrome(subgraph, defect_vertices)
     }
 }
 
-impl MWPSVisualizer for HyperModelGraph {
+impl MWPSVisualizer for ModelHyperGraph {
     fn snapshot(&self, abbrev: bool) -> serde_json::Value {
         self.initializer.snapshot(abbrev)
     }
@@ -75,9 +65,7 @@ pub mod tests {
     use super::super::example_codes::*;
     use super::*;
 
-    pub fn color_code_5_model_graph(
-        visualize_filename: String,
-    ) -> (Arc<HyperModelGraph>, Visualizer) {
+    pub fn color_code_5_model_graph(visualize_filename: String) -> (Arc<ModelHyperGraph>, Visualizer) {
         let code = CodeCapacityColorCode::new(5, 0.1, 1000);
         let mut visualizer = Visualizer::new(
             Some(visualize_data_folder() + visualize_filename.as_str()),
@@ -86,9 +74,7 @@ pub mod tests {
         )
         .unwrap();
         print_visualize_link(visualize_filename);
-        visualizer
-            .snapshot_combined("code".to_string(), vec![&code])
-            .unwrap();
+        visualizer.snapshot_combined("code".to_string(), vec![&code]).unwrap();
         let model_graph = code.get_model_graph();
         (model_graph, visualizer)
     }

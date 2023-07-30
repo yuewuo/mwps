@@ -255,7 +255,7 @@ impl PrimalModuleImpl for PrimalModuleSerial {
 impl PrimalModuleSerial {
     // union the cluster of two dual nodes
     #[allow(clippy::unnecessary_cast)]
-    pub fn union(&self, dual_node_ptr_1: &DualNodePtr, dual_node_ptr_2: &DualNodePtr, decoding_graph: &HyperDecodingGraph) {
+    pub fn union(&self, dual_node_ptr_1: &DualNodePtr, dual_node_ptr_2: &DualNodePtr, decoding_graph: &DecodingHyperGraph) {
         let node_index_1 = dual_node_ptr_1.read_recursive().index;
         let node_index_2 = dual_node_ptr_2.read_recursive().index;
         let primal_node_1 = self.nodes[node_index_1 as usize].read_recursive();
@@ -408,7 +408,7 @@ pub mod tests {
         primal_module.growing_strategy = growing_strategy;
         primal_module.plugins = Arc::new(plugins);
         // try to work on a simple syndrome
-        let decoding_graph = HyperDecodingGraph::new_defects(model_graph, defect_vertices.clone());
+        let decoding_graph = DecodingHyperGraph::new_defects(model_graph, defect_vertices.clone());
         let interface_ptr = DualModuleInterfacePtr::new(decoding_graph.model_graph.clone());
         primal_module.solve_visualizer(
             &interface_ptr,

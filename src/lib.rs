@@ -85,7 +85,7 @@ pub fn get_version() -> String {
     primal_module.growing_strategy = GrowingStrategy::SingleCluster;
     primal_module.plugins = std::sync::Arc::new(vec![]);
     // try to work on a simple syndrome
-    let decoding_graph = HyperDecodingGraph::new_defects(model_graph, defect_vertices.clone());
+    let decoding_graph = DecodingHyperGraph::new_defects(model_graph, defect_vertices.clone());
     let interface_ptr = DualModuleInterfacePtr::new(decoding_graph.model_graph.clone());
     primal_module.solve_visualizer(
         &interface_ptr,
