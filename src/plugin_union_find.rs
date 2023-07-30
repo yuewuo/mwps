@@ -20,13 +20,13 @@ pub struct PluginUnionFind {}
 
 impl PluginUnionFind {
     /// check if the cluster is valid (hypergraph union-find decoder)
-    pub fn find_single_relaxer<'a>(decoding_graph: &DecodingHyperGraph, matrix: &'a mut EchelonMatrix) -> Option<Relaxer> {
+    pub fn find_single_relaxer(decoding_graph: &DecodingHyperGraph, matrix: &mut EchelonMatrix) -> Option<Relaxer> {
         if matrix.get_echelon_info().satisfiable {
             return None; // cannot find any relaxer
         }
         let invalid_subgraph = InvalidSubgraph::new_complete_ptr(
             matrix.get_vertices(),
-            BTreeSet::from_iter(matrix.get_view_edges().into_iter()),
+            BTreeSet::from_iter(matrix.get_view_edges()),
             decoding_graph,
         );
         Some(Relaxer::new_vec(vec![(invalid_subgraph, Rational::one())]))
@@ -34,10 +34,10 @@ impl PluginUnionFind {
 }
 
 impl PluginImpl for PluginUnionFind {
-    fn find_relaxers<'a>(
+    fn find_relaxers(
         &self,
         decoding_graph: &DecodingHyperGraph,
-        matrix: &'a mut EchelonMatrix,
+        matrix: &mut EchelonMatrix,
         _positive_dual_nodes: &[DualNodePtr],
     ) -> Vec<Relaxer> {
         if let Some(relaxer) = Self::find_single_relaxer(decoding_graph, matrix) {

@@ -20,10 +20,10 @@ pub type EchelonMatrix = Echelon<Tail<Tight<BasicMatrix>>>;
 /// common trait that must be implemented for each plugin
 pub trait PluginImpl {
     /// given the tight edges and parity constraints, find relaxers
-    fn find_relaxers<'a>(
+    fn find_relaxers(
         &self,
         decoding_graph: &DecodingHyperGraph,
-        matrix: &'a mut EchelonMatrix,
+        matrix: &mut EchelonMatrix,
         positive_dual_nodes: &[DualNodePtr],
     ) -> RelaxerVec;
 
@@ -82,8 +82,7 @@ impl PluginManager {
         matrix: &mut EchelonMatrix,
         positive_dual_nodes: &[DualNodePtr],
     ) -> Option<Relaxer> {
-        let mut relaxer_forest =
-            RelaxerForest::new(BTreeSet::from_iter(matrix.get_view_edges().into_iter()), positive_dual_nodes);
+        let mut relaxer_forest = RelaxerForest::new(BTreeSet::from_iter(matrix.get_view_edges()), positive_dual_nodes);
         for plugin_entry in self.plugins.iter().chain(std::iter::once(&PluginUnionFind::entry())) {
             let mut repeat = true;
             let mut repeat_count = 0;

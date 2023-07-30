@@ -15,10 +15,10 @@ use crate::relaxer::*;
 pub struct PluginSingleHair {}
 
 impl PluginImpl for PluginSingleHair {
-    fn find_relaxers<'a>(
+    fn find_relaxers(
         &self,
         decoding_graph: &DecodingHyperGraph,
-        matrix: &'a mut EchelonMatrix,
+        matrix: &mut EchelonMatrix,
         positive_dual_nodes: &[DualNodePtr],
     ) -> Vec<Relaxer> {
         // single hair requires the matrix to have at least one feasible solution
