@@ -152,7 +152,10 @@ pub trait MatrixEchelon: MatrixView {
     }
 
     /// try every independent variables and try to minimize the total weight of the solution
-    fn get_solution_local_minimum(&mut self, hypergraph: &SolverInitializer) -> Option<Subgraph> {
+    fn get_solution_local_minimum<F>(&mut self, weight_of: F) -> Option<Subgraph>
+    where
+        F: Fn(EdgeIndex) -> Weight,
+    {
         self.get_echelon_info(); // make sure it's in echelon form
         let info = self.get_echelon_info_immutable();
         if !info.satisfiable {
@@ -175,7 +178,7 @@ pub trait MatrixEchelon: MatrixView {
         }
         let mut total_weight = 0;
         for &edge_index in solution.iter() {
-            total_weight += hypergraph.weighted_edges[edge_index].weight;
+            total_weight += weight_of(edge_index);
         }
         let mut pending_flip_edge_indices = vec![];
         let mut is_local_minimum = false;
@@ -186,8 +189,8 @@ pub trait MatrixEchelon: MatrixView {
                 pending_flip_edge_indices.clear();
                 let var_index = self.column_to_var_index(column);
                 let edge_index = self.var_to_edge_index(var_index);
-                let mut primal_delta = (hypergraph.weighted_edges[edge_index].weight as isize)
-                    * (if solution.contains(&edge_index) { -1 } else { 1 });
+                let mut primal_delta =
+                    (weight_of(edge_index) as isize) * (if solution.contains(&edge_index) { -1 } else { 1 });
                 pending_flip_edge_indices.push(edge_index);
                 for row in 0..info.rows.len() {
                     if self.get_lhs(row, var_index) {
@@ -195,7 +198,7 @@ pub trait MatrixEchelon: MatrixView {
                         let flip_column = info.rows[row].column;
                         debug_assert!(flip_column < column);
                         let flip_edge_index = self.column_to_edge_index(flip_column);
-                        primal_delta += (hypergraph.weighted_edges[flip_edge_index].weight as isize)
+                        primal_delta += (weight_of(flip_edge_index) as isize)
                             * (if solution.contains(&flip_edge_index) { -1 } else { 1 });
                         pending_flip_edge_indices.push(flip_edge_index);
                     }
@@ -313,6 +316,7 @@ impl std::fmt::Debug for RowInfo {
 pub mod tests {
     use super::super::*;
     use super::*;
+    use std::collections::BTreeMap;
 
     type TightMatrix = Tight<BasicMatrix>;
 
@@ -356,6 +360,30 @@ pub mod tests {
         println!("echelon_info: {echelon_info:?}");
     }
 
+    #[derive(Default)]
+    struct TestEdgeWeights {
+        pub weights: BTreeMap<EdgeIndex, Weight>,
+    }
+
+    impl TestEdgeWeights {
+        fn new(weights: &[(EdgeIndex, Weight)]) -> Self {
+            let mut result: TestEdgeWeights = Default::default();
+            for &(edge_index, weight) in weights {
+                result.weights.insert(edge_index, weight);
+            }
+            result
+        }
+        fn get_solution_local_minimum(&self, matrix: &mut Echelon<Tail<BasicMatrix>>) -> Option<Subgraph> {
+            matrix.get_solution_local_minimum(|edge_index| {
+                if let Some(weight) = self.weights.get(&edge_index) {
+                    *weight
+                } else {
+                    1
+                }
+            })
+        }
+    }
+
     #[test]
     fn matrix_interface_echelon_solution() {
         // cargo test --features=colorful matrix_interface_echelon_solution -- --nocapture
@@ -382,7 +410,33 @@ pub mod tests {
         }
         matrix.printstd();
         assert_eq!(matrix.get_solution(), Some(Subgraph::new(vec![0, 1, 2, 3, 4])));
-        // construct a decoding hypergraph
-        // matrix.get_solution_local_minimum(hypergraph);
+        let weights = TestEdgeWeights::new(&[(3, 10), (9, 10)]);
+        assert_eq!(
+            weights.get_solution_local_minimum(&mut matrix),
+            Some(Subgraph::new(vec![5, 7, 8]))
+        );
+        let weights = TestEdgeWeights::new(&[(7, 10), (9, 10)]);
+        assert_eq!(
+            weights.get_solution_local_minimum(&mut matrix),
+            Some(Subgraph::new(vec![3, 4, 8]))
+        );
+        let weights = TestEdgeWeights::new(&[(3, 10), (4, 10), (7, 10)]);
+        assert_eq!(
+            weights.get_solution_local_minimum(&mut matrix),
+            Some(Subgraph::new(vec![5, 6, 9]))
+        );
+    }
+
+    #[test]
+    fn matrix_interface_echelon_no_solution() {
+        // cargo test matrix_interface_echelon_no_solution -- --nocapture
+        let mut matrix = Echelon::<Tail<BasicMatrix>>::new();
+        let parity_checks = vec![(vec![0, 1], false), (vec![0, 1], true)];
+        for (vertex_index, (incident_edges, parity)) in parity_checks.iter().enumerate() {
+            matrix.add_constraint(vertex_index, incident_edges, *parity);
+        }
+        assert_eq!(matrix.get_solution(), None);
+        let weights = TestEdgeWeights::new(&[]);
+        assert_eq!(weights.get_solution_local_minimum(&mut matrix), None);
     }
 }
