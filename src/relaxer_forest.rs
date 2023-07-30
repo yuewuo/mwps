@@ -4,6 +4,7 @@
 //!
 
 use crate::invalid_subgraph::*;
+use crate::relaxer;
 use crate::relaxer::*;
 use crate::util::*;
 use num_traits::Signed;
@@ -71,12 +72,19 @@ impl RelaxerForest {
         // validate only at debug mode to improve speed
         debug_assert_eq!(self.validate(&relaxer), Ok(()));
         // add this relaxer to the forest
+        let relaxer = Arc::new(relaxer);
+        for (edge_index, speed) in relaxer.get_untighten_edges() {
+            debug_assert!(speed.is_negative());
+            if !self.edge_untightener.contains_key(edge_index) {
+                self.edge_untightener.insert(*edge_index, (relaxer.clone(), -speed.recip()));
+            }
+        }
     }
 
     /// expand a relaxer
-    pub fn expand(&mut self, relaxer: Relaxer) -> Relaxer {
+    pub fn expand(&mut self, relaxer: &Relaxer) -> Relaxer {
         println!("expand on {relaxer:?}");
-        relaxer
+        relaxer.clone()
     }
 }
 
@@ -104,7 +112,8 @@ pub mod tests {
             ]
             .into(),
         );
-        relaxer_forest.add(relaxer);
+        let expanded = relaxer_forest.expand(&relaxer);
+        println!("{expanded:?}");
     }
 
     #[test]

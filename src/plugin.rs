@@ -100,7 +100,7 @@ impl PluginManager {
                 for relaxer in relaxers.into_iter() {
                     let sum_speed = relaxer.get_sum_speed();
                     if sum_speed.is_positive() {
-                        return Some(relaxer_forest.expand(relaxer));
+                        return Some(relaxer_forest.expand(&relaxer));
                     } else {
                         relaxer_forest.add(relaxer);
                     }

@@ -103,6 +103,10 @@ impl Relaxer {
     pub fn get_growing_edges(&self) -> &BTreeMap<EdgeIndex, Rational> {
         &self.growing_edges
     }
+
+    pub fn get_untighten_edges(&self) -> &BTreeMap<EdgeIndex, Rational> {
+        &self.untighten_edges
+    }
 }
 
 #[cfg(test)]
