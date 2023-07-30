@@ -35,8 +35,6 @@ pub mod invalid_subgraph;
 pub mod matrix;
 pub mod model_hypergraph;
 pub mod mwps_solver;
-pub mod old_parity_matrix;
-pub mod parity_matrix_visualize;
 pub mod plugin;
 pub mod plugin_single_hair;
 pub mod plugin_union_find;

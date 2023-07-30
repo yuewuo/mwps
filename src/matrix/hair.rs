@@ -188,8 +188,6 @@ impl<'a, M: MatrixTail + MatrixEchelon> VizTrait for HairView<'a, M> {
 
 #[cfg(test)]
 pub mod tests {
-    use crate::matrix::hair;
-
     use super::super::basic::*;
     use super::super::echelon::*;
     use super::super::tail::*;
