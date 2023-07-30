@@ -8,7 +8,6 @@
 //!
 
 use super::interface::*;
-use super::*;
 use prettytable::format::TableFormat;
 use prettytable::*;
 #[cfg(feature = "python_binding")]
@@ -130,7 +129,7 @@ impl VizTrait for VizTable {
 
 #[cfg(test)]
 pub mod tests {
-    use super::*;
+    use super::super::*;
 
     #[test]
     fn viz_table_1() {

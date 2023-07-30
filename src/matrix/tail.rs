@@ -6,7 +6,7 @@ use std::collections::BTreeSet;
 
 #[derive(Clone, Derivative)]
 #[derivative(Default(new = "true"))]
-pub struct Tail<M> {
+pub struct Tail<M: MatrixView> {
     base: M,
     /// the set of edges that should be placed at the end, if any
     tail_edges: BTreeSet<EdgeIndex>,
@@ -19,13 +19,13 @@ pub struct Tail<M> {
     tail_var_indices: Vec<VarIndex>,
 }
 
-impl<M> Tail<M> {
+impl<M: MatrixView> Tail<M> {
     pub fn get_base(&self) -> &M {
         &self.base
     }
 }
 
-impl<M> MatrixTail for Tail<M> {
+impl<M: MatrixView> MatrixTail for Tail<M> {
     fn get_tail_edges(&self) -> &BTreeSet<EdgeIndex> {
         &self.tail_edges
     }
@@ -45,7 +45,7 @@ impl<M: MatrixTight> MatrixTight for Tail<M> {
     }
 }
 
-impl<M: MatrixBasic> MatrixBasic for Tail<M> {
+impl<M: MatrixView> MatrixBasic for Tail<M> {
     fn add_variable(&mut self, edge_index: EdgeIndex) -> Option<VarIndex> {
         self.is_var_indices_outdated = true;
         self.base.add_variable(edge_index)

@@ -93,7 +93,7 @@ pub trait MatrixView: MatrixBasic {
     }
 }
 
-pub trait MatrixTight: MatrixBasic {
+pub trait MatrixTight: MatrixView {
     fn update_edge_tightness(&mut self, edge_index: EdgeIndex, is_tight: bool);
     fn is_tight(&self, edge_index: usize) -> bool;
 
@@ -129,8 +129,9 @@ pub trait MatrixTail {
     }
 }
 
-pub trait MatrixEchelon {
+pub trait MatrixEchelon: MatrixView {
     fn get_echelon_info(&mut self) -> &EchelonInfo;
+    fn get_echelon_info_immutable(&self) -> &EchelonInfo;
 }
 
 #[derive(Clone, Debug, Derivative)]

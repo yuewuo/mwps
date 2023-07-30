@@ -6,7 +6,7 @@ use std::collections::BTreeSet;
 
 #[derive(Clone, Derivative)]
 #[derivative(Default(new = "true"))]
-pub struct Tight<M> {
+pub struct Tight<M: MatrixView> {
     base: M,
     /// the set of tight edges: should be a relatively small set
     tight_edges: BTreeSet<EdgeIndex>,
@@ -17,13 +17,13 @@ pub struct Tight<M> {
     var_indices: Vec<VarIndex>,
 }
 
-impl<M> Tight<M> {
+impl<M: MatrixView> Tight<M> {
     pub fn get_base(&self) -> &M {
         &self.base
     }
 }
 
-impl<M: MatrixBasic> MatrixTight for Tight<M> {
+impl<M: MatrixView> MatrixTight for Tight<M> {
     fn update_edge_tightness(&mut self, edge_index: EdgeIndex, is_tight: bool) {
         debug_assert!(self.exists_edge(edge_index));
         self.is_var_indices_outdated = true;
@@ -40,7 +40,7 @@ impl<M: MatrixBasic> MatrixTight for Tight<M> {
     }
 }
 
-impl<M: MatrixBasic> MatrixBasic for Tight<M> {
+impl<M: MatrixView> MatrixBasic for Tight<M> {
     fn add_variable(&mut self, edge_index: EdgeIndex) -> Option<VarIndex> {
         self.base.add_variable(edge_index)
     }

@@ -1,5 +1,6 @@
 pub mod basic;
 pub mod echelon;
+pub mod hair;
 pub mod interface;
 pub mod row;
 pub mod tail;

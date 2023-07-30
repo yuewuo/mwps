@@ -8,7 +8,7 @@ use std::collections::BTreeSet;
 
 #[derive(Clone, Derivative)]
 #[derivative(Default(new = "true"))]
-pub struct Echelon<M> {
+pub struct Echelon<M: MatrixView> {
     base: M,
     /// echelon form is invalidated on any changes to the underlying matrix
     #[derivative(Default(value = "true"))]
@@ -17,13 +17,13 @@ pub struct Echelon<M> {
     info: EchelonInfo,
 }
 
-impl<M> Echelon<M> {
+impl<M: MatrixView> Echelon<M> {
     pub fn get_base(&self) -> &M {
         &self.base
     }
 }
 
-impl<M: MatrixTail> MatrixTail for Echelon<M> {
+impl<M: MatrixTail + MatrixView> MatrixTail for Echelon<M> {
     fn get_tail_edges(&self) -> &BTreeSet<EdgeIndex> {
         self.base.get_tail_edges()
     }
@@ -43,7 +43,7 @@ impl<M: MatrixTight> MatrixTight for Echelon<M> {
     }
 }
 
-impl<M: MatrixBasic> MatrixBasic for Echelon<M> {
+impl<M: MatrixView> MatrixBasic for Echelon<M> {
     fn add_variable(&mut self, edge_index: EdgeIndex) -> Option<VarIndex> {
         self.is_info_outdated = true;
         self.base.add_variable(edge_index)
@@ -200,6 +200,10 @@ impl<M: MatrixView> MatrixEchelon for Echelon<M> {
         self.echelon_info_lazy_update();
         &self.info
     }
+    fn get_echelon_info_immutable(&self) -> &EchelonInfo {
+        debug_assert!(!self.is_info_outdated, "call `get_echelon_info` first");
+        &self.info
+    }
 }
 
 impl<M: MatrixView> MatrixView for Echelon<M> {
@@ -221,21 +225,9 @@ impl<M: MatrixView> MatrixView for Echelon<M> {
 
 impl<M: MatrixView> VizTrait for Echelon<M> {
     fn viz_table(&mut self) -> VizTable {
-        // self will be mutably borrowed, so clone the necessary information
-        let info = self.get_echelon_info().clone();
+        let mut table = VizTable::from(&mut *self);
+        let info: &EchelonInfo = self.get_echelon_info_immutable();
         assert_eq!(info.rows.len(), info.effective_rows);
-        let leading_edges: Vec<Option<EdgeIndex>> = info
-            .rows
-            .iter()
-            .map(|row_info| {
-                if row_info.has_leading() {
-                    Some(self.column_to_edge_index(row_info.column))
-                } else {
-                    None
-                }
-            })
-            .collect();
-        let mut table = VizTable::from(self);
         // add echelon mark
         assert!(table.title.get_cell(0).unwrap().get_content().is_empty());
         if info.satisfiable {
@@ -247,9 +239,9 @@ impl<M: MatrixView> VizTrait for Echelon<M> {
         assert_eq!(table.rows.len(), info.effective_rows);
         // add row information on the right
         table.title.add_cell(Cell::new("\u{25BC}"));
-        for (row, edge_index) in leading_edges.iter().enumerate() {
-            let cell = if let Some(edge_index) = edge_index {
-                Cell::new(edge_index.to_string().as_str()).style_spec("irFm")
+        for (row, row_info) in info.rows.iter().enumerate() {
+            let cell = if row_info.has_leading() {
+                Cell::new(self.column_to_edge_index(row_info.column).to_string().as_str()).style_spec("irFm")
             } else {
                 Cell::new("*").style_spec("rFr")
             };
@@ -431,6 +423,18 @@ pub mod tests {
         // even though there is indeed such a column, we forbid such dangerous calls
         // always call `columns()` before accessing any column
         matrix.column_to_var_index(0);
+    }
+
+    #[test]
+    #[should_panic]
+    fn echelon_matrix_cannot_call_dirty_echelon_info() {
+        // cargo test echelon_matrix_cannot_call_dirty_echelon_info -- --nocapture
+        let mut matrix = EchelonMatrix::new();
+        matrix.add_constraint(0, &[1, 4, 6], true);
+        matrix.update_edge_tightness(1, true);
+        // even though there is indeed such a column, we forbid such dangerous calls
+        // always call `columns()` before accessing any column
+        matrix.get_echelon_info_immutable();
     }
 
     #[test]
