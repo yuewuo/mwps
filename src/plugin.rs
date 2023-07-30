@@ -38,6 +38,16 @@ pub trait PluginImpl {
             repeat_strategy: RepeatStrategy::default(),
         }
     }
+
+    fn entry_with_strategy(strategy: RepeatStrategy) -> PluginEntry
+    where
+        Self: 'static + Send + Sync + Sized + Default,
+    {
+        PluginEntry {
+            plugin: Arc::new(Self::default()),
+            repeat_strategy: strategy,
+        }
+    }
 }
 
 /// configuration of how a plugin should be repeated
@@ -98,6 +108,9 @@ impl PluginManager {
                     .plugin
                     .find_relaxers(decoding_graph, &mut *matrix, positive_dual_nodes);
                 for relaxer in relaxers.into_iter() {
+                    for edge_index in relaxer.get_untighten_edges().keys() {
+                        matrix.update_edge_tightness(*edge_index, false);
+                    }
                     let relaxer = Arc::new(relaxer);
                     let sum_speed = relaxer.get_sum_speed();
                     if sum_speed.is_positive() {
@@ -120,7 +133,6 @@ impl PluginManager {
                 repeat_count += 1;
             }
         }
-        // TODO: recover implicit shrink here
         None
     }
 }

@@ -255,7 +255,7 @@ impl<M: MatrixView> VizTrait for Echelon<M> {
         bottom_row.add_cell(Cell::new(" \u{25B6}"));
         for column_info in info.columns.iter() {
             let cell = if column_info.is_dependent() {
-                Cell::new(column_info.row.to_string().as_str()).style_spec("irFb")
+                Cell::new(VizTable::force_single_column(column_info.row.to_string().as_str()).as_str()).style_spec("irFb")
             } else {
                 Cell::new("*").style_spec("rFr")
             };

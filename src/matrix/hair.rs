@@ -16,6 +16,15 @@ pub struct HairView<'a, M: MatrixTail + MatrixEchelon> {
 }
 
 impl<'a, M: MatrixTail + MatrixEchelon> HairView<'a, M> {
+    pub fn get_base(&self) -> &M {
+        self.base
+    }
+    pub fn get_base_view_edges(&mut self) -> Vec<EdgeIndex> {
+        self.base.get_view_edges()
+    }
+}
+
+impl<'a, M: MatrixTail + MatrixEchelon> HairView<'a, M> {
     pub fn new<EdgeIter>(matrix: &'a mut M, hairs: EdgeIter) -> Self
     where
         EdgeIter: Iterator<Item = EdgeIndex>,
@@ -63,7 +72,7 @@ impl<'a, M: MatrixTail + MatrixEchelon> HairView<'a, M> {
 
 impl<'a, M: MatrixTail + MatrixEchelon> MatrixTail for HairView<'a, M> {
     fn get_tail_edges(&self) -> &BTreeSet<EdgeIndex> {
-        self.base.get_tail_edges()
+        self.get_base().get_tail_edges()
     }
     fn get_tail_edges_mut(&mut self) -> &mut BTreeSet<EdgeIndex> {
         panic!("cannot mutate a hair view");
@@ -84,7 +93,7 @@ impl<'a, M: MatrixTight + MatrixTail + MatrixEchelon> MatrixTight for HairView<'
         panic!("cannot mutate a hair view");
     }
     fn is_tight(&self, edge_index: usize) -> bool {
-        self.base.is_tight(edge_index)
+        self.get_base().is_tight(edge_index)
     }
 }
 
@@ -109,19 +118,19 @@ impl<'a, M: MatrixTail + MatrixEchelon> MatrixBasic for HairView<'a, M> {
         panic!("cannot mutate a hair view");
     }
     fn get_lhs(&self, row: RowIndex, var_index: VarIndex) -> bool {
-        self.base.get_lhs(row + self.row_bias, var_index)
+        self.get_base().get_lhs(row + self.row_bias, var_index)
     }
     fn get_rhs(&self, row: RowIndex) -> bool {
-        self.base.get_rhs(row + self.row_bias)
+        self.get_base().get_rhs(row + self.row_bias)
     }
     fn var_to_edge_index(&self, var_index: VarIndex) -> EdgeIndex {
-        self.base.var_to_edge_index(var_index)
+        self.get_base().var_to_edge_index(var_index)
     }
     fn edge_to_var_index(&self, edge_index: EdgeIndex) -> Option<VarIndex> {
-        self.base.edge_to_var_index(edge_index)
+        self.get_base().edge_to_var_index(edge_index)
     }
     fn get_vertices(&self) -> BTreeSet<VertexIndex> {
-        self.base.get_vertices()
+        self.get_base().get_vertices()
     }
 }
 
@@ -173,7 +182,8 @@ impl<'a, M: MatrixTail + MatrixEchelon> VizTrait for HairView<'a, M> {
         for column in 0..columns {
             let column_info = self.get_echelon_column_info(column);
             let cell = if column_info.is_dependent() {
-                Cell::new((column_info.row - self.row_bias).to_string().as_str()).style_spec("irFb")
+                Cell::new(VizTable::force_single_column((column_info.row - self.row_bias).to_string().as_str()).as_str())
+                    .style_spec("irFb")
             } else {
                 Cell::new("*").style_spec("rFr")
             };
@@ -274,6 +284,7 @@ pub mod tests {
         assert!(hair_view.is_tight(1));
         assert!(hair_view.get_echelon_satisfiable());
         assert_eq!(hair_view.get_vertices(), [0, 1, 2].into());
+        assert_eq!(hair_view.get_base_view_edges(), [4, 9, 1, 6]);
     }
 
     fn generate_demo_matrix() -> EchelonMatrix {

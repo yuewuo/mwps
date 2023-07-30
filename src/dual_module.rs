@@ -287,13 +287,15 @@ impl DualModuleInterfacePtr {
         let interface = self.read_recursive();
         let mut internal_vertices = BTreeSet::new();
         internal_vertices.insert(vertex_idx);
+        let invalid_subgraph = Arc::new(InvalidSubgraph::new_complete(
+            vec![vertex_idx].into_iter().collect(),
+            BTreeSet::new(),
+            &interface.decoding_graph,
+        ));
+        let node_index = interface.nodes.len() as NodeIndex;
         let node_ptr = DualNodePtr::new_value(DualNode {
-            index: interface.nodes.len() as NodeIndex,
-            invalid_subgraph: Arc::new(InvalidSubgraph::new_complete(
-                vec![vertex_idx].into_iter().collect(),
-                BTreeSet::new(),
-                &interface.decoding_graph,
-            )),
+            index: node_index,
+            invalid_subgraph: invalid_subgraph.clone(),
             dual_variable: Rational::zero(),
             grow_rate: Rational::one(),
         });
@@ -301,6 +303,7 @@ impl DualModuleInterfacePtr {
         drop(interface);
         let mut interface = self.write();
         interface.nodes.push(node_ptr);
+        interface.hashmap.insert(invalid_subgraph, node_index);
         drop(interface);
         dual_module.add_dual_node(&cloned_node_ptr);
         cloned_node_ptr
@@ -322,8 +325,10 @@ impl DualModuleInterfacePtr {
             "do not create the same node twice"
         );
         let mut interface = self.write();
+        let node_index = interface.nodes.len() as NodeIndex;
+        interface.hashmap.insert(invalid_subgraph.clone(), node_index);
         let node_ptr = DualNodePtr::new_value(DualNode {
-            index: interface.nodes.len() as NodeIndex,
+            index: node_index,
             invalid_subgraph,
             dual_variable: Rational::zero(),
             grow_rate: Rational::one(),

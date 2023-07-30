@@ -5,11 +5,18 @@
 //! A plugin must implement Clone trait, because it will be cloned multiple times for each cluster
 //!
 
+use std::collections::BTreeSet;
+
 use crate::decoding_hypergraph::*;
 use crate::dual_module::*;
+use crate::invalid_subgraph::InvalidSubgraph;
+use crate::matrix::*;
 use crate::plugin::*;
 use crate::plugin_union_find::*;
 use crate::relaxer::*;
+use crate::util::*;
+use num_traits::One;
+use std::sync::Arc;
 
 #[derive(Debug, Clone, Default)]
 pub struct PluginSingleHair {}
@@ -26,35 +33,87 @@ impl PluginImpl for PluginSingleHair {
             return vec![relaxer];
         }
         // then try to find more relaxers
+        let mut relaxers = vec![];
         for dual_node_ptr in positive_dual_nodes.iter() {
             let dual_node = dual_node_ptr.read_recursive();
-            println!("find non-zero dual node: {}", dual_node.index);
-            // matrix
+            let mut hair_view = HairView::new(matrix, dual_node.invalid_subgraph.hairs.iter().cloned());
+            debug_assert!(hair_view.get_echelon_satisfiable());
+            // hair_view.printstd();
+            // optimization: check if there exists a single-hair solution, if not, clear the previous relaxers
+            let constrained_rows: Vec<EdgeIndex> = (0..hair_view.rows()).filter(|&row| hair_view.get_rhs(row)).collect();
+            let mut has_single_hair_solution = false;
+            for column in 0..hair_view.columns() {
+                if constrained_rows
+                    .iter()
+                    .all(|&row| hair_view.get_lhs(row, hair_view.column_to_var_index(column)))
+                {
+                    has_single_hair_solution = true;
+                    break;
+                }
+            }
+            if !has_single_hair_solution {
+                relaxers.clear(); // no need for relaxers from other dual nodes
+            }
+            for &row in constrained_rows.iter() {
+                let mut unnecessary_edges = vec![];
+                for column in 0..hair_view.columns() {
+                    let var_index = hair_view.column_to_var_index(column);
+                    if !hair_view.get_lhs(row, var_index) {
+                        let edge_index = hair_view.var_to_edge_index(var_index);
+                        unnecessary_edges.push(edge_index);
+                    }
+                }
+                if !unnecessary_edges.is_empty() {
+                    // we can construct a relaxer here, by growing a new invalid subgraph that
+                    // removes those unnecessary edges and shrinking the existing one
+                    let mut vertices: BTreeSet<VertexIndex> = hair_view.get_vertices();
+                    let mut edges: BTreeSet<EdgeIndex> = BTreeSet::from_iter(hair_view.get_base_view_edges());
+                    for &edge_index in dual_node.invalid_subgraph.hairs.iter() {
+                        edges.remove(&edge_index);
+                    }
+                    for &edge_index in unnecessary_edges.iter() {
+                        edges.insert(edge_index);
+                        vertices.extend(decoding_graph.get_edge_neighbors(edge_index));
+                    }
+                    let invalid_subgraph = Arc::new(InvalidSubgraph::new_complete(vertices, edges, decoding_graph));
+                    let relaxer = Relaxer::new(
+                        [
+                            (invalid_subgraph, Rational::one()),
+                            (dual_node.invalid_subgraph.clone(), -Rational::one()),
+                        ]
+                        .into(),
+                    );
+                    relaxers.push(relaxer);
+                }
+            }
+            if !has_single_hair_solution {
+                break; // no need to check other dual nodes
+            }
         }
-        vec![]
+        relaxers
     }
 }
 
-// #[cfg(test)]
-// pub mod tests {
-//     use super::*;
-//     use crate::example_codes::*;
-//     use crate::primal_module_serial::tests::*;
-//     use crate::primal_module_serial::*;
+#[cfg(test)]
+pub mod tests {
+    use super::*;
+    use crate::example_codes::*;
+    use crate::primal_module_serial::tests::*;
+    use crate::primal_module_serial::*;
 
-//     #[test]
-//     fn plugin_single_hair_basic_1() {
-//         // cargo test plugin_single_hair_basic_1 -- --nocapture
-//         let visualize_filename = "plugin_single_hair_basic_1.json".to_string();
-//         let defect_vertices = vec![10, 11, 12, 15, 16, 17, 18];
-//         let code = CodeCapacityTailoredCode::new(5, 0., 0.01, 1);
-//         primal_module_serial_basic_standard_syndrome(
-//             code,
-//             visualize_filename,
-//             defect_vertices,
-//             4,
-//             vec![PluginSingleHair::entry()],
-//             GrowingStrategy::SingleCluster,
-//         );
-//     }
-// }
+    #[test]
+    fn plugin_single_hair_basic_1() {
+        // cargo test --features=colorful plugin_single_hair_basic_1 -- --nocapture
+        let visualize_filename = "plugin_single_hair_basic_1.json".to_string();
+        let defect_vertices = vec![10, 11, 12, 15, 16, 17, 18];
+        let code = CodeCapacityTailoredCode::new(5, 0., 0.01, 1);
+        primal_module_serial_basic_standard_syndrome(
+            code,
+            visualize_filename,
+            defect_vertices,
+            4,
+            vec![PluginSingleHair::entry_with_strategy(RepeatStrategy::Once)],
+            GrowingStrategy::SingleCluster,
+        );
+    }
+}

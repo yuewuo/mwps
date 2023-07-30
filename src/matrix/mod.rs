@@ -14,6 +14,7 @@ use pyo3::prelude::*;
 pub use basic::BasicMatrix;
 pub use complete::CompleteMatrix;
 pub use echelon::Echelon;
+pub use hair::HairView;
 pub use interface::*;
 pub use tail::Tail;
 pub use tight::Tight;
