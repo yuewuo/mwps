@@ -5,32 +5,31 @@ use crate::util::*;
 use derivative::Derivative;
 use std::collections::{BTreeMap, BTreeSet};
 
+/// complete matrix considers a predefined set of edges and won't consider any other edges
 #[derive(Clone, Derivative)]
 #[derivative(Default(new = "true"))]
-pub struct BasicMatrix {
+pub struct CompleteMatrix {
     /// the vertices already maintained by this parity check
-    #[cfg_attr(feature = "python_binding", pyo3(get, set))]
-    pub vertices: BTreeSet<VertexIndex>,
+    vertices: BTreeSet<VertexIndex>,
     /// the edges maintained by this parity check, mapping to the local indices
-    #[cfg_attr(feature = "python_binding", pyo3(get, set))]
-    pub edges: BTreeMap<EdgeIndex, VarIndex>,
+    edges: BTreeMap<EdgeIndex, VarIndex>,
     /// variable index map to edge index
-    #[cfg_attr(feature = "python_binding", pyo3(get, set))]
-    pub variables: Vec<EdgeIndex>,
-    #[cfg_attr(feature = "python_binding", pyo3(get, set))]
-    pub constraints: Vec<ParityRow>,
+    variables: Vec<EdgeIndex>,
+    constraints: Vec<ParityRow>,
 }
 
-impl MatrixBasic for BasicMatrix {
+impl MatrixBasic for CompleteMatrix {
     fn add_variable(&mut self, edge_index: EdgeIndex) -> Option<VarIndex> {
         if self.edges.contains_key(&edge_index) {
             // variable already exists
             return None;
         }
+        if !self.constraints.is_empty() {
+            panic!("complete matrix doesn't allow dynamic edges, please insert all edges at the beginning")
+        }
         let var_index = self.variables.len();
         self.edges.insert(edge_index, var_index);
         self.variables.push(edge_index);
-        ParityRow::add_one_variable(&mut self.constraints, self.variables.len());
         Some(var_index)
     }
 
@@ -44,22 +43,18 @@ impl MatrixBasic for BasicMatrix {
             // no need to add repeat constraint
             return None;
         }
-        let mut var_indices = None;
         self.vertices.insert(vertex_index);
-        for &edge_index in incident_edges.iter() {
-            if let Some(var_index) = self.add_variable(edge_index) {
-                // this is a newly added edge
-                var_indices.get_or_insert_with(Vec::new).push(var_index);
-            }
-        }
         let mut row = ParityRow::new_length(self.variables.len());
         for &edge_index in incident_edges.iter() {
-            let var_index = self.edges[&edge_index];
-            row.set_left(var_index, true);
+            if self.exists_edge(edge_index) {
+                let var_index = self.edges[&edge_index];
+                row.set_left(var_index, true);
+            }
         }
         row.set_right(parity);
         self.constraints.push(row);
-        var_indices
+        // never add new edges
+        None
     }
 
     /// row operations
@@ -88,7 +83,7 @@ impl MatrixBasic for BasicMatrix {
     }
 }
 
-impl MatrixView for BasicMatrix {
+impl MatrixView for CompleteMatrix {
     fn columns(&mut self) -> usize {
         self.variables.len()
     }
@@ -102,7 +97,7 @@ impl MatrixView for BasicMatrix {
     }
 }
 
-impl VizTrait for BasicMatrix {
+impl VizTrait for CompleteMatrix {
     fn viz_table(&mut self) -> VizTable {
         VizTable::from(self)
     }
@@ -110,26 +105,17 @@ impl VizTrait for BasicMatrix {
 
 #[cfg(test)]
 pub mod tests {
+    use crate::matrix::Echelon;
+
     use super::*;
 
     #[test]
-    fn basic_matrix_1() {
-        // cargo test --features=colorful basic_matrix_1 -- --nocapture
-        let mut matrix = BasicMatrix::new();
-        matrix.printstd();
-        assert_eq!(
-            matrix.printstd_str(),
-            "\
-┌┬───┐
-┊┊ = ┊
-╞╪═══╡
-└┴───┘
-"
-        );
-        matrix.add_variable(1);
-        matrix.add_variable(4);
-        matrix.add_variable(12);
-        matrix.add_variable(345);
+    fn complete_matrix_1() {
+        // cargo test --features=colorful complete_matrix_1 -- --nocapture
+        let mut matrix = CompleteMatrix::new();
+        for edge_index in [1, 4, 12, 345] {
+            matrix.add_variable(edge_index);
+        }
         matrix.printstd();
         assert_eq!(
             matrix.printstd_str(),
@@ -165,10 +151,13 @@ pub mod tests {
     }
 
     #[test]
-    fn basic_matrix_should_not_add_repeated_constraint() {
-        // cargo test --features=colorful basic_matrix_should_not_add_repeated_constraint -- --nocapture
-        let mut matrix = BasicMatrix::new();
-        assert_eq!(matrix.add_constraint(0, &[1, 4, 8], false), Some(vec![0, 1, 2]));
+    fn complete_matrix_should_not_add_repeated_constraint() {
+        // cargo test --features=colorful complete_matrix_should_not_add_repeated_constraint -- --nocapture
+        let mut matrix = CompleteMatrix::new();
+        for edge_index in [1, 4, 8] {
+            matrix.add_variable(edge_index);
+        }
+        assert_eq!(matrix.add_constraint(0, &[1, 4, 8], false), None);
         assert_eq!(matrix.add_constraint(1, &[4, 8], true), None);
         assert_eq!(matrix.add_constraint(0, &[4], true), None); // repeated
         matrix.printstd();
@@ -187,9 +176,12 @@ pub mod tests {
     }
 
     #[test]
-    fn basic_matrix_row_operations() {
-        // cargo test --features=colorful basic_matrix_row_operations -- --nocapture
-        let mut matrix = BasicMatrix::new();
+    fn complete_matrix_row_operations() {
+        // cargo test --features=colorful complete_matrix_row_operations -- --nocapture
+        let mut matrix = CompleteMatrix::new();
+        for edge_index in [1, 4, 6, 9] {
+            matrix.add_variable(edge_index);
+        }
         matrix.add_constraint(0, &[1, 4, 6], true);
         matrix.add_constraint(1, &[4, 9], false);
         matrix.add_constraint(2, &[1, 9], true);
@@ -243,9 +235,12 @@ pub mod tests {
     }
 
     #[test]
-    fn basic_matrix_manual_echelon() {
-        // cargo test --features=colorful basic_matrix_manual_echelon -- --nocapture
-        let mut matrix = BasicMatrix::new();
+    fn complete_matrix_manual_echelon() {
+        // cargo test --features=colorful complete_matrix_manual_echelon -- --nocapture
+        let mut matrix = CompleteMatrix::new();
+        for edge_index in [1, 4, 6, 9, 9, 6, 4, 1] {
+            matrix.add_variable(edge_index);
+        }
         matrix.add_constraint(0, &[1, 4, 6], true);
         matrix.add_constraint(1, &[4, 9], false);
         matrix.add_constraint(2, &[1, 9], true);
@@ -268,5 +263,48 @@ pub mod tests {
 └─┴─┴─┴─┴─┴───┘
 "
         );
+    }
+
+    #[test]
+    fn complete_matrix_automatic_echelon() {
+        // cargo test --features=colorful complete_matrix_automatic_echelon -- --nocapture
+        let mut matrix = Echelon::<CompleteMatrix>::new();
+        for edge_index in [1, 4, 6, 9] {
+            matrix.add_variable(edge_index);
+        }
+        matrix.add_constraint(0, &[1, 4, 6, 11, 12], true);
+        matrix.add_constraint(1, &[4, 9, 23, 12], false);
+        matrix.add_constraint(2, &[1, 9, 11], true);
+        matrix.printstd();
+        assert_eq!(
+            matrix.clone().printstd_str(),
+            "\
+┌──┬─┬─┬─┬─┬───┬─┐
+┊ E┊1┊4┊6┊9┊ = ┊▼┊
+╞══╪═╪═╪═╪═╪═══╪═╡
+┊ 0┊1┊ ┊ ┊1┊ 1 ┊1┊
+├──┼─┼─┼─┼─┼───┼─┤
+┊ 1┊ ┊1┊ ┊1┊   ┊4┊
+├──┼─┼─┼─┼─┼───┼─┤
+┊ 2┊ ┊ ┊1┊ ┊   ┊6┊
+├──┼─┼─┼─┼─┼───┼─┤
+┊ ▶┊0┊1┊2┊*┊◀  ┊▲┊
+└──┴─┴─┴─┴─┴───┴─┘
+"
+        );
+    }
+
+    #[test]
+    #[should_panic]
+    fn complete_matrix_dynamic_variables_forbidden() {
+        // cargo test complete_matrix_dynamic_variables_forbidden -- --nocapture
+        let mut matrix = Echelon::<CompleteMatrix>::new();
+        for edge_index in [1, 4, 6, 9] {
+            matrix.add_variable(edge_index);
+        }
+        matrix.add_constraint(0, &[1, 4, 6], true);
+        matrix.add_constraint(1, &[4, 9], false);
+        matrix.add_constraint(2, &[1, 9], true);
+        matrix.add_variable(2);
     }
 }

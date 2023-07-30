@@ -1,4 +1,5 @@
 pub mod basic;
+pub mod complete;
 pub mod echelon;
 pub mod hair;
 pub mod interface;
@@ -11,6 +12,7 @@ pub mod visualize;
 use pyo3::prelude::*;
 
 pub use basic::BasicMatrix;
+pub use complete::CompleteMatrix;
 pub use echelon::Echelon;
 pub use interface::*;
 pub use tail::Tail;

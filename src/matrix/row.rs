@@ -3,6 +3,7 @@
 //! A single row in the parity matrix, providing operations in Z_2 linear system
 //!
 
+use super::interface::*;
 use derivative::Derivative;
 #[cfg(feature = "python_binding")]
 use pyo3::prelude::*;
@@ -118,6 +119,20 @@ impl ParityRow {
                 debug_assert_eq!(row.others.len() + 1, others_len);
                 row.others.push(0);
             }
+        }
+    }
+
+    pub(super) fn xor_two_rows(rows: &mut [Self], target: RowIndex, source: RowIndex) {
+        if target < source {
+            let (slice_1, slice_2) = rows.split_at_mut(source);
+            let source = &slice_2[0];
+            let target = &mut slice_1[target];
+            target.add(source);
+        } else {
+            let (slice_1, slice_2) = rows.split_at_mut(target);
+            let source = &slice_1[source];
+            let target = &mut slice_2[0];
+            target.add(source);
         }
     }
 }
