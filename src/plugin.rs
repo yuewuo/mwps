@@ -5,6 +5,8 @@
 //! A plugin must implement Clone trait, because it will be cloned multiple times for each cluster
 //!
 
+use num_traits::Signed;
+
 use crate::decoding_hypergraph::*;
 use crate::derivative::Derivative;
 use crate::dual_module::*;
@@ -88,7 +90,6 @@ impl PluginManager {
                 .map(|ptr| ptr.read_recursive().invalid_subgraph.clone()),
         );
         for plugin_entry in self.plugins.iter().chain(std::iter::once(&PluginUnionFind::entry())) {
-            println!("plugin_entry:");
             let mut repeat = true;
             let mut repeat_count = 0;
             while repeat {
@@ -96,7 +97,14 @@ impl PluginManager {
                 let relaxers = plugin_entry
                     .plugin
                     .find_relaxers(decoding_graph, &mut *matrix, positive_dual_nodes);
-                relaxer_forest.extend(relaxers);
+                for relaxer in relaxers.into_iter() {
+                    let sum_speed = relaxer.get_sum_speed();
+                    if sum_speed.is_positive() {
+                        return Some(relaxer_forest.expand(relaxer));
+                    } else {
+                        relaxer_forest.add(relaxer);
+                    }
+                }
                 // determine whether repeat again
                 match plugin_entry.repeat_strategy {
                     RepeatStrategy::Once => {

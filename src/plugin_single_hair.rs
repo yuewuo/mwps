@@ -25,7 +25,6 @@ impl PluginImpl for PluginSingleHair {
         if let Some(relaxer) = PluginUnionFind::find_single_relaxer(decoding_graph, matrix) {
             return vec![relaxer];
         }
-        println!("haahhhaha");
         // then try to find more relaxers
         for dual_node_ptr in positive_dual_nodes.iter() {
             let dual_node = dual_node_ptr.read_recursive();
@@ -36,26 +35,26 @@ impl PluginImpl for PluginSingleHair {
     }
 }
 
-// #[cfg(test)]
-// pub mod tests {
-//     use super::*;
-//     use crate::example_codes::*;
-//     use crate::primal_module_serial::tests::*;
-//     use crate::primal_module_serial::*;
+#[cfg(test)]
+pub mod tests {
+    use super::*;
+    use crate::example_codes::*;
+    use crate::primal_module_serial::tests::*;
+    use crate::primal_module_serial::*;
 
-//     #[test]
-//     fn plugin_single_hair_basic_1() {
-//         // cargo test plugin_single_hair_basic_1 -- --nocapture
-//         let visualize_filename = "plugin_single_hair_basic_1.json".to_string();
-//         let defect_vertices = vec![10, 11, 12, 15, 16, 17, 18];
-//         let code = CodeCapacityTailoredCode::new(5, 0., 0.01, 1);
-//         primal_module_serial_basic_standard_syndrome(
-//             code,
-//             visualize_filename,
-//             defect_vertices,
-//             4,
-//             vec![PluginSingleHair::entry()],
-//             GrowingStrategy::SingleCluster,
-//         );
-//     }
-// }
+    #[test]
+    fn plugin_single_hair_basic_1() {
+        // cargo test plugin_single_hair_basic_1 -- --nocapture
+        let visualize_filename = "plugin_single_hair_basic_1.json".to_string();
+        let defect_vertices = vec![10, 11, 12, 15, 16, 17, 18];
+        let code = CodeCapacityTailoredCode::new(5, 0., 0.01, 1);
+        primal_module_serial_basic_standard_syndrome(
+            code,
+            visualize_filename,
+            defect_vertices,
+            4,
+            vec![PluginSingleHair::entry()],
+            GrowingStrategy::SingleCluster,
+        );
+    }
+}

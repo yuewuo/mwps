@@ -9,14 +9,14 @@ use std::sync::Arc;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Relaxer {
     /// the hash value calculated by other fields
-    pub hash_value: u64,
+    hash_value: u64,
     /// the direction of invalid subgraphs
-    pub direction: BTreeMap<Arc<InvalidSubgraph>, Rational>,
+    direction: BTreeMap<Arc<InvalidSubgraph>, Rational>,
     /// the edges that will be untightened after growing along `direction`;
     /// basically all the edges that have negative `overall_growing_rate`
-    pub untighten_edges: BTreeMap<EdgeIndex, Rational>,
+    untighten_edges: BTreeMap<EdgeIndex, Rational>,
     /// the edges that will grow
-    pub growing_edges: BTreeMap<EdgeIndex, Rational>,
+    growing_edges: BTreeMap<EdgeIndex, Rational>,
 }
 
 impl Hash for Relaxer {
@@ -71,10 +71,7 @@ impl Relaxer {
 
     pub fn sanity_check(&self) -> Result<(), String> {
         // check summation of ΔyS >= 0
-        let mut sum_speed = Rational::zero();
-        for (_, speed) in self.direction.iter() {
-            sum_speed += speed;
-        }
+        let sum_speed = self.get_sum_speed();
         if sum_speed.is_negative() {
             return Err(format!("{RELAXER_ERR_MSG_NEGATIVE_SUMMATION}: {sum_speed:?}"));
         }
@@ -89,6 +86,22 @@ impl Relaxer {
         // only hash the direction since other field are derived from the direction
         self.direction.hash(&mut hasher);
         self.hash_value = hasher.finish();
+    }
+
+    pub fn get_sum_speed(&self) -> Rational {
+        let mut sum_speed = Rational::zero();
+        for (_, speed) in self.direction.iter() {
+            sum_speed += speed;
+        }
+        sum_speed
+    }
+
+    pub fn get_direction(&self) -> &BTreeMap<Arc<InvalidSubgraph>, Rational> {
+        &self.direction
+    }
+
+    pub fn get_growing_edges(&self) -> &BTreeMap<EdgeIndex, Rational> {
+        &self.growing_edges
     }
 }
 

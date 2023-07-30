@@ -40,12 +40,9 @@ impl PluginImpl for PluginUnionFind {
         matrix: &mut EchelonMatrix,
         _positive_dual_nodes: &[DualNodePtr],
     ) -> Vec<Relaxer> {
-        println!("yeah!!");
         if let Some(relaxer) = Self::find_single_relaxer(decoding_graph, matrix) {
-            println!("relaxer!! {relaxer:?}");
             vec![relaxer]
         } else {
-            println!("empty!!");
             vec![]
         }
     }

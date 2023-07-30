@@ -337,12 +337,12 @@ impl DualModuleInterfacePtr {
     /// return whether it's existing node or not
     pub fn find_or_create_node(
         &self,
-        invalid_subgraph: Arc<InvalidSubgraph>,
+        invalid_subgraph: &Arc<InvalidSubgraph>,
         dual_module: &mut impl DualModuleImpl,
     ) -> (bool, DualNodePtr) {
-        match self.find_node(&invalid_subgraph) {
+        match self.find_node(invalid_subgraph) {
             Some(node_ptr) => (true, node_ptr),
-            None => (false, self.create_node(invalid_subgraph, dual_module)),
+            None => (false, self.create_node(invalid_subgraph.clone(), dual_module)),
         }
     }
 }

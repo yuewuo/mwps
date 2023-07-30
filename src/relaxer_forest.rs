@@ -16,17 +16,17 @@ pub type RelaxerVec = Vec<Relaxer>;
 pub struct RelaxerForest {
     /// keep track of the remaining tight edges for quick validation:
     /// these edges cannot grow unless untightened by some relaxers
-    pub tight_edges: BTreeSet<EdgeIndex>,
+    tight_edges: BTreeSet<EdgeIndex>,
     /// keep track of the subgraphs that are allowed to shrink:
     /// these should be all positive dual variables, all others are yS = 0
-    pub shrinkable_subgraphs: HashSet<Arc<InvalidSubgraph>>,
+    shrinkable_subgraphs: HashSet<Arc<InvalidSubgraph>>,
     /// each untightened edge corresponds to a relaxer with speed:
     /// to untighten the edge for a unit length, how much should a relaxer be executed
-    pub edge_untightener: HashMap<EdgeIndex, (Arc<Relaxer>, Rational)>,
+    edge_untightener: HashMap<EdgeIndex, (Arc<Relaxer>, Rational)>,
     /// expanded relaxer results, as part of the dynamic programming:
     /// the expanded relaxer is a valid relaxer only growing of initial un-tight edges,
     /// not any edges untightened by other relaxers
-    pub expanded_relaxers: HashMap<Arc<Relaxer>, Relaxer>,
+    expanded_relaxers: HashMap<Arc<Relaxer>, Relaxer>,
 }
 
 pub const FOREST_ERR_MSG_GROW_TIGHT_EDGE: &str = "invalid relaxer: try to grow a tight edge";
@@ -52,13 +52,13 @@ impl RelaxerForest {
         // non-negative overall speed and effectiveness check
         relaxer.sanity_check()?;
         // a relaxer cannot grow any tight edge
-        for (edge_index, _) in relaxer.growing_edges.iter() {
+        for (edge_index, _) in relaxer.get_growing_edges().iter() {
             if self.tight_edges.contains(edge_index) && !self.edge_untightener.contains_key(edge_index) {
                 return Err(format!("{FOREST_ERR_MSG_GROW_TIGHT_EDGE}: {edge_index}"));
             }
         }
         // a relaxer cannot shrink any zero dual variable
-        for (invalid_subgraph, grow_ratio) in relaxer.direction.iter() {
+        for (invalid_subgraph, grow_ratio) in relaxer.get_direction().iter() {
             if grow_ratio.is_negative() && !self.shrinkable_subgraphs.contains(invalid_subgraph) {
                 return Err(format!("{FOREST_ERR_MSG_UNSHRINKABLE}: {invalid_subgraph:?}"));
             }
@@ -73,10 +73,10 @@ impl RelaxerForest {
         // add this relaxer to the forest
     }
 
-    pub fn extend(&mut self, relaxers: RelaxerVec) {
-        for relaxer in relaxers.into_iter() {
-            self.add(relaxer);
-        }
+    /// expand a relaxer
+    pub fn expand(&mut self, relaxer: Relaxer) -> Relaxer {
+        println!("expand on {relaxer:?}");
+        relaxer
     }
 }
 
@@ -84,6 +84,28 @@ impl RelaxerForest {
 pub mod tests {
     use super::*;
     use crate::num_traits::One;
+
+    #[test]
+    fn relaxer_forest_example() {
+        // cargo test relaxer_forest_example -- --nocapture
+        let tight_edges = [0, 1, 2, 3, 4, 5, 6];
+        let shrinkable_subgraphs = [
+            Arc::new(InvalidSubgraph::new_raw([].into(), [].into(), [1, 2].into())),
+            Arc::new(InvalidSubgraph::new_raw([].into(), [].into(), [3, 4, 5].into())),
+        ];
+        let mut relaxer_forest = RelaxerForest::new(tight_edges.into_iter(), shrinkable_subgraphs.iter().cloned());
+        let relaxer = Relaxer::new_raw(
+            [
+                (
+                    Arc::new(InvalidSubgraph::new_raw([].into(), [].into(), [7, 8, 9].into())),
+                    Rational::one(),
+                ),
+                (shrinkable_subgraphs[0].clone(), -Rational::one()),
+            ]
+            .into(),
+        );
+        relaxer_forest.add(relaxer);
+    }
 
     #[test]
     fn relaxer_forest_validate() {

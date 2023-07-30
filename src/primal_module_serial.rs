@@ -317,21 +317,23 @@ impl PrimalModuleSerial {
         }
 
         // find an executable relaxer from the plugin manager
-        let positive_dual_variables: Vec<DualNodePtr> = cluster
-            .nodes
-            .iter()
-            .map(|p| p.read_recursive().dual_node_ptr.clone())
-            .filter(|dual_node_ptr| !dual_node_ptr.read_recursive().dual_variable.is_zero())
-            .collect();
-        let decoding_graph = &interface_ptr.read_recursive().decoding_graph;
-        let cluster_mut = &mut *cluster; // must first get mutable reference
-        let plugin_manager = &mut cluster_mut.plugin_manager;
-        let matrix = &mut cluster_mut.matrix;
-        let relaxer = plugin_manager.find_relaxer(decoding_graph, matrix, &positive_dual_variables);
+        let relaxer = {
+            let positive_dual_variables: Vec<DualNodePtr> = cluster
+                .nodes
+                .iter()
+                .map(|p| p.read_recursive().dual_node_ptr.clone())
+                .filter(|dual_node_ptr| !dual_node_ptr.read_recursive().dual_variable.is_zero())
+                .collect();
+            let decoding_graph = &interface_ptr.read_recursive().decoding_graph;
+            let cluster_mut = &mut *cluster; // must first get mutable reference
+            let plugin_manager = &mut cluster_mut.plugin_manager;
+            let matrix = &mut cluster_mut.matrix;
+            plugin_manager.find_relaxer(decoding_graph, matrix, &positive_dual_variables)
+        };
 
         // if a relaxer is found, execute it and return
         if let Some(relaxer) = relaxer {
-            for (invalid_subgraph, grow_rate) in relaxer.direction {
+            for (invalid_subgraph, grow_rate) in relaxer.get_direction() {
                 let (existing, dual_node_ptr) = interface_ptr.find_or_create_node(invalid_subgraph, dual_module);
                 if !existing {
                     // create the corresponding primal node and add it to cluster
@@ -342,7 +344,7 @@ impl PrimalModuleSerial {
                     cluster.nodes.push(primal_node_ptr.clone());
                     self.nodes.push(primal_node_ptr);
                 }
-                dual_module.set_grow_rate(&dual_node_ptr, grow_rate);
+                dual_module.set_grow_rate(&dual_node_ptr, grow_rate.clone());
             }
             return false;
         }
