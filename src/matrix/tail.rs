@@ -178,7 +178,7 @@ pub mod tests {
 └─┴─┴─┴─┴─┴───┘
 "
         );
-        matrix.set_tail_edges([1, 6].iter());
+        matrix.set_tail_edges([1, 6].into_iter());
         matrix.printstd();
         assert_eq!(
             matrix.clone().printstd_str(),

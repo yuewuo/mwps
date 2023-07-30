@@ -16,11 +16,11 @@ pub struct HairView<'a, M: MatrixTail + MatrixEchelon> {
 }
 
 impl<'a, M: MatrixTail + MatrixEchelon> HairView<'a, M> {
-    pub fn new<Iter>(matrix: &'a mut M, iter: Iter) -> Self
+    pub fn new<EdgeIter>(matrix: &'a mut M, hairs: EdgeIter) -> Self
     where
-        Iter: Iterator<Item = &'a EdgeIndex>,
+        EdgeIter: Iterator<Item = EdgeIndex>,
     {
-        matrix.set_tail_edges(iter);
+        matrix.set_tail_edges(hairs);
         let columns = matrix.columns();
         let rows = matrix.rows();
         let mut column_bias = columns;
@@ -224,7 +224,7 @@ pub mod tests {
 └──┴─┴─┴─┴─┴───┴─┘
 "
         );
-        let mut hair_view = HairView::new(&mut matrix, [6, 9].iter());
+        let mut hair_view = HairView::new(&mut matrix, [6, 9].into_iter());
         assert_eq!(hair_view.edge_to_var_index(4), Some(1));
         hair_view.printstd();
         assert_eq!(
@@ -239,7 +239,7 @@ pub mod tests {
 └──┴─┴─┴───┴─┘
 "
         );
-        let mut hair_view = HairView::new(&mut matrix, [1, 6].iter());
+        let mut hair_view = HairView::new(&mut matrix, [1, 6].into_iter());
         hair_view.base.printstd();
         assert_eq!(
             hair_view.base.printstd_str(),
@@ -273,6 +273,7 @@ pub mod tests {
         assert_eq!(hair_view.get_tail_edges_vec(), [1, 6]);
         assert!(hair_view.is_tight(1));
         assert!(hair_view.get_echelon_satisfiable());
+        assert_eq!(hair_view.get_vertices(), [0, 1, 2].into());
     }
 
     fn generate_demo_matrix() -> EchelonMatrix {
@@ -290,7 +291,7 @@ pub mod tests {
     fn hair_view_should_not_modify_tail_edges() {
         // cargo test hair_view_should_not_modify_tail_edges -- --nocapture
         let mut matrix = generate_demo_matrix();
-        let mut hair_view = HairView::new(&mut matrix, [].iter());
+        let mut hair_view = HairView::new(&mut matrix, [].into_iter());
         hair_view.get_tail_edges_mut();
     }
 
@@ -299,7 +300,7 @@ pub mod tests {
     fn hair_view_should_not_update_edge_tightness() {
         // cargo test hair_view_should_not_update_edge_tightness -- --nocapture
         let mut matrix = generate_demo_matrix();
-        let mut hair_view = HairView::new(&mut matrix, [].iter());
+        let mut hair_view = HairView::new(&mut matrix, [].into_iter());
         hair_view.update_edge_tightness(1, false);
     }
 
@@ -308,7 +309,7 @@ pub mod tests {
     fn hair_view_should_not_add_variable() {
         // cargo test hair_view_should_not_add_variable -- --nocapture
         let mut matrix = generate_demo_matrix();
-        let mut hair_view = HairView::new(&mut matrix, [].iter());
+        let mut hair_view = HairView::new(&mut matrix, [].into_iter());
         hair_view.add_variable(100);
     }
 
@@ -317,7 +318,7 @@ pub mod tests {
     fn hair_view_should_not_add_constraint() {
         // cargo test hair_view_should_not_add_constraint -- --nocapture
         let mut matrix = generate_demo_matrix();
-        let mut hair_view = HairView::new(&mut matrix, [].iter());
+        let mut hair_view = HairView::new(&mut matrix, [].into_iter());
         hair_view.add_constraint(5, &[1, 2, 3], false);
     }
 
@@ -326,7 +327,7 @@ pub mod tests {
     fn hair_view_should_not_xor_row() {
         // cargo test hair_view_should_not_xor_row -- --nocapture
         let mut matrix = generate_demo_matrix();
-        let mut hair_view = HairView::new(&mut matrix, [].iter());
+        let mut hair_view = HairView::new(&mut matrix, [].into_iter());
         hair_view.xor_row(0, 1);
     }
 
@@ -335,7 +336,7 @@ pub mod tests {
     fn hair_view_should_not_swap_row() {
         // cargo test hair_view_should_not_swap_row -- --nocapture
         let mut matrix = generate_demo_matrix();
-        let mut hair_view = HairView::new(&mut matrix, [].iter());
+        let mut hair_view = HairView::new(&mut matrix, [].into_iter());
         hair_view.swap_row(0, 1);
     }
 
@@ -344,7 +345,7 @@ pub mod tests {
     fn hair_view_should_not_get_echelon_info() {
         // cargo test hair_view_should_not_get_echelon_info -- --nocapture
         let mut matrix = generate_demo_matrix();
-        let mut hair_view = HairView::new(&mut matrix, [].iter());
+        let mut hair_view = HairView::new(&mut matrix, [].into_iter());
         hair_view.get_echelon_info();
     }
 
@@ -353,7 +354,7 @@ pub mod tests {
     fn hair_view_should_not_get_echelon_info_immutable() {
         // cargo test hair_view_should_not_get_echelon_info_immutable -- --nocapture
         let mut matrix = generate_demo_matrix();
-        let hair_view = HairView::new(&mut matrix, [].iter());
+        let hair_view = HairView::new(&mut matrix, [].into_iter());
         hair_view.get_echelon_info_immutable();
     }
 
@@ -387,7 +388,7 @@ pub mod tests {
 └──┴─┴─┴─┴─┴───┴─┘
 "
         );
-        let mut hair_view = HairView::new(&mut matrix, [6, 9].iter());
+        let mut hair_view = HairView::new(&mut matrix, [6, 9].into_iter());
         hair_view.printstd();
         assert_eq!(
             hair_view.printstd_str(),

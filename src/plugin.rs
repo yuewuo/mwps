@@ -82,8 +82,14 @@ impl PluginManager {
         matrix: &mut EchelonMatrix,
         positive_dual_nodes: &[DualNodePtr],
     ) -> Option<Relaxer> {
-        let mut relaxer_forest = RelaxerForest::new(BTreeSet::from_iter(matrix.get_view_edges()), positive_dual_nodes);
+        let mut relaxer_forest = RelaxerForest::new(
+            matrix.get_view_edges().into_iter(),
+            positive_dual_nodes
+                .iter()
+                .map(|ptr| ptr.read_recursive().invalid_subgraph.clone()),
+        );
         for plugin_entry in self.plugins.iter().chain(std::iter::once(&PluginUnionFind::entry())) {
+            println!("plugin_entry:");
             let mut repeat = true;
             let mut repeat_count = 0;
             while repeat {

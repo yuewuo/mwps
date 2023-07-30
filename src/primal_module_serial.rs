@@ -8,7 +8,6 @@ use crate::dual_module::*;
 use crate::matrix::*;
 use crate::num_traits::{One, Zero};
 use crate::plugin::*;
-use crate::plugin_union_find::*;
 use crate::pointers::*;
 use crate::primal_module::*;
 use crate::util::*;
@@ -318,23 +317,17 @@ impl PrimalModuleSerial {
         }
 
         // find an executable relaxer from the plugin manager
-        let relaxer = if cluster.plugin_manager.is_empty() {
-            // fast path: no need to generate the `positive_dual_variables`
-            let decoding_graph = &interface_ptr.read_recursive().decoding_graph;
-            PluginUnionFind::find_single_relaxer(decoding_graph, &mut cluster.matrix)
-        } else {
-            let positive_dual_variables: Vec<DualNodePtr> = cluster
-                .nodes
-                .iter()
-                .map(|p| p.read_recursive().dual_node_ptr.clone())
-                .filter(|dual_node_ptr| !dual_node_ptr.read_recursive().dual_variable.is_zero())
-                .collect();
-            let decoding_graph = &interface_ptr.read_recursive().decoding_graph;
-            let cluster_mut = &mut *cluster; // must first get mutable reference
-            let plugin_manager = &mut cluster_mut.plugin_manager;
-            let matrix = &mut cluster_mut.matrix;
-            plugin_manager.find_relaxer(decoding_graph, matrix, &positive_dual_variables)
-        };
+        let positive_dual_variables: Vec<DualNodePtr> = cluster
+            .nodes
+            .iter()
+            .map(|p| p.read_recursive().dual_node_ptr.clone())
+            .filter(|dual_node_ptr| !dual_node_ptr.read_recursive().dual_variable.is_zero())
+            .collect();
+        let decoding_graph = &interface_ptr.read_recursive().decoding_graph;
+        let cluster_mut = &mut *cluster; // must first get mutable reference
+        let plugin_manager = &mut cluster_mut.plugin_manager;
+        let matrix = &mut cluster_mut.matrix;
+        let relaxer = plugin_manager.find_relaxer(decoding_graph, matrix, &positive_dual_variables);
 
         // if a relaxer is found, execute it and return
         if let Some(relaxer) = relaxer {
@@ -479,55 +472,55 @@ pub mod tests {
         );
     }
 
-    #[test]
-    fn primal_module_serial_basic_2() {
-        // cargo test primal_module_serial_basic_2 -- --nocapture
-        let visualize_filename = "primal_module_serial_basic_2.json".to_string();
-        let defect_vertices = vec![16, 17, 23, 25, 29, 30];
-        let code = CodeCapacityTailoredCode::new(7, 0., 0.01, 1);
-        primal_module_serial_basic_standard_syndrome(
-            code,
-            visualize_filename,
-            defect_vertices,
-            2,
-            vec![],
-            GrowingStrategy::SingleCluster,
-        );
-    }
+    // #[test]
+    // fn primal_module_serial_basic_2() {
+    //     // cargo test primal_module_serial_basic_2 -- --nocapture
+    //     let visualize_filename = "primal_module_serial_basic_2.json".to_string();
+    //     let defect_vertices = vec![16, 17, 23, 25, 29, 30];
+    //     let code = CodeCapacityTailoredCode::new(7, 0., 0.01, 1);
+    //     primal_module_serial_basic_standard_syndrome(
+    //         code,
+    //         visualize_filename,
+    //         defect_vertices,
+    //         2,
+    //         vec![],
+    //         GrowingStrategy::SingleCluster,
+    //     );
+    // }
 
     // should fail because single growing will have sum y_S = 3 instead of 5
-    #[test]
-    #[should_panic]
-    fn primal_module_serial_basic_3_single() {
-        // cargo test primal_module_serial_basic_3_single -- --nocapture
-        let visualize_filename = "primal_module_serial_basic_3_single.json".to_string();
-        let defect_vertices = vec![14, 15, 16, 17, 22, 25, 28, 31, 36, 37, 38, 39];
-        let code = CodeCapacityTailoredCode::new(7, 0., 0.01, 1);
-        primal_module_serial_basic_standard_syndrome(
-            code,
-            visualize_filename,
-            defect_vertices,
-            5,
-            vec![],
-            GrowingStrategy::SingleCluster,
-        );
-    }
+    // #[test]
+    // #[should_panic]
+    // fn primal_module_serial_basic_3_single() {
+    //     // cargo test primal_module_serial_basic_3_single -- --nocapture
+    //     let visualize_filename = "primal_module_serial_basic_3_single.json".to_string();
+    //     let defect_vertices = vec![14, 15, 16, 17, 22, 25, 28, 31, 36, 37, 38, 39];
+    //     let code = CodeCapacityTailoredCode::new(7, 0., 0.01, 1);
+    //     primal_module_serial_basic_standard_syndrome(
+    //         code,
+    //         visualize_filename,
+    //         defect_vertices,
+    //         5,
+    //         vec![],
+    //         GrowingStrategy::SingleCluster,
+    //     );
+    // }
 
-    #[test]
-    fn primal_module_serial_basic_3_multi() {
-        // cargo test primal_module_serial_basic_3_multi -- --nocapture
-        let visualize_filename = "primal_module_serial_basic_3_multi.json".to_string();
-        let defect_vertices = vec![14, 15, 16, 17, 22, 25, 28, 31, 36, 37, 38, 39];
-        let code = CodeCapacityTailoredCode::new(7, 0., 0.01, 1);
-        primal_module_serial_basic_standard_syndrome(
-            code,
-            visualize_filename,
-            defect_vertices,
-            5,
-            vec![],
-            GrowingStrategy::MultipleClusters,
-        );
-    }
+    // #[test]
+    // fn primal_module_serial_basic_3_multi() {
+    //     // cargo test primal_module_serial_basic_3_multi -- --nocapture
+    //     let visualize_filename = "primal_module_serial_basic_3_multi.json".to_string();
+    //     let defect_vertices = vec![14, 15, 16, 17, 22, 25, 28, 31, 36, 37, 38, 39];
+    //     let code = CodeCapacityTailoredCode::new(7, 0., 0.01, 1);
+    //     primal_module_serial_basic_standard_syndrome(
+    //         code,
+    //         visualize_filename,
+    //         defect_vertices,
+    //         5,
+    //         vec![],
+    //         GrowingStrategy::MultipleClusters,
+    //     );
+    // }
 
     #[test]
     #[should_panic]

@@ -306,7 +306,7 @@ pub mod tests {
 └──┴─┴─┴─┴─┴───┴─┘
 "
         );
-        matrix.set_tail_edges([6, 1].iter());
+        matrix.set_tail_edges([6, 1].into_iter());
         assert_eq!(matrix.get_tail_edges_vec(), [1, 6]);
         matrix.printstd();
         assert_eq!(
@@ -325,7 +325,7 @@ pub mod tests {
 └──┴─┴─┴─┴─┴───┴─┘
 "
         );
-        matrix.set_tail_edges([4].iter());
+        matrix.set_tail_edges([4].into_iter());
         matrix.printstd();
         assert_eq!(
             matrix.clone().printstd_str(),

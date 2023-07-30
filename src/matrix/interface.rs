@@ -110,13 +110,13 @@ pub trait MatrixTail {
     fn get_tail_edges(&self) -> &BTreeSet<EdgeIndex>;
     fn get_tail_edges_mut(&mut self) -> &mut BTreeSet<EdgeIndex>;
 
-    fn set_tail_edges<'a, Iter>(&mut self, iter: Iter)
+    fn set_tail_edges<EdgeIter>(&mut self, edges: EdgeIter)
     where
-        Iter: Iterator<Item = &'a EdgeIndex>,
+        EdgeIter: Iterator<Item = EdgeIndex>,
     {
         let tail_edges = self.get_tail_edges_mut();
         tail_edges.clear();
-        for &edge_index in iter {
+        for edge_index in edges {
             tail_edges.insert(edge_index);
         }
     }
