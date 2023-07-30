@@ -120,6 +120,9 @@ impl<'a, M: MatrixTail + MatrixEchelon> MatrixBasic for HairView<'a, M> {
     fn edge_to_var_index(&self, edge_index: EdgeIndex) -> Option<VarIndex> {
         self.base.edge_to_var_index(edge_index)
     }
+    fn get_vertices(&self) -> BTreeSet<VertexIndex> {
+        self.base.get_vertices()
+    }
 }
 
 impl<'a, M: MatrixTail + MatrixEchelon> MatrixView for HairView<'a, M> {

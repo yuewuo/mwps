@@ -72,6 +72,9 @@ impl<M: MatrixView> MatrixBasic for Tight<M> {
     fn edge_to_var_index(&self, edge_index: EdgeIndex) -> Option<VarIndex> {
         self.get_base().edge_to_var_index(edge_index)
     }
+    fn get_vertices(&self) -> BTreeSet<VertexIndex> {
+        self.get_base().get_vertices()
+    }
 }
 
 impl<M: MatrixView> Tight<M> {

@@ -7,7 +7,6 @@
 
 use crate::decoding_hypergraph::*;
 use crate::dual_module::*;
-use crate::old_parity_matrix::*;
 use crate::plugin::*;
 use crate::plugin_union_find::*;
 use crate::relaxer::*;
@@ -19,7 +18,7 @@ impl PluginImpl for PluginSingleHair {
     fn find_relaxers<'a>(
         &self,
         decoding_graph: &DecodingHyperGraph,
-        matrix: &'a mut ParityMatrixProtected<'a>,
+        matrix: &'a mut EchelonMatrix,
         positive_dual_nodes: &[DualNodePtr],
     ) -> Vec<Relaxer> {
         // single hair requires the matrix to have at least one feasible solution

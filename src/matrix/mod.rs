@@ -22,7 +22,7 @@ pub use visualize::{VizTable, VizTrait};
 #[cfg(feature = "python_binding")]
 #[pyfunction]
 pub(crate) fn register(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
-    m.add_class::<ParityMatrix>()?;
-    m.add_class::<ParityRow>()?;
+    // m.add_class::<ParityMatrix>()?;
+    // m.add_class::<ParityRow>()?;
     Ok(())
 }

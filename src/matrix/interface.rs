@@ -55,6 +55,8 @@ pub trait MatrixBasic {
     fn exists_edge(&self, edge_index: EdgeIndex) -> bool {
         self.edge_to_var_index(edge_index).is_some()
     }
+
+    fn get_vertices(&self) -> BTreeSet<VertexIndex>;
 }
 
 pub trait MatrixView: MatrixBasic {
@@ -76,10 +78,7 @@ pub trait MatrixView: MatrixBasic {
 
     fn get_view_edges(&mut self) -> Vec<EdgeIndex> {
         (0..self.columns())
-            .map(|column: usize| {
-                let var_index = self.column_to_var_index(column);
-                self.var_to_edge_index(var_index)
-            })
+            .map(|column: usize| self.column_to_edge_index(column))
             .collect()
     }
 

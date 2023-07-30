@@ -5,8 +5,8 @@
 
 use crate::decoding_hypergraph::*;
 use crate::dual_module::*;
+use crate::matrix::*;
 use crate::num_traits::{One, Zero};
-use crate::old_parity_matrix::*;
 use crate::plugin::*;
 use crate::plugin_union_find::*;
 use crate::pointers::*;
@@ -61,7 +61,7 @@ pub struct PrimalCluster {
     /// all the vertices ever touched by any tight edge
     pub vertices: BTreeSet<VertexIndex>,
     /// the parity matrix to determine whether it's a valid cluster and also find new ways to increase the dual
-    pub matrix: ParityMatrix,
+    pub matrix: EchelonMatrix,
     /// the parity subgraph result, only valid when it's solved
     pub subgraph: Option<Subgraph>,
     /// plugin manager helps to execute the plugin and find an executable relaxer
@@ -187,9 +187,9 @@ impl PrimalModuleImpl for PrimalModuleSerial {
                     for &vertex_index in incident_vertices.iter() {
                         if !cluster.vertices.contains(&vertex_index) {
                             cluster.vertices.insert(vertex_index);
-                            cluster
-                                .matrix
-                                .add_parity_check_with_decoding_graph(vertex_index, decoding_graph);
+                            let incident_edges = decoding_graph.get_vertex_neighbors(vertex_index);
+                            let parity = decoding_graph.is_vertex_defect(vertex_index);
+                            cluster.matrix.add_constraint(vertex_index, incident_edges, parity);
                         }
                     }
                     cluster.edges.insert(edge_index);
@@ -283,9 +283,9 @@ impl PrimalModuleSerial {
         for &vertex_index in cluster_2.vertices.iter() {
             if !cluster_1.vertices.contains(&vertex_index) {
                 cluster_1.vertices.insert(vertex_index);
-                cluster_1
-                    .matrix
-                    .add_parity_check_with_decoding_graph(vertex_index, decoding_graph);
+                let incident_edges = decoding_graph.get_vertex_neighbors(vertex_index);
+                let parity = decoding_graph.is_vertex_defect(vertex_index);
+                cluster_1.matrix.add_constraint(vertex_index, incident_edges, parity);
             }
         }
         cluster_2.vertices.clear();
@@ -310,14 +310,18 @@ impl PrimalModuleSerial {
             dual_module.set_grow_rate(&dual_node_ptr, Rational::zero());
         }
         // update the matrix with new tight edges
-        cluster.matrix.clear_implicit_shrink();
-        cluster.matrix.update_with_dual_module(dual_module);
+        let cluster = &mut *cluster;
+        for &edge_index in cluster.edges.iter() {
+            cluster
+                .matrix
+                .update_edge_tightness(edge_index, dual_module.is_edge_tight(edge_index));
+        }
 
         // find an executable relaxer from the plugin manager
         let relaxer = if cluster.plugin_manager.is_empty() {
             // fast path: no need to generate the `positive_dual_variables`
             let decoding_graph = &interface_ptr.read_recursive().decoding_graph;
-            PluginUnionFind::find_single_relaxer(decoding_graph, &mut ParityMatrixProtected::new(&mut cluster.matrix))
+            PluginUnionFind::find_single_relaxer(decoding_graph, &mut cluster.matrix)
         } else {
             let positive_dual_variables: Vec<DualNodePtr> = cluster
                 .nodes
@@ -353,14 +357,10 @@ impl PrimalModuleSerial {
         // TODO idea: plugins can suggest subgraph (ideally, a global maximum), if so, then it will adopt the subgraph with minimum weight from all plugins as the starting point to do local minimum
 
         // find a local minimum (hopefully a global minimum)
-        cluster.subgraph = Some(
-            cluster
-                .matrix
-                .get_joint_solution_local_minimum(
-                    interface_ptr.read_recursive().decoding_graph.model_graph.initializer.as_ref(),
-                )
-                .expect("satisfiable"),
-        );
+        let interface = interface_ptr.read_recursive();
+        let initializer = interface.decoding_graph.model_graph.initializer.as_ref();
+        let weight_of = |edge_index: EdgeIndex| initializer.weighted_edges[edge_index].weight;
+        cluster.subgraph = Some(cluster.matrix.get_solution_local_minimum(weight_of).expect("satisfiable"));
         true
     }
 }

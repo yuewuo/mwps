@@ -8,11 +8,14 @@
 use crate::decoding_hypergraph::*;
 use crate::derivative::Derivative;
 use crate::dual_module::*;
-use crate::old_parity_matrix::*;
+use crate::matrix::*;
 use crate::plugin_union_find::*;
 use crate::relaxer::*;
 use crate::relaxer_forest::*;
+use std::collections::BTreeSet;
 use std::sync::Arc;
+
+pub type EchelonMatrix = Echelon<Tail<Tight<BasicMatrix>>>;
 
 /// common trait that must be implemented for each plugin
 pub trait PluginImpl {
@@ -20,7 +23,7 @@ pub trait PluginImpl {
     fn find_relaxers<'a>(
         &self,
         decoding_graph: &DecodingHyperGraph,
-        matrix: &'a mut ParityMatrixProtected<'a>,
+        matrix: &'a mut EchelonMatrix,
         positive_dual_nodes: &[DualNodePtr],
     ) -> RelaxerVec;
 
@@ -76,21 +79,19 @@ impl PluginManager {
     pub fn find_relaxer(
         &mut self,
         decoding_graph: &DecodingHyperGraph,
-        matrix: &mut ParityMatrix,
+        matrix: &mut EchelonMatrix,
         positive_dual_nodes: &[DualNodePtr],
     ) -> Option<Relaxer> {
-        matrix.clear_implicit_shrink();
-        let mut relaxer_forest = RelaxerForest::new(matrix.get_tight_edges(), positive_dual_nodes);
+        let mut relaxer_forest =
+            RelaxerForest::new(BTreeSet::from_iter(matrix.get_view_edges().into_iter()), positive_dual_nodes);
         for plugin_entry in self.plugins.iter().chain(std::iter::once(&PluginUnionFind::entry())) {
             let mut repeat = true;
             let mut repeat_count = 0;
             while repeat {
                 // execute the plugin
-                let relaxers = plugin_entry.plugin.find_relaxers(
-                    decoding_graph,
-                    &mut ParityMatrixProtected::new(matrix),
-                    positive_dual_nodes,
-                );
+                let relaxers = plugin_entry
+                    .plugin
+                    .find_relaxers(decoding_graph, &mut *matrix, positive_dual_nodes);
                 relaxer_forest.extend(relaxers);
                 // determine whether repeat again
                 match plugin_entry.repeat_strategy {
@@ -106,6 +107,7 @@ impl PluginManager {
                 repeat_count += 1;
             }
         }
+        // TODO: recover implicit shrink here
         None
     }
 }

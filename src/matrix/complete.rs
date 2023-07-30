@@ -81,6 +81,10 @@ impl MatrixBasic for CompleteMatrix {
     fn edge_to_var_index(&self, edge_index: EdgeIndex) -> Option<VarIndex> {
         self.edges.get(&edge_index).cloned()
     }
+
+    fn get_vertices(&self) -> BTreeSet<VertexIndex> {
+        self.vertices.clone()
+    }
 }
 
 impl MatrixView for CompleteMatrix {
@@ -148,6 +152,8 @@ pub mod tests {
 └─┴─┴─┴─┴─┴───┘
 "
         );
+        assert_eq!(matrix.get_vertices(), [0, 1, 2].into());
+        assert_eq!(matrix.get_view_edges(), [1, 4, 12, 345]);
     }
 
     #[test]

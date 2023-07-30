@@ -1,5 +1,6 @@
 use crate::decoding_hypergraph::*;
-use crate::old_parity_matrix::*;
+use crate::matrix::*;
+use crate::plugin::EchelonMatrix;
 use crate::util::*;
 use std::cmp::Ordering;
 use std::collections::hash_map::DefaultHasher;
@@ -129,17 +130,19 @@ impl InvalidSubgraph {
             }
         }
         // check the edges indeed cannot satisfy the requirement of the vertices
-        let mut matrix = ParityMatrix::new_no_phantom();
+        let mut matrix = Echelon::<CompleteMatrix>::new();
         for &edge_index in self.edges.iter() {
-            matrix.add_tight_variable(edge_index);
+            matrix.add_variable(edge_index);
         }
         for &vertex_index in self.vertices.iter() {
-            matrix.add_parity_check_with_decoding_graph(vertex_index, decoding_graph);
+            let incident_edges = decoding_graph.get_vertex_neighbors(vertex_index);
+            let parity = decoding_graph.is_vertex_defect(vertex_index);
+            matrix.add_constraint(vertex_index, incident_edges, parity);
         }
-        if matrix.check_is_satisfiable() {
+        if matrix.get_echelon_info().satisfiable {
             return Err(format!(
                 "it's a valid subgraph because edges {:?} ⊆ {:?} can satisfy the parity requirement from vertices {:?}",
-                matrix.get_joint_solution().unwrap(),
+                matrix.get_solution().unwrap(),
                 self.edges,
                 self.vertices
             ));
@@ -147,13 +150,15 @@ impl InvalidSubgraph {
         Ok(())
     }
 
-    pub fn generate_matrix(&self, decoding_graph: &DecodingHyperGraph) -> ParityMatrix {
-        let mut matrix = ParityMatrix::new();
+    pub fn generate_matrix(&self, decoding_graph: &DecodingHyperGraph) -> EchelonMatrix {
+        let mut matrix = EchelonMatrix::new();
         for &edge_index in self.hairs.iter() {
             matrix.add_variable(edge_index);
         }
         for &vertex_index in self.vertices.iter() {
-            matrix.add_parity_check_with_decoding_graph(vertex_index, decoding_graph);
+            let incident_edges = decoding_graph.get_vertex_neighbors(vertex_index);
+            let parity = decoding_graph.is_vertex_defect(vertex_index);
+            matrix.add_constraint(vertex_index, incident_edges, parity);
         }
         matrix
     }
