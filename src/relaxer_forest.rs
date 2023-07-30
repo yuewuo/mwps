@@ -151,15 +151,15 @@ impl RelaxerForest {
 #[cfg(test)]
 pub mod tests {
     use super::*;
-    use crate::num_traits::One;
+    use num_traits::{FromPrimitive, One};
 
     #[test]
     fn relaxer_forest_example() {
         // cargo test relaxer_forest_example -- --nocapture
         let tight_edges = [0, 1, 2, 3, 4, 5, 6];
         let shrinkable_subgraphs = [
-            Arc::new(InvalidSubgraph::new_raw([].into(), [].into(), [1, 2].into())),
-            Arc::new(InvalidSubgraph::new_raw([].into(), [].into(), [3, 4, 5].into())),
+            Arc::new(InvalidSubgraph::new_raw([].into(), [].into(), [1, 2, 3].into())),
+            Arc::new(InvalidSubgraph::new_raw([].into(), [].into(), [4, 5].into())),
         ];
         let mut relaxer_forest = RelaxerForest::new(tight_edges.into_iter(), shrinkable_subgraphs.iter().cloned());
         let invalid_subgraph_1 = Arc::new(InvalidSubgraph::new_raw([].into(), [].into(), [7, 8, 9].into()));
@@ -189,6 +189,78 @@ pub mod tests {
             )
         );
         // println!("{expanded_2:#?}");
+    }
+
+    #[test]
+    fn relaxer_forest_require_multiple() {
+        // cargo test relaxer_forest_require_multiple -- --nocapture
+        let tight_edges = [0, 1, 2, 3, 4, 5, 6];
+        let shrinkable_subgraphs = [
+            Arc::new(InvalidSubgraph::new_raw([].into(), [].into(), [1, 2].into())),
+            Arc::new(InvalidSubgraph::new_raw([].into(), [].into(), [3].into())),
+        ];
+        let mut relaxer_forest = RelaxerForest::new(tight_edges.into_iter(), shrinkable_subgraphs.iter().cloned());
+        let invalid_subgraph_1 = Arc::new(InvalidSubgraph::new_raw([].into(), [].into(), [7, 8, 9].into()));
+        let relaxer_1 = Arc::new(Relaxer::new_raw(
+            [
+                (invalid_subgraph_1.clone(), Rational::one()),
+                (shrinkable_subgraphs[0].clone(), -Rational::one()),
+            ]
+            .into(),
+        ));
+        relaxer_forest.add(relaxer_1);
+        let invalid_subgraph_2 = Arc::new(InvalidSubgraph::new_raw([].into(), [].into(), [1, 2, 7].into()));
+        let invalid_subgraph_3 = Arc::new(InvalidSubgraph::new_raw([].into(), [].into(), [2].into()));
+        let relaxer_2 = Arc::new(Relaxer::new_raw(
+            [
+                (invalid_subgraph_2.clone(), Rational::one()),
+                (invalid_subgraph_3.clone(), Rational::one()),
+            ]
+            .into(),
+        ));
+        let expanded_2 = relaxer_forest.expand(&relaxer_2);
+        assert_eq!(
+            expanded_2,
+            Relaxer::new(
+                [
+                    (invalid_subgraph_2, Rational::one()),
+                    (invalid_subgraph_3, Rational::one()),
+                    (invalid_subgraph_1, Rational::from_usize(2).unwrap()),
+                    (shrinkable_subgraphs[0].clone(), -Rational::from_usize(2).unwrap()),
+                ]
+                .into()
+            )
+        );
+        // println!("{expanded_2:#?}");
+    }
+
+    #[test]
+    fn relaxer_forest_relaxing_same_edge() {
+        // cargo test relaxer_forest_relaxing_same_edge -- --nocapture
+        let tight_edges = [0, 1, 2, 3, 4, 5, 6];
+        let shrinkable_subgraphs = [
+            Arc::new(InvalidSubgraph::new_raw([].into(), [].into(), [1, 2].into())),
+            Arc::new(InvalidSubgraph::new_raw([].into(), [].into(), [2, 3].into())),
+        ];
+        let mut relaxer_forest = RelaxerForest::new(tight_edges.into_iter(), shrinkable_subgraphs.iter().cloned());
+        let invalid_subgraph_1 = Arc::new(InvalidSubgraph::new_raw([].into(), [].into(), [7, 8, 9].into()));
+        let relaxer_1 = Arc::new(Relaxer::new_raw(
+            [
+                (invalid_subgraph_1.clone(), Rational::one()),
+                (shrinkable_subgraphs[0].clone(), -Rational::one()),
+            ]
+            .into(),
+        ));
+        relaxer_forest.add(relaxer_1);
+        let invalid_subgraph_2 = Arc::new(InvalidSubgraph::new_raw([].into(), [].into(), [10, 11].into()));
+        let relaxer_2 = Arc::new(Relaxer::new_raw(
+            [
+                (invalid_subgraph_2.clone(), Rational::one()),
+                (shrinkable_subgraphs[1].clone(), -Rational::one()),
+            ]
+            .into(),
+        ));
+        relaxer_forest.add(relaxer_2);
     }
 
     #[test]
