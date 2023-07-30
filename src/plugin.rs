@@ -5,9 +5,9 @@
 //! A plugin must implement Clone trait, because it will be cloned multiple times for each cluster
 //!
 
+use crate::decoding_hypergraph::*;
 use crate::derivative::Derivative;
 use crate::dual_module::*;
-use crate::hyper_decoding_graph::*;
 use crate::old_parity_matrix::*;
 use crate::plugin_union_find::*;
 use crate::relaxer::*;

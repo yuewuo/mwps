@@ -1,4 +1,4 @@
-use crate::hyper_decoding_graph::*;
+use crate::decoding_hypergraph::*;
 use crate::old_parity_matrix::*;
 use crate::util::*;
 use std::cmp::Ordering;
@@ -190,7 +190,7 @@ impl InvalidSubgraph {
 #[cfg(test)]
 pub mod tests {
     use super::*;
-    use crate::hyper_decoding_graph::tests::*;
+    use crate::decoding_hypergraph::tests::*;
 
     #[test]
     fn invalid_subgraph_good() {

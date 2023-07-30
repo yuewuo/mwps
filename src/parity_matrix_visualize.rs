@@ -1,5 +1,5 @@
+use crate::decoding_hypergraph::*;
 use crate::dual_module::*;
-use crate::hyper_decoding_graph::*;
 use crate::prettytable::*;
 use crate::util::*;
 use derivative::Derivative;

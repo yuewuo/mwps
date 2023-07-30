@@ -9,7 +9,7 @@
 //!
 
 use crate::derivative::Derivative;
-use crate::hyper_model_graph::*;
+use crate::model_hypergraph::*;
 use crate::rand_xoshiro::rand_core::SeedableRng;
 use crate::serde_json;
 use crate::util::*;

@@ -12,7 +12,7 @@ use crate::util::*;
 use crate::visualize::*;
 // use crate::primal_module_serial::*;
 use crate::example_codes::*;
-use crate::hyper_model_graph::*;
+use crate::model_hypergraph::*;
 #[cfg(feature = "python_binding")]
 use pyo3::prelude::*;
 use std::fs::File;

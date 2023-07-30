@@ -3,8 +3,8 @@
 //! This implementation targets to be an exact MWPS solver, although it's not yet sure whether it is actually one.
 //!
 
+use crate::decoding_hypergraph::*;
 use crate::dual_module::*;
-use crate::hyper_decoding_graph::*;
 use crate::num_traits::{One, Zero};
 use crate::old_parity_matrix::*;
 use crate::plugin::*;

@@ -3,10 +3,10 @@
 //! Generics for dual modules
 //!
 
+use crate::decoding_hypergraph::*;
 use crate::derivative::Derivative;
-use crate::hyper_decoding_graph::*;
-use crate::hyper_model_graph::*;
 use crate::invalid_subgraph::*;
+use crate::model_hypergraph::*;
 use crate::num_traits::{One, ToPrimitive, Zero};
 use crate::pointers::*;
 use crate::util::*;

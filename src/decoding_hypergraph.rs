@@ -1,5 +1,5 @@
-use crate::hyper_model_graph::*;
 use crate::matrix::*;
+use crate::model_hypergraph::*;
 use crate::util::*;
 use crate::visualize::*;
 use std::collections::{BTreeSet, HashSet};
@@ -114,7 +114,7 @@ impl MWPSVisualizer for DecodingHyperGraph {
 #[cfg(test)]
 pub mod tests {
     use super::*;
-    use crate::hyper_model_graph::tests::*;
+    use crate::model_hypergraph::tests::*;
 
     pub fn color_code_5_decoding_graph(
         defect_vertices: Vec<VertexIndex>,

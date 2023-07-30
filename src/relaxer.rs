@@ -71,10 +71,7 @@ impl Relaxer {
             return Err(format!("the summation of ΔyS is negative: {:?}", sum_speed));
         }
         if self.untighten_edges.is_empty() && sum_speed.is_zero() {
-            return Err(
-                "a valid relaxer must either increase overall ΔyS or untighten some edges"
-                    .to_string(),
-            );
+            return Err("a valid relaxer must either increase overall ΔyS or untighten some edges".to_string());
         }
         Ok(())
     }
@@ -90,7 +87,7 @@ impl Relaxer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::hyper_decoding_graph::tests::*;
+    use crate::decoding_hypergraph::tests::*;
     use crate::invalid_subgraph::tests::*;
     use num_traits::One;
     use std::collections::BTreeSet;
@@ -132,10 +129,8 @@ mod tests {
         let vertices: BTreeSet<VertexIndex> = [1, 2, 3].into();
         let edges: BTreeSet<EdgeIndex> = [4, 5].into();
         let hairs: BTreeSet<EdgeIndex> = [6, 7, 8].into();
-        let invalid_subgraph =
-            InvalidSubgraph::new_raw(vertices.clone(), edges.clone(), hairs.clone());
-        let relaxer_1 =
-            Relaxer::new_vec(vec![(Arc::new(invalid_subgraph.clone()), Rational::one())]);
+        let invalid_subgraph = InvalidSubgraph::new_raw(vertices.clone(), edges.clone(), hairs.clone());
+        let relaxer_1 = Relaxer::new_vec(vec![(Arc::new(invalid_subgraph.clone()), Rational::one())]);
         let relaxer_2 = Relaxer::new_vec(vec![(Arc::new(invalid_subgraph), Rational::one())]);
         assert_eq!(relaxer_1, relaxer_2);
         // they should have the same hash value
@@ -143,20 +138,11 @@ mod tests {
             get_default_hash_value(&relaxer_1),
             get_default_hash_value(&relaxer_1.hash_value)
         );
-        assert_eq!(
-            get_default_hash_value(&relaxer_1),
-            get_default_hash_value(&relaxer_2)
-        );
+        assert_eq!(get_default_hash_value(&relaxer_1), get_default_hash_value(&relaxer_2));
         // the pointer should also have the same hash value
         let ptr_1 = Arc::new(relaxer_1);
         let ptr_2 = Arc::new(relaxer_2);
-        assert_eq!(
-            get_default_hash_value(&ptr_1),
-            get_default_hash_value(&ptr_1.hash_value)
-        );
-        assert_eq!(
-            get_default_hash_value(&ptr_1),
-            get_default_hash_value(&ptr_2)
-        );
+        assert_eq!(get_default_hash_value(&ptr_1), get_default_hash_value(&ptr_1.hash_value));
+        assert_eq!(get_default_hash_value(&ptr_1), get_default_hash_value(&ptr_2));
     }
 }

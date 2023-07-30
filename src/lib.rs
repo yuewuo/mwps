@@ -27,13 +27,13 @@ extern crate wasm_bindgen;
 
 #[cfg(feature = "cli")]
 pub mod cli;
+pub mod decoding_hypergraph;
 pub mod dual_module;
 pub mod dual_module_serial;
 pub mod example_codes;
-pub mod hyper_decoding_graph;
-pub mod hyper_model_graph;
 pub mod invalid_subgraph;
 pub mod matrix;
+pub mod model_hypergraph;
 pub mod mwps_solver;
 pub mod old_parity_matrix;
 pub mod parity_matrix_visualize;
@@ -68,10 +68,10 @@ use wasm_bindgen::prelude::*;
 
 #[cfg_attr(feature = "wasm_binding", wasm_bindgen)]
 pub fn get_version() -> String {
+    use decoding_hypergraph::*;
     use dual_module::*;
     use dual_module_serial::*;
     use example_codes::*;
-    use hyper_decoding_graph::*;
     use primal_module::*;
     use primal_module_serial::*;
     // TODO: I'm just testing basic funcationality

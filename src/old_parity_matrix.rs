@@ -6,8 +6,8 @@
 //! The matrix can also be plotted with specific order of rows and columns for better visualization purpose
 //!
 
+use crate::decoding_hypergraph::*;
 use crate::dual_module::*;
-use crate::hyper_decoding_graph::*;
 use crate::parity_matrix_visualize::*;
 use crate::prettytable::*;
 use crate::util::*;
