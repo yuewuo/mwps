@@ -1,14 +1,18 @@
+use crate::derivative::Derivative;
 use crate::invalid_subgraph::*;
 use crate::util::*;
 use num_traits::{Signed, Zero};
+use std::cmp::Ordering;
 use std::collections::hash_map::DefaultHasher;
 use std::collections::BTreeMap;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq, Derivative)]
+#[derivative(Debug)]
 pub struct Relaxer {
     /// the hash value calculated by other fields
+    #[derivative(Debug = "ignore")]
     hash_value: u64,
     /// the direction of invalid subgraphs
     direction: BTreeMap<Arc<InvalidSubgraph>, Rational>,
@@ -25,14 +29,29 @@ impl Hash for Relaxer {
     }
 }
 
+impl Ord for Relaxer {
+    fn cmp(&self, other: &Self) -> Ordering {
+        if self.hash_value != other.hash_value {
+            self.hash_value.cmp(&other.hash_value)
+        } else if self == other {
+            Ordering::Equal
+        } else {
+            // rare cases: same hash value but different state
+            self.direction.cmp(&other.direction)
+        }
+    }
+}
+
+impl PartialOrd for Relaxer {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
 pub const RELAXER_ERR_MSG_NEGATIVE_SUMMATION: &str = "the summation of ΔyS is negative";
 pub const RELAXER_ERR_MSG_USEFUL: &str = "a valid relaxer must either increase overall ΔyS or untighten some edges";
 
 impl Relaxer {
-    pub fn new_vec(direction: Vec<(Arc<InvalidSubgraph>, Rational)>) -> Self {
-        Self::new(direction.into_iter().collect())
-    }
-
     pub fn new(direction: BTreeMap<Arc<InvalidSubgraph>, Rational>) -> Self {
         let relaxer = Self::new_raw(direction);
         debug_assert_eq!(relaxer.sanity_check(), Ok(()));
@@ -128,7 +147,7 @@ mod tests {
             decoding_graph.as_ref(),
         ));
         use num_traits::One;
-        let relaxer = Relaxer::new_vec(vec![(invalid_subgraph, Rational::one())]);
+        let relaxer = Relaxer::new([(invalid_subgraph, Rational::one())].into());
         println!("relaxer: {relaxer:?}");
         assert!(relaxer.untighten_edges.is_empty());
     }
@@ -144,7 +163,7 @@ mod tests {
             BTreeSet::new(),
             decoding_graph.as_ref(),
         ));
-        let relaxer: Relaxer = Relaxer::new_vec(vec![(invalid_subgraph, Rational::zero())]);
+        let relaxer: Relaxer = Relaxer::new([(invalid_subgraph, Rational::zero())].into());
         println!("relaxer: {relaxer:?}"); // should not print because it panics
     }
 
@@ -155,8 +174,8 @@ mod tests {
         let edges: BTreeSet<EdgeIndex> = [4, 5].into();
         let hairs: BTreeSet<EdgeIndex> = [6, 7, 8].into();
         let invalid_subgraph = InvalidSubgraph::new_raw(vertices.clone(), edges.clone(), hairs.clone());
-        let relaxer_1 = Relaxer::new_vec(vec![(Arc::new(invalid_subgraph.clone()), Rational::one())]);
-        let relaxer_2 = Relaxer::new_vec(vec![(Arc::new(invalid_subgraph), Rational::one())]);
+        let relaxer_1 = Relaxer::new([(Arc::new(invalid_subgraph.clone()), Rational::one())].into());
+        let relaxer_2 = Relaxer::new([(Arc::new(invalid_subgraph), Rational::one())].into());
         assert_eq!(relaxer_1, relaxer_2);
         // they should have the same hash value
         assert_eq!(

@@ -98,6 +98,7 @@ impl PluginManager {
                     .plugin
                     .find_relaxers(decoding_graph, &mut *matrix, positive_dual_nodes);
                 for relaxer in relaxers.into_iter() {
+                    let relaxer = Arc::new(relaxer);
                     let sum_speed = relaxer.get_sum_speed();
                     if sum_speed.is_positive() {
                         return Some(relaxer_forest.expand(&relaxer));

@@ -29,7 +29,7 @@ impl PluginUnionFind {
             BTreeSet::from_iter(matrix.get_view_edges()),
             decoding_graph,
         );
-        Some(Relaxer::new_vec(vec![(invalid_subgraph, Rational::one())]))
+        Some(Relaxer::new([(invalid_subgraph, Rational::one())].into()))
     }
 }
 

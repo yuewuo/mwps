@@ -4,11 +4,11 @@
 //!
 
 use crate::invalid_subgraph::*;
-use crate::relaxer;
+use crate::num_traits::Zero;
 use crate::relaxer::*;
 use crate::util::*;
 use num_traits::Signed;
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 pub type RelaxerVec = Vec<Relaxer>;
@@ -20,14 +20,14 @@ pub struct RelaxerForest {
     tight_edges: BTreeSet<EdgeIndex>,
     /// keep track of the subgraphs that are allowed to shrink:
     /// these should be all positive dual variables, all others are yS = 0
-    shrinkable_subgraphs: HashSet<Arc<InvalidSubgraph>>,
+    shrinkable_subgraphs: BTreeSet<Arc<InvalidSubgraph>>,
     /// each untightened edge corresponds to a relaxer with speed:
     /// to untighten the edge for a unit length, how much should a relaxer be executed
-    edge_untightener: HashMap<EdgeIndex, (Arc<Relaxer>, Rational)>,
+    edge_untightener: BTreeMap<EdgeIndex, (Arc<Relaxer>, Rational)>,
     /// expanded relaxer results, as part of the dynamic programming:
     /// the expanded relaxer is a valid relaxer only growing of initial un-tight edges,
     /// not any edges untightened by other relaxers
-    expanded_relaxers: HashMap<Arc<Relaxer>, Relaxer>,
+    expanded_relaxers: BTreeMap<Arc<Relaxer>, Relaxer>,
 }
 
 pub const FOREST_ERR_MSG_GROW_TIGHT_EDGE: &str = "invalid relaxer: try to grow a tight edge";
@@ -41,9 +41,9 @@ impl RelaxerForest {
     {
         Self {
             tight_edges: BTreeSet::from_iter(tight_edges),
-            shrinkable_subgraphs: HashSet::from_iter(shrinkable_subgraphs),
-            edge_untightener: HashMap::new(),
-            expanded_relaxers: HashMap::new(),
+            shrinkable_subgraphs: BTreeSet::from_iter(shrinkable_subgraphs),
+            edge_untightener: BTreeMap::new(),
+            expanded_relaxers: BTreeMap::new(),
         }
     }
 
@@ -68,11 +68,10 @@ impl RelaxerForest {
     }
 
     /// add a relaxer to the forest
-    pub fn add(&mut self, relaxer: Relaxer) {
+    pub fn add(&mut self, relaxer: Arc<Relaxer>) {
         // validate only at debug mode to improve speed
         debug_assert_eq!(self.validate(&relaxer), Ok(()));
         // add this relaxer to the forest
-        let relaxer = Arc::new(relaxer);
         for (edge_index, speed) in relaxer.get_untighten_edges() {
             debug_assert!(speed.is_negative());
             if !self.edge_untightener.contains_key(edge_index) {
@@ -81,10 +80,71 @@ impl RelaxerForest {
         }
     }
 
+    fn compute_expanded(&mut self, relaxer: &Arc<Relaxer>) {
+        if self.expanded_relaxers.contains_key(relaxer) {
+            return;
+        }
+        let mut untightened_edges: BTreeMap<EdgeIndex, Rational> = BTreeMap::new();
+        let mut directions: BTreeMap<Arc<InvalidSubgraph>, Rational> = relaxer.get_direction().clone();
+        for (edge_index, speed) in relaxer.get_growing_edges() {
+            debug_assert!(speed.is_positive());
+            if self.tight_edges.contains(edge_index) {
+                debug_assert!(self.edge_untightener.contains_key(edge_index));
+                let require_speed = if let Some(existing_speed) = untightened_edges.get_mut(edge_index) {
+                    if &*existing_speed >= speed {
+                        *existing_speed -= speed;
+                        Rational::zero()
+                    } else {
+                        let required_speed = speed - &*existing_speed;
+                        existing_speed.set_zero();
+                        required_speed
+                    }
+                } else {
+                    speed.clone()
+                };
+                if require_speed.is_positive() {
+                    // we need to invoke another relaxer to untighten this edge
+                    let edge_relaxer = self.edge_untightener.get(edge_index).unwrap().0.clone();
+                    self.compute_expanded(&edge_relaxer);
+                    let (edge_relaxer, speed_ratio) = self.edge_untightener.get(edge_index).unwrap();
+                    debug_assert!(speed_ratio.is_positive());
+                    let expanded_edge_relaxer = self.expanded_relaxers.get(edge_relaxer).unwrap();
+                    for (subgraph, original_speed) in expanded_edge_relaxer.get_direction() {
+                        let new_speed = original_speed * speed_ratio;
+                        if let Some(speed) = directions.get_mut(subgraph) {
+                            *speed += new_speed;
+                        } else {
+                            directions.insert(subgraph.clone(), new_speed);
+                        }
+                    }
+                    for (edge_index, original_speed) in expanded_edge_relaxer.get_untighten_edges() {
+                        debug_assert!(original_speed.is_negative());
+                        let new_speed = -original_speed * speed_ratio;
+                        if let Some(speed) = untightened_edges.get_mut(edge_index) {
+                            *speed += new_speed;
+                        } else {
+                            untightened_edges.insert(*edge_index, new_speed);
+                        }
+                    }
+                    debug_assert_eq!(untightened_edges.get(edge_index), Some(&require_speed));
+                    *untightened_edges.get_mut(edge_index).unwrap() -= require_speed;
+                }
+            }
+        }
+        let expanded = Relaxer::new(directions);
+        // an expanded relaxer will not rely on any non-tight edges
+        debug_assert!(expanded
+            .get_growing_edges()
+            .iter()
+            .all(|(edge_index, _)| !self.tight_edges.contains(edge_index)));
+        self.expanded_relaxers.insert(relaxer.clone(), expanded);
+    }
+
     /// expand a relaxer
-    pub fn expand(&mut self, relaxer: &Relaxer) -> Relaxer {
-        println!("expand on {relaxer:?}");
-        relaxer.clone()
+    pub fn expand(&mut self, relaxer: &Arc<Relaxer>) -> Relaxer {
+        debug_assert_eq!(self.validate(relaxer), Ok(()));
+        self.compute_expanded(relaxer);
+        self.expanded_relaxers.get(relaxer).unwrap().clone()
     }
 }
 
@@ -102,18 +162,33 @@ pub mod tests {
             Arc::new(InvalidSubgraph::new_raw([].into(), [].into(), [3, 4, 5].into())),
         ];
         let mut relaxer_forest = RelaxerForest::new(tight_edges.into_iter(), shrinkable_subgraphs.iter().cloned());
-        let relaxer = Relaxer::new_raw(
+        let invalid_subgraph_1 = Arc::new(InvalidSubgraph::new_raw([].into(), [].into(), [7, 8, 9].into()));
+        let relaxer_1 = Arc::new(Relaxer::new_raw(
             [
-                (
-                    Arc::new(InvalidSubgraph::new_raw([].into(), [].into(), [7, 8, 9].into())),
-                    Rational::one(),
-                ),
+                (invalid_subgraph_1.clone(), Rational::one()),
                 (shrinkable_subgraphs[0].clone(), -Rational::one()),
             ]
             .into(),
+        ));
+        let expanded_1 = relaxer_forest.expand(&relaxer_1);
+        assert_eq!(expanded_1, *relaxer_1);
+        relaxer_forest.add(relaxer_1);
+        // now add a relaxer that is relying on relaxer_1
+        let invalid_subgraph_2 = Arc::new(InvalidSubgraph::new_raw([].into(), [].into(), [1, 2, 7].into()));
+        let relaxer_2 = Arc::new(Relaxer::new_raw([(invalid_subgraph_2.clone(), Rational::one())].into()));
+        let expanded_2 = relaxer_forest.expand(&relaxer_2);
+        assert_eq!(
+            expanded_2,
+            Relaxer::new(
+                [
+                    (invalid_subgraph_1, Rational::one()),
+                    (shrinkable_subgraphs[0].clone(), -Rational::one()),
+                    (invalid_subgraph_2, Rational::one())
+                ]
+                .into()
+            )
         );
-        let expanded = relaxer_forest.expand(&relaxer);
-        println!("{expanded:?}");
+        // println!("{expanded_2:#?}");
     }
 
     #[test]

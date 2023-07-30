@@ -1,4 +1,5 @@
 use crate::decoding_hypergraph::*;
+use crate::derivative::Derivative;
 use crate::matrix::*;
 use crate::plugin::EchelonMatrix;
 use crate::util::*;
@@ -9,9 +10,11 @@ use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
 /// an invalid subgraph $S = (V_S, E_S)$, also store the hair $\delta(S)$
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq, Derivative)]
+#[derivative(Debug)]
 pub struct InvalidSubgraph {
     /// the hash value calculated by other fields
+    #[derivative(Debug = "ignore")]
     pub hash_value: u64,
     /// subset of vertices
     pub vertices: BTreeSet<VertexIndex>,
@@ -29,10 +32,10 @@ impl Hash for InvalidSubgraph {
 
 impl Ord for InvalidSubgraph {
     fn cmp(&self, other: &Self) -> Ordering {
-        if self == other {
-            Ordering::Equal
-        } else if self.hash_value != other.hash_value {
+        if self.hash_value != other.hash_value {
             self.hash_value.cmp(&other.hash_value)
+        } else if self == other {
+            Ordering::Equal
         } else {
             // rare cases: same hash value but different state
             (&self.vertices, &self.edges, &self.hairs).cmp(&(&other.vertices, &other.edges, &other.hairs))
