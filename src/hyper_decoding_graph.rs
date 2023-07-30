@@ -1,5 +1,5 @@
 use crate::hyper_model_graph::*;
-use crate::old_parity_matrix::*;
+use crate::matrix::*;
 use crate::util::*;
 use crate::visualize::*;
 use std::collections::{BTreeSet, HashSet};
@@ -55,14 +55,17 @@ impl HyperDecodingGraph {
     }
 
     pub fn find_valid_subgraph(&self, edges: &BTreeSet<EdgeIndex>, vertices: &BTreeSet<VertexIndex>) -> Option<Subgraph> {
-        let mut matrix = ParityMatrix::new_no_phantom();
+        let mut matrix = Echelon::<CompleteMatrix>::new();
         for &edge_index in edges.iter() {
-            matrix.add_tight_variable(edge_index);
+            matrix.add_variable(edge_index);
         }
+
         for &vertex_index in vertices.iter() {
-            matrix.add_parity_check_with_decoding_graph(vertex_index, self);
+            let incident_edges = self.get_vertex_neighbors(vertex_index);
+            let parity = self.is_vertex_defect(vertex_index);
+            matrix.add_constraint(vertex_index, incident_edges, parity);
         }
-        matrix.get_joint_solution()
+        matrix.get_solution()
     }
 
     pub fn find_valid_subgraph_auto_vertices(&self, edges: &BTreeSet<EdgeIndex>) -> Option<Subgraph> {

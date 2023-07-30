@@ -132,6 +132,90 @@ pub trait MatrixTail {
 pub trait MatrixEchelon: MatrixView {
     fn get_echelon_info(&mut self) -> &EchelonInfo;
     fn get_echelon_info_immutable(&self) -> &EchelonInfo;
+
+    fn get_solution(&mut self) -> Option<Subgraph> {
+        self.get_echelon_info(); // make sure it's in echelon form
+        let info = self.get_echelon_info_immutable();
+        if !info.satisfiable {
+            return None; // no solution
+        }
+        let mut solution = vec![];
+        for (row, row_info) in info.rows.iter().enumerate() {
+            debug_assert!(row_info.has_leading());
+            if self.get_rhs(row) {
+                let column = row_info.column;
+                let edge_index = self.column_to_edge_index(column);
+                solution.push(edge_index);
+            }
+        }
+        Some(Subgraph::new(solution))
+    }
+
+    /// try every independent variables and try to minimize the total weight of the solution
+    fn get_solution_local_minimum(&mut self, hypergraph: &SolverInitializer) -> Option<Subgraph> {
+        self.get_echelon_info(); // make sure it's in echelon form
+        let info = self.get_echelon_info_immutable();
+        if !info.satisfiable {
+            return None; // no solution
+        }
+        let mut solution = BTreeSet::new();
+        for (row, row_info) in info.rows.iter().enumerate() {
+            debug_assert!(row_info.has_leading());
+            if self.get_rhs(row) {
+                let column = row_info.column;
+                let edge_index = self.column_to_edge_index(column);
+                solution.insert(edge_index);
+            }
+        }
+        let mut independent_columns = vec![];
+        for (column, column_info) in info.columns.iter().enumerate() {
+            if !column_info.is_dependent() {
+                independent_columns.push(column);
+            }
+        }
+        let mut total_weight = 0;
+        for &edge_index in solution.iter() {
+            total_weight += hypergraph.weighted_edges[edge_index].weight;
+        }
+        let mut pending_flip_edge_indices = vec![];
+        let mut is_local_minimum = false;
+        while !is_local_minimum {
+            is_local_minimum = true;
+            // try every independent variable and find a local minimum
+            for &column in independent_columns.iter() {
+                pending_flip_edge_indices.clear();
+                let var_index = self.column_to_var_index(column);
+                let edge_index = self.var_to_edge_index(var_index);
+                let mut primal_delta = (hypergraph.weighted_edges[edge_index].weight as isize)
+                    * (if solution.contains(&edge_index) { -1 } else { 1 });
+                pending_flip_edge_indices.push(edge_index);
+                for row in 0..info.rows.len() {
+                    if self.get_lhs(row, var_index) {
+                        debug_assert!(info.rows[row].has_leading());
+                        let flip_column = info.rows[row].column;
+                        debug_assert!(flip_column < column);
+                        let flip_edge_index = self.column_to_edge_index(flip_column);
+                        primal_delta += (hypergraph.weighted_edges[flip_edge_index].weight as isize)
+                            * (if solution.contains(&flip_edge_index) { -1 } else { 1 });
+                        pending_flip_edge_indices.push(flip_edge_index);
+                    }
+                }
+                if primal_delta < 0 {
+                    total_weight = (total_weight as isize + primal_delta) as usize;
+                    for &edge_index in pending_flip_edge_indices.iter() {
+                        if solution.contains(&edge_index) {
+                            solution.remove(&edge_index);
+                        } else {
+                            solution.insert(edge_index);
+                        }
+                    }
+                    is_local_minimum = false;
+                    break; // loop over again
+                }
+            }
+        }
+        Some(Subgraph::new(solution.into_iter().collect()))
+    }
 }
 
 #[derive(Clone, Debug, Derivative)]
@@ -227,10 +311,8 @@ impl std::fmt::Debug for RowInfo {
 
 #[cfg(test)]
 pub mod tests {
-    use super::super::basic::*;
-    use super::super::tight::*;
+    use super::super::*;
     use super::*;
-    use crate::matrix::VizTrait;
 
     type TightMatrix = Tight<BasicMatrix>;
 
@@ -272,5 +354,35 @@ pub mod tests {
         assert_eq!(format!("{:?}", row_info.clone()), "Col(*)");
         let echelon_info = EchelonInfo::new();
         println!("echelon_info: {echelon_info:?}");
+    }
+
+    #[test]
+    fn matrix_interface_echelon_solution() {
+        // cargo test --features=colorful matrix_interface_echelon_solution -- --nocapture
+        /* 0,1,2: vertices; (0),(1),(2): edges; !n!: odd vertex
+               1 (1) 0
+              (2)   (0)
+         3 (3) 2 (8)!7!
+        (4)   (7)   (9)
+        !4!(5) 5 (6) 6
+            */
+        let mut matrix = Echelon::<Tail<BasicMatrix>>::new();
+        let parity_checks = vec![
+            (vec![0, 1], false),
+            (vec![1, 2], false),
+            (vec![2, 3, 7, 8], false),
+            (vec![3, 4], false),
+            (vec![4, 5], true),
+            (vec![5, 6, 7], false),
+            (vec![6, 9], false),
+            (vec![0, 8, 9], true),
+        ];
+        for (vertex_index, (incident_edges, parity)) in parity_checks.iter().enumerate() {
+            matrix.add_constraint(vertex_index, incident_edges, *parity);
+        }
+        matrix.printstd();
+        assert_eq!(matrix.get_solution(), Some(Subgraph::new(vec![0, 1, 2, 3, 4])));
+        // construct a decoding hypergraph
+        // matrix.get_solution_local_minimum(hypergraph);
     }
 }
