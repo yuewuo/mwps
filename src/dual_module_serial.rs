@@ -148,21 +148,27 @@ impl DualModuleImpl for DualModuleSerial {
         }
     }
 
+    fn add_defect_node(&mut self, dual_node_ptr: &DualNodePtr) {
+        let dual_node = dual_node_ptr.read_recursive();
+        debug_assert!(dual_node.invalid_subgraph.edges.is_empty());
+        debug_assert!(
+            dual_node.invalid_subgraph.vertices.len() == 1,
+            "defect node (without edges) should only work on a single vertex, for simplicity"
+        );
+        let vertex_index = dual_node.invalid_subgraph.vertices.iter().next().unwrap();
+        let mut vertex = self.vertices[*vertex_index].write();
+        assert!(!vertex.is_defect, "defect should not be added twice");
+        vertex.is_defect = true;
+        drop(dual_node);
+        drop(vertex);
+        self.add_dual_node(dual_node_ptr);
+    }
+
     #[allow(clippy::unnecessary_cast)]
     fn add_dual_node(&mut self, dual_node_ptr: &DualNodePtr) {
         // make sure the active edges are set
         let dual_node_weak = dual_node_ptr.downgrade();
         let dual_node = dual_node_ptr.read_recursive();
-        if dual_node.invalid_subgraph.edges.is_empty() {
-            assert!(
-                dual_node.invalid_subgraph.vertices.len() == 1,
-                "defect node (without edges) should only work on a single vertex, for simplicity"
-            );
-            let vertex_index = dual_node.invalid_subgraph.vertices.iter().next().unwrap();
-            let mut vertex = self.vertices[*vertex_index as usize].write();
-            assert!(!vertex.is_defect, "defect should not be added twice");
-            vertex.is_defect = true;
-        }
         for &edge_index in dual_node.invalid_subgraph.hairs.iter() {
             let mut edge = self.edges[edge_index as usize].write();
             edge.grow_rate += &dual_node.grow_rate;

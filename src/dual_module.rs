@@ -118,6 +118,9 @@ pub trait DualModuleImpl {
     /// clear all growth and existing dual nodes, prepared for the next decoding
     fn clear(&mut self);
 
+    /// add defect node
+    fn add_defect_node(&mut self, dual_node_ptr: &DualNodePtr);
+
     /// add corresponding dual node, note that the `internal_vertices` and `hair_edges` are not set
     fn add_dual_node(&mut self, dual_node_ptr: &DualNodePtr);
 
@@ -305,7 +308,7 @@ impl DualModuleInterfacePtr {
         interface.nodes.push(node_ptr);
         interface.hashmap.insert(invalid_subgraph, node_index);
         drop(interface);
-        dual_module.add_dual_node(&cloned_node_ptr);
+        dual_module.add_defect_node(&cloned_node_ptr);
         cloned_node_ptr
     }
 
