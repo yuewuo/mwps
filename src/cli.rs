@@ -1,10 +1,11 @@
-use crate::clap;
-use crate::clap::{Parser, Subcommand, ValueEnum};
 use crate::example_codes::*;
 use crate::matrix::*;
 use crate::mwps_solver::*;
 use crate::util::*;
 use crate::visualize::*;
+use clap::builder::{StringValueParser, TypedValueParser, ValueParser};
+use clap::error::{ContextKind, ContextValue, ErrorKind};
+use clap::{Parser, Subcommand, ValueEnum};
 use more_asserts::assert_le;
 use num_traits::FromPrimitive;
 use pbr::ProgressBar;
@@ -55,7 +56,7 @@ pub struct BenchmarkParameters {
     #[clap(short = 'c', long, value_enum, default_value_t = ExampleCodeType::CodeCapacityTailoredCode)]
     code_type: ExampleCodeType,
     /// the configuration of the code builder
-    #[clap(long, default_value_t = json!({}))]
+    #[clap(long, default_value_t = json!({}), value_parser = ValueParser::new(SerdeJsonParser))]
     code_config: serde_json::Value,
     /// logging to the default visualizer file at visualize/data/visualizer.json
     #[clap(long, action)]
@@ -76,7 +77,7 @@ pub struct BenchmarkParameters {
     #[clap(short = 'p', long, value_enum, default_value_t = PrimalDualType::UnionFind)]
     primal_dual_type: PrimalDualType,
     /// the configuration of primal and dual module
-    #[clap(long, default_value_t = json!({}))]
+    #[clap(long, default_value_t = json!({}), value_parser = ValueParser::new(SerdeJsonParser))]
     primal_dual_config: serde_json::Value,
     /// message on the progress bar
     #[clap(long, default_value_t = format!(""))]
@@ -112,8 +113,8 @@ pub enum ExampleCodeType {
 pub enum PrimalDualType {
     /// the solver from Union-Find decoder
     UnionFind,
-    /// the sequential solver
-    Serial,
+    /// the single-hair solver
+    SingleHair,
     /// log error into a file for later fetch
     ErrorPatternLogger,
 }
@@ -151,6 +152,35 @@ pub enum MatrixSpeedClass {
     EchelonTailTight,
     EchelonTight,
     Echelon,
+}
+
+#[derive(Clone)]
+struct SerdeJsonParser;
+impl TypedValueParser for SerdeJsonParser {
+    type Value = serde_json::Value;
+    fn parse_ref(
+        &self,
+        cmd: &clap::Command,
+        arg: Option<&clap::Arg>,
+        value: &std::ffi::OsStr,
+    ) -> Result<Self::Value, clap::Error> {
+        let inner = StringValueParser::new();
+        let val = inner.parse_ref(cmd, arg, value)?;
+        match serde_json::from_str::<serde_json::Value>(&val) {
+            Ok(vector) => Ok(vector),
+            Err(error) => {
+                let mut err = clap::Error::new(ErrorKind::ValueValidation).with_cmd(cmd);
+                if let Some(arg) = arg {
+                    err.insert(ContextKind::InvalidArg, ContextValue::String(arg.to_string()));
+                }
+                err.insert(
+                    ContextKind::InvalidValue,
+                    ContextValue::String(format!("should be like {{\"a\":1}}, parse error: {error}")),
+                );
+                Err(err)
+            }
+        }
+    }
 }
 
 impl MatrixSpeedClass {
@@ -369,10 +399,9 @@ impl PrimalDualType {
                 assert_eq!(primal_dual_config, json!({}));
                 Box::new(SolverUnionFind::new(initializer))
             }
-            Self::Serial => {
-                unimplemented!()
-                // assert_eq!(primal_dual_config, json!({}));
-                // Box::new(SolverSerial::new(initializer))
+            Self::SingleHair => {
+                assert_eq!(primal_dual_config, json!({}));
+                Box::new(SolverSingleHair::new(initializer))
             }
             Self::ErrorPatternLogger => Box::new(SolverErrorPatternLogger::new(initializer, code, primal_dual_config)),
         }
