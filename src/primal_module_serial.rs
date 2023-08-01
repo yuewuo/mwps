@@ -10,6 +10,7 @@ use crate::num_traits::{One, Zero};
 use crate::plugin::*;
 use crate::pointers::*;
 use crate::primal_module::*;
+use crate::relaxer_optimizer::*;
 use crate::util::*;
 use crate::visualize::*;
 use std::collections::{BTreeSet, VecDeque};
@@ -65,6 +66,8 @@ pub struct PrimalCluster {
     pub subgraph: Option<Subgraph>,
     /// plugin manager helps to execute the plugin and find an executable relaxer
     pub plugin_manager: PluginManager,
+    /// optimizing the direction of relaxers
+    pub relaxer_optimizer: RelaxerOptimizer,
 }
 
 pub type PrimalClusterPtr = ArcRwLock<PrimalCluster>;
@@ -122,6 +125,7 @@ impl PrimalModuleImpl for PrimalModuleSerial {
                 matrix: node.invalid_subgraph.generate_matrix(&interface.decoding_graph),
                 subgraph: None,
                 plugin_manager: PluginManager::new(self.plugins.clone()),
+                relaxer_optimizer: RelaxerOptimizer::new(),
             });
             // create the primal node of this defect node and insert into cluster
             let primal_node_ptr = PrimalModuleSerialNodePtr::new_value(PrimalModuleSerialNode {
@@ -287,6 +291,7 @@ impl PrimalModuleSerial {
                 cluster_1.matrix.add_constraint(vertex_index, incident_edges, parity);
             }
         }
+        cluster_1.relaxer_optimizer.append(&mut cluster_2.relaxer_optimizer);
         cluster_2.vertices.clear();
     }
 
@@ -332,7 +337,10 @@ impl PrimalModuleSerial {
         };
 
         // if a relaxer is found, execute it and return
-        if let Some(relaxer) = relaxer {
+        if let Some(mut relaxer) = relaxer {
+            if cluster.relaxer_optimizer.should_optimize(&relaxer) {
+                relaxer = cluster.relaxer_optimizer.optimize(relaxer)
+            }
             for (invalid_subgraph, grow_rate) in relaxer.get_direction() {
                 let (existing, dual_node_ptr) = interface_ptr.find_or_create_node(invalid_subgraph, dual_module);
                 if !existing {
@@ -346,6 +354,7 @@ impl PrimalModuleSerial {
                 }
                 dual_module.set_grow_rate(&dual_node_ptr, grow_rate.clone());
             }
+            cluster.relaxer_optimizer.insert(relaxer);
             return false;
         }
 

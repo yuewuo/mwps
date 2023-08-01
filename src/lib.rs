@@ -44,6 +44,7 @@ pub mod primal_module_serial;
 pub mod primal_module_union_find;
 pub mod relaxer;
 pub mod relaxer_forest;
+pub mod relaxer_optimizer;
 pub mod union_find;
 pub mod util;
 pub mod visualize;
