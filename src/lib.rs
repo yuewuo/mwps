@@ -74,7 +74,7 @@ pub fn get_version() -> String {
     use example_codes::*;
     use primal_module::*;
     use primal_module_serial::*;
-    // TODO: I'm just testing basic funcationality
+    // TODO: I'm just testing basic functionality
     let defect_vertices = vec![23, 24, 29, 30];
     let code = CodeCapacityTailoredCode::new(7, 0., 0.01, 1);
     // create dual module

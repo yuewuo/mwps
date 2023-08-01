@@ -5,7 +5,7 @@
 
 use crate::decoding_hypergraph::*;
 use crate::dual_module::*;
-use crate::invalid_subgraph::InvalidSubgraph;
+use crate::invalid_subgraph::*;
 use crate::matrix::*;
 use crate::num_traits::{One, Zero};
 use crate::plugin::*;
@@ -341,11 +341,6 @@ impl PrimalModuleSerial {
         // if a relaxer is found, execute it and return
         if let Some(mut relaxer) = relaxer {
             if cluster.relaxer_optimizer.should_optimize(&relaxer) {
-                let edge_slacks: BTreeMap<EdgeIndex, Rational> = cluster
-                    .edges
-                    .iter()
-                    .map(|&edge_index| (edge_index, dual_module.get_edge_slack(edge_index)))
-                    .collect();
                 let dual_variables: BTreeMap<Arc<InvalidSubgraph>, Rational> = cluster
                     .nodes
                     .iter()
@@ -354,6 +349,11 @@ impl PrimalModuleSerial {
                         let dual_node = primal_node.dual_node_ptr.read_recursive();
                         (dual_node.invalid_subgraph.clone(), dual_node.dual_variable.clone())
                     })
+                    .collect();
+                let edge_slacks: BTreeMap<EdgeIndex, Rational> = dual_variables
+                    .keys()
+                    .flat_map(|invalid_subgraph: &Arc<InvalidSubgraph>| invalid_subgraph.hairs.iter().cloned())
+                    .map(|edge_index| (edge_index, dual_module.get_edge_slack(edge_index)))
                     .collect();
                 relaxer = cluster.relaxer_optimizer.optimize(relaxer, edge_slacks, dual_variables);
             }

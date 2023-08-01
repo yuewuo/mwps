@@ -99,9 +99,7 @@ impl RelaxerOptimizer {
             constraints.push(constraint);
             invalid_subgraphs.push(invalid_subgraph);
             for &edge_index in invalid_subgraph.hairs.iter() {
-                if let Some(entry) = edge_contributor.get_mut(&edge_index) {
-                    entry.push(var_index);
-                }
+                edge_contributor.get_mut(&edge_index).unwrap().push(var_index);
             }
         }
         for (&edge_index, slack) in edge_slacks.iter() {
@@ -137,8 +135,7 @@ impl RelaxerOptimizer {
         let mut direction: BTreeMap<Arc<InvalidSubgraph>, Rational> = BTreeMap::new();
         match solution {
             slp::Solution::Optimal(optimal_objective, model) => {
-                if optimal_objective.is_positive() {
-                    // need more information report by the conflicts, just return the original relaxer
+                if !optimal_objective.is_positive() {
                     return relaxer;
                 }
                 for (var_index, (invalid_subgraph, _)) in dual_variables.iter().enumerate() {
@@ -152,10 +149,7 @@ impl RelaxerOptimizer {
                     }
                 }
             }
-            _ => {
-                // need more information
-                return relaxer;
-            }
+            _ => unreachable!(),
         }
         self.relaxers.insert(relaxer);
         Relaxer::new(direction)

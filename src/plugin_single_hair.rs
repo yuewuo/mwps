@@ -5,8 +5,6 @@
 //! A plugin must implement Clone trait, because it will be cloned multiple times for each cluster
 //!
 
-use std::collections::BTreeSet;
-
 use crate::decoding_hypergraph::*;
 use crate::dual_module::*;
 use crate::invalid_subgraph::InvalidSubgraph;
@@ -16,6 +14,7 @@ use crate::plugin_union_find::*;
 use crate::relaxer::*;
 use crate::util::*;
 use num_traits::One;
+use std::collections::BTreeSet;
 use std::sync::Arc;
 
 #[derive(Debug, Clone, Default)]
@@ -144,6 +143,24 @@ pub mod tests {
         // cargo test --features=colorful plugin_single_hair_debug_2 -- --nocapture
         let visualize_filename = "plugin_single_hair_debug_2.json".to_string();
         let defect_vertices = vec![2, 3, 12, 13, 17, 19, 20];
+        let code = CodeCapacityTailoredCode::new(5, 0., 0.1, 1);
+        primal_module_serial_basic_standard_syndrome(
+            code,
+            visualize_filename,
+            defect_vertices,
+            4,
+            vec![PluginSingleHair::entry_with_strategy(RepeatStrategy::Once)],
+            GrowingStrategy::SingleCluster,
+        );
+    }
+
+    // error_pattern: [9, 12, 22, 24]
+    // defect_vertices: [3, 8, 10, 11, 12, 13, 16, 17, 20, 21, 22, 23]
+    #[test]
+    fn plugin_single_hair_debug_3() {
+        // cargo test --features=colorful plugin_single_hair_debug_3 -- --nocapture
+        let visualize_filename = "plugin_single_hair_debug_3.json".to_string();
+        let defect_vertices = vec![3, 8, 10, 11, 12, 13, 16, 17, 20, 21, 22, 23];
         let code = CodeCapacityTailoredCode::new(5, 0., 0.1, 1);
         primal_module_serial_basic_standard_syndrome(
             code,
