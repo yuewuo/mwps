@@ -152,7 +152,7 @@ pub trait DualModuleImpl {
     fn grow(&mut self, length: Rational);
 
     fn get_edge_nodes(&self, edge_index: EdgeIndex) -> Vec<DualNodePtr>;
-
+    fn get_edge_slack(&self, edge_index: EdgeIndex) -> Rational;
     fn is_edge_tight(&self, edge_index: EdgeIndex) -> bool;
 }
 

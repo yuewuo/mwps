@@ -5,6 +5,7 @@
 
 use crate::decoding_hypergraph::*;
 use crate::dual_module::*;
+use crate::invalid_subgraph::InvalidSubgraph;
 use crate::matrix::*;
 use crate::num_traits::{One, Zero};
 use crate::plugin::*;
@@ -13,6 +14,7 @@ use crate::primal_module::*;
 use crate::relaxer_optimizer::*;
 use crate::util::*;
 use crate::visualize::*;
+use std::collections::BTreeMap;
 use std::collections::{BTreeSet, VecDeque};
 use std::fmt::Debug;
 use std::sync::Arc;
@@ -339,7 +341,21 @@ impl PrimalModuleSerial {
         // if a relaxer is found, execute it and return
         if let Some(mut relaxer) = relaxer {
             if cluster.relaxer_optimizer.should_optimize(&relaxer) {
-                relaxer = cluster.relaxer_optimizer.optimize(relaxer)
+                let edge_slacks: BTreeMap<EdgeIndex, Rational> = cluster
+                    .edges
+                    .iter()
+                    .map(|&edge_index| (edge_index, dual_module.get_edge_slack(edge_index)))
+                    .collect();
+                let dual_variables: BTreeMap<Arc<InvalidSubgraph>, Rational> = cluster
+                    .nodes
+                    .iter()
+                    .map(|primal_node_ptr| {
+                        let primal_node = primal_node_ptr.read_recursive();
+                        let dual_node = primal_node.dual_node_ptr.read_recursive();
+                        (dual_node.invalid_subgraph.clone(), dual_node.dual_variable.clone())
+                    })
+                    .collect();
+                relaxer = cluster.relaxer_optimizer.optimize(relaxer, edge_slacks, dual_variables);
             }
             for (invalid_subgraph, grow_rate) in relaxer.get_direction() {
                 let (existing, dual_node_ptr) = interface_ptr.find_or_create_node(invalid_subgraph, dual_module);
@@ -358,7 +374,8 @@ impl PrimalModuleSerial {
             return false;
         }
 
-        // TODO idea: plugins can suggest subgraph (ideally, a global maximum), if so, then it will adopt the subgraph with minimum weight from all plugins as the starting point to do local minimum
+        // TODO idea: plugins can suggest subgraph (ideally, a global maximum), if so, then it will adopt th
+        // subgraph with minimum weight from all plugins as the starting point to do local minimum
 
         // find a local minimum (hopefully a global minimum)
         let interface = interface_ptr.read_recursive();

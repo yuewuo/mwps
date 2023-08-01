@@ -378,6 +378,11 @@ impl DualModuleImpl for DualModuleSerial {
             .collect()
     }
 
+    fn get_edge_slack(&self, edge_index: EdgeIndex) -> Rational {
+        let edge = self.edges[edge_index].read_recursive();
+        edge.weight.clone() - edge.growth.clone()
+    }
+
     #[allow(clippy::unnecessary_cast)]
     fn is_edge_tight(&self, edge_index: EdgeIndex) -> bool {
         let edge = self.edges[edge_index as usize].read_recursive();
