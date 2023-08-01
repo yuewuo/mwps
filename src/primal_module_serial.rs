@@ -353,6 +353,12 @@ impl PrimalModuleSerial {
                 let edge_slacks: BTreeMap<EdgeIndex, Rational> = dual_variables
                     .keys()
                     .flat_map(|invalid_subgraph: &Arc<InvalidSubgraph>| invalid_subgraph.hairs.iter().cloned())
+                    .chain(
+                        relaxer
+                            .get_direction()
+                            .keys()
+                            .flat_map(|invalid_subgraph| invalid_subgraph.hairs.iter().cloned()),
+                    )
                     .map(|edge_index| (edge_index, dual_module.get_edge_slack(edge_index)))
                     .collect();
                 relaxer = cluster.relaxer_optimizer.optimize(relaxer, edge_slacks, dual_variables);

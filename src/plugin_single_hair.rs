@@ -171,4 +171,40 @@ pub mod tests {
             GrowingStrategy::SingleCluster,
         );
     }
+
+    // error_pattern: [6, 7, 10]
+    // defect_vertices: [5, 7, 11, 14, 15]
+    #[test]
+    fn plugin_single_hair_debug_4() {
+        // cargo test --features=colorful plugin_single_hair_debug_4 -- --nocapture
+        let visualize_filename = "plugin_single_hair_debug_4.json".to_string();
+        let defect_vertices = vec![5, 7, 11, 14, 15];
+        let code = CodeCapacityTailoredCode::new(5, 0., 0.1, 1);
+        primal_module_serial_basic_standard_syndrome(
+            code,
+            visualize_filename,
+            defect_vertices,
+            3,
+            vec![PluginSingleHair::entry_with_strategy(RepeatStrategy::Once)],
+            GrowingStrategy::SingleCluster,
+        );
+    }
+
+    // error_pattern: [12, 15, 16]
+    // defect_vertices: [10, 11, 14, 17, 20]
+    #[test]
+    fn plugin_single_hair_debug_5() {
+        // cargo test --features=colorful plugin_single_hair_debug_5 -- --nocapture
+        let visualize_filename = "plugin_single_hair_debug_5.json".to_string();
+        let defect_vertices = vec![10, 11, 14, 17, 20];
+        let code = CodeCapacityTailoredCode::new(5, 0., 0.1, 1);
+        primal_module_serial_basic_standard_syndrome(
+            code,
+            visualize_filename,
+            defect_vertices,
+            3,
+            vec![PluginSingleHair::entry_with_strategy(RepeatStrategy::Once)],
+            GrowingStrategy::SingleCluster,
+        );
+    }
 }
