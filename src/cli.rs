@@ -115,6 +115,8 @@ pub enum PrimalDualType {
     UnionFind,
     /// the single-hair solver
     SingleHair,
+    /// joint single-hair solver
+    JointSingleHair,
     /// log error into a file for later fetch
     ErrorPatternLogger,
 }
@@ -397,11 +399,15 @@ impl PrimalDualType {
         match self {
             Self::UnionFind => {
                 assert_eq!(primal_dual_config, json!({}));
-                Box::new(SolverUnionFind::new(initializer))
+                Box::new(SolverSerialUnionFind::new(initializer))
             }
             Self::SingleHair => {
                 assert_eq!(primal_dual_config, json!({}));
-                Box::new(SolverSingleHair::new(initializer))
+                Box::new(SolverSerialSingleHair::new(initializer))
+            }
+            Self::JointSingleHair => {
+                assert_eq!(primal_dual_config, json!({}));
+                Box::new(SolverSerialJointSingleHair::new(initializer))
             }
             Self::ErrorPatternLogger => Box::new(SolverErrorPatternLogger::new(initializer, code, primal_dual_config)),
         }

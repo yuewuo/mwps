@@ -40,104 +40,36 @@ pub trait PrimalDualSolver {
     fn generate_profiler_report(&self) -> serde_json::Value;
 }
 
-#[cfg_attr(feature = "python_binding", cfg_eval)]
-#[cfg_attr(feature = "python_binding", pyclass)]
-pub struct SolverUnionFind {
-    dual_module: DualModuleSerial,
-    primal_module: PrimalModuleUnionFind,
-    interface_ptr: DualModuleInterfacePtr,
-    model_graph: Arc<ModelHyperGraph>,
-}
-
-impl MWPSVisualizer for SolverUnionFind {
-    fn snapshot(&self, abbrev: bool) -> serde_json::Value {
-        let mut value = self.primal_module.snapshot(abbrev);
-        snapshot_combine_values(&mut value, self.dual_module.snapshot(abbrev), abbrev);
-        snapshot_combine_values(&mut value, self.interface_ptr.snapshot(abbrev), abbrev);
-        value
-    }
-}
-
-#[cfg_attr(feature = "python_binding", cfg_eval)]
-#[cfg_attr(feature = "python_binding", pymethods)]
-impl SolverUnionFind {
-    #[cfg_attr(feature = "python_binding", new)]
-    pub fn new(initializer: &SolverInitializer) -> Self {
-        let model_graph = Arc::new(ModelHyperGraph::new(Arc::new(initializer.clone())));
-        Self::new_model_graph(model_graph)
-    }
-}
-
-impl SolverUnionFind {
-    pub fn new_model_graph(model_graph: Arc<ModelHyperGraph>) -> Self {
-        Self {
-            dual_module: DualModuleSerial::new_empty(model_graph.initializer.as_ref()),
-            primal_module: PrimalModuleUnionFind::new_empty(model_graph.initializer.as_ref()),
-            interface_ptr: DualModuleInterfacePtr::new(model_graph.clone()),
-            model_graph,
+macro_rules! bind_primal_dual_solver_trait {
+    ($struct_name:ident) => {
+        impl PrimalDualSolver for $struct_name {
+            fn clear(&mut self) {
+                self.0.clear()
+            }
+            fn solve_visualizer(&mut self, syndrome_pattern: &SyndromePattern, visualizer: Option<&mut Visualizer>) {
+                self.0.solve_visualizer(syndrome_pattern, visualizer)
+            }
+            fn subgraph_range_visualizer(&mut self, visualizer: Option<&mut Visualizer>) -> (Subgraph, WeightRange) {
+                self.0.subgraph_range_visualizer(visualizer)
+            }
+            fn sum_dual_variables(&self) -> Rational {
+                self.0.sum_dual_variables()
+            }
+            fn generate_profiler_report(&self) -> serde_json::Value {
+                self.0.generate_profiler_report()
+            }
         }
-    }
+    };
 }
 
-impl PrimalDualSolver for SolverUnionFind {
-    fn clear(&mut self) {
-        self.primal_module.clear();
-        self.dual_module.clear();
-        self.interface_ptr.clear();
-    }
-    fn solve_visualizer(&mut self, syndrome_pattern: &SyndromePattern, visualizer: Option<&mut Visualizer>) {
-        let syndrome_pattern = Arc::new(syndrome_pattern.clone());
-        if !syndrome_pattern.erasures.is_empty() {
-            unimplemented!();
-        }
-        self.primal_module.solve_visualizer(
-            &self.interface_ptr,
-            syndrome_pattern.clone(),
-            &mut self.dual_module,
-            visualizer,
-        );
-        debug_assert!(
-            {
-                let subgraph = self.subgraph();
-                self.model_graph
-                    .matches_subgraph_syndrome(&subgraph, &syndrome_pattern.defect_vertices)
-            },
-            "the subgraph does not generate the syndrome"
-        );
-    }
-    fn subgraph_range_visualizer(&mut self, visualizer: Option<&mut Visualizer>) -> (Subgraph, WeightRange) {
-        let (subgraph, weight_range) = self.primal_module.subgraph_range(&self.interface_ptr, &mut self.dual_module);
-        if let Some(visualizer) = visualizer {
-            visualizer
-                .snapshot_combined(
-                    "subgraph".to_string(),
-                    vec![&self.interface_ptr, &self.dual_module, &subgraph, &weight_range],
-                )
-                .unwrap();
-        }
-        (subgraph, weight_range)
-    }
-    fn sum_dual_variables(&self) -> Rational {
-        self.interface_ptr.sum_dual_variables()
-    }
-    fn generate_profiler_report(&self) -> serde_json::Value {
-        json!({
-            // "dual": self.dual_module.generate_profiler_report(),
-            "primal": self.primal_module.generate_profiler_report(),
-        })
-    }
-}
-
-#[cfg_attr(feature = "python_binding", cfg_eval)]
-#[cfg_attr(feature = "python_binding", pyclass)]
-pub struct SolverSingleHair {
+pub struct SolverSerialPlugins {
     dual_module: DualModuleSerial,
     primal_module: PrimalModuleSerial,
     interface_ptr: DualModuleInterfacePtr,
     model_graph: Arc<ModelHyperGraph>,
 }
 
-impl MWPSVisualizer for SolverSingleHair {
+impl MWPSVisualizer for SolverSerialPlugins {
     fn snapshot(&self, abbrev: bool) -> serde_json::Value {
         let mut value = self.primal_module.snapshot(abbrev);
         snapshot_combine_values(&mut value, self.dual_module.snapshot(abbrev), abbrev);
@@ -146,15 +78,12 @@ impl MWPSVisualizer for SolverSingleHair {
     }
 }
 
-#[cfg_attr(feature = "python_binding", cfg_eval)]
-#[cfg_attr(feature = "python_binding", pymethods)]
-impl SolverSingleHair {
-    #[cfg_attr(feature = "python_binding", new)]
-    pub fn new(initializer: &SolverInitializer) -> Self {
+impl SolverSerialPlugins {
+    pub fn new(initializer: &SolverInitializer, plugins: Arc<Vec<PluginEntry>>) -> Self {
         let model_graph = Arc::new(ModelHyperGraph::new(Arc::new(initializer.clone())));
         let mut primal_module = PrimalModuleSerial::new_empty(initializer);
         primal_module.growing_strategy = GrowingStrategy::SingleCluster;
-        primal_module.plugins = Arc::new(vec![PluginSingleHair::entry_with_strategy(RepeatStrategy::Once)]);
+        primal_module.plugins = plugins;
         Self {
             dual_module: DualModuleSerial::new_empty(initializer),
             primal_module,
@@ -164,7 +93,7 @@ impl SolverSingleHair {
     }
 }
 
-impl PrimalDualSolver for SolverSingleHair {
+impl PrimalDualSolver for SolverSerialPlugins {
     fn clear(&mut self) {
         self.primal_module.clear();
         self.dual_module.clear();
@@ -212,6 +141,44 @@ impl PrimalDualSolver for SolverSingleHair {
         })
     }
 }
+
+pub struct SolverSerialUnionFind(SolverSerialPlugins);
+
+impl SolverSerialUnionFind {
+    pub fn new(initializer: &SolverInitializer) -> Self {
+        Self(SolverSerialPlugins::new(initializer, Arc::new(vec![])))
+    }
+}
+
+bind_primal_dual_solver_trait!(SolverSerialUnionFind);
+
+pub struct SolverSerialSingleHair(SolverSerialPlugins);
+
+impl SolverSerialSingleHair {
+    pub fn new(initializer: &SolverInitializer) -> Self {
+        Self(SolverSerialPlugins::new(
+            initializer,
+            Arc::new(vec![PluginSingleHair::entry_with_strategy(RepeatStrategy::Once)]),
+        ))
+    }
+}
+
+bind_primal_dual_solver_trait!(SolverSerialSingleHair);
+
+pub struct SolverSerialJointSingleHair(SolverSerialPlugins);
+
+impl SolverSerialJointSingleHair {
+    pub fn new(initializer: &SolverInitializer) -> Self {
+        Self(SolverSerialPlugins::new(
+            initializer,
+            Arc::new(vec![PluginSingleHair::entry_with_strategy(RepeatStrategy::Multiple {
+                max_repetition: usize::MAX,
+            })]),
+        ))
+    }
+}
+
+bind_primal_dual_solver_trait!(SolverSerialJointSingleHair);
 
 #[cfg_attr(feature = "python_binding", cfg_eval)]
 #[cfg_attr(feature = "python_binding", pyclass)]

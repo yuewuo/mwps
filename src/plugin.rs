@@ -107,6 +107,9 @@ impl PluginManager {
                 let relaxers = plugin_entry
                     .plugin
                     .find_relaxers(decoding_graph, &mut *matrix, positive_dual_nodes);
+                if relaxers.is_empty() {
+                    repeat = false;
+                }
                 for relaxer in relaxers.into_iter() {
                     for edge_index in relaxer.get_untighten_edges().keys() {
                         matrix.update_edge_tightness(*edge_index, false);

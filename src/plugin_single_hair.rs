@@ -208,4 +208,25 @@ pub mod tests {
             GrowingStrategy::SingleCluster,
         );
     }
+
+    // debug joint single hair
+    // error_pattern: [3]
+    // defect_vertices: [3, 4]
+    #[test]
+    fn plugin_joint_single_hair_debug_1() {
+        // cargo test --features=colorful plugin_joint_single_hair_debug_1 -- --nocapture
+        let visualize_filename = "plugin_joint_single_hair_debug_1.json".to_string();
+        let defect_vertices = vec![3, 4];
+        let code = CodeCapacityColorCode::new(5, 0., 1);
+        primal_module_serial_basic_standard_syndrome(
+            code,
+            visualize_filename,
+            defect_vertices,
+            1,
+            vec![PluginSingleHair::entry_with_strategy(RepeatStrategy::Multiple {
+                max_repetition: usize::MAX,
+            })],
+            GrowingStrategy::SingleCluster,
+        );
+    }
 }

@@ -333,7 +333,7 @@ impl PrimalModuleSerial {
 
         // if a relaxer is found, execute it and return
         if let Some(mut relaxer) = relaxer {
-            if cluster.relaxer_optimizer.should_optimize(&relaxer) {
+            if !cluster.plugin_manager.is_empty() && cluster.relaxer_optimizer.should_optimize(&relaxer) {
                 let dual_variables: BTreeMap<Arc<InvalidSubgraph>, Rational> = cluster
                     .nodes
                     .iter()
