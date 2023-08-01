@@ -186,7 +186,6 @@ impl PrimalModuleImpl for PrimalModuleSerial {
                         .cluster_weak
                         .upgrade_force();
                     let mut cluster = cluster_ptr.write();
-                    cluster.matrix.add_variable(edge_index);
                     // then add new constraints because these edges may touch new vertices
                     let incident_vertices = decoding_graph.get_edge_neighbors(edge_index);
                     for &vertex_index in incident_vertices.iter() {
@@ -278,13 +277,7 @@ impl PrimalModuleSerial {
             primal_node_ptr.write().cluster_weak = cluster_ptr_1.downgrade();
             cluster_1.nodes.push(primal_node_ptr);
         }
-        for &edge_index in cluster_2.edges.iter() {
-            if !cluster_1.edges.contains(&edge_index) {
-                cluster_1.edges.insert(edge_index);
-                cluster_1.matrix.add_variable(edge_index);
-            }
-        }
-        cluster_2.edges.clear();
+        cluster_1.edges.append(&mut cluster_2.edges);
         for &vertex_index in cluster_2.vertices.iter() {
             if !cluster_1.vertices.contains(&vertex_index) {
                 cluster_1.vertices.insert(vertex_index);

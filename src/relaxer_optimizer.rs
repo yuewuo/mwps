@@ -63,8 +63,8 @@ impl RelaxerOptimizer {
     }
 
     pub fn should_optimize(&self, relaxer: &Relaxer) -> bool {
-        // self.relaxers.contains(relaxer)
-        true
+        self.relaxers.contains(relaxer)
+        // true
     }
 
     pub fn optimize(
@@ -73,9 +73,10 @@ impl RelaxerOptimizer {
         edge_slacks: BTreeMap<EdgeIndex, Rational>,
         mut dual_variables: BTreeMap<Arc<InvalidSubgraph>, Rational>,
     ) -> Relaxer {
-        println!("relaxer count: {}", self.relaxers.len());
         for invalid_subgraph in relaxer.get_direction().keys() {
-            dual_variables.insert(invalid_subgraph.clone(), Rational::zero());
+            if !dual_variables.contains_key(invalid_subgraph) {
+                dual_variables.insert(invalid_subgraph.clone(), Rational::zero());
+            }
         }
         // look at all existing invalid subgraphs and propose a best direction
         // each invalid subgraph corresponds to a variable

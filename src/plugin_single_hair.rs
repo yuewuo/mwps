@@ -192,6 +192,7 @@ pub mod tests {
 
     // error_pattern: [12, 15, 16]
     // defect_vertices: [10, 11, 14, 17, 20]
+    // the bug was caused by incorrectly set the dual variable in relaxer optimizer
     #[test]
     fn plugin_single_hair_debug_5() {
         // cargo test --features=colorful plugin_single_hair_debug_5 -- --nocapture
