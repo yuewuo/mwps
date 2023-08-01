@@ -75,7 +75,6 @@ impl RelaxerOptimizer {
         for invalid_subgraph in relaxer.get_direction().keys() {
             dual_variables.insert(invalid_subgraph.clone(), Rational::zero());
         }
-        self.relaxers.insert(relaxer);
         // look at all existing invalid subgraphs and propose a best direction
         // each invalid subgraph corresponds to a variable
         // each edge_slack or dual_variable correspond to a constraint
@@ -100,7 +99,9 @@ impl RelaxerOptimizer {
             constraints.push(constraint);
             invalid_subgraphs.push(invalid_subgraph);
             for &edge_index in invalid_subgraph.hairs.iter() {
-                edge_contributor.get_mut(&edge_index).unwrap().push(var_index);
+                if let Some(entry) = edge_contributor.get_mut(&edge_index) {
+                    entry.push(var_index);
+                }
             }
         }
         for (&edge_index, slack) in edge_slacks.iter() {
@@ -136,7 +137,10 @@ impl RelaxerOptimizer {
         let mut direction: BTreeMap<Arc<InvalidSubgraph>, Rational> = BTreeMap::new();
         match solution {
             slp::Solution::Optimal(optimal_objective, model) => {
-                assert!(optimal_objective.is_positive());
+                if optimal_objective.is_positive() {
+                    // need more information report by the conflicts, just return the original relaxer
+                    return relaxer;
+                }
                 for (var_index, (invalid_subgraph, _)) in dual_variables.iter().enumerate() {
                     let overall_growth = model[var_index].clone() - model[var_index + x_vars.len()].clone();
                     if !overall_growth.is_zero() {
@@ -148,8 +152,12 @@ impl RelaxerOptimizer {
                     }
                 }
             }
-            _ => unreachable!(),
+            _ => {
+                // need more information
+                return relaxer;
+            }
         }
+        self.relaxers.insert(relaxer);
         Relaxer::new(direction)
     }
 }
