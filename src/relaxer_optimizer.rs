@@ -63,8 +63,8 @@ impl RelaxerOptimizer {
     }
 
     pub fn should_optimize(&self, relaxer: &Relaxer) -> bool {
-        self.relaxers.contains(relaxer)
-        // true
+        // self.relaxers.contains(relaxer)
+        true
     }
 
     pub fn optimize(
