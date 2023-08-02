@@ -229,4 +229,44 @@ pub mod tests {
             GrowingStrategy::SingleCluster,
         );
     }
+
+    // error_pattern: [8, 16]
+    // defect_vertices: [4, 5, 7, 8]
+    #[test]
+    fn plugin_joint_single_hair_debug_2() {
+        // cargo test --features=colorful plugin_joint_single_hair_debug_2 -- --nocapture
+        let visualize_filename = "plugin_joint_single_hair_debug_2.json".to_string();
+        let defect_vertices = vec![4, 5, 7, 8];
+        let code = CodeCapacityColorCode::new(5, 0., 1);
+        primal_module_serial_basic_standard_syndrome(
+            code,
+            visualize_filename,
+            defect_vertices,
+            2,
+            vec![PluginSingleHair::entry_with_strategy(RepeatStrategy::Multiple {
+                max_repetition: usize::MAX,
+            })],
+            GrowingStrategy::SingleCluster,
+        );
+    }
+
+    // // error_pattern: [0, 3, 9]
+    // // defect_vertices: [2, 3, 4]
+    // #[test]
+    // fn plugin_joint_single_hair_debug_3() {
+    //     // cargo test --features=colorful plugin_joint_single_hair_debug_3 -- --nocapture
+    //     let visualize_filename = "plugin_joint_single_hair_debug_3.json".to_string();
+    //     let defect_vertices = vec![2, 3, 4];
+    //     let code = CodeCapacityColorCode::new(5, 0., 1);
+    //     primal_module_serial_basic_standard_syndrome(
+    //         code,
+    //         visualize_filename,
+    //         defect_vertices,
+    //         3,
+    //         vec![PluginSingleHair::entry_with_strategy(RepeatStrategy::Multiple {
+    //             max_repetition: usize::MAX,
+    //         })],
+    //         GrowingStrategy::SingleCluster,
+    //     );
+    // }
 }
