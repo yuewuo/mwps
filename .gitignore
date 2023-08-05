@@ -24,7 +24,7 @@ visualize/rendered.png
 __pycache__
 
 /wheelhouse/
-mwps.egg-info/
+mwpf.egg-info/
 /dist/
 
 *.DS_Store

@@ -63,16 +63,16 @@ if (is_mock) {
 }
 
 export const scene = new THREE.Scene()
-scene.background = new THREE.Color( 0xffffff )  // for better image output
-scene.add( new THREE.AmbientLight( 0xffffff ) )
+scene.background = new THREE.Color(0xffffff)  // for better image output
+scene.add(new THREE.AmbientLight(0xffffff))
 window.scene = scene
-export const perspective_camera = new THREE.PerspectiveCamera( 75, sizes.canvas_width / sizes.canvas_height, 0.1, 10000 )
+export const perspective_camera = new THREE.PerspectiveCamera(75, sizes.canvas_width / sizes.canvas_height, 0.1, 10000)
 const orthogonal_camera_init_scale = 6
-export const orthogonal_camera = new THREE.OrthographicCamera( sizes.canvas_width / sizes.canvas_height * (-orthogonal_camera_init_scale)
-    , sizes.canvas_width / sizes.canvas_height * orthogonal_camera_init_scale, orthogonal_camera_init_scale, -orthogonal_camera_init_scale, 0.1, 100000 )
+export const orthogonal_camera = new THREE.OrthographicCamera(sizes.canvas_width / sizes.canvas_height * (-orthogonal_camera_init_scale)
+    , sizes.canvas_width / sizes.canvas_height * orthogonal_camera_init_scale, orthogonal_camera_init_scale, -orthogonal_camera_init_scale, 0.1, 100000)
 export const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true, context: webgl_renderer_context() })
 
-document.body.appendChild( renderer.domElement )
+document.body.appendChild(renderer.domElement)
 
 watch(sizes, () => {
     perspective_camera.aspect = sizes.canvas_width / sizes.canvas_height
@@ -80,9 +80,9 @@ watch(sizes, () => {
     orthogonal_camera.left = sizes.canvas_width / sizes.canvas_height * (-orthogonal_camera_init_scale)
     orthogonal_camera.right = sizes.canvas_width / sizes.canvas_height * (orthogonal_camera_init_scale)
     orthogonal_camera.updateProjectionMatrix()
-    renderer.setSize( sizes.canvas_width, sizes.canvas_height, false )
+    renderer.setSize(sizes.canvas_width, sizes.canvas_height, false)
     const ratio = window.devicePixelRatio  // looks better on devices with a high pixel ratio, such as iPhones with Retina displays
-    renderer.setPixelRatio( ratio )
+    renderer.setPixelRatio(ratio)
     const canvas = renderer.domElement
     canvas.width = sizes.canvas_width * ratio
     canvas.height = sizes.canvas_height * ratio
@@ -90,8 +90,8 @@ watch(sizes, () => {
     canvas.style.height = `${sizes.canvas_height}px`
 }, { immediate: true })
 
-export const orbit_control_perspective = new OrbitControls( perspective_camera, renderer.domElement )
-export const orbit_control_orthogonal = new OrbitControls( orthogonal_camera, renderer.domElement )
+export const orbit_control_perspective = new OrbitControls(perspective_camera, renderer.domElement)
+export const orbit_control_orthogonal = new OrbitControls(orthogonal_camera, renderer.domElement)
 export const enable_control = ref(true)
 watch(enable_control, (enabled) => {
     orbit_control_perspective.enabled = enabled
@@ -108,7 +108,7 @@ export const orbit_control = computed(() => {
     return use_perspective_camera.value ? orbit_control_perspective : orbit_control_orthogonal
 })
 
-export function reset_camera_position(direction="top") {
+export function reset_camera_position(direction = "top") {
     for (let [camera, control, distance] of [[perspective_camera, orbit_control_perspective, 8], [orthogonal_camera, orbit_control_orthogonal, 1000]]) {
         control.reset()
         camera.position.x = (direction == "left" ? -distance : 0)
@@ -127,7 +127,7 @@ export const show_stats = ref(false)
 if (!is_mock) {
     stats = Stats()
     document.body.appendChild(stats.dom)
-    watch(show_stats, function() {
+    watch(show_stats, function () {
         if (show_stats.value) {
             stats.dom.style.display = "block"
         } else {
@@ -141,15 +141,15 @@ if (!is_mock) {
 }
 
 export function animate() {
-    requestAnimationFrame( animate )
+    requestAnimationFrame(animate)
     orbit_control.value.update()
-    renderer.render( scene, camera.value )
+    renderer.render(scene, camera.value)
     if (stats) stats.update()
 }
 
 // commonly used vectors
-const zero_vector = new THREE.Vector3( 0, 0, 0 )
-const unit_up_vector = new THREE.Vector3( 0, 1, 0 )
+const zero_vector = new THREE.Vector3(0, 0, 0)
+const unit_up_vector = new THREE.Vector3(0, 1, 0)
 
 // create common geometries
 const segment = parseInt(urlParams.get('segment') || 32)  // higher segment will consume more GPU resources
@@ -158,19 +158,19 @@ export const vertex_radius_scale = ref(1)
 const scaled_vertex_radius = computed(() => {
     return vertex_radius * vertex_radius_scale.value
 })
-const vertex_geometry = new THREE.SphereGeometry( vertex_radius, segment, segment )
+const vertex_geometry = new THREE.SphereGeometry(vertex_radius, segment, segment)
 const edge_radius = parseFloat(urlParams.get('edge_radius') || 0.03)
 const edge_radius_scale = ref(1)
 const scaled_edge_radius = computed(() => {
     return edge_radius * edge_radius_scale.value
 })
-const singular_edge_geometry = new THREE.CylinderGeometry( vertex_radius * 2, vertex_radius * 2, 0.01, segment, 1, false )
+const singular_edge_geometry = new THREE.CylinderGeometry(vertex_radius * 2, vertex_radius * 2, 0.01, segment, 1, false)
 singular_edge_geometry.translate(0, -vertex_radius, 0)
-const normal_edge_geometry = new THREE.CylinderGeometry( edge_radius, edge_radius, 1, segment, 1, true )
+const normal_edge_geometry = new THREE.CylinderGeometry(edge_radius, edge_radius, 1, segment, 1, true)
 normal_edge_geometry.translate(0, 0.5, 0)
-const tri_edge_geometry = new THREE.CylinderGeometry( edge_radius * 1.5, edge_radius * 1.5, 1, segment, 1, true )
+const tri_edge_geometry = new THREE.CylinderGeometry(edge_radius * 1.5, edge_radius * 1.5, 1, segment, 1, true)
 tri_edge_geometry.translate(0, 0.5, 0)
-const quad_edge_geometry = new THREE.CylinderGeometry( edge_radius * 2, edge_radius * 2, 1, segment, 1, true )
+const quad_edge_geometry = new THREE.CylinderGeometry(edge_radius * 2, edge_radius * 2, 1, segment, 1, true)
 quad_edge_geometry.translate(0, 0.5, 0)
 const edge_geometries = [
     singular_edge_geometry,
@@ -179,8 +179,8 @@ const edge_geometries = [
     quad_edge_geometry,
 ]
 function get_edge_geometry(edge_degree) {
-    if (edge_degree-1 < edge_geometries.length) return edge_geometries[edge_degree-1]
-    return edge_geometries[edge_geometries.length-1]
+    if (edge_degree - 1 < edge_geometries.length) return edge_geometries[edge_degree - 1]
+    return edge_geometries[edge_geometries.length - 1]
 }
 
 // create common materials
@@ -229,14 +229,14 @@ function make_edge_material(ratio) {
 }
 edge_materials.push(make_edge_material(0))
 edge_materials.push(make_edge_material(1))
-for (let i=0; i<color_steps; ++i) {
-    const ratio = almost_empty_ratio + 
+for (let i = 0; i < color_steps; ++i) {
+    const ratio = almost_empty_ratio +
         (almost_grown_ratio - almost_empty_ratio) * i / (color_steps - 1)
     edge_materials.push(make_edge_material(ratio))
 }
 function update_edge_materials() {
-    for (let idx=0; idx<color_steps+2; ++idx) {
-        let ratio = almost_empty_ratio + 
+    for (let idx = 0; idx < color_steps + 2; ++idx) {
+        let ratio = almost_empty_ratio +
             (almost_grown_ratio - almost_empty_ratio) * (idx - 2) / (color_steps - 1)
         if (idx == 0) ratio = 0
         if (idx == 1) ratio = 1
@@ -290,12 +290,12 @@ window.edge_vec_meshes = edge_vec_meshes
 
 // update the sizes of objects
 watch(vertex_radius_scale, (newVal, oldVal) => {
-    vertex_geometry.scale(1/oldVal, 1/oldVal, 1/oldVal)
+    vertex_geometry.scale(1 / oldVal, 1 / oldVal, 1 / oldVal)
     vertex_geometry.scale(newVal, newVal, newVal)
 })
 watch(edge_radius_scale, (newVal, oldVal) => {
     for (let edge_geometry of edge_geometries) {
-        edge_geometry.scale(1/oldVal, 1, 1/oldVal)
+        edge_geometry.scale(1 / oldVal, 1, 1 / oldVal)
         edge_geometry.scale(newVal, 1, newVal)
     }
 })
@@ -315,7 +315,7 @@ watch([outline_ratio, vertex_radius_scale], () => {
 
 // helper functions
 export function compute_vector3(data_position) {
-    let vector = new THREE.Vector3( 0, 0, 0 )
+    let vector = new THREE.Vector3(0, 0, 0)
     load_position(vector, data_position)
     return vector
 }
@@ -325,14 +325,14 @@ export function load_position(mesh_position, data_position) {
     mesh_position.y = data_position.t
 }
 
-export const active_mwps_data = shallowRef(null)
+export const active_mwpf_data = shallowRef(null)
 export const active_snapshot_idx = ref(0)
 export async function refresh_snapshot_data() {
     // console.log("refresh_snapshot_data")
-    if (active_mwps_data.value != null) {  // no mwps data provided
-        const mwps_data = active_mwps_data.value
+    if (active_mwpf_data.value != null) {  // no mwpf data provided
+        const mwpf_data = active_mwpf_data.value
         const snapshot_idx = active_snapshot_idx.value
-        const snapshot = mwps_data.snapshots[snapshot_idx][1]
+        const snapshot = mwpf_data.snapshots[snapshot_idx][1]
         // clear hover and select
         current_hover.value = null
         let current_selected_value = JSON.parse(JSON.stringify(current_selected.value))
@@ -342,7 +342,7 @@ export async function refresh_snapshot_data() {
         // update vertex cache
         vertex_caches = []
         window.is_vertices_2d_plane = true
-        for (let position of mwps_data.positions) {
+        for (let position of mwpf_data.positions) {
             vertex_caches.push({
                 position: {
                     center: compute_vector3(position),
@@ -357,15 +357,15 @@ export async function refresh_snapshot_data() {
                 }
                 continue
             }
-            let position = mwps_data.positions[i]
+            let position = mwpf_data.positions[i]
             while (vertex_meshes.length <= i) {
-                const vertex_mesh = new THREE.Mesh( vertex_geometry, normal_vertex_material )
+                const vertex_mesh = new THREE.Mesh(vertex_geometry, normal_vertex_material)
                 vertex_mesh.visible = false
                 vertex_mesh.userData = {
                     type: "vertex",
                     vertex_index: vertex_meshes.length,
                 }
-                scene.add( vertex_mesh )
+                scene.add(vertex_mesh)
                 vertex_meshes.push(vertex_mesh)
             }
             const vertex_mesh = vertex_meshes[i]
@@ -398,10 +398,10 @@ export async function refresh_snapshot_data() {
         edge_caches = []  // clear cache
         for (let [i, edge] of snapshot.edges.entries()) {
             // calculate the center point of all vertices
-            let sum_position = new THREE.Vector3( 0, 0, 0 )
-            for (let j=0; j<edge.v.length; ++j) {
+            let sum_position = new THREE.Vector3(0, 0, 0)
+            for (let j = 0; j < edge.v.length; ++j) {
                 const vertex_index = edge.v[j]
-                const vertex_position = mwps_data.positions[vertex_index]
+                const vertex_position = mwpf_data.positions[vertex_index]
                 sum_position = sum_position.add(compute_vector3(vertex_position))
             }
             const center_position = sum_position.multiplyScalar(1 / edge.v.length)
@@ -411,24 +411,24 @@ export async function refresh_snapshot_data() {
                 edge_vec_meshes.push([])
             }
             let edge_vec_mesh = edge_vec_meshes[i]
-            for (let j=0; j<edge_vec_mesh.length; ++j) {
-                scene.remove( edge_vec_mesh[j] )
+            for (let j = 0; j < edge_vec_mesh.length; ++j) {
+                scene.remove(edge_vec_mesh[j])
             }
             edge_vec_mesh.splice(0, edge_vec_mesh.length) // clear
             const edge_material = get_edge_material(edge.g, edge.w)
-            for (let j=0; j<edge.v.length; ++j) {
-                const edge_mesh = new THREE.Mesh( get_edge_geometry(edge.v.length), edge_material )
+            for (let j = 0; j < edge.v.length; ++j) {
+                const edge_mesh = new THREE.Mesh(get_edge_geometry(edge.v.length), edge_material)
                 edge_mesh.userData = {
                     type: "edge",
                     edge_index: i,
                 }
                 edge_mesh.visible = false
-                scene.add( edge_mesh )
+                scene.add(edge_mesh)
                 edge_vec_mesh.push(edge_mesh)
             }
-            for (let j=0; j<edge.v.length; ++j) {
+            for (let j = 0; j < edge.v.length; ++j) {
                 const vertex_index = edge.v[j]
-                const vertex_position = mwps_data.positions[vertex_index]
+                const vertex_position = mwpf_data.positions[vertex_index]
                 const relative = center_position.clone().add(compute_vector3(vertex_position).multiplyScalar(-1))
                 const direction = relative.clone().normalize()
                 // console.log(direction)
@@ -486,12 +486,12 @@ export async function refresh_snapshot_data() {
                 }
                 continue
             }
-            let position = mwps_data.positions[i]
+            let position = mwpf_data.positions[i]
             while (vertex_outline_meshes.length <= i) {
-                const vertex_outline_mesh = new THREE.Mesh( vertex_geometry, normal_vertex_outline_material )
+                const vertex_outline_mesh = new THREE.Mesh(vertex_geometry, normal_vertex_outline_material)
                 vertex_outline_mesh.visible = false
                 update_mesh_outline(vertex_outline_mesh)
-                scene.add( vertex_outline_mesh )
+                scene.add(vertex_outline_mesh)
                 vertex_outline_meshes.push(vertex_outline_mesh)
             }
             const vertex_outline_mesh = vertex_outline_meshes[i]
@@ -515,15 +515,15 @@ export async function refresh_snapshot_data() {
         }
     }
 }
-watch([active_mwps_data], refresh_snapshot_data)  // call refresh_snapshot_data
+watch([active_mwpf_data], refresh_snapshot_data)  // call refresh_snapshot_data
 watch([active_snapshot_idx], refresh_snapshot_data)
-export function show_snapshot(snapshot_idx, mwps_data) {
+export function show_snapshot(snapshot_idx, mwpf_data) {
     active_snapshot_idx.value = snapshot_idx
-    active_mwps_data.value = mwps_data
+    active_mwpf_data.value = mwpf_data
 }
 
 // configurations
-const gui = new GUI( { width: 400, title: "render configurations" } )
+const gui = new GUI({ width: 400, title: "render configurations" })
 export const show_config = ref(false)
 watch(show_config, () => {
     if (show_config.value) {
@@ -560,35 +560,35 @@ const conf = {
     vertex_radius_scale: vertex_radius_scale.value,
     edge_radius_scale: edge_radius_scale.value,
 }
-const side_options = { "FrontSide": THREE.FrontSide, "BackSide": THREE.BackSide, "DoubleSide": THREE.DoubleSide } 
+const side_options = { "FrontSide": THREE.FrontSide, "BackSide": THREE.BackSide, "DoubleSide": THREE.DoubleSide }
 export const controller = {}
 window.controller = controller
-controller.scene_background = gui.addColor( conf, 'scene_background' ).onChange( function ( value ) { scene.background = value } )
-const vertex_folder = gui.addFolder( 'vertex' )
-controller.defect_vertex_color = vertex_folder.addColor( conf, 'defect_vertex_color' ).onChange( function ( value ) { defect_vertex_material.color = value } )
-controller.defect_vertex_opacity = vertex_folder.add( conf, 'defect_vertex_opacity', 0, 1 ).onChange( function ( value ) { defect_vertex_material.opacity = Number(value) } )
-controller.normal_vertex_color = vertex_folder.addColor( conf, 'normal_vertex_color' ).onChange( function ( value ) { normal_vertex_material.color = value } )
-controller.normal_vertex_opacity = vertex_folder.add( conf, 'normal_vertex_opacity', 0, 1 ).onChange( function ( value ) { normal_vertex_material.opacity = Number(value) } )
-const vertex_outline_folder = gui.addFolder( 'vertex outline' )
-controller.defect_vertex_outline_color = vertex_outline_folder.addColor( conf, 'defect_vertex_outline_color' ).onChange( function ( value ) { defect_vertex_outline_material.color = value } )
-controller.defect_vertex_outline_opacity = vertex_outline_folder.add( conf, 'defect_vertex_outline_opacity', 0, 1 ).onChange( function ( value ) { defect_vertex_outline_material.opacity = Number(value) } )
-controller.normal_vertex_outline_color = vertex_outline_folder.addColor( conf, 'normal_vertex_outline_color' ).onChange( function ( value ) { normal_vertex_outline_material.color = value } )
-controller.normal_vertex_outline_opacity = vertex_outline_folder.add( conf, 'normal_vertex_outline_opacity', 0, 1 ).onChange( function ( value ) { normal_vertex_outline_material.opacity = Number(value) } )
-const edge_folder = gui.addFolder( 'edge' )
-controller.empty_edge_color = edge_folder.addColor( conf, 'empty_edge_color' ).onChange( function ( value ) { empty_edge_color = value; update_edge_materials() } )
-controller.empty_edge_opacity = edge_folder.add( conf, 'empty_edge_opacity', 0, 1 ).onChange( function ( value ) { empty_edge_opacity = Number(value); update_edge_materials() } )
-controller.grown_edge_color = edge_folder.addColor( conf, 'grown_edge_color' ).onChange( function ( value ) { grown_edge_color = value; update_edge_materials() } )
-controller.grown_edge_opacity = edge_folder.add( conf, 'grown_edge_opacity', 0, 1 ).onChange( function ( value ) { grown_edge_opacity = Number(value); update_edge_materials() } )
-controller.edge_side = edge_folder.add( conf, 'edge_side', side_options ).onChange( function ( value ) { edge_side = value; update_edge_materials() } )
-controller.almost_empty_ratio = edge_folder.add( conf, 'almost_empty_ratio', 0, 1 ).onChange( function ( value ) { almost_empty_ratio = Number(value); update_edge_materials() } )
-controller.almost_grown_ratio = edge_folder.add( conf, 'almost_grown_ratio', 0, 1 ).onChange( function ( value ) { almost_grown_ratio = Number(value); update_edge_materials() } )
-controller.subgraph_edge_color = edge_folder.addColor( conf, 'subgraph_edge_color' ).onChange( function ( value ) { subgraph_edge_material.color = value } )
-controller.subgraph_edge_opacity = edge_folder.add( conf, 'subgraph_edge_opacity', 0, 1 ).onChange( function ( value ) { subgraph_edge_material.opacity = Number(value) } )
-controller.subgraph_edge_side = edge_folder.add( conf, 'subgraph_edge_side', side_options ).onChange( function ( value ) { subgraph_edge_material.side = Number(value) } )
-const size_folder = gui.addFolder( 'size' )
-controller.outline_ratio = size_folder.add( conf, 'outline_ratio', 0.99, 2 ).onChange( function ( value ) { outline_ratio.value = Number(value) } )
-controller.vertex_radius_scale = size_folder.add( conf, 'vertex_radius_scale', 0.1, 5 ).onChange( function ( value ) { vertex_radius_scale.value = Number(value) } )
-controller.edge_radius_scale = size_folder.add( conf, 'edge_radius_scale', 0.1, 10 ).onChange( function ( value ) { edge_radius_scale.value = Number(value) } )
+controller.scene_background = gui.addColor(conf, 'scene_background').onChange(function (value) { scene.background = value })
+const vertex_folder = gui.addFolder('vertex')
+controller.defect_vertex_color = vertex_folder.addColor(conf, 'defect_vertex_color').onChange(function (value) { defect_vertex_material.color = value })
+controller.defect_vertex_opacity = vertex_folder.add(conf, 'defect_vertex_opacity', 0, 1).onChange(function (value) { defect_vertex_material.opacity = Number(value) })
+controller.normal_vertex_color = vertex_folder.addColor(conf, 'normal_vertex_color').onChange(function (value) { normal_vertex_material.color = value })
+controller.normal_vertex_opacity = vertex_folder.add(conf, 'normal_vertex_opacity', 0, 1).onChange(function (value) { normal_vertex_material.opacity = Number(value) })
+const vertex_outline_folder = gui.addFolder('vertex outline')
+controller.defect_vertex_outline_color = vertex_outline_folder.addColor(conf, 'defect_vertex_outline_color').onChange(function (value) { defect_vertex_outline_material.color = value })
+controller.defect_vertex_outline_opacity = vertex_outline_folder.add(conf, 'defect_vertex_outline_opacity', 0, 1).onChange(function (value) { defect_vertex_outline_material.opacity = Number(value) })
+controller.normal_vertex_outline_color = vertex_outline_folder.addColor(conf, 'normal_vertex_outline_color').onChange(function (value) { normal_vertex_outline_material.color = value })
+controller.normal_vertex_outline_opacity = vertex_outline_folder.add(conf, 'normal_vertex_outline_opacity', 0, 1).onChange(function (value) { normal_vertex_outline_material.opacity = Number(value) })
+const edge_folder = gui.addFolder('edge')
+controller.empty_edge_color = edge_folder.addColor(conf, 'empty_edge_color').onChange(function (value) { empty_edge_color = value; update_edge_materials() })
+controller.empty_edge_opacity = edge_folder.add(conf, 'empty_edge_opacity', 0, 1).onChange(function (value) { empty_edge_opacity = Number(value); update_edge_materials() })
+controller.grown_edge_color = edge_folder.addColor(conf, 'grown_edge_color').onChange(function (value) { grown_edge_color = value; update_edge_materials() })
+controller.grown_edge_opacity = edge_folder.add(conf, 'grown_edge_opacity', 0, 1).onChange(function (value) { grown_edge_opacity = Number(value); update_edge_materials() })
+controller.edge_side = edge_folder.add(conf, 'edge_side', side_options).onChange(function (value) { edge_side = value; update_edge_materials() })
+controller.almost_empty_ratio = edge_folder.add(conf, 'almost_empty_ratio', 0, 1).onChange(function (value) { almost_empty_ratio = Number(value); update_edge_materials() })
+controller.almost_grown_ratio = edge_folder.add(conf, 'almost_grown_ratio', 0, 1).onChange(function (value) { almost_grown_ratio = Number(value); update_edge_materials() })
+controller.subgraph_edge_color = edge_folder.addColor(conf, 'subgraph_edge_color').onChange(function (value) { subgraph_edge_material.color = value })
+controller.subgraph_edge_opacity = edge_folder.add(conf, 'subgraph_edge_opacity', 0, 1).onChange(function (value) { subgraph_edge_material.opacity = Number(value) })
+controller.subgraph_edge_side = edge_folder.add(conf, 'subgraph_edge_side', side_options).onChange(function (value) { subgraph_edge_material.side = Number(value) })
+const size_folder = gui.addFolder('size')
+controller.outline_ratio = size_folder.add(conf, 'outline_ratio', 0.99, 2).onChange(function (value) { outline_ratio.value = Number(value) })
+controller.vertex_radius_scale = size_folder.add(conf, 'vertex_radius_scale', 0.1, 5).onChange(function (value) { vertex_radius_scale.value = Number(value) })
+controller.edge_radius_scale = size_folder.add(conf, 'edge_radius_scale', 0.1, 10).onChange(function (value) { edge_radius_scale.value = Number(value) })
 watch(sizes, () => {
     gui.domElement.style.transform = `scale(${sizes.scale})`
     gui.domElement.style["transform-origin"] = "right top"
@@ -606,9 +606,9 @@ window.current_selected = current_selected
 export const show_hover_effect = ref(true)
 function is_user_data_valid(user_data) {
     if (user_data == null) return false
-    const mwps_data = active_mwps_data.value
+    const mwpf_data = active_mwpf_data.value
     const snapshot_idx = active_snapshot_idx.value
-    const snapshot = mwps_data.snapshots[snapshot_idx][1]
+    const snapshot = mwpf_data.snapshots[snapshot_idx][1]
     if (user_data.type == "vertex") {
         return user_data.vertex_index < snapshot.vertices.length && snapshot.vertices[user_data.vertex_index] != null
     }
@@ -617,14 +617,14 @@ function is_user_data_valid(user_data) {
     }
     if (user_data.type == "vertices") {
         let is_valid = true
-        for (let i=0; i<user_data.vertices.length && is_valid; ++i) {
+        for (let i = 0; i < user_data.vertices.length && is_valid; ++i) {
             is_valid &= user_data.vertices[i] < snapshot.vertices.length && snapshot.vertices[user_data.vertices[i]] != null
         }
         return is_valid
     }
     if (user_data.type == "edges") {
         let is_valid = true
-        for (let i=0; i<user_data.edges.length && is_valid; ++i) {
+        for (let i = 0; i < user_data.edges.length && is_valid; ++i) {
             is_valid &= user_data.edges[i] < snapshot.edges.length && snapshot.edges[user_data.edges[i]] != null
         }
         return is_valid
@@ -650,7 +650,7 @@ function set_material_with_user_data(user_data, material) {  // return the previ
     }
     if (user_data.type == "vertices") {
         let previous_material = []
-        for (let i=0; i<user_data.vertices.length; ++i) {
+        for (let i = 0; i < user_data.vertices.length; ++i) {
             let vertex_index = user_data.vertices[i]
             let vertex_mesh = vertex_meshes[vertex_index]
             previous_material.push(vertex_mesh.material)
@@ -664,7 +664,7 @@ function set_material_with_user_data(user_data, material) {  // return the previ
     }
     if (user_data.type == "edges") {
         let previous_material = []
-        for (let i=0; i<user_data.edges.length; ++i) {
+        for (let i = 0; i < user_data.edges.length; ++i) {
             let edge_index = user_data.edges[i]
             let edge_vec_mesh = edge_vec_meshes[edge_index]
             previous_material.push(edge_vec_mesh[0].material)
@@ -705,10 +705,10 @@ watch(current_selected, (newVal, oldVal) => {
     })
 })
 function on_mouse_change(event, is_click) {
-    mouse.x = ( event.clientX / sizes.canvas_width ) * 2 - 1
-    mouse.y = - ( event.clientY / sizes.canvas_height ) * 2 + 1
-    raycaster.setFromCamera( mouse, camera.value )
-    const intersects = raycaster.intersectObjects( scene.children, false )
+    mouse.x = (event.clientX / sizes.canvas_width) * 2 - 1
+    mouse.y = - (event.clientY / sizes.canvas_height) * 2 + 1
+    raycaster.setFromCamera(mouse, camera.value)
+    const intersects = raycaster.intersectObjects(scene.children, false)
     for (let intersect of intersects) {
         if (!intersect.object.visible) continue  // don't select invisible object
         let user_data = intersect.object.userData
@@ -734,37 +734,37 @@ function on_mouse_change(event, is_click) {
 }
 var mousedown_position = null
 var is_mouse_currently_down = false
-window.addEventListener( 'mousedown', (event) => {
+window.addEventListener('mousedown', (event) => {
     if (event.clientX > sizes.canvas_width) return  // don't care events on control panel
     mousedown_position = {
         clientX: event.clientX,
         clientY: event.clientY,
     }
     is_mouse_currently_down = true
-} )
-window.addEventListener( 'mouseup', (event) => {
+})
+window.addEventListener('mouseup', (event) => {
     if (event.clientX > sizes.canvas_width) return  // don't care events on control panel
     // to prevent triggering select while moving camera
     if (mousedown_position != null && mousedown_position.clientX == event.clientX && mousedown_position.clientY == event.clientY) {
         on_mouse_change(event, true)
     }
     is_mouse_currently_down = false
-} )
-window.addEventListener( 'mousemove', (event) => {
+})
+window.addEventListener('mousemove', (event) => {
     if (event.clientX > sizes.canvas_width) return  // don't care events on control panel
     // to prevent triggering hover while moving camera
     if (!is_mouse_currently_down) {
         on_mouse_change(event, false)
     }
-} )
+})
 
 // export current scene to high-resolution png, useful when generating figures for publication
 // (I tried svg renderer but it doesn't work very well... shaders are poorly supported)
-export function render_png(scale=1) {
+export function render_png(scale = 1) {
     const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true, preserveDrawingBuffer: true, context: webgl_renderer_context() })
-    renderer.setSize( sizes.canvas_width * scale, sizes.canvas_height * scale, false )
-    renderer.setPixelRatio( window.devicePixelRatio * scale )
-    renderer.render( scene, camera.value )
+    renderer.setSize(sizes.canvas_width * scale, sizes.canvas_height * scale, false)
+    renderer.setPixelRatio(window.devicePixelRatio * scale)
+    renderer.render(scene, camera.value)
     return renderer.domElement.toDataURL()
 }
 window.render_png = render_png
@@ -791,21 +791,21 @@ export async function nodejs_render_png() {  // works only in nodejs
     let context = webgl_renderer_context()
     var pixels = new Uint8Array(context.drawingBufferWidth * context.drawingBufferHeight * 4)
     const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: false, preserveDrawingBuffer: true, context })
-    renderer.setSize( sizes.canvas_width, sizes.canvas_height, false )
-    renderer.setPixelRatio( window.devicePixelRatio )
-    renderer.render( scene, camera.value )
+    renderer.setSize(sizes.canvas_width, sizes.canvas_height, false)
+    renderer.setPixelRatio(window.devicePixelRatio)
+    renderer.render(scene, camera.value)
     context.readPixels(0, 0, context.drawingBufferWidth, context.drawingBufferHeight, context.RGBA, context.UNSIGNED_BYTE, pixels)
     return pixels
 }
 
 // wait several Vue ticks to make sure all changes have been applied
 export async function wait_changes() {
-    for (let i=0; i<5; ++i) await Vue.nextTick()
+    for (let i = 0; i < 5; ++i) await Vue.nextTick()
 }
 
 // https://www.npmjs.com/package/base64-arraybuffer
 var chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
-function base64_encode (arraybuffer) {
+function base64_encode(arraybuffer) {
     var bytes = new Uint8Array(arraybuffer), i, len = bytes.length, base64 = ''
     for (i = 0; i < len; i += 3) {
         base64 += chars[bytes[i] >> 2]

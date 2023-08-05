@@ -249,7 +249,7 @@ pub trait ExampleCode {
         positions
     }
 
-    /// generate standard interface to instantiate MWPS solver
+    /// generate standard interface to instantiate MWPF solver
     fn get_initializer(&self) -> SolverInitializer {
         let (vertices, edges) = self.immutable_vertices_edges();
         let vertex_num = vertices.len() as VertexIndex;

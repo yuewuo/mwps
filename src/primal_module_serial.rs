@@ -1,6 +1,6 @@
 //! Serial Primal Module
 //!
-//! This implementation targets to be an exact MWPS solver, although it's not yet sure whether it is actually one.
+//! This implementation targets to be an exact MWPF solver, although it's not yet sure whether it is actually one.
 //!
 
 use crate::decoding_hypergraph::*;

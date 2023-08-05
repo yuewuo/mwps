@@ -1,21 +1,21 @@
 import fusion_blossom as fb
-import mwps
+import mwpf
 
 
-def prepare_hyperion_solver() -> mwps.SolverSerialJointSingleHair:
+def prepare_hyperion_solver() -> mwpf.SolverSerialJointSingleHair:
     vertex_num = 6
     weighted_edges = [
-        mwps.HyperEdge([0, 1], 100),
-        mwps.HyperEdge([1, 2], 100),
-        mwps.HyperEdge([2, 3], 100),
-        mwps.HyperEdge([3, 4], 100),
-        mwps.HyperEdge([4, 5], 100),
-        mwps.HyperEdge([1, 2, 3], 60),  # hyper edge
-        mwps.HyperEdge([0], 0),  # virtual vertex
-        mwps.HyperEdge([5], 0),  # virtual vertex
+        mwpf.HyperEdge([0, 1], 100),
+        mwpf.HyperEdge([1, 2], 100),
+        mwpf.HyperEdge([2, 3], 100),
+        mwpf.HyperEdge([3, 4], 100),
+        mwpf.HyperEdge([4, 5], 100),
+        mwpf.HyperEdge([1, 2, 3], 60),  # hyper edge
+        mwpf.HyperEdge([0], 0),  # virtual vertex
+        mwpf.HyperEdge([5], 0),  # virtual vertex
     ]
-    initializer = mwps.SolverInitializer(vertex_num, weighted_edges)
-    solver = mwps.SolverSerialJointSingleHair(initializer)
+    initializer = mwpf.SolverInitializer(vertex_num, weighted_edges)
+    solver = mwpf.SolverSerialJointSingleHair(initializer)
     return solver
 
 
@@ -34,7 +34,7 @@ def test_compare_hyperion_fusion() -> None:
     syndrome = [1, 2, 4]
     # hyperion
     hyperion = prepare_hyperion_solver()
-    hyperion.solve(mwps.SyndromePattern(syndrome))
+    hyperion.solve(mwpf.SyndromePattern(syndrome))
     hyperion_subgraph = hyperion.subgraph()
     _, bound = hyperion.subgraph_range()
     print(hyperion_subgraph)

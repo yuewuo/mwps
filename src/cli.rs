@@ -1,6 +1,6 @@
 use crate::example_codes::*;
 use crate::matrix::*;
-use crate::mwps_solver::*;
+use crate::mwpf_solver::*;
 use crate::util::*;
 use crate::visualize::*;
 use clap::builder::{StringValueParser, TypedValueParser, ValueParser};
@@ -16,7 +16,7 @@ use std::env;
 #[derive(Parser, Clone)]
 #[clap(author = clap::crate_authors!(", "))]
 #[clap(version = env!("CARGO_PKG_VERSION"))]
-#[clap(about = "Minimum-Weight Parity Subgraph Algorithm for Quantum Error Correction Decoding")]
+#[clap(about = "Minimum-Weight Parity Factor Algorithm for Quantum Error Correction Decoding")]
 #[clap(color = clap::ColorChoice::Auto)]
 #[clap(propagate_version = true)]
 #[clap(subcommand_required = true)]

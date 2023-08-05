@@ -1,6 +1,6 @@
 //! Serial Primal Module like Union-Find decoder
 //!
-//! This implementation is an approximate MWPS solver, which is essentially what hypergraph UF decoder does.
+//! This implementation is an approximate MWPF solver, which is essentially what hypergraph UF decoder does.
 //! Delfosse, Nicolas, Vivien Londe, and Michael E. Beverland. "Toward a Union-Find decoder for quantum LDPC codes." IEEE Transactions on Information Theory 68.5 (2022): 3187-3199.
 //!
 //! there might be some minor difference with Delfosse's paper, but the idea is the same

@@ -23,7 +23,7 @@ const { ref, reactive, watch, computed } = Vue
 const urlParams = new URLSearchParams(window.location.search)
 const filename = urlParams.get('filename') || "visualizer.json"
 
-export var mwps_data
+export var mwpf_data
 var patch_done = ref(false)
 
 // alert(navigator.userAgent)
@@ -43,7 +43,7 @@ const App = {
             snapshot_select: snapshot_select,
             snapshot_select_label: ref(1),
             snapshot_labels: ref([]),
-            mwps_data_ready: ref(false),
+            mwpf_data_ready: ref(false),
             use_perspective_camera: gui3d.use_perspective_camera,
             sizes: gui3d.sizes,
             export_scale_selected: ref(1),
@@ -80,10 +80,10 @@ const App = {
             throw e
         }
         if (response.ok || is_mock) {
-            mwps_data = await response.json()
-            // console.log(mwps_data)
-            if (mwps_data.format != "mwps") {
-                this.error_message = `visualization file format error, get "${mwps_data.format}" expected "mwps"`
+            mwpf_data = await response.json()
+            // console.log(mwpf_data)
+            if (mwpf_data.format != "mwpf") {
+                this.error_message = `visualization file format error, get "${mwpf_data.format}" expected "mwpf"`
                 throw this.error_message
             }
         } else {
@@ -92,12 +92,12 @@ const App = {
         }
         // load snapshot
         this.show_snapshot(0)  // load the first snapshot
-        this.snapshot_num = mwps_data.snapshots.length
-        for (let [idx, [name, _]] of mwps_data.snapshots.entries()) {
+        this.snapshot_num = mwpf_data.snapshots.length
+        for (let [idx, [name, _]] of mwpf_data.snapshots.entries()) {
             this.snapshot_labels.push(`[${idx}] ${name}`)
         }
         this.snapshot_select_label = this.snapshot_labels[0]
-        this.mwps_data_ready = true
+        this.mwpf_data_ready = true
         // only if data loads successfully will the animation starts
         if (!is_mock) {  // if mock, no need to refresh all the time
             gui3d.animate()
@@ -182,9 +182,9 @@ const App = {
     methods: {
         show_snapshot(snapshot_idx) {
             try {
-                window.mwps_data = mwps_data
+                window.mwpf_data = mwpf_data
                 window.snapshot_idx = snapshot_idx
-                gui3d.show_snapshot(snapshot_idx, mwps_data)
+                gui3d.show_snapshot(snapshot_idx, mwpf_data)
             } catch (e) {
                 this.error_message = "load data error"
                 throw e
@@ -244,7 +244,7 @@ const App = {
                 this.selected_edge_attributes = ""
             }
         },
-        jump_to(type, data, is_click=true) {
+        jump_to(type, data, is_click = true) {
             let current_ref = is_click ? gui3d.current_selected : gui3d.current_hover
             if (type == "edge") {
                 current_ref.value = {
@@ -276,8 +276,8 @@ const App = {
         update_export_resolutions() {
             this.export_resolution_options.splice(0, this.export_resolution_options.length)
             let exists_in_new_resolution = false
-            for (let i=-100; i<100; ++i) {
-                let scale = 1 * Math.pow(10, i/10)
+            for (let i = -100; i < 100; ++i) {
+                let scale = 1 * Math.pow(10, i / 10)
                 let width = Math.round(this.sizes.canvas_width * scale)
                 let height = Math.round(this.sizes.canvas_height * scale)
                 if (width > 5000 || height > 5000) {  // to large, likely exceeds WebGL maximum buffer size
@@ -310,7 +310,7 @@ const App = {
             return parseInt(label.split(']')[0].split('[')[1])
         },
         update_dual_module_info() {
-            let snapshot = mwps_data.snapshots[this.snapshot_select][1]
+            let snapshot = mwpf_data.snapshots[this.snapshot_select][1]
             if (snapshot.dual_nodes != null && snapshot.interface != null) {
                 this.dual_module_info = {
                     dual_nodes: snapshot.dual_nodes,
@@ -381,18 +381,18 @@ const App = {
             }
         },
         snapshot() {
-            if (this.mwps_data_ready) {
-                return mwps_data?.snapshots[this.snapshot_select][1]
+            if (this.mwpf_data_ready) {
+                return mwpf_data?.snapshots[this.snapshot_select][1]
             } else {
                 return null
             }
         },
         next_snapshot() {
-            if (this.mwps_data_ready) {
-                if (this.snapshot_select >= mwps_data.snapshots.length - 1) {
+            if (this.mwpf_data_ready) {
+                if (this.snapshot_select >= mwpf_data.snapshots.length - 1) {
                     return null
                 }
-                return mwps_data?.snapshots[this.snapshot_select+1][1]
+                return mwpf_data?.snapshots[this.snapshot_select + 1][1]
             } else {
                 return null
             }
@@ -413,7 +413,7 @@ if (!is_mock) {
     while (!patch_done.value) {
         await sleep(50)
     }
-    for (let i=0; i<10; ++i) {
+    for (let i = 0; i < 10; ++i) {
         await sleep(10)
         await Vue.nextTick()
     }

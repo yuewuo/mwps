@@ -1,13 +1,13 @@
 [package]
-name = "mwps"
-version = "0.0.1"
+name = "mwpf"
+version = "0.0.2"
 authors = ["Yue Wu <wuyue16pku@gmail.com>"]
 edition = "2021"
 license = "MIT"
-description = "Hypergraph Minimum-Weight Parity Subgraph (MWPS) Solver for Quantum LDPC Codes"
+description = "Hypergraph Minimum-Weight Parity Factor (MWPF) Solver for Quantum LDPC Codes"
 readme = "README.md"
-homepage = "https://hyper-mwps.com"
-repository = "https://github.com/yuewuo/mwps"
+homepage = "https://hyper-mwpf.com"
+repository = "https://github.com/yuewuo/mwpf"
 keywords = ["QEC", "quantum-computing", "error-correction", "visualization"]
 categories = ["science"]
 exclude = ["tutorial/*", "benchmark/*", "visualize/data/persist/*", ".github/*"]
@@ -17,12 +17,12 @@ exclude = ["tutorial/*", "benchmark/*", "visualize/data/persist/*", ".github/*"]
 maintenance = { status = "actively-developed" }
 
 [lib]
-name = "mwps"
+name = "mwpf"
 path = "src/lib.rs"
 crate-type = ["lib", "cdylib"]
 
 [[bin]]
-name = "mwps"
+name = "mwpf"
 path = "src/main.rs"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html

@@ -1,4 +1,4 @@
-use crate::mwps_solver::*;
+use crate::mwpf_solver::*;
 use crate::num_rational;
 use crate::num_traits::ToPrimitive;
 use crate::rand_xoshiro;
@@ -241,7 +241,7 @@ impl F64Rng for DeterministicRng {
     }
 }
 
-/// the result of MWPS algorithm: a parity subgraph (defined by some edges that,
+/// the result of MWPF algorithm: a parity subgraph (defined by some edges that,
 /// if are selected, will generate the parity result in the syndrome)
 pub type Subgraph = Vec<EdgeIndex>;
 
@@ -264,7 +264,7 @@ pub fn rational_to_pyobject(value: &Rational) -> PyResult<Py<PyAny>> {
     })
 }
 
-/// the range of the optimal MWPS solution's weight
+/// the range of the optimal MWPF solution's weight
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "python_binding", cfg_eval)]
 #[cfg_attr(feature = "python_binding", pyclass)]

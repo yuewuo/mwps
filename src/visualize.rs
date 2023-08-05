@@ -1,6 +1,6 @@
 //! Visualizer
 //!
-//! This module helps visualize the progress of a mwps module
+//! This module helps visualize the progress of a mwpf module
 //!
 
 use crate::chrono::Local;
@@ -20,7 +20,7 @@ pub trait MWPSVisualizer {
 }
 
 #[macro_export]
-macro_rules! bind_trait_mwps_visualizer {
+macro_rules! bind_trait_mwpf_visualizer {
     ($struct_name:ident) => {
         #[cfg(feature = "python_binding")]
         #[pymethods]
@@ -34,7 +34,7 @@ macro_rules! bind_trait_mwps_visualizer {
     };
 }
 #[allow(unused_imports)]
-pub use bind_trait_mwps_visualizer;
+pub use bind_trait_mwpf_visualizer;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "python_binding", cfg_eval)]
@@ -314,7 +314,7 @@ impl Visualizer {
         if let Some(file) = file.as_mut() {
             file.set_len(0)?; // truncate the file
             file.seek(SeekFrom::Start(0))?; // move the cursor to the front
-            file.write_all(format!("{{\"format\":\"mwps\",\"version\":\"{}\"", env!("CARGO_PKG_VERSION")).as_bytes())?;
+            file.write_all(format!("{{\"format\":\"mwpf\",\"version\":\"{}\"", env!("CARGO_PKG_VERSION")).as_bytes())?;
             file.write_all(b",\"positions\":")?;
             file.write_all(json!(positions).to_string().as_bytes())?;
             file.write_all(b",\"snapshots\":[]}")?;
@@ -387,15 +387,15 @@ impl Visualizer {
         Ok(())
     }
 
-    /// append another snapshot of the mwps modules, and also update the file in case
-    pub fn snapshot_combined(&mut self, name: String, mwps_algorithms: Vec<&dyn MWPSVisualizer>) -> std::io::Result<()> {
+    /// append another snapshot of the mwpf modules, and also update the file in case
+    pub fn snapshot_combined(&mut self, name: String, mwpf_algorithms: Vec<&dyn MWPSVisualizer>) -> std::io::Result<()> {
         if cfg!(feature = "disable_visualizer") {
             return Ok(());
         }
         let abbrev = true;
         let mut value = json!({});
-        for mwps_algorithm in mwps_algorithms.iter() {
-            let value_2 = mwps_algorithm.snapshot(abbrev);
+        for mwpf_algorithm in mwpf_algorithms.iter() {
+            let value_2 = mwpf_algorithm.snapshot(abbrev);
             snapshot_combine_values(&mut value, value_2, abbrev);
         }
         snapshot_fix_missing_fields(&mut value, abbrev);
@@ -403,13 +403,13 @@ impl Visualizer {
         Ok(())
     }
 
-    /// append another snapshot of the mwps modules, and also update the file in case
-    pub fn snapshot(&mut self, name: String, mwps_algorithm: &impl MWPSVisualizer) -> std::io::Result<()> {
+    /// append another snapshot of the mwpf modules, and also update the file in case
+    pub fn snapshot(&mut self, name: String, mwpf_algorithm: &impl MWPSVisualizer) -> std::io::Result<()> {
         if cfg!(feature = "disable_visualizer") {
             return Ok(());
         }
         let abbrev = true;
-        let mut value = mwps_algorithm.snapshot(abbrev);
+        let mut value = mwpf_algorithm.snapshot(abbrev);
         snapshot_fix_missing_fields(&mut value, abbrev);
         self.incremental_save(name, value)?;
         Ok(())
@@ -469,7 +469,7 @@ pub fn print_visualize_link_with_parameters(filename: String, parameters: Vec<(S
     }
     if cfg!(feature = "python_binding") {
         println!(
-            "opening link {} (use `mwps.open_visualizer(filename)` to start a server and open it in browser)",
+            "opening link {} (use `mwpf.open_visualizer(filename)` to start a server and open it in browser)",
             link
         )
     } else {

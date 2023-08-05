@@ -35,7 +35,7 @@ pub mod example_codes;
 pub mod invalid_subgraph;
 pub mod matrix;
 pub mod model_hypergraph;
-pub mod mwps_solver;
+pub mod mwpf_solver;
 pub mod plugin;
 pub mod plugin_single_hair;
 pub mod plugin_union_find;
@@ -55,11 +55,11 @@ use pyo3::prelude::*;
 
 #[cfg(feature = "python_binding")]
 #[pymodule]
-fn mwps(py: Python<'_>, m: &PyModule) -> PyResult<()> {
+fn mwpf(py: Python<'_>, m: &PyModule) -> PyResult<()> {
     util::register(py, m)?;
     // visualize::register(py, m)?;
     example_codes::register(py, m)?;
-    mwps_solver::register(py, m)?;
+    mwpf_solver::register(py, m)?;
     Ok(())
 }
 
