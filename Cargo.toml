@@ -35,19 +35,20 @@ debug = true
 
 [features]
 # to enable a feature, use `--features xxx`
-default = ["cli"]
+default = ["cli", "python_binding"]
 cli = ["pbr"]
-r64_weight = []                 # use Rational64 instead of BigRational as weight type
-u32_index = []                  # use u32 instead of usize as index type, to save memory
-python_binding = ["pyo3"]       # bind to Python
-wasm_binding = ["wasm-bindgen"] # bind to wasm
-colorful = []                   # enable colorful output in case terminal exists
+r64_weight = []                     # use Rational64 instead of BigRational as weight type
+u32_index = []                      # use u32 instead of usize as index type, to save memory
+python_binding = ["pyo3"]           # bind to Python
+wasm_binding = ["wasm-bindgen"]     # bind to wasm
+colorful = []                       # enable colorful output in case terminal exists
 
 [dependencies]
-pyo3 = { version = "0.18.3", features = [
+pyo3 = { version = "0.19.2", features = [
     "extension-module",
     "multiple-pymethods",
     "abi3-py37",
+    "num-bigint",
 ], optional = true }
 serde = { version = "1.0.163", features = ["derive", "rc"] }
 serde-wasm-bindgen = "0.5.0"

@@ -6,16 +6,14 @@
 
 use crate::dual_module::*;
 use crate::dual_module_serial::*;
+use crate::example_codes::*;
+use crate::model_hypergraph::*;
 use crate::plugin::*;
 use crate::plugin_single_hair::*;
 use crate::primal_module::*;
 use crate::primal_module_serial::*;
-use crate::primal_module_union_find::*;
 use crate::util::*;
 use crate::visualize::*;
-// use crate::primal_module_serial::*;
-use crate::example_codes::*;
-use crate::model_hypergraph::*;
 #[cfg(feature = "python_binding")]
 use pyo3::prelude::*;
 use std::fs::File;
@@ -40,23 +38,33 @@ pub trait PrimalDualSolver {
     fn generate_profiler_report(&self) -> serde_json::Value;
 }
 
-macro_rules! bind_primal_dual_solver_trait {
+#[cfg(feature = "python_binding")]
+macro_rules! bind_trait_to_python {
     ($struct_name:ident) => {
-        impl PrimalDualSolver for $struct_name {
-            fn clear(&mut self) {
-                self.0.clear()
+        #[pymethods]
+        impl $struct_name {
+            #[pyo3(name = "clear")]
+            fn trait_clear(&mut self) {
+                self.clear()
             }
-            fn solve_visualizer(&mut self, syndrome_pattern: &SyndromePattern, visualizer: Option<&mut Visualizer>) {
-                self.0.solve_visualizer(syndrome_pattern, visualizer)
+            #[pyo3(name = "solve")] // in Python, `solve` and `solve_visualizer` is the same because it can take optional parameter
+            fn trait_solve(&mut self, syndrome_pattern: &SyndromePattern) {
+                // disable visualizer from Python end before paper publication
+                self.solve_visualizer(syndrome_pattern, None)
             }
-            fn subgraph_range_visualizer(&mut self, visualizer: Option<&mut Visualizer>) -> (Subgraph, WeightRange) {
-                self.0.subgraph_range_visualizer(visualizer)
+            #[pyo3(name = "subgraph_range")] // in Python, `subgraph_range` and `subgraph_range_visualizer` is the same
+            fn trait_subgraph_range(&mut self) -> (Subgraph, WeightRange) {
+                // disable visualizer from Python end before paper publication
+                self.subgraph_range()
             }
-            fn sum_dual_variables(&self) -> Rational {
-                self.0.sum_dual_variables()
+            #[pyo3(name = "subgraph")]
+            fn trait_subgraph(&mut self) -> Subgraph {
+                // disable visualizer from Python end before paper publication
+                self.subgraph_range().0
             }
-            fn generate_profiler_report(&self) -> serde_json::Value {
-                self.0.generate_profiler_report()
+            #[pyo3(name = "sum_dual_variables")]
+            fn trait_sum_dual_variables(&self) -> PyResult<Py<PyAny>> {
+                rational_to_pyobject(&self.sum_dual_variables())
             }
         }
     };
@@ -142,9 +150,36 @@ impl PrimalDualSolver for SolverSerialPlugins {
     }
 }
 
+macro_rules! bind_primal_dual_solver_trait {
+    ($struct_name:ident) => {
+        impl PrimalDualSolver for $struct_name {
+            fn clear(&mut self) {
+                self.0.clear()
+            }
+            fn solve_visualizer(&mut self, syndrome_pattern: &SyndromePattern, visualizer: Option<&mut Visualizer>) {
+                self.0.solve_visualizer(syndrome_pattern, visualizer)
+            }
+            fn subgraph_range_visualizer(&mut self, visualizer: Option<&mut Visualizer>) -> (Subgraph, WeightRange) {
+                self.0.subgraph_range_visualizer(visualizer)
+            }
+            fn sum_dual_variables(&self) -> Rational {
+                self.0.sum_dual_variables()
+            }
+            fn generate_profiler_report(&self) -> serde_json::Value {
+                self.0.generate_profiler_report()
+            }
+        }
+    };
+}
+
+#[cfg_attr(feature = "python_binding", cfg_eval)]
+#[cfg_attr(feature = "python_binding", pyclass)]
 pub struct SolverSerialUnionFind(SolverSerialPlugins);
 
+#[cfg_attr(feature = "python_binding", cfg_eval)]
+#[cfg_attr(feature = "python_binding", pymethods)]
 impl SolverSerialUnionFind {
+    #[cfg_attr(feature = "python_binding", new)]
     pub fn new(initializer: &SolverInitializer) -> Self {
         Self(SolverSerialPlugins::new(initializer, Arc::new(vec![])))
     }
@@ -152,9 +187,17 @@ impl SolverSerialUnionFind {
 
 bind_primal_dual_solver_trait!(SolverSerialUnionFind);
 
+#[cfg(feature = "python_binding")]
+bind_trait_to_python!(SolverSerialUnionFind);
+
+#[cfg_attr(feature = "python_binding", cfg_eval)]
+#[cfg_attr(feature = "python_binding", pyclass)]
 pub struct SolverSerialSingleHair(SolverSerialPlugins);
 
+#[cfg_attr(feature = "python_binding", cfg_eval)]
+#[cfg_attr(feature = "python_binding", pymethods)]
 impl SolverSerialSingleHair {
+    #[cfg_attr(feature = "python_binding", new)]
     pub fn new(initializer: &SolverInitializer) -> Self {
         Self(SolverSerialPlugins::new(
             initializer,
@@ -165,9 +208,17 @@ impl SolverSerialSingleHair {
 
 bind_primal_dual_solver_trait!(SolverSerialSingleHair);
 
+#[cfg(feature = "python_binding")]
+bind_trait_to_python!(SolverSerialSingleHair);
+
+#[cfg_attr(feature = "python_binding", cfg_eval)]
+#[cfg_attr(feature = "python_binding", pyclass)]
 pub struct SolverSerialJointSingleHair(SolverSerialPlugins);
 
+#[cfg_attr(feature = "python_binding", cfg_eval)]
+#[cfg_attr(feature = "python_binding", pymethods)]
 impl SolverSerialJointSingleHair {
+    #[cfg_attr(feature = "python_binding", new)]
     pub fn new(initializer: &SolverInitializer) -> Self {
         Self(SolverSerialPlugins::new(
             initializer,
@@ -179,6 +230,9 @@ impl SolverSerialJointSingleHair {
 }
 
 bind_primal_dual_solver_trait!(SolverSerialJointSingleHair);
+
+#[cfg(feature = "python_binding")]
+bind_trait_to_python!(SolverSerialJointSingleHair);
 
 #[cfg_attr(feature = "python_binding", cfg_eval)]
 #[cfg_attr(feature = "python_binding", pyclass)]
@@ -229,4 +283,14 @@ impl PrimalDualSolver for SolverErrorPatternLogger {
     fn generate_profiler_report(&self) -> serde_json::Value {
         json!({})
     }
+}
+
+#[cfg(feature = "python_binding")]
+#[pyfunction]
+pub(crate) fn register(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
+    m.add_class::<SolverSerialUnionFind>()?;
+    m.add_class::<SolverSerialSingleHair>()?;
+    m.add_class::<SolverSerialJointSingleHair>()?;
+    m.add_class::<SolverErrorPatternLogger>()?;
+    Ok(())
 }

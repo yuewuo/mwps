@@ -10,8 +10,6 @@
 use super::interface::*;
 use prettytable::format::TableFormat;
 use prettytable::*;
-#[cfg(feature = "python_binding")]
-use pyo3::prelude::*;
 
 #[derive(Clone)]
 pub struct VizTable {

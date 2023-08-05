@@ -57,9 +57,9 @@ use pyo3::prelude::*;
 #[pymodule]
 fn mwps(py: Python<'_>, m: &PyModule) -> PyResult<()> {
     util::register(py, m)?;
-    visualize::register(py, m)?;
+    // visualize::register(py, m)?;
     example_codes::register(py, m)?;
-    old_parity_matrix::register(py, m)?;
+    mwps_solver::register(py, m)?;
     Ok(())
 }
 

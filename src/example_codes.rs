@@ -355,7 +355,7 @@ pub trait ExampleCode {
         for vertex in vertices.iter_mut() {
             vertex.is_defect = false;
         }
-        let mut error_pattern = Subgraph::new_empty();
+        let mut error_pattern = vec![];
         for (edge_index, edge) in edges.iter_mut().enumerate() {
             let p = if rng.next_f64() < edge.pe {
                 edge.is_erasure = true;
@@ -890,7 +890,7 @@ impl ExampleCode for ErrorPatternReader {
         );
         let syndrome_pattern = self.syndrome_patterns[self.syndrome_index].clone();
         self.syndrome_index += 1;
-        (syndrome_pattern, Subgraph::new_empty())
+        (syndrome_pattern, vec![])
     }
 }
 

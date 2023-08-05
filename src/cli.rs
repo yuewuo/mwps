@@ -499,7 +499,7 @@ impl ResultVerifier for VerifierActualError {
         assert_le!(
             weight_range.lower,
             actual_weight,
-            "the lower bound of weight range is larger than the actual weight"
+            "bug: the lower bound of weight range is larger than the actual weight"
         );
         if self.is_strict {
             let subgraph_weight = Rational::from_usize(self.initializer.get_subgraph_total_weight(&subgraph)).unwrap();

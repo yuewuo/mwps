@@ -9,15 +9,11 @@ use std::collections::{BTreeMap, BTreeSet};
 #[derivative(Default(new = "true"))]
 pub struct BasicMatrix {
     /// the vertices already maintained by this parity check
-    #[cfg_attr(feature = "python_binding", pyo3(get, set))]
     pub vertices: BTreeSet<VertexIndex>,
     /// the edges maintained by this parity check, mapping to the local indices
-    #[cfg_attr(feature = "python_binding", pyo3(get, set))]
     pub edges: BTreeMap<EdgeIndex, VarIndex>,
     /// variable index map to edge index
-    #[cfg_attr(feature = "python_binding", pyo3(get, set))]
     pub variables: Vec<EdgeIndex>,
-    #[cfg_attr(feature = "python_binding", pyo3(get, set))]
     pub constraints: Vec<ParityRow>,
 }
 

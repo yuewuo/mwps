@@ -62,7 +62,7 @@ impl RelaxerOptimizer {
         self.relaxers.insert(relaxer);
     }
 
-    pub fn should_optimize(&self, relaxer: &Relaxer) -> bool {
+    pub fn should_optimize(&self, _relaxer: &Relaxer) -> bool {
         // self.relaxers.contains(relaxer)
         true
     }
@@ -163,11 +163,11 @@ impl RelaxerOptimizer {
 pub mod tests {
     use super::*;
 
-    #[test]
-    fn relaxer_optimizer_simple() {
-        // cargo test relaxer_optimizer_simple -- --nocapture
-        let mut relaxer_optimizer = RelaxerOptimizer::new();
-    }
+    // #[test]
+    // fn relaxer_optimizer_simple() {
+    //     // cargo test relaxer_optimizer_simple -- --nocapture
+    //     let mut relaxer_optimizer = RelaxerOptimizer::new();
+    // }
 
     #[test]
     fn lp_solver_simple() {

@@ -238,7 +238,7 @@ impl PrimalModuleImpl for PrimalModuleSerial {
     }
 
     fn subgraph(&mut self, _interface: &DualModuleInterfacePtr, _dual_module: &mut impl DualModuleImpl) -> Subgraph {
-        let mut subgraph = Subgraph::new_empty();
+        let mut subgraph = vec![];
         for cluster_ptr in self.clusters.iter() {
             let cluster = cluster_ptr.read_recursive();
             if cluster.nodes.is_empty() {

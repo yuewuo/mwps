@@ -478,7 +478,7 @@ mod tests {
             .snapshot_combined("solved".to_string(), vec![&interface_ptr, &dual_module])
             .unwrap();
         // the result subgraph
-        let subgraph = Subgraph::new(vec![15, 20]);
+        let subgraph = vec![15, 20];
         visualizer
             .snapshot_combined("subgraph".to_string(), vec![&interface_ptr, &dual_module, &subgraph])
             .unwrap();
@@ -519,7 +519,7 @@ mod tests {
             .snapshot_combined("solved".to_string(), vec![&interface_ptr, &dual_module])
             .unwrap();
         // the result subgraph
-        let subgraph = Subgraph::new(vec![24]);
+        let subgraph = vec![24];
         visualizer
             .snapshot_combined("subgraph".to_string(), vec![&interface_ptr, &dual_module, &subgraph])
             .unwrap();
@@ -576,7 +576,7 @@ mod tests {
             .snapshot_combined("solved".to_string(), vec![&interface_ptr, &dual_module])
             .unwrap();
         // the result subgraph
-        let subgraph = Subgraph::new(vec![82, 24]);
+        let subgraph = vec![82, 24];
         visualizer
             .snapshot_combined("subgraph".to_string(), vec![&interface_ptr, &dual_module, &subgraph])
             .unwrap();

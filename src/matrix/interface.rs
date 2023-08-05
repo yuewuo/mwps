@@ -147,7 +147,7 @@ pub trait MatrixEchelon: MatrixView {
                 solution.push(edge_index);
             }
         }
-        Some(Subgraph::new(solution))
+        Some(solution)
     }
 
     /// try every independent variables and try to minimize the total weight of the solution
@@ -216,35 +216,26 @@ pub trait MatrixEchelon: MatrixView {
                 }
             }
         }
-        Some(Subgraph::new(solution.into_iter().collect()))
+        Some(solution.into_iter().collect())
     }
 }
 
 #[derive(Clone, Debug, Derivative)]
 #[derivative(Default(new = "true"))]
-#[cfg_attr(feature = "python_binding", cfg_eval)]
-#[cfg_attr(feature = "python_binding", pyclass)]
 pub struct EchelonInfo {
     /// whether it's a satisfiable matrix, only valid when `is_echelon_form` is true
-    #[cfg_attr(feature = "python_binding", pyo3(get, set))]
     pub satisfiable: bool,
     /// (is_dependent, if dependent the only "1" position row)
-    #[cfg_attr(feature = "python_binding", pyo3(get, set))]
     pub columns: Vec<ColumnInfo>,
     /// the number of effective rows
-    #[cfg_attr(feature = "python_binding", pyo3(get, set))]
     pub effective_rows: usize,
     /// the leading "1" position column
-    #[cfg_attr(feature = "python_binding", pyo3(get, set))]
     pub rows: Vec<RowInfo>,
 }
 
 #[derive(Clone, Copy, Derivative, PartialEq, Eq)]
 #[derivative(Default(new = "true"))]
-#[cfg_attr(feature = "python_binding", cfg_eval)]
-#[cfg_attr(feature = "python_binding", pyclass)]
 pub struct ColumnInfo {
-    #[cfg_attr(feature = "python_binding", pyo3(get, set))]
     pub row: RowIndex,
 }
 
@@ -276,10 +267,7 @@ impl std::fmt::Debug for ColumnInfo {
 
 #[derive(Clone, Copy, Derivative, PartialEq, Eq)]
 #[derivative(Default(new = "true"))]
-#[cfg_attr(feature = "python_binding", cfg_eval)]
-#[cfg_attr(feature = "python_binding", pyclass)]
 pub struct RowInfo {
-    #[cfg_attr(feature = "python_binding", pyo3(get, set))]
     pub column: ColumnIndex,
 }
 
@@ -408,22 +396,13 @@ pub mod tests {
             matrix.add_constraint(vertex_index, incident_edges, *parity);
         }
         matrix.printstd();
-        assert_eq!(matrix.get_solution(), Some(Subgraph::new(vec![0, 1, 2, 3, 4])));
+        assert_eq!(matrix.get_solution(), Some(vec![0, 1, 2, 3, 4]));
         let weights = TestEdgeWeights::new(&[(3, 10), (9, 10)]);
-        assert_eq!(
-            weights.get_solution_local_minimum(&mut matrix),
-            Some(Subgraph::new(vec![5, 7, 8]))
-        );
+        assert_eq!(weights.get_solution_local_minimum(&mut matrix), Some(vec![5, 7, 8]));
         let weights = TestEdgeWeights::new(&[(7, 10), (9, 10)]);
-        assert_eq!(
-            weights.get_solution_local_minimum(&mut matrix),
-            Some(Subgraph::new(vec![3, 4, 8]))
-        );
+        assert_eq!(weights.get_solution_local_minimum(&mut matrix), Some(vec![3, 4, 8]));
         let weights = TestEdgeWeights::new(&[(3, 10), (4, 10), (7, 10)]);
-        assert_eq!(
-            weights.get_solution_local_minimum(&mut matrix),
-            Some(Subgraph::new(vec![5, 6, 9]))
-        );
+        assert_eq!(weights.get_solution_local_minimum(&mut matrix), Some(vec![5, 6, 9]));
     }
 
     #[test]

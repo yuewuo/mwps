@@ -46,13 +46,15 @@ pub type VertexNodeIndex = VertexIndex; // must be same as VertexIndex, NodeInde
 pub type VertexNum = VertexIndex;
 pub type NodeNum = VertexIndex;
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "python_binding", cfg_eval)]
 #[cfg_attr(feature = "python_binding", pyclass)]
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HyperEdge {
     /// the vertices incident to the hyperedge
+    #[cfg_attr(feature = "python_binding", pyo3(get, set))]
     pub vertices: Vec<VertexIndex>,
     /// the weight of the hyperedge
+    #[cfg_attr(feature = "python_binding", pyo3(get, set))]
     pub weight: Weight,
 }
 
@@ -97,6 +99,30 @@ impl SolverInitializer {
     fn __repr__(&self) -> String {
         format!("{:?}", self)
     }
+}
+
+impl SolverInitializer {
+    /// sanity check to avoid duplicate edges that are hard to debug
+    pub fn sanity_check(&self) -> Result<(), String> {
+        use crate::example_codes::*;
+        let code = ErrorPatternReader::from_initializer(self);
+        code.sanity_check()
+    }
+
+    pub fn matches_subgraph_syndrome(&self, subgraph: &Subgraph, defect_vertices: &[VertexIndex]) -> bool {
+        let subgraph_defect_vertices: Vec<_> = self.get_subgraph_syndrome(subgraph).into_iter().collect();
+        let mut defect_vertices = defect_vertices.to_owned();
+        defect_vertices.sort();
+        if defect_vertices.len() != subgraph_defect_vertices.len() {
+            return false;
+        }
+        for i in 0..defect_vertices.len() {
+            if defect_vertices[i] != subgraph_defect_vertices[i] {
+                return false;
+            }
+        }
+        true
+    }
 
     #[allow(clippy::unnecessary_cast)]
     pub fn get_subgraph_total_weight(&self, subgraph: &Subgraph) -> Weight {
@@ -121,30 +147,6 @@ impl SolverInitializer {
             }
         }
         defect_vertices
-    }
-}
-
-impl SolverInitializer {
-    /// sanity check to avoid duplicate edges that are hard to debug
-    pub fn sanity_check(&self) -> Result<(), String> {
-        use crate::example_codes::*;
-        let code = ErrorPatternReader::from_initializer(self);
-        code.sanity_check()
-    }
-
-    pub fn matches_subgraph_syndrome(&self, subgraph: &Subgraph, defect_vertices: &[VertexIndex]) -> bool {
-        let subgraph_defect_vertices: Vec<_> = self.get_subgraph_syndrome(subgraph).into_iter().collect();
-        let mut defect_vertices = defect_vertices.to_owned();
-        defect_vertices.sort();
-        if defect_vertices.len() != subgraph_defect_vertices.len() {
-            return false;
-        }
-        for i in 0..defect_vertices.len() {
-            if defect_vertices[i] != subgraph_defect_vertices[i] {
-                return false;
-            }
-        }
-        true
     }
 }
 
@@ -241,50 +243,31 @@ impl F64Rng for DeterministicRng {
 
 /// the result of MWPS algorithm: a parity subgraph (defined by some edges that,
 /// if are selected, will generate the parity result in the syndrome)
-#[cfg_attr(feature = "python_binding", cfg_eval)]
-#[cfg_attr(feature = "python_binding", pyclass)]
-#[derive(Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct Subgraph(Vec<EdgeIndex>);
-
-impl Subgraph {
-    pub fn new(edges: Vec<EdgeIndex>) -> Self {
-        Self(edges)
-    }
-    pub fn new_empty() -> Self {
-        Self(vec![])
-    }
-}
-
-impl std::ops::Deref for Subgraph {
-    type Target = Vec<EdgeIndex>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl std::ops::DerefMut for Subgraph {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
-}
-
-impl std::fmt::Debug for Subgraph {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "{:?}", self.0)
-    }
-}
+pub type Subgraph = Vec<EdgeIndex>;
 
 impl MWPSVisualizer for Subgraph {
     fn snapshot(&self, _abbrev: bool) -> serde_json::Value {
         json!({
-            "subgraph": self.0,
+            "subgraph": self,
         })
     }
 }
 
+// https://stackoverflow.com/questions/76082775/return-a-python-object-defined-in-a-third-party-python-module-e-g-numpy-using
+#[cfg(feature = "python_binding")]
+pub fn rational_to_pyobject(value: &Rational) -> PyResult<Py<PyAny>> {
+    Python::with_gil(|py| {
+        let frac = py.import("fractions")?;
+        let numer = value.numer().clone();
+        let denom = value.denom().clone();
+        frac.call_method("Fraction", (numer, denom), None).map(Into::into)
+    })
+}
+
 /// the range of the optimal MWPS solution's weight
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "python_binding", cfg_eval)]
+#[cfg_attr(feature = "python_binding", pyclass)]
 pub struct WeightRange {
     pub lower: Rational,
     pub upper: Rational,
@@ -297,6 +280,24 @@ impl WeightRange {
     /// a solution is optimal only if the range is a single point
     pub fn is_optimal(&self) -> bool {
         self.lower == self.upper
+    }
+}
+
+#[cfg(feature = "python_binding")]
+#[pymethods]
+impl WeightRange {
+    #[getter]
+    fn lower(&self) -> PyResult<Py<PyAny>> {
+        rational_to_pyobject(&self.lower)
+    }
+
+    #[getter]
+    fn upper(&self) -> PyResult<Py<PyAny>> {
+        rational_to_pyobject(&self.lower)
+    }
+
+    fn __repr__(&self) -> String {
+        format!("{:?}", self)
     }
 }
 
@@ -502,15 +503,15 @@ pub fn pyobject_to_json_locked(value: PyObject, py: Python) -> serde_json::Value
     let value: &PyAny = value.as_ref(py);
     if value.is_none() {
         serde_json::Value::Null
-    } else if value.is_instance_of::<pyo3::types::PyBool>().unwrap() {
+    } else if value.is_instance_of::<pyo3::types::PyBool>() {
         json!(value.extract::<bool>().unwrap())
-    } else if value.is_instance_of::<pyo3::types::PyInt>().unwrap() {
+    } else if value.is_instance_of::<pyo3::types::PyInt>() {
         json!(value.extract::<i64>().unwrap())
-    } else if value.is_instance_of::<pyo3::types::PyFloat>().unwrap() {
+    } else if value.is_instance_of::<pyo3::types::PyFloat>() {
         json!(value.extract::<f64>().unwrap())
-    } else if value.is_instance_of::<pyo3::types::PyString>().unwrap() {
+    } else if value.is_instance_of::<pyo3::types::PyString>() {
         json!(value.extract::<String>().unwrap())
-    } else if value.is_instance_of::<pyo3::types::PyList>().unwrap() {
+    } else if value.is_instance_of::<pyo3::types::PyList>() {
         let elements: Vec<serde_json::Value> = value
             .extract::<Vec<PyObject>>()
             .unwrap()
@@ -518,7 +519,7 @@ pub fn pyobject_to_json_locked(value: PyObject, py: Python) -> serde_json::Value
             .map(|object| pyobject_to_json_locked(object, py))
             .collect();
         json!(elements)
-    } else if value.is_instance_of::<pyo3::types::PyDict>().unwrap() {
+    } else if value.is_instance_of::<pyo3::types::PyDict>() {
         let map: &pyo3::types::PyDict = value.downcast().unwrap();
         let mut json_map = serde_json::Map::new();
         for (key, value) in map.iter() {
@@ -543,6 +544,6 @@ pub fn pyobject_to_json(value: PyObject) -> serde_json::Value {
 pub(crate) fn register(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<SolverInitializer>()?;
     m.add_class::<SyndromePattern>()?;
-    m.add_class::<Subgraph>()?;
+    m.add_class::<HyperEdge>()?;
     Ok(())
 }

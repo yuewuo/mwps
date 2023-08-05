@@ -75,11 +75,7 @@ impl PrimalModuleImpl for PrimalModuleUnionFind {
     }
 
     #[allow(clippy::unnecessary_cast)]
-    fn load<D: DualModuleImpl>(
-        &mut self,
-        interface_ptr: &DualModuleInterfacePtr,
-        _dual_module: &mut D,
-    ) {
+    fn load<D: DualModuleImpl>(&mut self, interface_ptr: &DualModuleInterfacePtr, _dual_module: &mut D) {
         let interface = interface_ptr.read_recursive();
         for index in 0..interface.nodes.len() as NodeIndex {
             let node_ptr = &interface.nodes[index as usize];
@@ -96,11 +92,7 @@ impl PrimalModuleImpl for PrimalModuleUnionFind {
                 node.index, index,
                 "must load a fresh dual module interface, found index out of order"
             );
-            assert_eq!(
-                node.index as usize,
-                self.union_find.size(),
-                "must load defect nodes in order"
-            );
+            assert_eq!(node.index as usize, self.union_find.size(), "must load defect nodes in order");
             self.union_find.insert(PrimalModuleUnionFindNode {
                 internal_edges: BTreeSet::new(),
                 node_index: node.index,
@@ -115,10 +107,7 @@ impl PrimalModuleImpl for PrimalModuleUnionFind {
         interface_ptr: &DualModuleInterfacePtr,
         dual_module: &mut impl DualModuleImpl,
     ) {
-        debug_assert!(
-            !group_max_update_length.is_unbounded()
-                && group_max_update_length.get_valid_growth().is_none()
-        );
+        debug_assert!(!group_max_update_length.is_unbounded() && group_max_update_length.get_valid_growth().is_none());
         let mut active_clusters = BTreeSet::<NodeIndex>::new();
         while let Some(conflict) = group_max_update_length.pop() {
             // println!("conflict: {conflict:?}");
@@ -134,17 +123,14 @@ impl PrimalModuleImpl for PrimalModuleUnionFind {
                     for dual_node_ptr in dual_nodes.iter() {
                         dual_module.set_grow_rate(dual_node_ptr, Rational::zero());
                         let node_index = dual_node_ptr.read_recursive().index;
-                        active_clusters
-                            .remove(&(self.union_find.find(node_index as usize) as NodeIndex));
-                        self.union_find
-                            .union(cluster_index as usize, node_index as usize);
+                        active_clusters.remove(&(self.union_find.find(node_index as usize) as NodeIndex));
+                        self.union_find.union(cluster_index as usize, node_index as usize);
                     }
                     self.union_find
                         .get_mut(cluster_index as usize)
                         .internal_edges
                         .insert(edge_index);
-                    active_clusters
-                        .insert(self.union_find.find(cluster_index as usize) as NodeIndex);
+                    active_clusters.insert(self.union_find.find(cluster_index as usize) as NodeIndex);
                 }
                 _ => {
                     unreachable!()
@@ -155,9 +141,7 @@ impl PrimalModuleImpl for PrimalModuleUnionFind {
             if interface_ptr
                 .read_recursive()
                 .decoding_graph
-                .is_valid_cluster_auto_vertices(
-                    &self.union_find.get(cluster_index as usize).internal_edges,
-                )
+                .is_valid_cluster_auto_vertices(&self.union_find.get(cluster_index as usize).internal_edges)
             {
                 // do nothing
             } else {
@@ -166,13 +150,9 @@ impl PrimalModuleImpl for PrimalModuleUnionFind {
                     internal_edges: BTreeSet::new(),
                     node_index: new_cluster_node_index,
                 });
-                self.union_find
-                    .union(cluster_index as usize, new_cluster_node_index as usize);
+                self.union_find.union(cluster_index as usize, new_cluster_node_index as usize);
                 let invalid_subgraph = InvalidSubgraph::new_ptr(
-                    self.union_find
-                        .get(cluster_index as usize)
-                        .internal_edges
-                        .clone(),
+                    self.union_find.get(cluster_index as usize).internal_edges.clone(),
                     &interface_ptr.read_recursive().decoding_graph,
                 );
                 interface_ptr.create_node(invalid_subgraph, dual_module);
@@ -180,13 +160,9 @@ impl PrimalModuleImpl for PrimalModuleUnionFind {
         }
     }
 
-    fn subgraph(
-        &mut self,
-        interface_ptr: &DualModuleInterfacePtr,
-        _dual_module: &mut impl DualModuleImpl,
-    ) -> Subgraph {
+    fn subgraph(&mut self, interface_ptr: &DualModuleInterfacePtr, _dual_module: &mut impl DualModuleImpl) -> Subgraph {
         let mut valid_clusters = BTreeSet::new();
-        let mut subgraph = Subgraph::new_empty();
+        let mut subgraph = vec![];
         for i in 0..self.union_find.size() {
             let root_index = self.union_find.find(i);
             if !valid_clusters.contains(&root_index) {
@@ -194,9 +170,7 @@ impl PrimalModuleImpl for PrimalModuleUnionFind {
                 let cluster_subgraph = interface_ptr
                     .read_recursive()
                     .decoding_graph
-                    .find_valid_subgraph_auto_vertices(
-                        &self.union_find.get(root_index).internal_edges,
-                    )
+                    .find_valid_subgraph_auto_vertices(&self.union_find.get(root_index).internal_edges)
                     .expect("must be valid cluster");
                 subgraph.extend(cluster_subgraph.iter());
             }
@@ -229,11 +203,7 @@ pub mod tests {
         visualize_filename: Option<String>,
         defect_vertices: Vec<VertexIndex>,
         final_dual: Weight,
-    ) -> (
-        DualModuleInterfacePtr,
-        PrimalModuleUnionFind,
-        DualModuleSerial,
-    ) {
+    ) -> (DualModuleInterfacePtr, PrimalModuleUnionFind, DualModuleSerial) {
         println!("{defect_vertices:?}");
         let mut visualizer = match visualize_filename.as_ref() {
             Some(visualize_filename) => {
@@ -262,8 +232,7 @@ pub mod tests {
             &mut dual_module,
             visualizer.as_mut(),
         );
-        let (subgraph, weight_range) =
-            primal_module.subgraph_range(&interface_ptr, &mut dual_module);
+        let (subgraph, weight_range) = primal_module.subgraph_range(&interface_ptr, &mut dual_module);
         if let Some(visualizer) = visualizer.as_mut() {
             visualizer
                 .snapshot_combined(
@@ -273,9 +242,7 @@ pub mod tests {
                 .unwrap();
         }
         assert!(
-            model_graph
-                .initializer
-                .matches_subgraph_syndrome(&subgraph, &defect_vertices),
+            model_graph.initializer.matches_subgraph_syndrome(&subgraph, &defect_vertices),
             "the result subgraph is invalid"
         );
         assert_le!(
@@ -301,11 +268,7 @@ pub mod tests {
         visualize_filename: String,
         defect_vertices: Vec<VertexIndex>,
         final_dual: Weight,
-    ) -> (
-        DualModuleInterfacePtr,
-        PrimalModuleUnionFind,
-        DualModuleSerial,
-    ) {
+    ) -> (DualModuleInterfacePtr, PrimalModuleUnionFind, DualModuleSerial) {
         primal_module_union_find_basic_standard_syndrome_optional_viz(
             code,
             Some(visualize_filename),
@@ -321,12 +284,7 @@ pub mod tests {
         let visualize_filename = "primal_module_union_find_basic_1.json".to_string();
         let defect_vertices = vec![23, 24, 29, 30];
         let code = CodeCapacityTailoredCode::new(7, 0., 0.01, 1);
-        primal_module_union_find_basic_standard_syndrome(
-            code,
-            visualize_filename,
-            defect_vertices,
-            1,
-        );
+        primal_module_union_find_basic_standard_syndrome(code, visualize_filename, defect_vertices, 1);
     }
 
     #[test]
@@ -335,12 +293,7 @@ pub mod tests {
         let visualize_filename = "primal_module_union_find_basic_2.json".to_string();
         let defect_vertices = vec![16, 17, 23, 25, 29, 30];
         let code = CodeCapacityTailoredCode::new(7, 0., 0.01, 1);
-        primal_module_union_find_basic_standard_syndrome(
-            code,
-            visualize_filename,
-            defect_vertices,
-            2,
-        );
+        primal_module_union_find_basic_standard_syndrome(code, visualize_filename, defect_vertices, 2);
     }
 
     #[test]
@@ -349,12 +302,7 @@ pub mod tests {
         let visualize_filename = "primal_module_union_find_basic_3.json".to_string();
         let defect_vertices = vec![14, 15, 16, 17, 22, 25, 28, 31, 36, 37, 38, 39];
         let code = CodeCapacityTailoredCode::new(7, 0., 0.01, 1);
-        primal_module_union_find_basic_standard_syndrome(
-            code,
-            visualize_filename,
-            defect_vertices,
-            5,
-        );
+        primal_module_union_find_basic_standard_syndrome(code, visualize_filename, defect_vertices, 5);
     }
 
     #[test]
@@ -363,12 +311,7 @@ pub mod tests {
         let visualize_filename = "primal_module_union_find_basic_4.json".to_string();
         let defect_vertices = vec![3, 12];
         let code = CodeCapacityColorCode::new(7, 0.01, 1);
-        primal_module_union_find_basic_standard_syndrome(
-            code,
-            visualize_filename,
-            defect_vertices,
-            2,
-        );
+        primal_module_union_find_basic_standard_syndrome(code, visualize_filename, defect_vertices, 2);
     }
 
     #[test]
@@ -377,12 +320,7 @@ pub mod tests {
         let visualize_filename = "primal_module_union_find_basic_5.json".to_string();
         let defect_vertices = vec![3, 5, 10, 12];
         let code = CodeCapacityColorCode::new(7, 0.01, 1);
-        primal_module_union_find_basic_standard_syndrome(
-            code,
-            visualize_filename,
-            defect_vertices,
-            4,
-        );
+        primal_module_union_find_basic_standard_syndrome(code, visualize_filename, defect_vertices, 4);
     }
 
     #[test]
@@ -391,11 +329,6 @@ pub mod tests {
         let visualize_filename = "primal_module_union_find_basic_6.json".to_string();
         let defect_vertices = vec![22];
         let code = CodeCapacityTailoredCode::new(5, 0., 0.05, 1);
-        primal_module_union_find_basic_standard_syndrome(
-            code,
-            visualize_filename,
-            defect_vertices,
-            4,
-        );
+        primal_module_union_find_basic_standard_syndrome(code, visualize_filename, defect_vertices, 4);
     }
 }
