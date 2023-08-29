@@ -161,7 +161,7 @@ impl RelaxerOptimizer {
 
 #[cfg(test)]
 pub mod tests {
-    use super::*;
+    // use super::*;
 
     // #[test]
     // fn relaxer_optimizer_simple() {

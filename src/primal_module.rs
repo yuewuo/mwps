@@ -19,11 +19,7 @@ pub trait PrimalModuleImpl {
     fn clear(&mut self);
 
     /// load a new decoding problem given dual interface: note that all nodes MUST be defect node
-    fn load<D: DualModuleImpl>(
-        &mut self,
-        interface_ptr: &DualModuleInterfacePtr,
-        dual_module: &mut D,
-    );
+    fn load<D: DualModuleImpl>(&mut self, interface_ptr: &DualModuleInterfacePtr, dual_module: &mut D);
 
     /// analyze the reason why dual module cannot further grow, update primal data structure (alternating tree, temporary matches, etc)
     /// and then tell dual module what to do to resolve these conflicts;
@@ -65,21 +61,14 @@ pub trait PrimalModuleImpl {
                     }
                     if group_max_update_length.is_unbounded() {
                         visualizer
-                            .snapshot_combined(
-                                format!("unbounded grow"),
-                                vec![interface, dual_module, primal_module],
-                            )
+                            .snapshot_combined(format!("unbounded grow"), vec![interface, dual_module, primal_module])
                             .unwrap();
                     } else if let Some(length) = group_max_update_length.get_valid_growth() {
                         visualizer
-                            .snapshot_combined(
-                                format!("grow {length}"),
-                                vec![interface, dual_module, primal_module],
-                            )
+                            .snapshot_combined(format!("grow {length}"), vec![interface, dual_module, primal_module])
                             .unwrap();
                     } else {
-                        let first_conflict =
-                            format!("{:?}", group_max_update_length.peek().unwrap());
+                        let first_conflict = format!("{:?}", group_max_update_length.peek().unwrap());
                         visualizer
                             .snapshot_combined(
                                 format!("resolve {first_conflict}"),
@@ -131,11 +120,7 @@ pub trait PrimalModuleImpl {
         }
     }
 
-    fn subgraph(
-        &mut self,
-        interface: &DualModuleInterfacePtr,
-        dual_module: &mut impl DualModuleImpl,
-    ) -> Subgraph;
+    fn subgraph(&mut self, interface: &DualModuleInterfacePtr, dual_module: &mut impl DualModuleImpl) -> Subgraph;
 
     fn subgraph_range(
         &mut self,

@@ -181,7 +181,9 @@ pub struct SolverSerialUnionFind(SolverSerialPlugins);
 impl SolverSerialUnionFind {
     #[cfg_attr(feature = "python_binding", new)]
     pub fn new(initializer: &SolverInitializer) -> Self {
-        Self(SolverSerialPlugins::new(initializer, Arc::new(vec![])))
+        let mut solver = SolverSerialPlugins::new(initializer, Arc::new(vec![]));
+        solver.primal_module.growing_strategy = GrowingStrategy::MultipleClusters; // the original UF decoder
+        Self(solver)
     }
 }
 
