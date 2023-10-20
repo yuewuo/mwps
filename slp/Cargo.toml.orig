@@ -1,0 +1,26 @@
+[package]
+name = "slp"
+version = "0.1.11"
+authors = ["Prateek Kumar <prateek@prateekkumar.in>"]
+edition = "2018"
+description = """
+Linear Programming Solver
+"""
+documentation = "https://docs.rs/slp/"
+homepage = "https://docs.rs/crate/slp/"
+repository = "https://github.com/solhop/slp"
+readme = "README.md"
+keywords = ["Optimization", "Linear", "Programming", "Solver", "Math"]
+categories = ["science"]
+license = "MIT"
+exclude = ["/.vscode/", "/.github/"]
+
+[badges]
+maintenance = { status = "deprecated" }
+
+[dependencies]
+rayon = "1.4"
+num = "0.3"
+pest = "2.1"
+pest_derive = "2.1"
+structopt = "0.3"
