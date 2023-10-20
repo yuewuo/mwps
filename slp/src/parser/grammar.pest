@@ -1,0 +1,26 @@
+WHITESPACE = _{ " " | "\t" | NEWLINE }
+COMMENT = _{ "/*" ~ (!"*/" ~ ANY)* ~ "*/" }
+keyword = @{ "max" | "min" | "subject" | "to" }
+identifier = @{ !(keyword) ~ ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "_")* }
+lteq = @{ "<=" }
+gteq = @{ ">=" }
+operator = @{ lteq | gteq }
+number = @{ (ASCII_DIGIT|"."|"/")+ }
+pos_number = @{ "+" ~ number }
+neg_number = @{ "-" ~ number }
+coefficient = { number? }
+unsigned_term = { coefficient ~ identifier }
+pos_signed_term = { "+" ~ unsigned_term }
+neg_signed_term = { "-" ~ unsigned_term }
+signed_term = { pos_signed_term | neg_signed_term }
+expression = { (signed_term | unsigned_term) ~ signed_term* }
+max_objective = { ("max") ~ expression }
+min_objective = { ("min") ~ expression }
+objective = { max_objective | min_objective }
+constraint = { expression ~ operator ~ (number | pos_number | neg_number) }
+constraints = { constraint ~ ("," ~ constraint)* }
+variable_real = { identifier ~ ">=" ~ "0" }
+variable_int = { identifier ~ "(" ~ "Z" ~ ")" ~ ">=" ~ "0" }
+variable = { variable_real | variable_int }
+variables = { "vars" ~ variable ~ ( "," ~ variable)* }
+lp_problem = { SOI ~ variables ~ objective ~ "subject" ~ "to" ~ constraints ~ EOI }

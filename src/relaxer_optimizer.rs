@@ -9,21 +9,29 @@
 use crate::invalid_subgraph::*;
 use crate::relaxer::*;
 use crate::util::*;
+use crate::util::Rational;
 use derivative::Derivative;
+use num_rational::Ratio;
 use num_traits::Signed;
 use num_traits::{One, Zero};
+use rand_xoshiro::rand_core::le;
 use std::collections::{BTreeMap, BTreeSet};
 use std::str::FromStr;
 use std::sync::Arc;
+use slp::Solution::{self, Infeasible, Optimal, Unbounded};
+use slp::SolverSettings;
+use slp::*;
+use std::f32::EPSILON;
 
 #[derive(Derivative)]
-#[derivative(Default(new = "true"))]
+#[derivative(Default(new = "true" ))] 
 pub struct RelaxerOptimizer {
     /// the set of existing relaxers
     relaxers: BTreeSet<Relaxer>,
+    // TODO: LP solver persist
 }
 
-#[derive(Derivative)]
+#[derive(Derivative, Debug)]
 #[derivative(Default(new = "true"))]
 pub struct ConstraintLine {
     pub lhs: Vec<(Rational, String)>,
@@ -84,20 +92,44 @@ impl RelaxerOptimizer {
         // the objective function is the summation of all dual variables
         let mut x_vars = vec![];
         let mut y_vars = vec![];
+        let mut lhs_matrix:Vec<Vec<Rational>> = vec![vec![]];
+        
         let mut constraints = vec![];
         let mut invalid_subgraphs = Vec::with_capacity(dual_variables.len());
         let mut edge_contributor: BTreeMap<EdgeIndex, Vec<usize>> =
             edge_slacks.keys().map(|&edge_index| (edge_index, vec![])).collect();
+
+        //Add the objective function constraint in the simplex form  z = obj, so constraint z - obj = 0
+        for _ in 0..dual_variables.iter().enumerate().len(){
+            lhs_matrix[0].push(-Rational::one());
+        }
+        for _ in 0..dual_variables.iter().enumerate().len(){
+            lhs_matrix[0].push(Rational::one());
+        }
+
         for (var_index, (invalid_subgraph, dual_variable)) in dual_variables.iter().enumerate() {
             // slp only allows >= 0 variables, make this adaption
             let var_x = format!("x{var_index}");
             let var_y = format!("y{var_index}");
+
+            //new part
+            let mut row_constraint = vec![Rational::zero(); 2*dual_variables.iter().enumerate().len()];
+            //
+
             x_vars.push(var_x.clone());
             y_vars.push(var_y.clone());
+
             // constraint of the dual variable >= 0
             let mut constraint = ConstraintLine::new();
             constraint.lhs.push((-Rational::one(), var_x.clone()));
             constraint.lhs.push((Rational::one(), var_y.clone()));
+
+            //new part
+            row_constraint[var_index] = -Rational::one();
+            row_constraint[dual_variables.iter().enumerate().len()+var_index] = Rational::one();
+            lhs_matrix.push(row_constraint);
+            //
+
             constraint.rhs = dual_variable.clone();
             constraints.push(constraint);
             invalid_subgraphs.push(invalid_subgraph);
@@ -105,16 +137,68 @@ impl RelaxerOptimizer {
                 edge_contributor.get_mut(&edge_index).unwrap().push(var_index);
             }
         }
+
         for (&edge_index, slack) in edge_slacks.iter() {
             // constraint of edge: sum(y_S) <= weight
             let mut constraint = ConstraintLine::new();
+            let mut row_constraint = vec![Rational::zero(); 2*dual_variables.iter().enumerate().len()];
             for &var_index in edge_contributor[&edge_index].iter() {
                 constraint.lhs.push((Rational::one(), x_vars[var_index].clone()));
                 constraint.lhs.push((-Rational::one(), y_vars[var_index].clone()));
+                
+                //new part
+                row_constraint[var_index] = Rational::one();
+                row_constraint[dual_variables.iter().enumerate().len()+var_index] = -Rational::one();
+                //
+
             }
+            lhs_matrix.push(row_constraint);
+
             constraint.rhs = slack.clone();
             constraints.push(constraint);
         }
+
+    
+        let mut identity_matrix: Vec<Vec<Rational>> = vec![vec![Rational::zero(); constraints.len()]; constraints.len()];
+
+        for i in 0..constraints.len() {
+            identity_matrix[i][i] =Rational::one();
+        }
+        let mut slack_matrix: Vec<Vec<Rational>> = vec![vec![Rational::zero(); identity_matrix[0].len()]; 1];
+        slack_matrix.extend_from_slice(&identity_matrix);
+        
+
+        let mut rhs_vec: Vec<Rational> = vec![Rational::zero(); constraints.len()+1];
+
+        for i in  0..constraints.len() {
+            rhs_vec[i+1] = constraints[i].rhs.clone();
+        }
+        
+        //Create the tableu simplex vector [RHS, LHS, slack]
+        let mut tableau: Vec<Vec<Rational>> = Vec::new();
+        for i in 0..slack_matrix.len() {
+            let mut row = Vec::new();
+            row.push(rhs_vec[i].clone());
+            row.extend_from_slice(&lhs_matrix[i]);
+            row.extend_from_slice(&slack_matrix[i]);
+            tableau.push(row);
+
+        }
+        let mut basic_indices = Vec::new();
+        let mut is_int_constraint = Vec::new();
+        basic_indices.push(0);
+        for i in 1..constraints.len() + 1{
+            basic_indices.push(2*dual_variables.iter().enumerate().len() + i);
+            is_int_constraint.push(false)
+        }
+
+        let lp_aux: slp::LP<Rational> = LP {
+            n_constraints: constraints.len(),
+            n_vars: 2*dual_variables.iter().enumerate().len(),
+            basic_indices:  basic_indices,
+            tableau: tableau,
+        };
+        
         let vars_line = "vars ".to_string()
             + &x_vars
                 .iter()
@@ -133,8 +217,13 @@ impl RelaxerOptimizer {
                 .map(|constraint| constraint.to_string())
                 .collect::<Vec<_>>()
                 .join(",\n");
-        let mut solver = slp::Solver::<slp::Ratio<slp::BigInt>>::new(&input);
+
+        /* let mut solver = slp::Solver::<slp::Ratio<slp::BigInt>>::new(&input);
+        let solution = solver.solve();*/
+
+        let mut solver = slp::Solver::<slp::Ratio<slp::BigInt>>::new_with_int_constraints(lp_aux.clone(), is_int_constraint, false);
         let solution = solver.solve();
+        
         let mut direction: BTreeMap<Arc<InvalidSubgraph>, Rational> = BTreeMap::new();
         match solution {
             slp::Solution::Optimal(optimal_objective, model) => {
@@ -168,6 +257,8 @@ pub mod tests {
     //     // cargo test relaxer_optimizer_simple -- --nocapture
     //     let mut relaxer_optimizer = RelaxerOptimizer::new();
     // }
+
+    use crate::util::Rational;
 
     #[test]
     fn lp_solver_simple() {
@@ -203,4 +294,35 @@ pub mod tests {
             }
         }
     }
+
+    #[test]
+    fn test_lp_direct_instantiation() {
+        let lp_aux: slp::LP<slp::Rational> = slp::LP {
+            n_constraints: 2,
+            n_vars: 3,
+            basic_indices: vec![0, 4, 5],
+            tableau: vec![vec![slp::Rational::from_integer(0), slp::Rational::from_integer(18), slp::Rational::from_integer(60), slp::Rational::from_integer(40), slp::Rational::from_integer(0), slp::Rational::from_integer(0)],
+             vec![slp::Rational::from_integer(-2), slp::Rational::from_integer(-2), slp::Rational::from_integer(-6), slp::Rational::from_integer(-2), slp::Rational::from_integer(1), slp::Rational::from_integer(0)], 
+             vec![slp::Rational::from_integer(-3), slp::Rational::from_integer(-1), slp::Rational::from_integer(-5), slp::Rational::from_integer(-5), slp::Rational::from_integer(0), slp::Rational::from_integer(1)]],
+        };
+        let mut solver: slp::Solver<slp::Rational> =  slp::Solver::new_with_int_constraints(lp_aux.clone(), vec![false, false, false], true);
+        let solution = solver.solve();
+        assert_eq!(
+            solution,
+            slp::Solution::Optimal(slp::Rational::from_integer(28), vec![slp::Rational::from_integer(0), slp::Rational::new(1,5), slp::Rational::new(2,5)])
+        );
+        match solution {
+            slp::Solution::Infeasible => println!("INFEASIBLE"),
+            slp::Solution::Unbounded => println!("UNBOUNDED"),
+            slp::Solution::Optimal(obj, model) => {
+                println!("OPTIMAL {}", obj);
+                print!("SOLUTION");
+                for v in model {
+                    print!(" {}", v);
+                }
+                println!();
+            }
+        }
+    }
+    
 }
