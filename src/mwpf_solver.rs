@@ -10,12 +10,14 @@ use crate::example_codes::*;
 use crate::model_hypergraph::*;
 use crate::plugin::*;
 use crate::plugin_single_hair::*;
+use crate::plugin_union_find::PluginUnionFind;
 use crate::primal_module::*;
 use crate::primal_module_serial::*;
 use crate::util::*;
 use crate::visualize::*;
 #[cfg(feature = "python_binding")]
 use pyo3::prelude::*;
+use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::io::prelude::*;
 use std::io::BufWriter;
@@ -70,6 +72,22 @@ macro_rules! bind_trait_to_python {
     };
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SolverSerialPluginsConfig {
+    /// timeout for the whole solving process in millisecond
+    #[serde(default = "hyperion_default_configs::primal")]
+    primal: PrimalModuleSerialConfig,
+}
+
+pub mod hyperion_default_configs {
+    use crate::primal_module_serial::PrimalModuleSerialConfig;
+
+    pub fn primal() -> PrimalModuleSerialConfig {
+        serde_json::from_value(json!({})).unwrap()
+    }
+}
+
 pub struct SolverSerialPlugins {
     dual_module: DualModuleSerial,
     primal_module: PrimalModuleSerial,
@@ -87,11 +105,14 @@ impl MWPSVisualizer for SolverSerialPlugins {
 }
 
 impl SolverSerialPlugins {
-    pub fn new(initializer: &SolverInitializer, plugins: Arc<Vec<PluginEntry>>) -> Self {
+    pub fn new(initializer: &SolverInitializer, plugins: Arc<Vec<PluginEntry>>, config: serde_json::Value) -> Self {
         let model_graph = Arc::new(ModelHyperGraph::new(Arc::new(initializer.clone())));
         let mut primal_module = PrimalModuleSerial::new_empty(initializer);
-        primal_module.growing_strategy = GrowingStrategy::SingleCluster;
+        let config: SolverSerialPluginsConfig = serde_json::from_value(config).unwrap();
+        primal_module.growing_strategy = GrowingStrategy::MultipleClusters;
         primal_module.plugins = plugins;
+        primal_module.config = config.primal.clone();
+        // primal_module.
         Self {
             dual_module: DualModuleSerial::new_empty(initializer),
             primal_module,
@@ -180,8 +201,8 @@ pub struct SolverSerialUnionFind(SolverSerialPlugins);
 #[cfg_attr(feature = "python_binding", pymethods)]
 impl SolverSerialUnionFind {
     #[cfg_attr(feature = "python_binding", new)]
-    pub fn new(initializer: &SolverInitializer) -> Self {
-        let mut solver = SolverSerialPlugins::new(initializer, Arc::new(vec![]));
+    pub fn new(initializer: &SolverInitializer, config: serde_json::Value) -> Self {
+        let mut solver = SolverSerialPlugins::new(initializer, Arc::new(vec![]), config);
         solver.primal_module.growing_strategy = GrowingStrategy::MultipleClusters; // the original UF decoder
         Self(solver)
     }
@@ -200,10 +221,14 @@ pub struct SolverSerialSingleHair(SolverSerialPlugins);
 #[cfg_attr(feature = "python_binding", pymethods)]
 impl SolverSerialSingleHair {
     #[cfg_attr(feature = "python_binding", new)]
-    pub fn new(initializer: &SolverInitializer) -> Self {
+    pub fn new(initializer: &SolverInitializer, config: serde_json::Value) -> Self {
         Self(SolverSerialPlugins::new(
             initializer,
-            Arc::new(vec![PluginSingleHair::entry_with_strategy(RepeatStrategy::Once)]),
+            Arc::new(vec![
+                PluginUnionFind::entry(), // to allow timeout using union-find as baseline
+                PluginSingleHair::entry_with_strategy(RepeatStrategy::Once),
+            ]),
+            config,
         ))
     }
 }
@@ -221,12 +246,16 @@ pub struct SolverSerialJointSingleHair(SolverSerialPlugins);
 #[cfg_attr(feature = "python_binding", pymethods)]
 impl SolverSerialJointSingleHair {
     #[cfg_attr(feature = "python_binding", new)]
-    pub fn new(initializer: &SolverInitializer) -> Self {
+    pub fn new(initializer: &SolverInitializer, config: serde_json::Value) -> Self {
         Self(SolverSerialPlugins::new(
             initializer,
-            Arc::new(vec![PluginSingleHair::entry_with_strategy(RepeatStrategy::Multiple {
-                max_repetition: usize::MAX,
-            })]),
+            Arc::new(vec![
+                PluginUnionFind::entry(), // to allow timeout using union-find as baseline
+                PluginSingleHair::entry_with_strategy(RepeatStrategy::Multiple {
+                    max_repetition: usize::MAX,
+                }),
+            ]),
+            config,
         ))
     }
 }

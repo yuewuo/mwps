@@ -5,8 +5,6 @@
 //! A plugin must implement Clone trait, because it will be cloned multiple times for each cluster
 //!
 
-use num_traits::Signed;
-
 use crate::decoding_hypergraph::*;
 use crate::derivative::Derivative;
 use crate::dual_module::*;
@@ -14,6 +12,8 @@ use crate::matrix::*;
 use crate::plugin_union_find::*;
 use crate::relaxer::*;
 use crate::relaxer_forest::*;
+use num_traits::Signed;
+use parking_lot::RwLock;
 use std::sync::Arc;
 
 pub type EchelonMatrix = Echelon<Tail<Tight<BasicMatrix>>>;
@@ -72,15 +72,63 @@ pub struct PluginEntry {
     pub repeat_strategy: RepeatStrategy,
 }
 
+impl PluginEntry {
+    pub fn execute(
+        &self,
+        decoding_graph: &DecodingHyperGraph,
+        matrix: &mut EchelonMatrix,
+        positive_dual_nodes: &[DualNodePtr],
+        relaxer_forest: &mut RelaxerForest,
+    ) -> Option<Relaxer> {
+        let mut repeat = true;
+        let mut repeat_count = 0;
+        while repeat {
+            // execute the plugin
+            let relaxers = self.plugin.find_relaxers(decoding_graph, &mut *matrix, positive_dual_nodes);
+            if relaxers.is_empty() {
+                repeat = false;
+            }
+            for relaxer in relaxers.into_iter() {
+                for edge_index in relaxer.get_untighten_edges().keys() {
+                    matrix.update_edge_tightness(*edge_index, false);
+                }
+                let relaxer = Arc::new(relaxer);
+                let sum_speed = relaxer.get_sum_speed();
+                if sum_speed.is_positive() {
+                    return Some(relaxer_forest.expand(&relaxer));
+                } else {
+                    relaxer_forest.add(relaxer);
+                }
+            }
+            // determine whether repeat again
+            match self.repeat_strategy {
+                RepeatStrategy::Once => {
+                    repeat = false;
+                }
+                RepeatStrategy::Multiple { max_repetition } => {
+                    if repeat_count + 1 >= max_repetition {
+                        repeat = false;
+                    }
+                }
+            }
+            repeat_count += 1;
+        }
+        None
+    }
+}
+
 pub type PluginVec = Vec<PluginEntry>;
 
 pub struct PluginManager {
     pub plugins: Arc<PluginVec>,
+    /// the plugin manager will stop at this index; this is helpful when we want
+    /// to execute the first plugin for all clusters, and then the second plugin for all, and so on.
+    pub plugin_count: Arc<RwLock<usize>>,
 }
 
 impl PluginManager {
-    pub fn new(plugins: Arc<PluginVec>) -> Self {
-        Self { plugins }
+    pub fn new(plugins: Arc<PluginVec>, plugin_count: Arc<RwLock<usize>>) -> Self {
+        Self { plugins, plugin_count }
     }
 
     pub fn is_empty(&self) -> bool {
@@ -99,43 +147,12 @@ impl PluginManager {
                 .iter()
                 .map(|ptr| ptr.read_recursive().invalid_subgraph.clone()),
         );
-        for plugin_entry in self.plugins.iter().chain(std::iter::once(&PluginUnionFind::entry())) {
-            let mut repeat = true;
-            let mut repeat_count = 0;
-            while repeat {
-                // execute the plugin
-                let relaxers = plugin_entry
-                    .plugin
-                    .find_relaxers(decoding_graph, &mut *matrix, positive_dual_nodes);
-                if relaxers.is_empty() {
-                    repeat = false;
-                }
-                for relaxer in relaxers.into_iter() {
-                    for edge_index in relaxer.get_untighten_edges().keys() {
-                        matrix.update_edge_tightness(*edge_index, false);
-                    }
-                    let relaxer = Arc::new(relaxer);
-                    let sum_speed = relaxer.get_sum_speed();
-                    if sum_speed.is_positive() {
-                        return Some(relaxer_forest.expand(&relaxer));
-                    } else {
-                        relaxer_forest.add(relaxer);
-                    }
-                }
-                // determine whether repeat again
-                match plugin_entry.repeat_strategy {
-                    RepeatStrategy::Once => {
-                        repeat = false;
-                    }
-                    RepeatStrategy::Multiple { max_repetition } => {
-                        if repeat_count + 1 >= max_repetition {
-                            repeat = false;
-                        }
-                    }
-                }
-                repeat_count += 1;
+        for plugin_entry in self.plugins.iter().take(*self.plugin_count.read_recursive()) {
+            if let Some(relaxer) = plugin_entry.execute(decoding_graph, matrix, positive_dual_nodes, &mut relaxer_forest) {
+                return Some(relaxer);
             }
         }
-        None
+        // add a union find relaxer finder as the last resort if nothing is reported
+        PluginUnionFind::entry().execute(decoding_graph, matrix, positive_dual_nodes, &mut relaxer_forest)
     }
 }

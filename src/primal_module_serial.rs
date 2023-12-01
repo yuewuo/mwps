@@ -14,10 +14,13 @@ use crate::primal_module::*;
 use crate::relaxer_optimizer::*;
 use crate::util::*;
 use crate::visualize::*;
+use parking_lot::RwLock;
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::collections::{BTreeSet, VecDeque};
 use std::fmt::Debug;
 use std::sync::Arc;
+use std::time::Instant;
 
 pub struct PrimalModuleSerial {
     /// growing strategy, default to single-tree approach for easier debugging and better locality
@@ -26,12 +29,31 @@ pub struct PrimalModuleSerial {
     pub nodes: Vec<PrimalModuleSerialNodePtr>,
     /// clusters of dual nodes
     pub clusters: Vec<PrimalClusterPtr>,
-    /// the indices of live clusters: those actively updating the dual module
-    pub live_clusters: BTreeSet<NodeIndex>,
     /// pending dual variables to grow, when using SingleCluster growing strategy
     pending_nodes: VecDeque<PrimalModuleSerialNodeWeak>,
     /// plugins
     pub plugins: Arc<PluginVec>,
+    /// how many plugins are actually executed for every cluster
+    pub plugin_count: Arc<RwLock<usize>>,
+    pub plugin_pending_clusters: Vec<usize>,
+    /// configuration
+    pub config: PrimalModuleSerialConfig,
+    /// the time spent on resolving the obstacles
+    pub time_resolve: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PrimalModuleSerialConfig {
+    /// timeout for the whole solving process
+    #[serde(default = "primal_serial_default_configs::timeout")]
+    timeout: f64,
+}
+
+pub mod primal_serial_default_configs {
+    pub fn timeout() -> f64 {
+        (10 * 60) as f64
+    }
 }
 
 /// strategy of growing the dual variables
@@ -81,17 +103,22 @@ impl PrimalModuleImpl for PrimalModuleSerial {
             growing_strategy: GrowingStrategy::SingleCluster,
             nodes: vec![],
             clusters: vec![],
-            live_clusters: BTreeSet::new(),
             pending_nodes: VecDeque::new(),
             plugins: Arc::new(vec![]), // default to UF decoder, i.e., without any plugins
+            plugin_count: Arc::new(RwLock::new(1)),
+            plugin_pending_clusters: vec![],
+            config: serde_json::from_value(json!({})).unwrap(),
+            time_resolve: 0.,
         }
     }
 
     fn clear(&mut self) {
         self.nodes.clear();
         self.clusters.clear();
-        self.live_clusters.clear();
         self.pending_nodes.clear();
+        *self.plugin_count.write() = 1;
+        self.plugin_pending_clusters.clear();
+        self.time_resolve = 0.;
     }
 
     #[allow(clippy::unnecessary_cast)]
@@ -113,11 +140,6 @@ impl PrimalModuleImpl for PrimalModuleSerial {
                 "must load a fresh dual module interface, found index out of order"
             );
             assert_eq!(node.index as usize, self.nodes.len(), "must load defect nodes in order");
-            assert_eq!(
-                node.index as usize,
-                self.live_clusters.len(),
-                "must load defect nodes in order"
-            );
             // construct cluster and its parity matrix (will be reused over all iterations)
             let primal_cluster_ptr = PrimalClusterPtr::new_value(PrimalCluster {
                 cluster_index: self.clusters.len() as NodeIndex,
@@ -126,7 +148,7 @@ impl PrimalModuleImpl for PrimalModuleSerial {
                 vertices: node.invalid_subgraph.vertices.clone(),
                 matrix: node.invalid_subgraph.generate_matrix(&interface.decoding_graph),
                 subgraph: None,
-                plugin_manager: PluginManager::new(self.plugins.clone()),
+                plugin_manager: PluginManager::new(self.plugins.clone(), self.plugin_count.clone()),
                 relaxer_optimizer: RelaxerOptimizer::new(),
             });
             // create the primal node of this defect node and insert into cluster
@@ -137,7 +159,6 @@ impl PrimalModuleImpl for PrimalModuleSerial {
             primal_cluster_ptr.write().nodes.push(primal_node_ptr.clone());
             // add to self
             self.nodes.push(primal_node_ptr);
-            self.live_clusters.insert(self.clusters.len() as NodeIndex);
             self.clusters.push(primal_cluster_ptr);
         }
         if matches!(self.growing_strategy, GrowingStrategy::SingleCluster) {
@@ -145,19 +166,76 @@ impl PrimalModuleImpl for PrimalModuleSerial {
                 let dual_node_ptr = primal_node_ptr.read_recursive().dual_node_ptr.clone();
                 dual_module.set_grow_rate(&dual_node_ptr, Rational::zero());
                 self.pending_nodes.push_back(primal_node_ptr.downgrade());
-                let cluster_index = primal_node_ptr
-                    .read_recursive()
-                    .cluster_weak
-                    .upgrade_force()
-                    .read_recursive()
-                    .cluster_index;
-                self.live_clusters.remove(&cluster_index);
             }
         }
     }
 
-    #[allow(clippy::unnecessary_cast)]
     fn resolve(
+        &mut self,
+        group_max_update_length: GroupMaxUpdateLength,
+        interface_ptr: &DualModuleInterfacePtr,
+        dual_module: &mut impl DualModuleImpl,
+    ) {
+        let begin = Instant::now();
+        self.resolve_core(group_max_update_length, interface_ptr, dual_module);
+        self.time_resolve += begin.elapsed().as_secs_f64();
+    }
+
+    fn subgraph(&mut self, _interface: &DualModuleInterfacePtr, _dual_module: &mut impl DualModuleImpl) -> Subgraph {
+        let mut subgraph = vec![];
+        for cluster_ptr in self.clusters.iter() {
+            let cluster = cluster_ptr.read_recursive();
+            if cluster.nodes.is_empty() {
+                continue;
+            }
+            subgraph.extend(
+                cluster
+                    .subgraph
+                    .clone()
+                    .expect("bug occurs: cluster should be solved, but the subgraph is not yet generated")
+                    .iter(),
+            );
+        }
+        subgraph
+    }
+}
+
+impl PrimalModuleSerial {
+    // union the cluster of two dual nodes
+    #[allow(clippy::unnecessary_cast)]
+    pub fn union(&self, dual_node_ptr_1: &DualNodePtr, dual_node_ptr_2: &DualNodePtr, decoding_graph: &DecodingHyperGraph) {
+        let node_index_1 = dual_node_ptr_1.read_recursive().index;
+        let node_index_2 = dual_node_ptr_2.read_recursive().index;
+        let primal_node_1 = self.nodes[node_index_1 as usize].read_recursive();
+        let primal_node_2 = self.nodes[node_index_2 as usize].read_recursive();
+        if primal_node_1.cluster_weak.ptr_eq(&primal_node_2.cluster_weak) {
+            return; // already in the same cluster
+        }
+        let cluster_ptr_1 = primal_node_1.cluster_weak.upgrade_force();
+        let cluster_ptr_2 = primal_node_2.cluster_weak.upgrade_force();
+        drop(primal_node_1);
+        drop(primal_node_2);
+        let mut cluster_1 = cluster_ptr_1.write();
+        let mut cluster_2 = cluster_ptr_2.write();
+        for primal_node_ptr in cluster_2.nodes.drain(..) {
+            primal_node_ptr.write().cluster_weak = cluster_ptr_1.downgrade();
+            cluster_1.nodes.push(primal_node_ptr);
+        }
+        cluster_1.edges.append(&mut cluster_2.edges);
+        for &vertex_index in cluster_2.vertices.iter() {
+            if !cluster_1.vertices.contains(&vertex_index) {
+                cluster_1.vertices.insert(vertex_index);
+                let incident_edges = decoding_graph.get_vertex_neighbors(vertex_index);
+                let parity = decoding_graph.is_vertex_defect(vertex_index);
+                cluster_1.matrix.add_constraint(vertex_index, incident_edges, parity);
+            }
+        }
+        cluster_1.relaxer_optimizer.append(&mut cluster_2.relaxer_optimizer);
+        cluster_2.vertices.clear();
+    }
+
+    #[allow(clippy::unnecessary_cast)]
+    fn resolve_core(
         &mut self,
         mut group_max_update_length: GroupMaxUpdateLength,
         interface_ptr: &DualModuleInterfacePtr,
@@ -214,80 +292,64 @@ impl PrimalModuleImpl for PrimalModuleSerial {
             }
         }
         drop(interface);
+        if *self.plugin_count.read_recursive() > 1 && self.time_resolve > self.config.timeout {
+            for &cluster_index in active_clusters.iter() {
+                self.reset_cluster(cluster_index, dual_module);
+            }
+            return; // timeout
+        }
         let mut all_solved = true;
         for &cluster_index in active_clusters.iter() {
             let solved = self.resolve_cluster(cluster_index, interface_ptr, dual_module);
-            if solved {
-                self.live_clusters.remove(&cluster_index);
-            }
             all_solved &= solved;
         }
-        if all_solved {
-            while !self.pending_nodes.is_empty() {
-                let primal_node_weak = self.pending_nodes.pop_front().unwrap();
-                let primal_node_ptr = primal_node_weak.upgrade_force();
-                let primal_node = primal_node_ptr.read_recursive();
-                let cluster_ptr = primal_node.cluster_weak.upgrade_force();
-                self.live_clusters.insert(cluster_ptr.read_recursive().cluster_index);
-                if cluster_ptr.read_recursive().subgraph.is_none() {
-                    dual_module.set_grow_rate(&primal_node.dual_node_ptr, Rational::one());
-                    break;
+        if !all_solved {
+            return; // already give dual module something to do
+        }
+        while !self.pending_nodes.is_empty() {
+            let primal_node_weak = self.pending_nodes.pop_front().unwrap();
+            let primal_node_ptr = primal_node_weak.upgrade_force();
+            let primal_node = primal_node_ptr.read_recursive();
+            let cluster_ptr = primal_node.cluster_weak.upgrade_force();
+            if cluster_ptr.read_recursive().subgraph.is_none() {
+                dual_module.set_grow_rate(&primal_node.dual_node_ptr, Rational::one());
+                return; // let the dual module to find more obstacles
+            }
+        }
+        // until this point, at least every cluster has been visited once and marked as solved; we check for timeout now
+        if self.time_resolve >= self.config.timeout {
+            for &cluster_index in active_clusters.iter() {
+                self.reset_cluster(cluster_index, dual_module);
+            }
+            return; // timeout
+        }
+        // check that all clusters have passed the plugins
+        loop {
+            while let Some(cluster_index) = self.plugin_pending_clusters.pop() {
+                let solved = self.resolve_cluster(cluster_index, interface_ptr, dual_module);
+                if !solved {
+                    return; // let the dual module to handle one
                 }
             }
-        }
-    }
-
-    fn subgraph(&mut self, _interface: &DualModuleInterfacePtr, _dual_module: &mut impl DualModuleImpl) -> Subgraph {
-        let mut subgraph = vec![];
-        for cluster_ptr in self.clusters.iter() {
-            let cluster = cluster_ptr.read_recursive();
-            if cluster.nodes.is_empty() {
-                continue;
+            if *self.plugin_count.read_recursive() < self.plugins.len() {
+                // increment the plugin count
+                *self.plugin_count.write() += 1;
+                self.plugin_pending_clusters = (0..self.clusters.len()).collect();
+            } else {
+                break; // nothing more to check
             }
-            subgraph.extend(
-                cluster
-                    .subgraph
-                    .clone()
-                    .expect("bug occurs: cluster should be solved, but the subgraph is not yet generated")
-                    .iter(),
-            );
         }
-        subgraph
     }
-}
 
-impl PrimalModuleSerial {
-    // union the cluster of two dual nodes
     #[allow(clippy::unnecessary_cast)]
-    pub fn union(&self, dual_node_ptr_1: &DualNodePtr, dual_node_ptr_2: &DualNodePtr, decoding_graph: &DecodingHyperGraph) {
-        let node_index_1 = dual_node_ptr_1.read_recursive().index;
-        let node_index_2 = dual_node_ptr_2.read_recursive().index;
-        let primal_node_1 = self.nodes[node_index_1 as usize].read_recursive();
-        let primal_node_2 = self.nodes[node_index_2 as usize].read_recursive();
-        if primal_node_1.cluster_weak.ptr_eq(&primal_node_2.cluster_weak) {
-            return; // already in the same cluster
+    fn reset_cluster(&mut self, cluster_index: NodeIndex, dual_module: &mut impl DualModuleImpl) {
+        let cluster_ptr = self.clusters[cluster_index as usize].clone();
+        let cluster = cluster_ptr.write();
+        // set all nodes to stop growing in the cluster
+        for primal_node_ptr in cluster.nodes.iter() {
+            let dual_node_ptr = primal_node_ptr.read_recursive().dual_node_ptr.clone();
+            dual_module.set_grow_rate(&dual_node_ptr, Rational::zero());
         }
-        let cluster_ptr_1 = primal_node_1.cluster_weak.upgrade_force();
-        let cluster_ptr_2 = primal_node_2.cluster_weak.upgrade_force();
-        drop(primal_node_1);
-        drop(primal_node_2);
-        let mut cluster_1 = cluster_ptr_1.write();
-        let mut cluster_2 = cluster_ptr_2.write();
-        for primal_node_ptr in cluster_2.nodes.drain(..) {
-            primal_node_ptr.write().cluster_weak = cluster_ptr_1.downgrade();
-            cluster_1.nodes.push(primal_node_ptr);
-        }
-        cluster_1.edges.append(&mut cluster_2.edges);
-        for &vertex_index in cluster_2.vertices.iter() {
-            if !cluster_1.vertices.contains(&vertex_index) {
-                cluster_1.vertices.insert(vertex_index);
-                let incident_edges = decoding_graph.get_vertex_neighbors(vertex_index);
-                let parity = decoding_graph.is_vertex_defect(vertex_index);
-                cluster_1.matrix.add_constraint(vertex_index, incident_edges, parity);
-            }
-        }
-        cluster_1.relaxer_optimizer.append(&mut cluster_2.relaxer_optimizer);
-        cluster_2.vertices.clear();
     }
 
     /// analyze a cluster and return whether there exists an optimal solution (depending on optimization levels)
@@ -397,6 +459,8 @@ pub mod tests {
     use super::super::example_codes::*;
     use super::*;
     use crate::num_traits::FromPrimitive;
+    use crate::plugin_single_hair::PluginSingleHair;
+    use crate::plugin_union_find::PluginUnionFind;
 
     pub fn primal_module_serial_basic_standard_syndrome_optional_viz(
         code: impl ExampleCode,
@@ -581,6 +645,43 @@ pub mod tests {
             defect_vertices,
             4,
             vec![],
+            GrowingStrategy::MultipleClusters,
+        );
+    }
+
+    /// verify that each cluster is indeed growing one by one
+    #[test]
+    fn primal_module_serial_basic_4_cluster_single_growth() {
+        // cargo test primal_module_serial_basic_4_cluster_single_growth -- --nocapture
+        let visualize_filename = "primal_module_serial_basic_4_cluster_single_growth.json".to_string();
+        let defect_vertices = vec![32, 33, 37, 47, 86, 87, 72, 82];
+        let code = CodeCapacityPlanarCode::new(11, 0.01, 1);
+        primal_module_serial_basic_standard_syndrome(
+            code,
+            visualize_filename,
+            defect_vertices,
+            4,
+            vec![],
+            GrowingStrategy::SingleCluster,
+        );
+    }
+
+    /// verify that the plugins are applied one by one
+    #[test]
+    fn primal_module_serial_basic_4_plugin_one_by_one() {
+        // cargo test primal_module_serial_basic_4_plugin_one_by_one -- --nocapture
+        let visualize_filename = "primal_module_serial_basic_4_plugin_one_by_one.json".to_string();
+        let defect_vertices = vec![12, 22, 23, 32, 17, 26, 27, 37, 62, 72, 73, 82, 67, 76, 77, 87];
+        let code = CodeCapacityPlanarCode::new(11, 0.01, 1);
+        primal_module_serial_basic_standard_syndrome(
+            code,
+            visualize_filename,
+            defect_vertices,
+            12,
+            vec![
+                PluginUnionFind::entry(),
+                PluginSingleHair::entry_with_strategy(RepeatStrategy::Once),
+            ],
             GrowingStrategy::MultipleClusters,
         );
     }

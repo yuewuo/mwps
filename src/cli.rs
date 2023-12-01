@@ -397,18 +397,9 @@ impl PrimalDualType {
         primal_dual_config: serde_json::Value,
     ) -> Box<dyn PrimalDualSolver> {
         match self {
-            Self::UnionFind => {
-                assert_eq!(primal_dual_config, json!({}));
-                Box::new(SolverSerialUnionFind::new(initializer))
-            }
-            Self::SingleHair => {
-                assert_eq!(primal_dual_config, json!({}));
-                Box::new(SolverSerialSingleHair::new(initializer))
-            }
-            Self::JointSingleHair => {
-                assert_eq!(primal_dual_config, json!({}));
-                Box::new(SolverSerialJointSingleHair::new(initializer))
-            }
+            Self::UnionFind => Box::new(SolverSerialUnionFind::new(initializer, primal_dual_config)),
+            Self::SingleHair => Box::new(SolverSerialSingleHair::new(initializer, primal_dual_config)),
+            Self::JointSingleHair => Box::new(SolverSerialJointSingleHair::new(initializer, primal_dual_config)),
             Self::ErrorPatternLogger => Box::new(SolverErrorPatternLogger::new(initializer, code, primal_dual_config)),
         }
     }
