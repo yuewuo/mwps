@@ -251,6 +251,7 @@ impl SolverSerialJointSingleHair {
             initializer,
             Arc::new(vec![
                 PluginUnionFind::entry(), // to allow timeout using union-find as baseline
+                PluginSingleHair::entry_with_strategy(RepeatStrategy::Once), // first make all clusters valid single hair
                 PluginSingleHair::entry_with_strategy(RepeatStrategy::Multiple {
                     max_repetition: usize::MAX,
                 }),

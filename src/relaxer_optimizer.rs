@@ -62,7 +62,11 @@ impl RelaxerOptimizer {
         self.relaxers.insert(relaxer);
     }
 
-    pub fn should_optimize(&self, _relaxer: &Relaxer) -> bool {
+    pub fn should_optimize(&self, relaxer: &Relaxer) -> bool {
+        // avoid calling optimizer on simple growing relaxer
+        if relaxer.get_direction().len() < 2 {
+            return false;
+        }
         // self.relaxers.contains(relaxer)
         true
     }
