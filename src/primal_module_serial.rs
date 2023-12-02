@@ -222,6 +222,7 @@ impl PrimalModuleSerial {
             cluster_1.nodes.push(primal_node_ptr);
         }
         cluster_1.edges.append(&mut cluster_2.edges);
+        cluster_1.subgraph = None; // mark as no subgraph
         for &vertex_index in cluster_2.vertices.iter() {
             if !cluster_1.vertices.contains(&vertex_index) {
                 cluster_1.vertices.insert(vertex_index);
@@ -292,11 +293,8 @@ impl PrimalModuleSerial {
             }
         }
         drop(interface);
-        if *self.plugin_count.read_recursive() > 1 && self.time_resolve > self.config.timeout {
-            for &cluster_index in active_clusters.iter() {
-                self.reset_cluster(cluster_index, dual_module);
-            }
-            return; // timeout
+        if *self.plugin_count.read_recursive() != 0 && self.time_resolve > self.config.timeout {
+            *self.plugin_count.write() = 0; // force only the first plugin
         }
         let mut all_solved = true;
         for &cluster_index in active_clusters.iter() {
@@ -316,12 +314,8 @@ impl PrimalModuleSerial {
                 return; // let the dual module to find more obstacles
             }
         }
-        // until this point, at least every cluster has been visited once and marked as solved; we check for timeout now
-        if self.time_resolve >= self.config.timeout {
-            for &cluster_index in active_clusters.iter() {
-                self.reset_cluster(cluster_index, dual_module);
-            }
-            return; // timeout
+        if *self.plugin_count.read_recursive() == 0 {
+            return;
         }
         // check that all clusters have passed the plugins
         loop {
@@ -338,17 +332,6 @@ impl PrimalModuleSerial {
             } else {
                 break; // nothing more to check
             }
-        }
-    }
-
-    #[allow(clippy::unnecessary_cast)]
-    fn reset_cluster(&mut self, cluster_index: NodeIndex, dual_module: &mut impl DualModuleImpl) {
-        let cluster_ptr = self.clusters[cluster_index as usize].clone();
-        let cluster = cluster_ptr.write();
-        // set all nodes to stop growing in the cluster
-        for primal_node_ptr in cluster.nodes.iter() {
-            let dual_node_ptr = primal_node_ptr.read_recursive().dual_node_ptr.clone();
-            dual_module.set_grow_rate(&dual_node_ptr, Rational::zero());
         }
     }
 
@@ -491,6 +474,7 @@ pub mod tests {
         let mut primal_module = PrimalModuleSerial::new_empty(&model_graph.initializer);
         primal_module.growing_strategy = growing_strategy;
         primal_module.plugins = Arc::new(plugins);
+        // primal_module.config = serde_json::from_value(json!({"timeout":1})).unwrap();
         // try to work on a simple syndrome
         let decoding_graph = DecodingHyperGraph::new_defects(model_graph, defect_vertices.clone());
         let interface_ptr = DualModuleInterfacePtr::new(decoding_graph.model_graph.clone());
@@ -681,6 +665,31 @@ pub mod tests {
             vec![
                 PluginUnionFind::entry(),
                 PluginSingleHair::entry_with_strategy(RepeatStrategy::Once),
+            ],
+            GrowingStrategy::MultipleClusters,
+        );
+    }
+
+    /// timeout functionality does not work, panic with
+    /// bug occurs: cluster should be solved, but the subgraph is not yet generated
+    /// {"[0][6][8]":"Z","[0][6][10]":"X","[0][7][1]":"Y","[0][8][6]":"Y","[0][8][8]":"Z","[0][9][5]":"X"}
+    #[test]
+    fn primal_module_serial_debug_1() {
+        // cargo test primal_module_serial_debug_1 -- --nocapture
+        let visualize_filename = "primal_module_serial_debug_1.json".to_string();
+        let defect_vertices = vec![10, 23, 16, 41, 29, 17, 3, 37, 25, 43];
+        let code = CodeCapacityTailoredCode::new(7, 0.1, 0.1, 1);
+
+        primal_module_serial_basic_standard_syndrome(
+            code,
+            visualize_filename,
+            defect_vertices,
+            6,
+            vec![
+                PluginUnionFind::entry(),
+                PluginSingleHair::entry_with_strategy(RepeatStrategy::Multiple {
+                    max_repetition: usize::MAX,
+                }),
             ],
             GrowingStrategy::MultipleClusters,
         );
