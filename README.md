@@ -8,6 +8,15 @@ Note: hypergraph MWPF is proven to be NP-hard. Our design is taking advantage of
 the **average** time complexity and reach almost-linear **average** time complexity at small physical error rate.
 Please wait for our paper for more discussion of the speed v.s. accuracy.
 
+## Installation
+
+```sh
+# for development environment
+conda install --channel conda-forge scip
+# for user
+pip install mwpf
+```
+
 ## Background
 
 Solving MWPF on hypergraph is essential for QEC decoding because it can implement exact Most Likely Error (MLE) decoder 

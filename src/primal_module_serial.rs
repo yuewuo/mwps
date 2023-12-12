@@ -679,7 +679,29 @@ pub mod tests {
         let visualize_filename = "primal_module_serial_debug_1.json".to_string();
         let defect_vertices = vec![10, 23, 16, 41, 29, 17, 3, 37, 25, 43];
         let code = CodeCapacityTailoredCode::new(7, 0.1, 0.1, 1);
+        primal_module_serial_basic_standard_syndrome(
+            code,
+            visualize_filename,
+            defect_vertices,
+            6,
+            vec![
+                PluginUnionFind::entry(),
+                PluginSingleHair::entry_with_strategy(RepeatStrategy::Multiple {
+                    max_repetition: usize::MAX,
+                }),
+            ],
+            GrowingStrategy::MultipleClusters,
+        );
+    }
 
+    /// runs too slow
+    /// the issue is that the relaxer optimizer runs too slowly...
+    #[test]
+    fn primal_module_serial_debug_2() {
+        // cargo test primal_module_serial_debug_2 -- --nocapture
+        let visualize_filename = "primal_module_serial_debug_2.json".to_string();
+        let defect_vertices = vec![2, 4, 5, 8, 13, 14, 15, 16, 18, 24, 25, 26, 28, 29];
+        let code = CodeCapacityColorCode::new(9, 0.05, 1);
         primal_module_serial_basic_standard_syndrome(
             code,
             visualize_filename,
