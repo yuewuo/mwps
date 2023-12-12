@@ -71,6 +71,7 @@ getrandom = { version = "0.2", features = ["js"] }
 wasm-bindgen = { version = "0.2.86", optional = true }
 lazy_static = "1.4.0"
 slp = "0.1.11"
+russcip = "0.2.6"
 
 [dev-dependencies]
 test-case = "3.1.0"
