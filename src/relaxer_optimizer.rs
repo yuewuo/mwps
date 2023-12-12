@@ -166,7 +166,7 @@ impl RelaxerOptimizer {
 #[cfg(test)]
 pub mod tests {
     // use super::*;
-    use russcip::{prelude::*, ProblemCreated};
+    use highs::{ColProblem, HighsModelStatus, Model, Sense};
 
     // #[test]
     // fn relaxer_optimizer_simple() {
@@ -210,39 +210,42 @@ pub mod tests {
     }
 
     #[test]
-    fn scip_simple() {
-        // cargo test scip_simple -- --nocapture
-        let mut model = Model::new()
-            .hide_output()
-            .include_default_plugins()
-            .create_prob("test")
-            .set_obj_sense(ObjSense::Maximize);
+    fn highs_simple() {
+        let mut model = ColProblem::default().optimise(Sense::Maximise);
+        let row1 = model.add_row(..=6., []); // x*3 + y*1 <= 6
+        let row2 = model.add_row(..=7., []); // y*1 + z*2 <= 7
+        let _x = model.add_col(1., (0.).., [(row1, 3.)]);
+        let y = model.add_col(2., (0.).., [(row1, 1.), (row2, 1.)]);
+        let _z = model.add_col(1., (0.).., [(row2, 2.)]);
 
-        // Add variables
-        let x1 = model.add_var(0., f64::INFINITY, 3., "x1", VarType::Integer);
-        let x2 = model.add_var(0., f64::INFINITY, 4., "x2", VarType::Integer);
+        model.set_option("time_limit", 30.0); // stop after 30 seconds
+        model.set_option("parallel", "off"); // do not use multiple cores
 
-        // Add constraints
-        model.add_cons(vec![x1.clone(), x2.clone()], &[2., 1.], -f64::INFINITY, 100., "c1");
-        model.add_cons(vec![x1.clone(), x2.clone()], &[1., 2.], -f64::INFINITY, 80., "c2");
+        let solved = model.solve();
 
-        let solved_model = model.solve();
+        assert_eq!(solved.status(), HighsModelStatus::Optimal);
 
-        let status = solved_model.status();
-        println!("Solved with status {:?}", status);
+        let solution = solved.get_solution();
+        // The expected solution is x=0  y=6  z=0.5
+        assert_eq!(solution.columns(), vec![0., 6., 0.5]);
+        // All the constraints are at their maximum
+        assert_eq!(solution.rows(), vec![6., 7.]);
 
-        let obj_val = solved_model.obj_val();
-        println!("Objective value: {}", obj_val);
+        // this does nothing but just mark the model as unsolved
+        // so that we can modify the problem
+        let mut model: Model = solved.into();
+        let v = model.add_col(1., (0.)..10., []);
 
-        let sol = solved_model.best_sol().unwrap();
-        let vars = solved_model.vars();
+        let _row3 = model.add_row(..=10., [(y, 1.), (v, 2.0)]); // y*1 + v*2 <= 10
 
-        for var in vars {
-            println!("{} = {}", &var.name(), sol.val(var));
-        }
+        let solved = model.solve();
+        assert_eq!(solved.status(), HighsModelStatus::Optimal);
 
-        // didn't find a way to dynamically add variables and constraints unless implement a custom plugin
-        // this is undesirable because we want to control when to add variable and constraints instead of letting
-        // the optimizer to determine it
+        let solution = solved.get_solution();
+        // The expected solution is x=0  y=6  z=0.5
+        assert_eq!(solution.columns(), vec![0., 6., 0.5, 2.]);
+        // All the constraints are at their maximum
+        assert_eq!(solution.rows(), vec![6., 7., 10.]);
+        // model.add_row(..=6, row_factors);
     }
 }

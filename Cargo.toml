@@ -38,6 +38,7 @@ debug = true
 default = ["cli"]
 cli = ["pbr"]
 r64_weight = []                 # use Rational64 instead of BigRational as weight type
+f64_weight = []                 # use f64 instead of BigRational as weight type
 u32_index = []                  # use u32 instead of usize as index type, to save memory
 python_binding = ["pyo3"]       # bind to Python
 wasm_binding = ["wasm-bindgen"] # bind to wasm
@@ -71,7 +72,7 @@ getrandom = { version = "0.2", features = ["js"] }
 wasm-bindgen = { version = "0.2.86", optional = true }
 lazy_static = "1.4.0"
 slp = "0.1.11"
-russcip = "0.2.6"
+highs = "1.6.1"
 
 [dev-dependencies]
 test-case = "3.1.0"
