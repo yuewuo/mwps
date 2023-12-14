@@ -11,10 +11,6 @@ Please wait for our paper for more discussion of the speed v.s. accuracy.
 ## Installation
 
 ```sh
-# for development environment
-conda install --channel conda-forge scip
-export DYLD_LIBRARY_PATH=$CONDA_PREFIX/lib
-# for user
 pip install mwpf
 ```
 
