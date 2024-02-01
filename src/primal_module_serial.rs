@@ -582,6 +582,25 @@ pub mod tests {
     }
 
     #[test]
+    fn primal_module_serial_basic_3_improved() {
+        // cargo test primal_module_serial_basic_3_improved -- --nocapture
+        let visualize_filename = "primal_module_serial_basic_3_improved.json".to_string();
+        let defect_vertices = vec![14, 15, 16, 17, 22, 25, 28, 31, 36, 37, 38, 39];
+        let code = CodeCapacityTailoredCode::new(7, 0., 0.01, 1);
+        primal_module_serial_basic_standard_syndrome(
+            code,
+            visualize_filename,
+            defect_vertices,
+            5,
+            vec![
+                PluginUnionFind::entry(),
+                PluginSingleHair::entry_with_strategy(RepeatStrategy::Once),
+            ],
+            GrowingStrategy::SingleCluster,
+        );
+    }
+
+    #[test]
     fn primal_module_serial_basic_3_multi() {
         // cargo test primal_module_serial_basic_3_multi -- --nocapture
         let visualize_filename = "primal_module_serial_basic_3_multi.json".to_string();
@@ -610,6 +629,25 @@ pub mod tests {
             defect_vertices,
             4,
             vec![],
+            GrowingStrategy::SingleCluster,
+        );
+    }
+
+    #[test]
+    fn primal_module_serial_basic_4_single_improved() {
+        // cargo test primal_module_serial_basic_4_single_improved -- --nocapture
+        let visualize_filename = "primal_module_serial_basic_4_single_improved.json".to_string();
+        let defect_vertices = vec![10, 11, 12, 15, 16, 17, 18];
+        let code = CodeCapacityTailoredCode::new(5, 0., 0.01, 1);
+        primal_module_serial_basic_standard_syndrome(
+            code,
+            visualize_filename,
+            defect_vertices,
+            4,
+            vec![
+                PluginUnionFind::entry(),
+                PluginSingleHair::entry_with_strategy(RepeatStrategy::Once),
+            ],
             GrowingStrategy::SingleCluster,
         );
     }

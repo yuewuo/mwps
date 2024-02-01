@@ -197,14 +197,21 @@ macro_rules! bind_primal_dual_solver_trait {
 #[cfg_attr(feature = "python_binding", pyclass)]
 pub struct SolverSerialUnionFind(SolverSerialPlugins);
 
-#[cfg_attr(feature = "python_binding", cfg_eval)]
-#[cfg_attr(feature = "python_binding", pymethods)]
 impl SolverSerialUnionFind {
-    #[cfg_attr(feature = "python_binding", new)]
     pub fn new(initializer: &SolverInitializer, config: serde_json::Value) -> Self {
         let mut solver = SolverSerialPlugins::new(initializer, Arc::new(vec![]), config);
         solver.primal_module.growing_strategy = GrowingStrategy::MultipleClusters; // the original UF decoder
         Self(solver)
+    }
+}
+
+#[cfg(feature = "python_binding")]
+#[pymethods]
+impl SolverSerialUnionFind {
+    #[new]
+    pub fn new_python(initializer: &SolverInitializer, config: Option<PyObject>) -> Self {
+        let config = config.map(|x| pyobject_to_json(x)).unwrap_or(json!({}));
+        Self::new(initializer, config)
     }
 }
 
@@ -217,10 +224,7 @@ bind_trait_to_python!(SolverSerialUnionFind);
 #[cfg_attr(feature = "python_binding", pyclass)]
 pub struct SolverSerialSingleHair(SolverSerialPlugins);
 
-#[cfg_attr(feature = "python_binding", cfg_eval)]
-#[cfg_attr(feature = "python_binding", pymethods)]
 impl SolverSerialSingleHair {
-    #[cfg_attr(feature = "python_binding", new)]
     pub fn new(initializer: &SolverInitializer, config: serde_json::Value) -> Self {
         Self(SolverSerialPlugins::new(
             initializer,
@@ -233,6 +237,16 @@ impl SolverSerialSingleHair {
     }
 }
 
+#[cfg(feature = "python_binding")]
+#[pymethods]
+impl SolverSerialSingleHair {
+    #[new]
+    pub fn new_python(initializer: &SolverInitializer, config: Option<PyObject>) -> Self {
+        let config = config.map(|x| pyobject_to_json(x)).unwrap_or(json!({}));
+        Self::new(initializer, config)
+    }
+}
+
 bind_primal_dual_solver_trait!(SolverSerialSingleHair);
 
 #[cfg(feature = "python_binding")]
@@ -242,10 +256,7 @@ bind_trait_to_python!(SolverSerialSingleHair);
 #[cfg_attr(feature = "python_binding", pyclass)]
 pub struct SolverSerialJointSingleHair(SolverSerialPlugins);
 
-#[cfg_attr(feature = "python_binding", cfg_eval)]
-#[cfg_attr(feature = "python_binding", pymethods)]
 impl SolverSerialJointSingleHair {
-    #[cfg_attr(feature = "python_binding", new)]
     pub fn new(initializer: &SolverInitializer, config: serde_json::Value) -> Self {
         Self(SolverSerialPlugins::new(
             initializer,
@@ -258,6 +269,16 @@ impl SolverSerialJointSingleHair {
             ]),
             config,
         ))
+    }
+}
+
+#[cfg(feature = "python_binding")]
+#[pymethods]
+impl SolverSerialJointSingleHair {
+    #[new]
+    pub fn new_python(initializer: &SolverInitializer, config: Option<PyObject>) -> Self {
+        let config = config.map(|x| pyobject_to_json(x)).unwrap_or(json!({}));
+        Self::new(initializer, config)
     }
 }
 
