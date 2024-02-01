@@ -282,6 +282,19 @@ pub trait ExampleCode {
         }
     }
 
+    #[allow(clippy::unnecessary_cast)]
+    fn set_physical_errors(&mut self, physical_errors: &[EdgeIndex]) {
+        // clear existing errors
+        self.set_defect_vertices(&[]);
+        let (vertices, edges) = self.vertices_edges();
+        for edge_idx in physical_errors {
+            let edge = &edges[*edge_idx as usize];
+            for vertex_idx in edge.vertices.iter() {
+                vertices[*vertex_idx as usize].is_defect = !vertices[*vertex_idx as usize].is_defect;
+            }
+        }
+    }
+
     /// set erasure edges
     #[allow(clippy::unnecessary_cast)]
     fn set_erasures(&mut self, erasures: &[EdgeIndex]) {
@@ -427,6 +440,10 @@ macro_rules! bind_trait_example_code {
             #[pyo3(name = "set_defect_vertices")]
             fn trait_set_defect_vertices(&mut self, defect_vertices: Vec<VertexIndex>) {
                 self.set_defect_vertices(&defect_vertices)
+            }
+            #[pyo3(name = "set_physical_errors")]
+            fn trait_set_physical_errors(&mut self, physical_errors: Vec<EdgeIndex>) {
+                self.set_physical_errors(&physical_errors)
             }
             #[pyo3(name = "set_erasures")]
             fn trait_set_erasures(&mut self, erasures: Vec<EdgeIndex>) {
@@ -698,17 +715,19 @@ impl CodeCapacityTailoredCode {
         assert_eq!(positions.len(), vertex_num as usize);
         let mut edges = Vec::new();
         // first add Z errors
-        for di in (1..2 * d as usize).step_by(2) {
-            for dj in (1..2 * d as usize).step_by(2) {
-                let mut vertices = vec![];
-                for (si, sj) in [(di - 1, dj - 1), (di - 1, dj + 1), (di + 1, dj - 1), (di + 1, dj + 1)] {
-                    if stabilizers.contains_key(&(si, sj)) {
-                        vertices.push(stabilizers[&(si, sj)]);
+        if pz > 0. {
+            for di in (1..2 * d as usize).step_by(2) {
+                for dj in (1..2 * d as usize).step_by(2) {
+                    let mut vertices = vec![];
+                    for (si, sj) in [(di - 1, dj - 1), (di - 1, dj + 1), (di + 1, dj - 1), (di + 1, dj + 1)] {
+                        if stabilizers.contains_key(&(si, sj)) {
+                            vertices.push(stabilizers[&(si, sj)]);
+                        }
                     }
+                    let mut edge = CodeEdge::new(vertices);
+                    edge.p = pz;
+                    edges.push(edge);
                 }
-                let mut edge = CodeEdge::new(vertices);
-                edge.p = pz;
-                edges.push(edge);
             }
         }
         // then add X and Y errors
@@ -971,6 +990,8 @@ pub(crate) fn register(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(weight_of_p, m)?)?;
     m.add_class::<CodeCapacityRepetitionCode>()?;
     m.add_class::<CodeCapacityPlanarCode>()?;
+    m.add_class::<CodeCapacityTailoredCode>()?;
+    m.add_class::<CodeCapacityColorCode>()?;
     Ok(())
 }
 
