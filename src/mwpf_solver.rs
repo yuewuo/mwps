@@ -75,13 +75,20 @@ pub struct SolverSerialPluginsConfig {
     /// timeout for the whole solving process in millisecond
     #[serde(default = "hyperion_default_configs::primal")]
     primal: PrimalModuleSerialConfig,
+    /// growing strategy
+    #[serde(default = "hyperion_default_configs::growing_strategy")]
+    growing_strategy: GrowingStrategy,
 }
 
 pub mod hyperion_default_configs {
-    use crate::primal_module_serial::PrimalModuleSerialConfig;
+    use crate::primal_module_serial::*;
 
     pub fn primal() -> PrimalModuleSerialConfig {
         serde_json::from_value(json!({})).unwrap()
+    }
+
+    pub fn growing_strategy() -> GrowingStrategy {
+        GrowingStrategy::MultipleClusters
     }
 }
 
@@ -106,7 +113,7 @@ impl SolverSerialPlugins {
         let model_graph = Arc::new(ModelHyperGraph::new(Arc::new(initializer.clone())));
         let mut primal_module = PrimalModuleSerial::new_empty(initializer);
         let config: SolverSerialPluginsConfig = serde_json::from_value(config).unwrap();
-        primal_module.growing_strategy = GrowingStrategy::MultipleClusters;
+        primal_module.growing_strategy = config.growing_strategy;
         primal_module.plugins = plugins;
         primal_module.config = config.primal.clone();
         // primal_module.
@@ -196,9 +203,7 @@ pub struct SolverSerialUnionFind(SolverSerialPlugins);
 
 impl SolverSerialUnionFind {
     pub fn new(initializer: &SolverInitializer, config: serde_json::Value) -> Self {
-        let mut solver = SolverSerialPlugins::new(initializer, Arc::new(vec![]), config);
-        solver.primal_module.growing_strategy = GrowingStrategy::MultipleClusters; // the original UF decoder
-        Self(solver)
+        Self(SolverSerialPlugins::new(initializer, Arc::new(vec![]), config))
     }
 }
 

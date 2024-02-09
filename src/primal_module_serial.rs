@@ -57,7 +57,7 @@ pub mod primal_serial_default_configs {
 }
 
 /// strategy of growing the dual variables
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum GrowingStrategy {
     /// focus on a single cluster at a time, for easier debugging and better locality
     SingleCluster,
