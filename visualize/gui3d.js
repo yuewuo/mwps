@@ -758,9 +758,14 @@ function set_material_with_user_data(user_data, material) {  // return the previ
     if (user_data.type == "edge") {
         let edge_index = user_data.edge_index
         let edge_vec_mesh = edge_vec_meshes[edge_index]
-        let previous_material = edge_vec_mesh[0].material
-        for (let mesh of edge_vec_mesh) {
-            mesh.material = material
+        let previous_material = []
+        for (let [index, mesh] of edge_vec_mesh.entries()) {
+            previous_material.push(mesh.material)
+            if (Array.isArray(material)) {
+                mesh.material = material[index]
+            } else {
+                mesh.material = material
+            }
         }
         return previous_material
     }
@@ -779,20 +784,22 @@ function set_material_with_user_data(user_data, material) {  // return the previ
         return previous_material
     }
     if (user_data.type == "edges") {
-        let previous_material = []
+        let previous_material_vec = []
         for (let i = 0; i < user_data.edges.length; ++i) {
             let edge_index = user_data.edges[i]
             let edge_vec_mesh = edge_vec_meshes[edge_index]
-            previous_material.push(edge_vec_mesh[0].material)
-            for (let mesh of edge_vec_mesh) {
+            let previous_material = []
+            previous_material_vec.push(previous_material)
+            for (let [index, mesh] of edge_vec_mesh.entries()) {
+                previous_material.push(mesh.material)
                 if (Array.isArray(material)) {
-                    mesh.material = material[i]
+                    mesh.material = material[i][index]
                 } else {
                     mesh.material = material
                 }
             }
         }
-        return previous_material
+        return previous_material_vec
     }
     console.error(`unknown type ${user_data.type}`)
 }

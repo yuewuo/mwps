@@ -116,7 +116,6 @@ impl SolverSerialPlugins {
         primal_module.growing_strategy = config.growing_strategy;
         primal_module.plugins = plugins;
         primal_module.config = config.primal.clone();
-        // primal_module.
         Self {
             dual_module: DualModuleSerial::new_empty(initializer),
             primal_module,

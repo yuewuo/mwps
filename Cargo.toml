@@ -73,6 +73,8 @@ wasm-bindgen = { version = "0.2.86", optional = true }
 lazy_static = "1.4.0"
 slp = "0.1.11"
 highs = "1.6.1"
+sugar = "0.2.0"
+maplit = "1.0.2"
 
 [dev-dependencies]
 test-case = "3.1.0"
