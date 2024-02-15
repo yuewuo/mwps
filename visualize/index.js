@@ -44,7 +44,7 @@ const App = {
             snapshot_select_label: ref(1),
             snapshot_labels: ref([]),
             mwpf_data_ready: ref(false),
-            segmented: ref(true),
+            segmented: gui3d.segmented,
             use_perspective_camera: gui3d.use_perspective_camera,
             sizes: gui3d.sizes,
             export_scale_selected: ref(1),

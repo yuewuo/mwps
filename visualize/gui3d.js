@@ -107,6 +107,7 @@ window.camera = camera
 export const orbit_control = computed(() => {
     return use_perspective_camera.value ? orbit_control_perspective : orbit_control_orthogonal
 })
+export const segmented = ref(true)
 
 export function reset_camera_position(direction = "top") {
     for (let [camera, control, distance] of [[perspective_camera, orbit_control_perspective, 8], [orthogonal_camera, orbit_control_orthogonal, 1000]]) {
@@ -259,6 +260,46 @@ export function get_edge_material(grown, weight) {
         return edge_materials[idx + 2]
     }
 }
+let segmented_edge_colors = [
+    "#D52C1C",  // red
+    "#44C03F",  // green
+    "#2723F7",  // blue
+    "#F6C231",  // yellow
+    "#4DCCFB",  // light blue
+    "#F17B24",  // orange
+    "#7C1DD8",  // purple
+    "#8C4515",  // brown
+    "#E14CB6",  // pink
+]
+let segmented_untight_opacity = 0.5
+let segmented_tight_opacity = 1
+export const segmented_edge_materials = []
+function update_segmented_edge_materials() {
+    for (let [untight, tight] of segmented_edge_materials) {
+        untight.dispose()
+        tight.dispose()
+    }
+    segmented_edge_materials.splice(0, segmented_edge_materials.length) // clear
+    for (let color of segmented_edge_colors) {
+        const tight = new THREE.MeshStandardMaterial({
+            color: color,
+            opacity: segmented_tight_opacity,
+            transparent: true,
+            side: edge_side
+        })
+        const untight = new THREE.MeshStandardMaterial({
+            color: color,
+            opacity: segmented_untight_opacity,
+            transparent: true,
+            side: edge_side
+        })
+        segmented_edge_materials.push([untight, tight])
+    }
+}
+update_segmented_edge_materials()
+export function get_segmented_edge_material(is_tight, node_index) {
+    return segmented_edge_materials[node_index % segmented_edge_materials.length][is_tight ? 1 : 0]
+}
 export const subgraph_edge_material = new THREE.MeshStandardMaterial({
     color: 0x0000ff,
     opacity: 1,
@@ -327,6 +368,21 @@ export function load_position(mesh_position, data_position) {
 
 export const active_mwpf_data = shallowRef(null)
 export const active_snapshot_idx = ref(0)
+export const edge_to_dual_indices = computed(() => {
+    const mwpf_data = active_mwpf_data.value
+    const snapshot_idx = active_snapshot_idx.value
+    const snapshot = mwpf_data.snapshots[snapshot_idx][1]
+    const dual_indices = []
+    for (let [_, edge] of snapshot.edges.entries()) {
+        dual_indices.push([])
+    }
+    for (let [node_index, node] of snapshot.dual_nodes.entries()) {
+        for (let edge_index of node.h) {
+            dual_indices[edge_index].push(node_index)
+        }
+    }
+    return dual_indices
+})
 export async function refresh_snapshot_data() {
     // console.log("refresh_snapshot_data")
     if (active_mwpf_data.value != null) {  // no mwpf data provided
@@ -416,15 +472,33 @@ export async function refresh_snapshot_data() {
             }
             edge_vec_mesh.splice(0, edge_vec_mesh.length) // clear
             const edge_material = get_edge_material(edge.g, edge.w)
-            for (let j = 0; j < edge.v.length; ++j) {
-                const edge_mesh = new THREE.Mesh(get_edge_geometry(edge.v.length), edge_material)
-                edge_mesh.userData = {
-                    type: "edge",
-                    edge_index: i,
+            const segmented_dual_indices = []
+            if (segmented.value && snapshot.dual_nodes != null) {  // check the non-zero contributing dual variables
+                for (let node_index of edge_to_dual_indices.value[i]) {
+                    if (snapshot.dual_nodes[node_index].dn != 0) {
+                        segmented_dual_indices.push(node_index)
+                    }
                 }
-                edge_mesh.visible = false
-                scene.add(edge_mesh)
-                edge_vec_mesh.push(edge_mesh)
+            }
+            for (let j = 0; j < edge.v.length; ++j) {
+                const create_edge_mesh = () => {
+                    const edge_mesh = new THREE.Mesh(get_edge_geometry(edge.v.length), edge_material)
+                    edge_mesh.userData = {
+                        type: "edge",
+                        edge_index: i,
+                    }
+                    edge_mesh.visible = false
+                    scene.add(edge_mesh)
+                    return edge_mesh
+                }
+                if (segmented.value) {
+                    // the last segment is the empty segment
+                    for (let k = 0; k < segmented_dual_indices.length + 1; ++k) {
+                        edge_vec_mesh.push(create_edge_mesh())
+                    }
+                } else {
+                    edge_vec_mesh.push(create_edge_mesh())
+                }
             }
             for (let j = 0; j < edge.v.length; ++j) {
                 const vertex_index = edge.v[j]
@@ -448,28 +522,71 @@ export async function refresh_snapshot_data() {
                     start_position = compute_vector3(vertex_position)
                     end_position = compute_vector3(vertex_position)
                 }
+                const segment_position_of = (ratio) => {  // 0: start, 1: end
+                    return start_position.clone().multiplyScalar(1 - ratio).add(end_position.clone().multiplyScalar(ratio))
+                }
                 local_edge_cache.push({
                     position: {
                         start: start_position,
                         end: end_position,
                     }
                 })
-                const edge_mesh = edge_vec_mesh[j]
-                edge_mesh.position.copy(start_position)
-                if (edge.v.length != 1) {
-                    edge_mesh.scale.set(1, edge_length, 1)
-                    edge_mesh.setRotationFromQuaternion(quaternion)
-                }
-                edge_mesh.visible = true
-                if (edge.v.length != 1 && edge_length == 0) {
-                    edge_mesh.visible = false
-                }
-                edge_mesh.material = edge_material
-                if (snapshot.subgraph != null) {
-                    edge_mesh.material = get_edge_material(0, edge.w)  // do not display grown edges
-                }
-                if (subgraph_set[i]) {
-                    edge_mesh.material = subgraph_edge_material
+                if (segmented.value) {
+                    // the segmented edges
+                    let accumulated_ratio = 0
+                    for (let k = 0; k < segmented_dual_indices.length + 1; ++k) {
+                        const is_segments = k != segmented_dual_indices.length
+                        const edge_mesh = edge_vec_mesh[k * edge.v.length + j]
+                        let segment_ratio = 0
+                        let node_index = -1
+                        if (is_segments) {
+                            node_index = segmented_dual_indices[k]
+                            const node = snapshot.dual_nodes[node_index]
+                            segment_ratio = node.d / edge.w
+                        } else {
+                            segment_ratio = 1 - accumulated_ratio
+                        }
+                        edge_mesh.position.copy(segment_position_of(accumulated_ratio))
+                        accumulated_ratio += segment_ratio
+                        if (edge.v.length != 1) {
+                            edge_mesh.scale.set(1, edge_length * segment_ratio, 1)
+                            edge_mesh.setRotationFromQuaternion(quaternion)
+                        }
+                        edge_mesh.visible = true
+                        if (edge.v.length != 1 && edge_length * segment_ratio == 0) {
+                            edge_mesh.visible = false
+                        }
+                        edge_mesh.renderOrder = 20 - edge.v.length  // better visual effect
+                        if (is_segments) {
+                            edge_mesh.material = get_segmented_edge_material(edge.un == 0, node_index)
+                        } else {
+                            edge_mesh.material = get_edge_material(0, edge.w)
+                        }
+                        if (snapshot.subgraph != null) {
+                            edge_mesh.material = get_edge_material(0, edge.w)  // do not display grown edges
+                        }
+                        if (subgraph_set[i]) {
+                            edge_mesh.material = subgraph_edge_material
+                        }
+                    }
+                } else {
+                    const edge_mesh = edge_vec_mesh[j]
+                    edge_mesh.position.copy(start_position)
+                    if (edge.v.length != 1) {
+                        edge_mesh.scale.set(1, edge_length, 1)
+                        edge_mesh.setRotationFromQuaternion(quaternion)
+                    }
+                    edge_mesh.visible = true
+                    if (edge.v.length != 1 && edge_length == 0) {
+                        edge_mesh.visible = false
+                    }
+                    edge_mesh.renderOrder = 20 - edge.v.length  // better visual effect
+                    if (snapshot.subgraph != null) {
+                        edge_mesh.material = get_edge_material(0, edge.w)  // do not display grown edges
+                    }
+                    if (subgraph_set[i]) {
+                        edge_mesh.material = subgraph_edge_material
+                    }
                 }
             }
         }
@@ -515,8 +632,7 @@ export async function refresh_snapshot_data() {
         }
     }
 }
-watch([active_mwpf_data], refresh_snapshot_data)  // call refresh_snapshot_data
-watch([active_snapshot_idx], refresh_snapshot_data)
+watch([active_mwpf_data, active_snapshot_idx, segmented], refresh_snapshot_data)  // call refresh_snapshot_data
 export function show_snapshot(snapshot_idx, mwpf_data) {
     active_snapshot_idx.value = snapshot_idx
     active_mwpf_data.value = mwpf_data
