@@ -331,7 +331,14 @@ const App = {
             } else {
                 this.dual_module_info = null
             }
-        }
+        },
+        node_color(node_index) {
+            if (!this.segmented) {
+                return "white"
+            }
+            const color = gui3d.segmented_edge_colors[node_index % gui3d.segmented_edge_colors.length]
+            return gui3d.lerpColors(color, "white", 0.5)
+        },
     },
     watch: {
         async snapshot_select() {

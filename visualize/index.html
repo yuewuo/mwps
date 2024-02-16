@@ -386,7 +386,8 @@
                     </div>
                     <div v-for="(node, node_index) of dual_module_info.dual_nodes" style="margin-top: 15px;">
                         <div v-if="!dual_display_hide_0 || node.dn != 0">
-                            y{{ node_index }} = <span class="dual-node-set bg-purple-2">
+                            <span class="dual-node-set" :style="{'background-color': node_color(node_index)}">y{{
+                                node_index }}</span> = <span class="dual-node-set bg-purple-2">
                                 {{ node.dn }}/{{ node.dd }}<q-tooltip anchor="top middle" self="bottom middle"
                                     :offset="[10, 10]" transition-show="scale" transition-hide="scale">
                                     <span style="font-size: 14px;">{{ node.d }}</span>

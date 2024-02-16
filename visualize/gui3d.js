@@ -218,11 +218,17 @@ let almost_empty_ratio = 0.1
 let almost_grown_ratio = 0.3
 let edge_side = THREE.BackSide
 const color_steps = 20  // there are 20 colors in the middle apart from the empty and full
+export function lerpColors(color1, color2, ratio) {
+    let c1 = new THREE.Color(color1)
+    let c2 = new THREE.Color(color2)
+    let c = new THREE.Color().lerpColors(c1, c2, ratio)
+    return "#" + c.getHexString()
+}
 function make_edge_material(ratio) {
     if (ratio < 0) ratio = 0
     if (ratio > 1) ratio = 1
     return new THREE.MeshStandardMaterial({
-        color: new THREE.Color().lerpColors(empty_edge_color, grown_edge_color, ratio),
+        color: lerpColors(empty_edge_color, grown_edge_color, ratio),
         opacity: empty_edge_opacity + (grown_edge_opacity - empty_edge_opacity) * ratio,
         transparent: true,
         side: edge_side
@@ -260,7 +266,7 @@ export function get_edge_material(grown, weight) {
         return edge_materials[idx + 2]
     }
 }
-let segmented_edge_colors = [
+export let segmented_edge_colors = [
     "#D52C1C",  // red
     "#44C03F",  // green
     "#2723F7",  // blue

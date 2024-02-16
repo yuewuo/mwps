@@ -13,9 +13,9 @@ use num_traits::cast::FromPrimitive;
 use std::sync::Arc;
 use sugar::*;
 
-fn simple_demo() {
+fn debug_demo() {
     for is_example in [true, false] {
-        let visualize_filename = format!("aps2024_simple_demo{}.json", if is_example { "_ex" } else { "" });
+        let visualize_filename = format!("aps2024_debug_demo{}.json", if is_example { "_ex" } else { "" });
         let mut code = CodeCapacityTailoredCode::new(3, 0., 0.01, 1);
         let initializer = code.get_initializer();
         let model_graph = Arc::new(ModelHyperGraph::new(Arc::new(initializer.clone())));
@@ -53,10 +53,23 @@ fn simple_demo() {
             let s0 = Arc::new(InvalidSubgraph::new_complete(btreeset! {3}, btreeset! {}, &decoding_graph));
             let (_, s0_ptr) = interface_ptr.find_or_create_node(&s0, &mut dual_module);
             dual_module.set_grow_rate(&s0_ptr, Rational::from_usize(1).unwrap());
-            dual_module.grow(Rational::new_raw(1.into(), 1.into()));
-            visualizer
-                .snapshot_combined("grow 1".to_string(), vec![&interface_ptr, &dual_module])
-                .unwrap();
+            for _ in 0..3 {
+                dual_module.grow(Rational::new_raw(1.into(), 3.into()));
+                visualizer
+                    .snapshot_combined("grow 1/3".to_string(), vec![&interface_ptr, &dual_module])
+                    .unwrap();
+            }
+            // create another node
+            let s1 = Arc::new(InvalidSubgraph::new_complete(btreeset! {6}, btreeset! {}, &decoding_graph));
+            let (_, s1_ptr) = interface_ptr.find_or_create_node(&s1, &mut dual_module);
+            dual_module.set_grow_rate(&s0_ptr, -Rational::from_usize(1).unwrap());
+            dual_module.set_grow_rate(&s1_ptr, Rational::from_usize(1).unwrap());
+            for _ in 0..3 {
+                dual_module.grow(Rational::new_raw(1.into(), 3.into()));
+                visualizer
+                    .snapshot_combined("grow 1/3".to_string(), vec![&interface_ptr, &dual_module])
+                    .unwrap();
+            }
             visualizer
                 .snapshot_combined(
                     "subgraph".to_string(),
@@ -68,5 +81,5 @@ fn simple_demo() {
 }
 
 fn main() {
-    simple_demo()
+    debug_demo();
 }
