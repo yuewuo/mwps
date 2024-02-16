@@ -432,12 +432,8 @@ export async function refresh_snapshot_data() {
             }
             const vertex_mesh = vertex_meshes[i]
             load_position(vertex_mesh.position, position)
-            if (vertex.mi != null && vertex.me == 0) {
-                vertex_mesh.material = disabled_mirror_vertex_material
-            } else if (vertex.s) {
+            if (vertex.s) {
                 vertex_mesh.material = defect_vertex_material
-            } else if (vertex.v) {
-                vertex_mesh.material = virtual_vertex_material
             } else {
                 vertex_mesh.material = normal_vertex_material
             }
@@ -481,7 +477,7 @@ export async function refresh_snapshot_data() {
             const segmented_dual_indices = []
             if (segmented.value && snapshot.dual_nodes != null) {  // check the non-zero contributing dual variables
                 for (let node_index of edge_to_dual_indices.value[i]) {
-                    if (snapshot.dual_nodes[node_index].dn != 0) {
+                    if (snapshot.dual_nodes[node_index].d != 0) {
                         segmented_dual_indices.push(node_index)
                     }
                 }
