@@ -47,7 +47,7 @@ pub struct PrimalModuleSerial {
 pub struct PrimalModuleSerialConfig {
     /// timeout for the whole solving process
     #[serde(default = "primal_serial_default_configs::timeout")]
-    timeout: f64,
+    pub timeout: f64,
 }
 
 pub mod primal_serial_default_configs {
