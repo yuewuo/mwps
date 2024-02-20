@@ -4,6 +4,7 @@ import * as THREE from 'three'
 import { OrbitControls } from './node_modules/three/examples/jsm/controls/OrbitControls.js'
 import Stats from './node_modules/three/examples/jsm/libs/stats.module.js'
 import GUI from './node_modules/three/examples/jsm/libs/lil-gui.module.min.js'
+import * as BufferGeometryUtils from './node_modules/three/examples/jsm/utils/BufferGeometryUtils.js'
 
 
 if (typeof window === 'undefined' || typeof document === 'undefined') {
@@ -165,8 +166,28 @@ const edge_radius_scale = ref(1)
 const scaled_edge_radius = computed(() => {
     return edge_radius * edge_radius_scale.value
 })
-const singular_edge_geometry = new THREE.CylinderGeometry(vertex_radius * 2, vertex_radius * 2, 0.01, segment, 1, false)
-singular_edge_geometry.translate(0, -vertex_radius, 0)
+function create_singular_edge_geometry(inner_radius, outer_radius) {
+    const singular_edge_geometry_bottom = new THREE.RingGeometry(inner_radius, outer_radius, segment)
+    singular_edge_geometry_bottom.rotateX(Math.PI / 2)
+    // singular_edge_geometry_bottom.translate(0, -outer_radius / 2, 0)
+    const singular_edge_geometry_top = new THREE.RingGeometry(inner_radius, outer_radius, segment)
+    singular_edge_geometry_top.rotateX(-Math.PI / 2)
+    // singular_edge_geometry_top.translate(0, outer_radius / 2, 0)
+    return BufferGeometryUtils.mergeBufferGeometries([singular_edge_geometry_bottom, singular_edge_geometry_top])
+}
+const singular_edge_geometry = create_singular_edge_geometry(0, vertex_radius * 2)
+// in order to support segmented singular edge, we need to create a list of geometries according to the ratio
+const singular_edge_geometry_segments = []
+const singular_edge_resolution = 100
+for (let i = 0; i <= singular_edge_resolution; ++i) {
+    singular_edge_geometry_segments.push(create_singular_edge_geometry(vertex_radius * 2 * i / singular_edge_resolution, vertex_radius * 2))
+}
+function get_singular_edge_geometry_segments(ratio) {
+    const index = parseInt(ratio * singular_edge_resolution)
+    if (index < 0) { index = 0 }
+    if (index > singular_edge_resolution) { index = singular_edge_resolution }
+    return singular_edge_geometry_segments[index]
+}
 const normal_edge_geometry = new THREE.CylinderGeometry(edge_radius, edge_radius, 1, segment, 1, true)
 normal_edge_geometry.translate(0, 0.5, 0)
 const tri_edge_geometry = new THREE.CylinderGeometry(edge_radius * 1.5, edge_radius * 1.5, 1, segment, 1, true)
@@ -267,9 +288,9 @@ export function get_edge_material(grown, weight) {
     }
 }
 export let segmented_edge_colors = [
-    "#D52C1C",  // red
+    // "#D52C1C",  // red
     "#44C03F",  // green
-    "#2723F7",  // blue
+    // "#2723F7",  // blue
     "#F6C231",  // yellow
     "#4DCCFB",  // light blue
     "#F17B24",  // orange
@@ -549,11 +570,17 @@ export async function refresh_snapshot_data() {
                             segment_ratio = 1 - accumulated_ratio
                         }
                         edge_mesh.position.copy(segment_position_of(accumulated_ratio))
-                        accumulated_ratio += segment_ratio
                         if (edge.v.length != 1) {
                             edge_mesh.scale.set(1, edge_length * segment_ratio, 1)
                             edge_mesh.setRotationFromQuaternion(quaternion)
+                        } else {
+                            let func = (ratio) => 0.5 * outline_ratio.value + (1 - 0.5 * outline_ratio.value) * ratio
+                            let inner = func(accumulated_ratio)
+                            let outer = func(segment_ratio + accumulated_ratio)
+                            edge_mesh.geometry = get_singular_edge_geometry_segments(inner / outer)
+                            edge_mesh.scale.set(outer, 1, outer)
                         }
+                        accumulated_ratio += segment_ratio
                         edge_mesh.visible = true
                         if (edge.v.length != 1 && edge_length * segment_ratio == 0) {
                             edge_mesh.visible = false

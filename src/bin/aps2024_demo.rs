@@ -13,6 +13,7 @@ use mwpf::primal_module_serial::*;
 use mwpf::util::*;
 use mwpf::visualize::*;
 use num_traits::cast::FromPrimitive;
+use pbr::ProgressBar;
 use std::sync::Arc;
 use sugar::*;
 
@@ -289,8 +290,104 @@ fn challenge_demo() {
     }
 }
 
+fn surface_code_example() {
+    let count = 100;
+    for p in [0.04, 0.02, 0.01] {
+        let mut pb = ProgressBar::on(std::io::stderr(), count);
+        let visualize_filename = format!("aps2024_surface_code_example_p{p}.json");
+        let mut code = CodeCapacityTailoredCode::new(9, p / 3., p / 3., 1);
+        let initializer = code.get_initializer();
+        let model_graph = Arc::new(ModelHyperGraph::new(Arc::new(initializer.clone())));
+        let mut dual_module = DualModuleSerial::new_empty(&initializer);
+        let interface_ptr = DualModuleInterfacePtr::new(model_graph.clone());
+        let mut visualizer = Visualizer::new(
+            Some(visualize_data_folder() + visualize_filename.as_str()),
+            code.get_positions(),
+            true,
+        )
+        .unwrap();
+        print_visualize_link(visualize_filename.clone());
+        for seed in 0..count {
+            pb.set(seed);
+            code.generate_random_errors(seed);
+            let syndrome_pattern = Arc::new(code.get_syndrome());
+            let mut primal_module = PrimalModuleSerial::new_empty(&initializer);
+            primal_module.growing_strategy = GrowingStrategy::MultipleClusters;
+            primal_module.plugins = Arc::new(vec![
+                PluginUnionFind::entry(), // to allow timeout using union-find as baseline
+                PluginSingleHair::entry_with_strategy(RepeatStrategy::Once), // first make all clusters valid single hair
+                PluginSingleHair::entry_with_strategy(RepeatStrategy::Multiple {
+                    max_repetition: usize::MAX,
+                }),
+            ]);
+            primal_module.solve_visualizer(&interface_ptr, syndrome_pattern, &mut dual_module, Some(&mut visualizer));
+            let (subgraph, weight_range) = primal_module.subgraph_range(&interface_ptr, &mut dual_module);
+            visualizer
+                .snapshot_combined(
+                    "subgraph".to_string(),
+                    vec![&interface_ptr, &dual_module, &subgraph, &weight_range],
+                )
+                .unwrap();
+            primal_module.clear();
+            dual_module.clear();
+            interface_ptr.clear();
+        }
+        pb.finish()
+    }
+}
+
+fn triangle_color_code_example() {
+    let count = 10;
+    for p in [0.02] {
+        let mut pb = ProgressBar::on(std::io::stderr(), count);
+        let visualize_filename = format!("aps2024_triangle_color_code_example_p{p}.json");
+        let mut code = CodeCapacityColorCode::new(9, p, 1);
+        let initializer = code.get_initializer();
+        let model_graph = Arc::new(ModelHyperGraph::new(Arc::new(initializer.clone())));
+        let mut dual_module = DualModuleSerial::new_empty(&initializer);
+        let interface_ptr = DualModuleInterfacePtr::new(model_graph.clone());
+        let mut visualizer = Visualizer::new(
+            Some(visualize_data_folder() + visualize_filename.as_str()),
+            code.get_positions(),
+            true,
+        )
+        .unwrap();
+        print_visualize_link(visualize_filename.clone());
+        for seed in 0..count {
+            pb.set(seed);
+            code.generate_random_errors(seed);
+            let syndrome_pattern = Arc::new(code.get_syndrome());
+            visualizer.snapshot_combined("code".to_string(), vec![&code]).unwrap();
+            let mut primal_module = PrimalModuleSerial::new_empty(&initializer);
+            primal_module.growing_strategy = GrowingStrategy::MultipleClusters;
+            primal_module.plugins = Arc::new(vec![
+                PluginUnionFind::entry(), // to allow timeout using union-find as baseline
+                PluginSingleHair::entry_with_strategy(RepeatStrategy::Once), // first make all clusters valid single hair
+                PluginSingleHair::entry_with_strategy(RepeatStrategy::Multiple {
+                    max_repetition: usize::MAX,
+                }),
+            ]);
+            primal_module.solve_visualizer(&interface_ptr, syndrome_pattern, &mut dual_module, Some(&mut visualizer));
+            let (subgraph, weight_range) = primal_module.subgraph_range(&interface_ptr, &mut dual_module);
+            visualizer
+                .snapshot_combined(
+                    "subgraph".to_string(),
+                    vec![&interface_ptr, &dual_module, &subgraph, &weight_range],
+                )
+                .unwrap();
+
+            primal_module.clear();
+            dual_module.clear();
+            interface_ptr.clear();
+        }
+        pb.finish()
+    }
+}
+
 fn main() {
     debug_demo();
     simple_demo();
     challenge_demo();
+    surface_code_example();
+    // triangle_color_code_example();
 }
