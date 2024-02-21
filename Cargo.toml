@@ -44,6 +44,7 @@ python_binding = ["pyo3"]       # bind to Python
 wasm_binding = ["wasm-bindgen"] # bind to wasm
 colorful = []                   # enable colorful output in case terminal exists
 qecp_integrate = ["qecp"]
+float_lp = ["highs"]
 
 [dependencies]
 pyo3 = { version = "0.19.2", features = [
@@ -73,7 +74,7 @@ getrandom = { version = "0.2", features = ["js"] }
 wasm-bindgen = { version = "0.2.86", optional = true }
 lazy_static = "1.4.0"
 slp = "0.1.11"
-highs = "1.6.1"
+highs = { version = "1.6.1", optional = true }
 sugar = "0.2.0"
 maplit = "1.0.2"
 qecp = { path = "../QEC-Playground", version = "0.2.4", optional = true, default-features = false, features = [

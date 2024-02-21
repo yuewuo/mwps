@@ -164,6 +164,7 @@ impl RelaxerOptimizer {
 }
 
 #[cfg(test)]
+#[cfg(feature = "highs")]
 pub mod tests {
     // use super::*;
     use highs::{ColProblem, HighsModelStatus, Model, Sense};
