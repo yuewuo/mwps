@@ -383,6 +383,7 @@ fn triangle_color_code_example() {
     }
 }
 
+#[cfg(feature = "qecp_integrate")]
 fn circuit_level_example() {
     let timeout = 1.0;
     for (count, p) in [(50, 0.003), (100, 0.001), (200, 0.0003)] {
@@ -439,10 +440,15 @@ fn circuit_level_example() {
 }
 
 fn main() {
+    assert!(
+        cfg!(feature = "qecp_integrate"),
+        "cargo run --release --features qecp_integrate --bin aps2024_demo"
+    );
     debug_demo();
     simple_demo();
     challenge_demo();
     surface_code_example();
     triangle_color_code_example();
+    #[cfg(feature = "qecp_integrate")]
     circuit_level_example();
 }

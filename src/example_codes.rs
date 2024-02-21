@@ -16,7 +16,6 @@ use crate::util::*;
 use crate::visualize::*;
 #[cfg(feature = "python_binding")]
 use pyo3::prelude::*;
-use qecp::model_graph::WeightFunction;
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::{self, BufRead};
@@ -1006,7 +1005,7 @@ pub struct HyperionDecoderConfig {
     /// weight function, by default using [`WeightFunction::AutotuneImproved`]
     #[serde(alias = "wf")] // abbreviation
     #[serde(default = "hyperion_default_configs::weight_function")]
-    pub weight_function: WeightFunction,
+    pub weight_function: qecp::model_graph::WeightFunction,
     /// combined probability can improve accuracy, but will cause probabilities differ a lot even in the case of i.i.d. noise model
     #[serde(alias = "ucp")] // abbreviation
     #[serde(default = "hyperion_default_configs::use_combined_probability")]
@@ -1021,8 +1020,8 @@ pub mod hyperion_default_configs {
     pub fn default_hyperion_config() -> serde_json::Value {
         json!({})
     }
-    pub fn weight_function() -> WeightFunction {
-        WeightFunction::AutotuneImproved
+    pub fn weight_function() -> qecp::model_graph::WeightFunction {
+        qecp::model_graph::WeightFunction::AutotuneImproved
     }
     pub fn use_combined_probability() -> bool {
         true
