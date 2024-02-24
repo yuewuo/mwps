@@ -488,17 +488,52 @@ fn circuit_level_example() {
     }
 }
 
+fn code_figure() {
+    let mut codes = vec![];
+    // 0. d=5 infinite Z bias
+    let code = CodeCapacityTailoredCode::new(5, 0., 0.1, 1000);
+    codes.push(code);
+    // 1. d=5 depolarizing
+    let code = CodeCapacityTailoredCode::new(5, 0.1, 0.1, 1000);
+    codes.push(code);
+    // 2. d=5 depolarizing with syndrome
+    let mut code = CodeCapacityTailoredCode::new(5, 0.1, 0.1, 1000);
+    code.set_physical_errors(&[12, 48]);
+    codes.push(code);
+    // 3. d=5 depolarizing with syndrome and subgraph
+    codes.push(codes.last().unwrap().clone());
+    // visualize
+    for (idx, code) in codes.iter().enumerate() {
+        let visualize_filename = format!("aps2024_code_figure_{idx}.json");
+        print_visualize_link(visualize_filename.clone());
+        let mut visualizer = Visualizer::new(
+            Some(visualize_data_folder() + visualize_filename.as_str()),
+            code.get_positions(),
+            true,
+        )
+        .unwrap();
+        if idx == 3 {
+            visualizer
+                .snapshot_combined("subgraph".to_string(), vec![code, &Subgraph::from(vec![12, 48])])
+                .unwrap();
+        } else {
+            visualizer.snapshot("code".to_string(), code).unwrap();
+        }
+    }
+}
+
 fn main() {
     assert!(
         cfg!(feature = "qecp_integrate"),
         "cargo run --release --features qecp_integrate --bin aps2024_demo"
     );
+    code_figure();
     debug_demo();
     simple_demo();
     challenge_demo();
-    // surface_code_example();
-    // triangle_color_code_example();
+    surface_code_example();
+    triangle_color_code_example();
     small_color_code_example();
-    // #[cfg(feature = "qecp_integrate")]
-    // circuit_level_example();
+    #[cfg(feature = "qecp_integrate")]
+    circuit_level_example();
 }
