@@ -1,16 +1,28 @@
 # MWPF
-Hypergraph <span style="color: red;">M</span>inimum-<span style="color: red; font-size: 120%;">W</span>eight <span style="color: red; font-size: 120%;">P</span>arity <span style="color: red; font-size: 120%;">F</span>actor Decoder for QEC
+### Hypergraph <span style="color: red; font-size: 120%;">M</span>inimum-<span style="color: red; font-size: 120%;">W</span>eight <span style="color: red; font-size: 120%;">P</span>arity <span style="color: red; font-size: 120%;">F</span>actor Decoder for QEC
 
 *Preview version claim: We publish the binary Python package but do not guarantee any correctness or speed. The source code and the full version will be made publicly available when our paper comes out.*
 
-Note: hypergraph MWPF is proven to be NP-hard. Our design is taking advantage of clustering technique to lower
-the **average** time complexity and reach almost-linear **average** time complexity at small physical error rate.
+Hypergraph MWPF is proven to be **NP-hard**. Our design is taking advantage of clustering technique to lower
+the **average** time complexity and reach **almost-linear** average time complexity at small physical error rate.
 Please wait for our paper for more discussion of the speed v.s. accuracy.
+
+1
+
+![](https://img.youtube.com/vi/26jgRb669UE/maxresdefault.jpg)
+
+2
+
+<video src='https://github.com/yuewuo/mwpf/raw/dev/visualize/demo/small_color_code_example.mp4' width=180/>
+
+3
+
+![](https://github.com/yuewuo/mwpf/raw/dev/visualize/demo/small_color_code_example.mp4)
 
 ## Installation
 
 ```sh
-pip install mwpf
+pip install MWPF
 ```
 
 ## Background
