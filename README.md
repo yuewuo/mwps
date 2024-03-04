@@ -1,5 +1,5 @@
 # MWPF
-### Hypergraph <span style="color: red;">M</span>inimum-<span style="color: red; font-size: 120%;">W</span>eight <span style="color: red; font-size: 120%;">P</span>arity <span style="color: red; font-size: 120%;">F</span>actor Decoder for QEC
+Hypergraph <span style="color: red;">M</span>inimum-<span style="color: red; font-size: 120%;">W</span>eight <span style="color: red; font-size: 120%;">P</span>arity <span style="color: red; font-size: 120%;">F</span>actor Decoder for QEC
 
 *Preview version claim: We publish the binary Python package but do not guarantee any correctness or speed. The source code and the full version will be made publicly available when our paper comes out.*
 
