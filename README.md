@@ -1,8 +1,7 @@
-# mwpf
-Hypergraph Minimum-Weight Parity Factor (MWPF) Algorithm for Quantum LDPC Codes
+# MWPF
+### Hypergraph <span style="color: red; font-size: 120%;">M</span>inimum-<span style="color: red; font-size: 120%;">W</span>eight <span style="color: red; font-size: 120%;">P</span>arity <span style="color: red; font-size: 120%;">F</span>actor Decoder for QEC
 
-**We publish the binary Python package but do not guarantee any correctness or speed.**
-**The source code and the full version will be made publicly available when our paper comes out.**
+*Preview version claim: We publish the binary Python package but do not guarantee any correctness or speed. The source code and the full version will be made publicly available when our paper comes out.*
 
 Note: hypergraph MWPF is proven to be NP-hard. Our design is taking advantage of clustering technique to lower
 the **average** time complexity and reach almost-linear **average** time complexity at small physical error rate.
