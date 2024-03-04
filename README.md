@@ -7,7 +7,7 @@ Hypergraph MWPF is proven to be **NP-hard**. Our design is taking advantage of c
 the **average** time complexity and reach **almost-linear** average time complexity at small physical error rate.
 Please wait for our paper for more discussion of the speed v.s. accuracy.
 
-[<img src="https://github.com/yuewuo/conference-talk-2024-APS-march-meeting/raw/main/video_maker/small_color_code_example.gif" width="100" height="100">](https://youtu.be/26jgRb669UE)
+[<img src="https://github.com/yuewuo/conference-talk-2024-APS-march-meeting/raw/main/video_maker/small_color_code_example.gif" width="50%" alt="Color Code Example (click for YouTube video)" align="center">](https://youtu.be/26jgRb669UE)
 
 ## Installation
 
