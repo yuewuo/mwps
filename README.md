@@ -9,13 +9,9 @@ Please wait for our paper for more discussion of the speed v.s. accuracy.
 
 1
 
-![](https://img.youtube.com/vi/26jgRb669UE/maxresdefault.jpg)
+[![Small Color Code Example (click for YouTube video)](https://github.com/yuewuo/conference-talk-2024-APS-march-meeting/raw/main/video_maker/small_color_code_example.gif)](https://youtu.be/26jgRb669UE)
 
 2
-
-<video src='https://github.com/yuewuo/mwpf/raw/dev/visualize/demo/small_color_code_example.mp4' width=180/>
-
-3
 
 ![](https://github.com/yuewuo/mwpf/raw/dev/visualize/demo/small_color_code_example.mp4)
 
