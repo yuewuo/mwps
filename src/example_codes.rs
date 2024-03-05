@@ -943,6 +943,7 @@ impl ExampleCode for QECPlaygroundCode {
 }
 
 #[cfg(feature = "python_binding")]
+#[cfg(feature = "qecp_integrate")]
 bind_trait_example_code! {QECPlaygroundCode}
 
 #[cfg(feature = "qecp_integrate")]
