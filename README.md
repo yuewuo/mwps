@@ -109,6 +109,35 @@ fusion_subgraph = fusion.subgraph()
 print(fusion_subgraph)  # out: [0, 2, 3], which is weighted 300 instead of 160
 ```
 
+## Advanced Usage
+
+When trading off accuracy and decoding time, we provide a timeout parameter for the decoder. Also, one can specify whether you want the clusters to all grow together or grow one by one. More parameters are coming as we develop the library.
+
+```python
+config = {
+    "primal": {
+        "timeout": 3.0,  # 3 second timeout for each cluster
+    },
+    "growing_strategy": "SingleCluster",  # growing from each defect one by one
+    # "growing_strategy": "MultipleClusters",  # every defect starts to grow at the same time
+}
+hyperion = SolverSerialJointSingleHair(initializer, config)
+```
+
+## Examples
+
+For surface code with depolarizing noise mode $p_x =p_y=p_z = p/3$, here shows physical error rates 1%, 2% and 4% (left to right).
+
+[<img src="https://raw.githubusercontent.com/yuewuo/conference-talk-2024-APS-march-meeting/main/video_maker/surface_code_example.gif" alt="Surface Code Example (click for YouTube video)" align="center">](https://youtu.be/SjZ8rMdYZ54)
+
+For triangle color code with X errors, here shows physical error rates 1%, 2% and 4% (left to right).
+
+[<img src="https://raw.githubusercontent.com/yuewuo/conference-talk-2024-APS-march-meeting/main/video_maker/triangle_color_code_example.gif" alt="Triangle Color Code Example (click for YouTube video)" align="center">](https://youtu.be/1KN62fmR7OM)
+
+For circuit-level surface code, here shows physical error rate 0.03%, 0.1% and 0.3% (left to right).
+
+[<img src="https://raw.githubusercontent.com/yuewuo/conference-talk-2024-APS-march-meeting/main/video_maker/circuit_level_example.gif" alt="Circuit-level Surface Code Example (click for YouTube video)" align="center">](https://youtu.be/ki9fHiA4Gyo)
+
 ## Reference
 
 [1] Berlekamp, Elwyn, Robert McEliece, and Henk Van Tilborg. "On the inherent intractability of certain coding problems (corresp.)." IEEE Transactions on Information Theory 24.3 (1978): 384-386.
