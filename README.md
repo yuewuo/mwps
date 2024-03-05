@@ -1,7 +1,7 @@
 # MWPF
 ### Hypergraph <span style="color: red; font-size: 120%;">M</span>inimum-<span style="color: red; font-size: 120%;">W</span>eight <span style="color: red; font-size: 120%;">P</span>arity <span style="color: red; font-size: 120%;">F</span>actor Decoder for QEC
 
-*Preview version claim: We publish the binary Python package but do not guarantee any correctness or speed. The source code and the full version will be made publicly available when our paper comes out.*
+*Preview claim: We publish the Python package that may subject to breaking changes. The source code and the full version will be made publicly available with our coming paper.*
 
 Hypergraph MWPF is proven to be **NP-hard** [1]. Our design is taking advantage of clustering technique to lower
 the **average** time complexity and reach **almost-linear** average time complexity at small physical error rate.
@@ -29,31 +29,33 @@ We named it Minimum-Weight Parity Factor because of a concept called "parity $(g
 
 #### Relationship with MWPM decoder
 
-Minimum-Weight Perfect Matching decoder is the traditional decoder for QEC. The MLE decoding problem, MWPF, can be reduced to the MWPM problem on a generated complete graph with $O(|V|^2)$ edges in polynomial time. Two recent works [2] and [3] improves the average time complexity to almost theoretical upper bound of $O(|V|)$ by not generating the complete graph. This motivates our idea to design an algorithm directly on the model graph, hopefully reaching the same $O(|V|)$ average time complexity even if the model graph is hypergraph.
+Minimum-Weight Perfect Matching decoder is the traditional decoder for QEC. When the decoding graph is a simple graph, the MLE decoding problem can be reduced to an MWPM problem on a generated complete graph with $O(|V|^2)$ edges. Two recent works [2] and [3] improves the average time complexity to almost theoretical upper bound of $O(|V|)$ by not explicitly generating the complete graph. This motivates our idea to design an algorithm directly on the model graph, hoping to reach the same $O(|V|)$ average time complexity even if the model graph is hypergraph.
 
 #### Key Idea
 
-We try to extend the blossom algorithm that solves the MWPM problem on simple graphs. An interesting attributes of the blossom algorithm is that it adds an **exponential** number of linear constraints in order to relax the integer constraints. The added linear constraints, which we refer to as "blossom constraints", is based on a very simple idea: filtering out invalid solutions. The blossom constraints simply says "any odd cluster cannot be perfectly matched internally", which is obviously true. However, this "filtering" requires an exponential number of linear constraints [5], which is impossible to generate efficiently. Thus, the algorithm must **implicitly** consider those exponential number of constraints without ever listing them. In fact, the blossom algorithm only keeps track of $O(|V|)$ such constraints from the exponential many. Surprisingly, this actually implicitly satisfies all the constraints! Inspired by this magic, we now have the courage to write down an exponential number of linear constraints to solve MWPF.
+We try to extend the blossom algorithm that solves the MWPM problem on simple graphs. An interesting attribute of the blossom algorithm is that it deals with an **exponential** number of linear constraints in order to relax the integer constraints. The added linear constraints, which we refer to as "blossom constraints", are based on a very simple idea: filtering out invalid solutions. The blossom constraints simply say "any odd cluster cannot be perfectly matched internally", which is obviously true. However, this "filtering" requires an exponential number of linear constraints [5], which is impossible to generate efficiently. Thus, the algorithm must **implicitly** consider those exponential number of constraints without ever listing them. In fact, the blossom algorithm only keeps track of $O(|V|)$ such constraints from the exponentially many. Surprisingly, this works! Inspired by this miracle, we now have the courage to use an exponential number of linear constraints to solve MWPF.
 
 #### Rigorous Math
 
 ![](https://raw.githubusercontent.com/yuewuo/conference-talk-2024-APS-march-meeting/main/images/MWPF_to_ILP.png)
 
-The ILP problem above is very similar to that of the blossom algorithm, except for that a "blossom" is more complex: it's now a subgraph $(V_S, E_S)$ instead of just a subset of vertices $S\subseteq V$. We have **mathematically** proved the equivalence between MWPF and this ILP. Given this ILP, we then simply relax the integer constraints.
+The ILP problem above is very similar to that of the blossom algorithm, except for the more complex "blossom"definition: it's now a subgraph $S=(V_S, E_S), V_S \subseteq V, E_S \subseteq E$ instead of just a subset of vertices $S\subseteq V$ in the blossom algorithm. We have **mathematically** proved the equivalence between hypergraph MWPF and this ILP. In the next step, we simply relax the integer constraints.
 
 ![](https://raw.githubusercontent.com/yuewuo/conference-talk-2024-APS-march-meeting/main/images/ILP_to_LP.png)
 
-Clearly, as a relaxation, the minimum objective value is no larger than that of the ILP. Unfortunately, we haven't been able to prove that they have the same, nor can we find a counter example that indeed shows they are not the same. We leave this as an interesting mathematical problem to be solved. We leave this conjecture as is for now, and do not assume its correctness.
+Clearly, as a relaxation, the minimum objective value is no larger than that of the ILP. Unfortunately, we haven't been able to rigorously prove that they have the same optimal objective value, nor can we find a counter example. We leave this conjecture as is for now, and do not assume its correctness.
 
 ##### Conjecture: $\min\text{ILP}=\min\text{LP}$. 
 
 ![](https://raw.githubusercontent.com/yuewuo/conference-talk-2024-APS-march-meeting/main/images/LP_to_DLP.png)
 
-The dual problem is a transpose of the primal LP problem. According to the duality theorem, they have the same optimal value. The key is that each primal constraint becomes a dual variable, and each primal variable becomes a primal constraint. Clearly, for the dual problem, $y_S = 0, \forall S \in \mathcal{O}$ is a solution (despite usually not the optimal solution). In this way, we can keep track of only **non-zero** dual variables to implicitly considering all the exponentially many primal constraints. Since the dual LP problem becomes a maximization problem, we have the whole inequality chain as below.
+The dual problem is a transpose of the primal LP problem. According to the duality theorem, they have the same optimal value. The key is that each primal constraint becomes a dual variable, and each primal variable becomes a dual constraint. Clearly, for the dual problem, $y_S = 0, \forall S \in \mathcal{O}$ is a solution (despite usually not the optimal solution). In this way, we can keep track of only **non-zero** dual variables to implicitly considering all the exponentially many primal constraints. Since the dual LP problem becomes a maximization problem, we have the whole inequality chain as below.
 
 ![](https://raw.githubusercontent.com/yuewuo/conference-talk-2024-APS-march-meeting/main/images/inequality_chain.png)
 
 If we can find a pair of feasible primal and dual solutions with the same weight, then this inequality chain **collapses** to an equality chain and the primal solution is **proven to be optimal**. Even if they are not equal, we still get a proximity bound.
+
+In fact, MWPM decoder using the blossom algorithm fits in this framework, where the alternating tree operation guarantees that in the end the primal must be equal to the dual. Union-Find decoder and hypergraph UF decoder can also be explained by this framework, but the proximity bound is usually not singleton.
 
 ## Usage
 
@@ -90,7 +92,7 @@ The example hyergraph is below: grey edges are weighted 100 and the purple hyper
 
 ![](https://raw.githubusercontent.com/yuewuo/conference-talk-2024-APS-march-meeting/main/images/example_hypergraph.png)
 
-In constrast, if we were to solve MWPF with MWPM decoder, then we have to ignore the hyperedge $e_4$ and thus leads to suboptimal result, as given by the following Python script using the [Fusion Blossom](https://pypi.org/project/fusion-blossom/) library.
+In constrast, if we were to solve MWPF with MWPM decoder, then we have to ignore the hyperedge $e_4$ and thus leads to suboptimal result, as shown by the following Python script using the [Fusion Blossom](https://pypi.org/project/fusion-blossom/) library.
 
 ```python
 from fusion_blossom import SolverInitializer, SolverSerial, SyndromePattern
@@ -123,6 +125,8 @@ config = {
 }
 hyperion = SolverSerialJointSingleHair(initializer, config)
 ```
+
+An embedded visualization tool is coming soon.
 
 ## Examples
 
