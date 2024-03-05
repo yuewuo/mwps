@@ -47,7 +47,7 @@ pub struct PrimalModuleSerial {
 pub struct PrimalModuleSerialConfig {
     /// timeout for the whole solving process
     #[serde(default = "primal_serial_default_configs::timeout")]
-    timeout: f64,
+    pub timeout: f64,
 }
 
 pub mod primal_serial_default_configs {
@@ -57,7 +57,7 @@ pub mod primal_serial_default_configs {
 }
 
 /// strategy of growing the dual variables
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum GrowingStrategy {
     /// focus on a single cluster at a time, for easier debugging and better locality
     SingleCluster,
@@ -582,6 +582,25 @@ pub mod tests {
     }
 
     #[test]
+    fn primal_module_serial_basic_3_improved() {
+        // cargo test primal_module_serial_basic_3_improved -- --nocapture
+        let visualize_filename = "primal_module_serial_basic_3_improved.json".to_string();
+        let defect_vertices = vec![14, 15, 16, 17, 22, 25, 28, 31, 36, 37, 38, 39];
+        let code = CodeCapacityTailoredCode::new(7, 0., 0.01, 1);
+        primal_module_serial_basic_standard_syndrome(
+            code,
+            visualize_filename,
+            defect_vertices,
+            5,
+            vec![
+                PluginUnionFind::entry(),
+                PluginSingleHair::entry_with_strategy(RepeatStrategy::Once),
+            ],
+            GrowingStrategy::SingleCluster,
+        );
+    }
+
+    #[test]
     fn primal_module_serial_basic_3_multi() {
         // cargo test primal_module_serial_basic_3_multi -- --nocapture
         let visualize_filename = "primal_module_serial_basic_3_multi.json".to_string();
@@ -610,6 +629,25 @@ pub mod tests {
             defect_vertices,
             4,
             vec![],
+            GrowingStrategy::SingleCluster,
+        );
+    }
+
+    #[test]
+    fn primal_module_serial_basic_4_single_improved() {
+        // cargo test primal_module_serial_basic_4_single_improved -- --nocapture
+        let visualize_filename = "primal_module_serial_basic_4_single_improved.json".to_string();
+        let defect_vertices = vec![10, 11, 12, 15, 16, 17, 18];
+        let code = CodeCapacityTailoredCode::new(5, 0., 0.01, 1);
+        primal_module_serial_basic_standard_syndrome(
+            code,
+            visualize_filename,
+            defect_vertices,
+            4,
+            vec![
+                PluginUnionFind::entry(),
+                PluginSingleHair::entry_with_strategy(RepeatStrategy::Once),
+            ],
             GrowingStrategy::SingleCluster,
         );
     }
@@ -679,7 +717,29 @@ pub mod tests {
         let visualize_filename = "primal_module_serial_debug_1.json".to_string();
         let defect_vertices = vec![10, 23, 16, 41, 29, 17, 3, 37, 25, 43];
         let code = CodeCapacityTailoredCode::new(7, 0.1, 0.1, 1);
+        primal_module_serial_basic_standard_syndrome(
+            code,
+            visualize_filename,
+            defect_vertices,
+            6,
+            vec![
+                PluginUnionFind::entry(),
+                PluginSingleHair::entry_with_strategy(RepeatStrategy::Multiple {
+                    max_repetition: usize::MAX,
+                }),
+            ],
+            GrowingStrategy::MultipleClusters,
+        );
+    }
 
+    /// runs too slow
+    /// the issue is that the relaxer optimizer runs too slowly...
+    #[test]
+    fn primal_module_serial_debug_2() {
+        // cargo test primal_module_serial_debug_2 -- --nocapture
+        let visualize_filename = "primal_module_serial_debug_2.json".to_string();
+        let defect_vertices = vec![2, 4, 5, 8, 13, 14, 15, 16, 18, 24, 25, 26, 28, 29];
+        let code = CodeCapacityColorCode::new(9, 0.05, 1);
         primal_module_serial_basic_standard_syndrome(
             code,
             visualize_filename,

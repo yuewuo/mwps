@@ -282,6 +282,19 @@ pub trait ExampleCode {
         }
     }
 
+    #[allow(clippy::unnecessary_cast)]
+    fn set_physical_errors(&mut self, physical_errors: &[EdgeIndex]) {
+        // clear existing errors
+        self.set_defect_vertices(&[]);
+        let (vertices, edges) = self.vertices_edges();
+        for edge_idx in physical_errors {
+            let edge = &edges[*edge_idx as usize];
+            for vertex_idx in edge.vertices.iter() {
+                vertices[*vertex_idx as usize].is_defect = !vertices[*vertex_idx as usize].is_defect;
+            }
+        }
+    }
+
     /// set erasure edges
     #[allow(clippy::unnecessary_cast)]
     fn set_erasures(&mut self, erasures: &[EdgeIndex]) {
@@ -427,6 +440,10 @@ macro_rules! bind_trait_example_code {
             #[pyo3(name = "set_defect_vertices")]
             fn trait_set_defect_vertices(&mut self, defect_vertices: Vec<VertexIndex>) {
                 self.set_defect_vertices(&defect_vertices)
+            }
+            #[pyo3(name = "set_physical_errors")]
+            fn trait_set_physical_errors(&mut self, physical_errors: Vec<EdgeIndex>) {
+                self.set_physical_errors(&physical_errors)
             }
             #[pyo3(name = "set_erasures")]
             fn trait_set_erasures(&mut self, erasures: Vec<EdgeIndex>) {
@@ -698,17 +715,19 @@ impl CodeCapacityTailoredCode {
         assert_eq!(positions.len(), vertex_num as usize);
         let mut edges = Vec::new();
         // first add Z errors
-        for di in (1..2 * d as usize).step_by(2) {
-            for dj in (1..2 * d as usize).step_by(2) {
-                let mut vertices = vec![];
-                for (si, sj) in [(di - 1, dj - 1), (di - 1, dj + 1), (di + 1, dj - 1), (di + 1, dj + 1)] {
-                    if stabilizers.contains_key(&(si, sj)) {
-                        vertices.push(stabilizers[&(si, sj)]);
+        if pz > 0. {
+            for di in (1..2 * d as usize).step_by(2) {
+                for dj in (1..2 * d as usize).step_by(2) {
+                    let mut vertices = vec![];
+                    for (si, sj) in [(di - 1, dj - 1), (di - 1, dj + 1), (di + 1, dj - 1), (di + 1, dj + 1)] {
+                        if stabilizers.contains_key(&(si, sj)) {
+                            vertices.push(stabilizers[&(si, sj)]);
+                        }
                     }
+                    let mut edge = CodeEdge::new(vertices);
+                    edge.p = pz;
+                    edges.push(edge);
                 }
-                let mut edge = CodeEdge::new(vertices);
-                edge.p = pz;
-                edges.push(edge);
             }
         }
         // then add X and Y errors
@@ -855,6 +874,258 @@ impl CodeCapacityColorCode {
     }
 }
 
+/// example code with QEC-Playground as simulator
+#[cfg(feature = "qecp_integrate")]
+#[cfg_attr(feature = "python_binding", cfg_eval)]
+#[cfg_attr(feature = "python_binding", pyclass)]
+pub struct QECPlaygroundCode {
+    simulator: qecp::simulator::Simulator,
+    noise_model: std::sync::Arc<qecp::noise_model::NoiseModel>,
+    edge_index_map: std::sync::Arc<HashMap<usize, EdgeIndex>>,
+    model_hypergraph: Arc<qecp::model_hypergraph::ModelHypergraph>,
+    /// vertices in the code
+    #[cfg_attr(feature = "python_binding", pyo3(get, set))]
+    pub vertices: Vec<CodeVertex>,
+    /// nearest-neighbor edges in the decoding graph
+    #[cfg_attr(feature = "python_binding", pyo3(get, set))]
+    pub edges: Vec<CodeEdge>,
+}
+
+#[cfg(feature = "qecp_integrate")]
+impl ExampleCode for QECPlaygroundCode {
+    fn vertices_edges(&mut self) -> (&mut Vec<CodeVertex>, &mut Vec<CodeEdge>) {
+        (&mut self.vertices, &mut self.edges)
+    }
+    fn immutable_vertices_edges(&self) -> (&Vec<CodeVertex>, &Vec<CodeEdge>) {
+        (&self.vertices, &self.edges)
+    }
+    // override simulation function
+    #[allow(clippy::unnecessary_cast)]
+    fn generate_random_errors(&mut self, seed: u64) -> (SyndromePattern, Subgraph) {
+        use qecp::simulator::SimulatorGenerics;
+        let rng = qecp::reproducible_rand::Xoroshiro128StarStar::seed_from_u64(seed);
+        self.simulator.set_rng(rng);
+        let (error_count, erasure_count) = self.simulator.generate_random_errors(&self.noise_model);
+        assert!(erasure_count == 0, "not implemented");
+        // let sparse_detected_erasures = if erasure_count != 0 {
+        //     self.simulator.generate_sparse_detected_erasures()
+        // } else {
+        //     qecp::simulator::SparseErasures::new()
+        // };
+        let sparse_measurement = if error_count != 0 {
+            self.simulator.generate_sparse_measurement()
+        } else {
+            qecp::simulator::SparseMeasurement::new()
+        };
+        let defects: Vec<_> = sparse_measurement
+            .defects
+            .iter()
+            .map(|defect| self.model_hypergraph.vertex_indices[defect])
+            .collect();
+        let syndrome_pattern = SyndromePattern::new_vertices(defects);
+        for vertex in self.vertices.iter_mut() {
+            vertex.is_defect = false;
+        }
+        for &vertex_index in syndrome_pattern.defect_vertices.iter() {
+            self.vertices[vertex_index].is_defect = true;
+        }
+        for edge in self.edges.iter_mut() {
+            edge.is_erasure = false;
+        }
+        for &edge_index in syndrome_pattern.erasures.iter() {
+            if let Some(new_index) = self.edge_index_map.get(&edge_index) {
+                self.edges[*new_index as usize].is_erasure = true;
+            }
+        }
+        // TODO: generate the real error pattern
+        (self.get_syndrome(), vec![])
+    }
+}
+
+#[cfg(feature = "python_binding")]
+#[cfg(feature = "qecp_integrate")]
+bind_trait_example_code! {QECPlaygroundCode}
+
+#[cfg(feature = "qecp_integrate")]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct QECPlaygroundCodeConfig {
+    // default to d
+    pub di: Option<usize>,
+    pub dj: Option<usize>,
+    pub nm: Option<usize>,
+    #[serde(default = "qec_playground_default_configs::pe")]
+    pub pe: f64,
+    pub noise_model_modifier: Option<serde_json::Value>,
+    #[serde(default = "qec_playground_default_configs::code_type")]
+    pub code_type: qecp::code_builder::CodeType,
+    #[serde(default = "qec_playground_default_configs::bias_eta")]
+    pub bias_eta: f64,
+    pub noise_model: Option<qecp::noise_model_builder::NoiseModelBuilder>,
+    #[serde(default = "qec_playground_default_configs::noise_model_configuration")]
+    pub noise_model_configuration: serde_json::Value,
+    #[serde(default = "qec_playground_default_configs::parallel_init")]
+    pub parallel_init: usize,
+    #[serde(default = "qec_playground_default_configs::use_brief_edge")]
+    pub use_brief_edge: bool,
+    // specify the target qubit type
+    pub qubit_type: Option<qecp::types::QubitType>,
+    #[serde(default = "qec_playground_default_configs::max_weight")]
+    pub max_weight: usize,
+}
+
+#[cfg(feature = "qecp_integrate")]
+pub mod qec_playground_default_configs {
+    pub fn pe() -> f64 {
+        0.
+    }
+    pub fn bias_eta() -> f64 {
+        0.5
+    }
+    pub fn noise_model_configuration() -> serde_json::Value {
+        json!({})
+    }
+    pub fn code_type() -> qecp::code_builder::CodeType {
+        qecp::code_builder::CodeType::StandardPlanarCode
+    }
+    pub fn parallel_init() -> usize {
+        1
+    }
+    pub fn use_brief_edge() -> bool {
+        false
+    }
+    pub fn max_weight() -> usize {
+        1000000
+    }
+}
+
+#[cfg(feature = "qecp_integrate")]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HyperionDecoderConfig {
+    /// weight function, by default using [`WeightFunction::AutotuneImproved`]
+    #[serde(alias = "wf")] // abbreviation
+    #[serde(default = "hyperion_default_configs::weight_function")]
+    pub weight_function: qecp::model_graph::WeightFunction,
+    /// combined probability can improve accuracy, but will cause probabilities differ a lot even in the case of i.i.d. noise model
+    #[serde(alias = "ucp")] // abbreviation
+    #[serde(default = "hyperion_default_configs::use_combined_probability")]
+    pub use_combined_probability: bool,
+    #[serde(default = "hyperion_default_configs::default_hyperion_config")]
+    pub hyperion_config: serde_json::Value,
+}
+
+#[cfg(feature = "qecp_integrate")]
+pub mod hyperion_default_configs {
+    use super::*;
+    pub fn default_hyperion_config() -> serde_json::Value {
+        json!({})
+    }
+    pub fn weight_function() -> qecp::model_graph::WeightFunction {
+        qecp::model_graph::WeightFunction::AutotuneImproved
+    }
+    pub fn use_combined_probability() -> bool {
+        true
+    } // default use combined probability for better accuracy
+}
+
+#[cfg(feature = "qecp_integrate")]
+impl QECPlaygroundCode {
+    #[allow(clippy::unnecessary_cast)]
+    pub fn new(d: usize, p: f64, config: serde_json::Value) -> Self {
+        let config: QECPlaygroundCodeConfig = serde_json::from_value(config).unwrap();
+        let di = config.di.unwrap_or(d);
+        let dj = config.dj.unwrap_or(d);
+        let nm = config.nm.unwrap_or(d);
+        let mut simulator = qecp::simulator::Simulator::new(config.code_type, qecp::code_builder::CodeSize::new(nm, di, dj));
+        let mut noise_model = qecp::noise_model::NoiseModel::new(&simulator);
+        let px = p / (1. + config.bias_eta) / 2.;
+        let py = px;
+        let pz = p - 2. * px;
+        simulator.set_error_rates(&mut noise_model, px, py, pz, config.pe);
+        // apply customized noise model
+        if let Some(noise_model_builder) = &config.noise_model {
+            noise_model_builder.apply(
+                &mut simulator,
+                &mut noise_model,
+                &config.noise_model_configuration,
+                p,
+                config.bias_eta,
+                config.pe,
+            );
+        }
+        simulator.compress_error_rates(&mut noise_model); // by default compress all error rates
+        let noise_model = std::sync::Arc::new(noise_model);
+        // construct vertices and edges
+        let hyperion_config: HyperionDecoderConfig = serde_json::from_value(json!({})).unwrap();
+        let mut model_hypergraph = qecp::model_hypergraph::ModelHypergraph::new(&simulator);
+        model_hypergraph.build(
+            &mut simulator,
+            Arc::clone(&noise_model),
+            &hyperion_config.weight_function,
+            config.parallel_init,
+            hyperion_config.use_combined_probability,
+            config.use_brief_edge,
+        );
+        let model_hypergraph = Arc::new(model_hypergraph);
+        // implementing: model_hypergraph.generate_mwpf_hypergraph(config.max_weight);
+        let mut maximum_weight = 0.;
+        for (_, hyperedge_group) in model_hypergraph.weighted_edges.iter() {
+            if hyperedge_group.hyperedge.probability > 0. && hyperedge_group.hyperedge.weight > maximum_weight {
+                maximum_weight = hyperedge_group.hyperedge.weight;
+            }
+        }
+        let mut weighted_edges = Vec::with_capacity(model_hypergraph.weighted_edges.len());
+        for (defect_vertices, hyperedge_group) in model_hypergraph.weighted_edges.iter() {
+            if hyperedge_group.hyperedge.probability > 0. {
+                // only add those possible edges; for erasures, handle later
+                let scaled_weight = hyperedge_group.hyperedge.weight * config.max_weight as f64 / maximum_weight;
+                let int_weight = scaled_weight.round();
+                assert!(int_weight.is_finite(), "weight must be normal");
+                assert!(int_weight >= 0., "weight must be non-negative");
+                assert!(
+                    int_weight <= config.max_weight as f64,
+                    "weight must be smaller than max weight"
+                );
+                let vertex_indices: Vec<_> = defect_vertices.0.iter().map(|x| model_hypergraph.vertex_indices[x]).collect();
+                weighted_edges.push(HyperEdge::new(vertex_indices, int_weight as usize));
+            }
+        }
+        let vertex_num = model_hypergraph.vertex_positions.len();
+        let initializer = Arc::new(SolverInitializer::new(vertex_num, weighted_edges));
+        let positions = &model_hypergraph.vertex_positions;
+        let mut code = Self {
+            simulator,
+            noise_model,
+            model_hypergraph: model_hypergraph.clone(),
+            edge_index_map: std::sync::Arc::new(HashMap::new()), // overwrite later
+            vertices: Vec::with_capacity(initializer.vertex_num),
+            edges: Vec::with_capacity(initializer.weighted_edges.len()),
+        };
+        let mut edge_index_map = HashMap::new();
+        for (edge_index, hyperedge) in initializer.weighted_edges.iter().cloned().enumerate() {
+            let new_index = edge_index_map.len() as EdgeIndex;
+            edge_index_map.insert(edge_index, new_index);
+            code.edges.push(CodeEdge {
+                vertices: hyperedge.vertices,
+                p: 0.,  // doesn't matter
+                pe: 0., // doesn't matter
+                weight: hyperedge.weight,
+                is_erasure: false, // doesn't matter
+            });
+        }
+        code.edge_index_map = std::sync::Arc::new(edge_index_map);
+        // automatically create the vertices and nearest-neighbor connection
+        code.fill_vertices(code.model_hypergraph.vertex_positions.len());
+        // set virtual vertices and positions
+        for (vertex_index, position) in positions.iter().cloned().enumerate() {
+            code.vertices[vertex_index].position =
+                VisualizePosition::new(position.i as f64, position.j as f64, position.t as f64 / 3.0);
+        }
+        code
+    }
+}
+
 /// read from file, including the error patterns;
 /// the point is to avoid bad cache performance, because generating random error requires iterating over a large memory space,
 /// invalidating all cache. also, this can reduce the time of decoding by prepare the data before hand and could be shared between
@@ -971,6 +1242,8 @@ pub(crate) fn register(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(weight_of_p, m)?)?;
     m.add_class::<CodeCapacityRepetitionCode>()?;
     m.add_class::<CodeCapacityPlanarCode>()?;
+    m.add_class::<CodeCapacityTailoredCode>()?;
+    m.add_class::<CodeCapacityColorCode>()?;
     Ok(())
 }
 

@@ -164,8 +164,10 @@ impl RelaxerOptimizer {
 }
 
 #[cfg(test)]
+#[cfg(feature = "highs")]
 pub mod tests {
     // use super::*;
+    use highs::{ColProblem, HighsModelStatus, Model, Sense};
 
     // #[test]
     // fn relaxer_optimizer_simple() {
@@ -206,5 +208,45 @@ pub mod tests {
                 println!();
             }
         }
+    }
+
+    #[test]
+    fn highs_simple() {
+        let mut model = ColProblem::default().optimise(Sense::Maximise);
+        let row1 = model.add_row(..=6., []); // x*3 + y*1 <= 6
+        let row2 = model.add_row(..=7., []); // y*1 + z*2 <= 7
+        let _x = model.add_col(1., (0.).., [(row1, 3.)]);
+        let y = model.add_col(2., (0.).., [(row1, 1.), (row2, 1.)]);
+        let _z = model.add_col(1., (0.).., [(row2, 2.)]);
+
+        model.set_option("time_limit", 30.0); // stop after 30 seconds
+        model.set_option("parallel", "off"); // do not use multiple cores
+
+        let solved = model.solve();
+
+        assert_eq!(solved.status(), HighsModelStatus::Optimal);
+
+        let solution = solved.get_solution();
+        // The expected solution is x=0  y=6  z=0.5
+        assert_eq!(solution.columns(), vec![0., 6., 0.5]);
+        // All the constraints are at their maximum
+        assert_eq!(solution.rows(), vec![6., 7.]);
+
+        // this does nothing but just mark the model as unsolved
+        // so that we can modify the problem
+        let mut model: Model = solved.into();
+        let v = model.add_col(1., (0.)..10., []);
+
+        let _row3 = model.add_row(..=10., [(y, 1.), (v, 2.0)]); // y*1 + v*2 <= 10
+
+        let solved = model.solve();
+        assert_eq!(solved.status(), HighsModelStatus::Optimal);
+
+        let solution = solved.get_solution();
+        // The expected solution is x=0  y=6  z=0.5
+        assert_eq!(solution.columns(), vec![0., 6., 0.5, 2.]);
+        // All the constraints are at their maximum
+        assert_eq!(solution.rows(), vec![6., 7., 10.]);
+        // model.add_row(..=6, row_factors);
     }
 }

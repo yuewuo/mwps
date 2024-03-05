@@ -50,19 +50,16 @@ macro_rules! bind_trait_to_python {
                 self.clear()
             }
             #[pyo3(name = "solve")] // in Python, `solve` and `solve_visualizer` is the same because it can take optional parameter
-            fn trait_solve(&mut self, syndrome_pattern: &SyndromePattern) {
-                // disable visualizer from Python end before paper publication
-                self.solve_visualizer(syndrome_pattern, None)
+            fn trait_solve(&mut self, syndrome_pattern: &SyndromePattern, visualizer: Option<&mut Visualizer>) {
+                self.solve_visualizer(syndrome_pattern, visualizer)
             }
             #[pyo3(name = "subgraph_range")] // in Python, `subgraph_range` and `subgraph_range_visualizer` is the same
-            fn trait_subgraph_range(&mut self) -> (Subgraph, WeightRange) {
-                // disable visualizer from Python end before paper publication
-                self.subgraph_range()
+            fn trait_subgraph_range(&mut self, visualizer: Option<&mut Visualizer>) -> (Subgraph, WeightRange) {
+                self.subgraph_range_visualizer(visualizer)
             }
             #[pyo3(name = "subgraph")]
-            fn trait_subgraph(&mut self) -> Subgraph {
-                // disable visualizer from Python end before paper publication
-                self.subgraph_range().0
+            fn trait_subgraph(&mut self, visualizer: Option<&mut Visualizer>) -> Subgraph {
+                self.subgraph_range_visualizer(visualizer).0
             }
             #[pyo3(name = "sum_dual_variables")]
             fn trait_sum_dual_variables(&self) -> PyResult<Py<PyAny>> {
@@ -78,13 +75,20 @@ pub struct SolverSerialPluginsConfig {
     /// timeout for the whole solving process in millisecond
     #[serde(default = "hyperion_default_configs::primal")]
     primal: PrimalModuleSerialConfig,
+    /// growing strategy
+    #[serde(default = "hyperion_default_configs::growing_strategy")]
+    growing_strategy: GrowingStrategy,
 }
 
 pub mod hyperion_default_configs {
-    use crate::primal_module_serial::PrimalModuleSerialConfig;
+    use crate::primal_module_serial::*;
 
     pub fn primal() -> PrimalModuleSerialConfig {
         serde_json::from_value(json!({})).unwrap()
+    }
+
+    pub fn growing_strategy() -> GrowingStrategy {
+        GrowingStrategy::MultipleClusters
     }
 }
 
@@ -109,10 +113,9 @@ impl SolverSerialPlugins {
         let model_graph = Arc::new(ModelHyperGraph::new(Arc::new(initializer.clone())));
         let mut primal_module = PrimalModuleSerial::new_empty(initializer);
         let config: SolverSerialPluginsConfig = serde_json::from_value(config).unwrap();
-        primal_module.growing_strategy = GrowingStrategy::MultipleClusters;
+        primal_module.growing_strategy = config.growing_strategy;
         primal_module.plugins = plugins;
         primal_module.config = config.primal.clone();
-        // primal_module.
         Self {
             dual_module: DualModuleSerial::new_empty(initializer),
             primal_module,
@@ -197,14 +200,19 @@ macro_rules! bind_primal_dual_solver_trait {
 #[cfg_attr(feature = "python_binding", pyclass)]
 pub struct SolverSerialUnionFind(SolverSerialPlugins);
 
-#[cfg_attr(feature = "python_binding", cfg_eval)]
-#[cfg_attr(feature = "python_binding", pymethods)]
 impl SolverSerialUnionFind {
-    #[cfg_attr(feature = "python_binding", new)]
     pub fn new(initializer: &SolverInitializer, config: serde_json::Value) -> Self {
-        let mut solver = SolverSerialPlugins::new(initializer, Arc::new(vec![]), config);
-        solver.primal_module.growing_strategy = GrowingStrategy::MultipleClusters; // the original UF decoder
-        Self(solver)
+        Self(SolverSerialPlugins::new(initializer, Arc::new(vec![]), config))
+    }
+}
+
+#[cfg(feature = "python_binding")]
+#[pymethods]
+impl SolverSerialUnionFind {
+    #[new]
+    pub fn new_python(initializer: &SolverInitializer, config: Option<PyObject>) -> Self {
+        let config = config.map(|x| pyobject_to_json(x)).unwrap_or(json!({}));
+        Self::new(initializer, config)
     }
 }
 
@@ -217,10 +225,7 @@ bind_trait_to_python!(SolverSerialUnionFind);
 #[cfg_attr(feature = "python_binding", pyclass)]
 pub struct SolverSerialSingleHair(SolverSerialPlugins);
 
-#[cfg_attr(feature = "python_binding", cfg_eval)]
-#[cfg_attr(feature = "python_binding", pymethods)]
 impl SolverSerialSingleHair {
-    #[cfg_attr(feature = "python_binding", new)]
     pub fn new(initializer: &SolverInitializer, config: serde_json::Value) -> Self {
         Self(SolverSerialPlugins::new(
             initializer,
@@ -233,6 +238,16 @@ impl SolverSerialSingleHair {
     }
 }
 
+#[cfg(feature = "python_binding")]
+#[pymethods]
+impl SolverSerialSingleHair {
+    #[new]
+    pub fn new_python(initializer: &SolverInitializer, config: Option<PyObject>) -> Self {
+        let config = config.map(|x| pyobject_to_json(x)).unwrap_or(json!({}));
+        Self::new(initializer, config)
+    }
+}
+
 bind_primal_dual_solver_trait!(SolverSerialSingleHair);
 
 #[cfg(feature = "python_binding")]
@@ -242,10 +257,7 @@ bind_trait_to_python!(SolverSerialSingleHair);
 #[cfg_attr(feature = "python_binding", pyclass)]
 pub struct SolverSerialJointSingleHair(SolverSerialPlugins);
 
-#[cfg_attr(feature = "python_binding", cfg_eval)]
-#[cfg_attr(feature = "python_binding", pymethods)]
 impl SolverSerialJointSingleHair {
-    #[cfg_attr(feature = "python_binding", new)]
     pub fn new(initializer: &SolverInitializer, config: serde_json::Value) -> Self {
         Self(SolverSerialPlugins::new(
             initializer,
@@ -258,6 +270,16 @@ impl SolverSerialJointSingleHair {
             ]),
             config,
         ))
+    }
+}
+
+#[cfg(feature = "python_binding")]
+#[pymethods]
+impl SolverSerialJointSingleHair {
+    #[new]
+    pub fn new_python(initializer: &SolverInitializer, config: Option<PyObject>) -> Self {
+        let config = config.map(|x| pyobject_to_json(x)).unwrap_or(json!({}));
+        Self::new(initializer, config)
     }
 }
 

@@ -21,7 +21,7 @@ const { ref, reactive, watch, computed } = Vue
 
 // fetch visualization data
 const urlParams = new URLSearchParams(window.location.search)
-const filename = urlParams.get('filename') || "visualizer.json"
+const filename = urlParams.get('filename') || 'visualizer.json'
 
 export var mwpf_data
 var patch_done = ref(false)
@@ -44,6 +44,7 @@ const App = {
             snapshot_select_label: ref(1),
             snapshot_labels: ref([]),
             mwpf_data_ready: ref(false),
+            segmented: gui3d.segmented,
             use_perspective_camera: gui3d.use_perspective_camera,
             sizes: gui3d.sizes,
             export_scale_selected: ref(1),
@@ -64,25 +65,25 @@ const App = {
             // select
             current_selected: gui3d.current_selected,
             selected_vertex_neighbor_edges: ref([]),
-            selected_vertex_attributes: ref(""),
+            selected_vertex_attributes: ref(''),
             selected_edge: ref(null),
-            selected_edge_attributes: ref(""),
-            dual_module_info: ref(null),
+            selected_edge_attributes: ref(''),
+            dual_module_info: ref(null)
         }
     },
     async mounted() {
         gui3d.root.style.setProperty('--control-visibility', 'visible')
         let response = null
         try {
-            response = await fetch('./data/' + filename, { cache: 'no-cache', })
+            response = await fetch('./data/' + filename, { cache: 'no-cache' })
         } catch (e) {
-            this.error_message = "fetch file error"
+            this.error_message = 'fetch file error'
             throw e
         }
         if (response.ok || is_mock) {
             mwpf_data = await response.json()
             // console.log(mwpf_data)
-            if (mwpf_data.format != "mwpf") {
+            if (mwpf_data.format != 'mwpf') {
                 this.error_message = `visualization file format error, get "${mwpf_data.format}" expected "mwpf"`
                 throw this.error_message
             }
@@ -91,7 +92,7 @@ const App = {
             throw this.error_message
         }
         // load snapshot
-        this.show_snapshot(0)  // load the first snapshot
+        this.show_snapshot(0) // load the first snapshot
         this.snapshot_num = mwpf_data.snapshots.length
         for (let [idx, [name, _]] of mwpf_data.snapshots.entries()) {
             this.snapshot_labels.push(`[${idx}] ${name}`)
@@ -99,40 +100,41 @@ const App = {
         this.snapshot_select_label = this.snapshot_labels[0]
         this.mwpf_data_ready = true
         // only if data loads successfully will the animation starts
-        if (!is_mock) {  // if mock, no need to refresh all the time
+        if (!is_mock) {
+            // if mock, no need to refresh all the time
             gui3d.animate()
         }
         // add keyboard shortcuts
-        document.onkeydown = (event) => {
+        document.onkeydown = event => {
             if (!event.metaKey) {
-                if (event.key == "t" || event.key == "T") {
-                    this.reset_camera("top")
-                } else if (event.key == "l" || event.key == "L") {
-                    this.reset_camera("left")
-                } else if (event.key == "f" || event.key == "F") {
-                    this.reset_camera("front")
-                } else if (event.key == "c" || event.key == "C") {
+                if (event.key == 't' || event.key == 'T') {
+                    this.reset_camera('top')
+                } else if (event.key == 'l' || event.key == 'L') {
+                    this.reset_camera('left')
+                } else if (event.key == 'f' || event.key == 'F') {
+                    this.reset_camera('front')
+                } else if (event.key == 'c' || event.key == 'C') {
                     this.show_config = !this.show_config
-                } else if (event.key == "s" || event.key == "S") {
+                } else if (event.key == 's' || event.key == 'S') {
                     this.show_stats = !this.show_stats
-                } else if (event.key == "v" || event.key == "V") {
+                } else if (event.key == 'v' || event.key == 'V') {
                     this.lock_view = !this.lock_view
-                } else if (event.key == "o" || event.key == "O") {
+                } else if (event.key == 'o' || event.key == 'O') {
                     this.use_perspective_camera = false
-                } else if (event.key == "p" || event.key == "P") {
+                } else if (event.key == 'p' || event.key == 'P') {
                     this.use_perspective_camera = true
-                } else if (event.key == "e" || event.key == "E") {
+                } else if (event.key == 'e' || event.key == 'E') {
                     this.toggle_error_correction()
-                } else if (event.key == "ArrowRight") {
+                } else if (event.key == 'ArrowRight') {
                     if (this.snapshot_select < this.snapshot_num - 1) {
                         this.snapshot_select += 1
                     }
-                } else if (event.key == "ArrowLeft") {
+                } else if (event.key == 'ArrowLeft') {
                     if (this.snapshot_select > 0) {
                         this.snapshot_select -= 1
                     }
                 } else {
-                    return  // unrecognized, propagate to other listeners
+                    return // unrecognized, propagate to other listeners
                 }
                 event.preventDefault()
                 event.stopPropagation()
@@ -143,9 +145,11 @@ const App = {
         let snapshot_idx = urlParams.get('si') || urlParams.get('snapshot_idx')
         if (snapshot_idx != null) {
             snapshot_idx = parseInt(snapshot_idx)
-            if (snapshot_idx < 0) {  // iterate from the end, like python list[-1]
+            if (snapshot_idx < 0) {
+                // iterate from the end, like python list[-1]
                 snapshot_idx = this.snapshot_num + snapshot_idx
-                if (snapshot_idx < 0) {  // too small
+                if (snapshot_idx < 0) {
+                    // too small
                     snapshot_idx = 0
                 }
             }
@@ -170,14 +174,14 @@ const App = {
                 this.warning_message = `patching from external file: ${patch_url}`
                 let patch_module = await import(patch_url)
                 if (patch_module.patch == null) {
-                    this.error_message = "invalid patch file: `patch` function not found"
-                    throw "patch file error"
+                    this.error_message = 'invalid patch file: `patch` function not found'
+                    throw 'patch file error'
                 }
                 await patch_module.patch.bind(this)()
                 this.warning_message = null
             }
             patch_done.value = true
-        }, 100);
+        }, 100)
     },
     methods: {
         show_snapshot(snapshot_idx) {
@@ -186,7 +190,7 @@ const App = {
                 window.snapshot_idx = snapshot_idx
                 gui3d.show_snapshot(snapshot_idx, mwpf_data)
             } catch (e) {
-                this.error_message = "load data error"
+                this.error_message = 'load data error'
                 throw e
             }
         },
@@ -195,12 +199,12 @@ const App = {
         },
         async update_selected_display() {
             if (this.current_selected == null) return
-            if (this.current_selected.type == "vertex") {
+            if (this.current_selected.type == 'vertex') {
                 let vertex_index = this.current_selected.vertex_index
                 let vertex = this.snapshot.vertices[vertex_index]
-                this.selected_vertex_attributes = ""
+                this.selected_vertex_attributes = ''
                 if (vertex.s == 1) {
-                    this.selected_vertex_attributes += "(defect) "
+                    this.selected_vertex_attributes += '(defect) '
                 }
                 // fetch edge list
                 let neighbor_edges = []
@@ -219,7 +223,7 @@ const App = {
                                 gn: edge.gn == null ? edge.g : edge.gn,
                                 gd: edge.gd == null ? 1 : edge.gd,
                                 un: edge.un == null ? edge.w - edge.g : edge.un,
-                                ud: edge.ud == null ? 1 : edge.ud,
+                                ud: edge.ud == null ? 1 : edge.ud
                             })
                             break
                         }
@@ -227,7 +231,7 @@ const App = {
                 }
                 this.selected_vertex_neighbor_edges = neighbor_edges
             }
-            if (this.current_selected.type == "edge") {
+            if (this.current_selected.type == 'edge') {
                 const edge_index = this.current_selected.edge_index
                 const edge = this.snapshot.edges[edge_index]
                 this.selected_edge = {
@@ -239,31 +243,35 @@ const App = {
                     gn: edge.gn == null ? edge.g : edge.gn,
                     gd: edge.gd == null ? 1 : edge.gd,
                     un: edge.un == null ? edge.w - edge.g : edge.un,
-                    ud: edge.ud == null ? 1 : edge.ud,
+                    ud: edge.ud == null ? 1 : edge.ud
                 }
-                this.selected_edge_attributes = ""
+                this.selected_edge_attributes = ''
             }
         },
         jump_to(type, data, is_click = true) {
             let current_ref = is_click ? gui3d.current_selected : gui3d.current_hover
-            if (type == "edge") {
+            if (type == 'edge') {
                 current_ref.value = {
-                    type, edge_index: data
+                    type,
+                    edge_index: data
                 }
             }
-            if (type == "vertex") {
+            if (type == 'vertex') {
                 current_ref.value = {
-                    type, vertex_index: data
+                    type,
+                    vertex_index: data
                 }
             }
-            if (type == "vertices") {
+            if (type == 'vertices') {
                 current_ref.value = {
-                    type, vertices: data
+                    type,
+                    vertices: data
                 }
             }
-            if (type == "edges") {
+            if (type == 'edges') {
                 current_ref.value = {
-                    type, edges: data
+                    type,
+                    edges: data
                 }
             }
         },
@@ -274,20 +282,24 @@ const App = {
             gui3d.current_hover.value = null
         },
         update_export_resolutions() {
-            this.export_resolution_options.splice(0, this.export_resolution_options.length)
+            this.export_resolution_options.splice(
+                0,
+                this.export_resolution_options.length
+            )
             let exists_in_new_resolution = false
             for (let i = -100; i < 100; ++i) {
                 let scale = 1 * Math.pow(10, i / 10)
                 let width = Math.round(this.sizes.canvas_width * scale)
                 let height = Math.round(this.sizes.canvas_height * scale)
-                if (width > 5000 || height > 5000) {  // to large, likely exceeds WebGL maximum buffer size
+                if (width > 5000 || height > 5000) {
+                    // to large, likely exceeds WebGL maximum buffer size
                     break
                 }
                 if (width >= 300 || height >= 300) {
                     let label = `${width} x ${height}`
                     this.export_resolution_options.push({
                         label: label,
-                        value: scale,
+                        value: scale
                     })
                     if (scale == this.export_scale_selected) {
                         exists_in_new_resolution = true
@@ -314,11 +326,18 @@ const App = {
             if (snapshot.dual_nodes != null && snapshot.interface != null) {
                 this.dual_module_info = {
                     dual_nodes: snapshot.dual_nodes,
-                    interface: snapshot.interface,
+                    interface: snapshot.interface
                 }
             } else {
                 this.dual_module_info = null
             }
+        },
+        node_color(node_index) {
+            if (!this.segmented) {
+                return "white"
+            }
+            const color = gui3d.segmented_edge_colors[node_index % gui3d.segmented_edge_colors.length]
+            return gui3d.lerpColors(color, "white", 0.5)
         },
     },
     watch: {
@@ -338,7 +357,7 @@ const App = {
         },
         lock_view() {
             gui3d.enable_control.value = !this.lock_view
-        },
+        }
     },
     computed: {
         scale() {
@@ -397,19 +416,19 @@ const App = {
                 return null
             }
         }
-    },
+    }
 }
 
 if (!is_mock) {
     const app = Vue.createApp(App)
     app.use(Quasar)
-    window.app = app.mount("#app")
+    window.app = app.mount('#app')
 } else {
     global.Element = window.Element
-    global.SVGElement = window.SVGElement  // https://github.com/jsdom/jsdom/issues/2734
-    App.template = "<div></div>"
+    global.SVGElement = window.SVGElement // https://github.com/jsdom/jsdom/issues/2734
+    App.template = '<div></div>'
     const app = Vue.createApp(App)
-    window.app = app.mount("#app")
+    window.app = app.mount('#app')
     while (!patch_done.value) {
         await sleep(50)
     }
@@ -417,8 +436,8 @@ if (!is_mock) {
         await sleep(10)
         await Vue.nextTick()
     }
-    console.log("[rendering]")
+    console.log('[rendering]')
     const pixels = await gui3d.nodejs_render_png()
-    console.log("[saving]")
+    console.log('[saving]')
     mocker.save_pixels(pixels)
 }

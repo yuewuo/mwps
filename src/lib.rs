@@ -57,7 +57,7 @@ use pyo3::prelude::*;
 #[pymodule]
 fn mwpf(py: Python<'_>, m: &PyModule) -> PyResult<()> {
     util::register(py, m)?;
-    // visualize::register(py, m)?;
+    visualize::register(py, m)?;
     example_codes::register(py, m)?;
     mwpf_solver::register(py, m)?;
     Ok(())
