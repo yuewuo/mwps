@@ -7,7 +7,7 @@ Hypergraph MWPF is proven to be **NP-hard** [1]. Our design is taking advantage 
 the **average** time complexity and reach **almost-linear** average time complexity at small physical error rate.
 Please wait for our paper for more discussion of the speed v.s. accuracy.
 
-[<img src="https://raw.githubusercontent.com/yuewuo/conference-talk-2024-APS-march-meeting/main/video_maker/small_color_code_example.gif" width="50%" alt="Color Code Example (click for YouTube video)" align="center">](https://youtu.be/26jgRb669UE)
+[<img src="https://raw.githubusercontent.com/yuewuo/conference-talk-2024-APS-march-meeting/main/video_maker/small_color_code_example.gif" width="50%" alt="Color Code Example (click for YouTube video)" align="center" loop=infinite>](https://youtu.be/26jgRb669UE)
 
 ## Installation
 
@@ -128,15 +128,15 @@ hyperion = SolverSerialJointSingleHair(initializer, config)
 
 For surface code with depolarizing noise mode $p_x =p_y=p_z = p/3$, here shows physical error rates 1%, 2% and 4% (left to right).
 
-[<img src="https://raw.githubusercontent.com/yuewuo/conference-talk-2024-APS-march-meeting/main/video_maker/surface_code_example.gif" alt="Surface Code Example (click for YouTube video)" align="center">](https://youtu.be/SjZ8rMdYZ54)
+[<img src="https://raw.githubusercontent.com/yuewuo/conference-talk-2024-APS-march-meeting/main/video_maker/surface_code_example.gif" alt="Surface Code Example (click for YouTube video)" align="center" loop=infinite>](https://youtu.be/SjZ8rMdYZ54)
 
 For triangle color code with X errors, here shows physical error rates 1%, 2% and 4% (left to right).
 
-[<img src="https://raw.githubusercontent.com/yuewuo/conference-talk-2024-APS-march-meeting/main/video_maker/triangle_color_code_example.gif" alt="Triangle Color Code Example (click for YouTube video)" align="center">](https://youtu.be/1KN62fmR7OM)
+[<img src="https://raw.githubusercontent.com/yuewuo/conference-talk-2024-APS-march-meeting/main/video_maker/triangle_color_code_example.gif" alt="Triangle Color Code Example (click for YouTube video)" align="center" loop=infinite>](https://youtu.be/1KN62fmR7OM)
 
 For circuit-level surface code, here shows physical error rate 0.03%, 0.1% and 0.3% (left to right).
 
-[<img src="https://raw.githubusercontent.com/yuewuo/conference-talk-2024-APS-march-meeting/main/video_maker/circuit_level_example.gif" alt="Circuit-level Surface Code Example (click for YouTube video)" align="center">](https://youtu.be/ki9fHiA4Gyo)
+[<img src="https://raw.githubusercontent.com/yuewuo/conference-talk-2024-APS-march-meeting/main/video_maker/circuit_level_example.gif" alt="Circuit-level Surface Code Example (click for YouTube video)" align="center" loop=infinite>](https://youtu.be/ki9fHiA4Gyo)
 
 ## Reference
 
