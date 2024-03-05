@@ -1,102 +1,156 @@
-# mwpf
-Hypergraph Minimum-Weight Parity Factor (MWPF) Algorithm for Quantum LDPC Codes
+# MWPF
+### Hypergraph <span style="color: red; font-size: 120%;">M</span>inimum-<span style="color: red; font-size: 120%;">W</span>eight <span style="color: red; font-size: 120%;">P</span>arity <span style="color: red; font-size: 120%;">F</span>actor Decoder for QEC
 
-**We publish the binary Python package but do not guarantee any correctness or speed.**
-**The source code and the full version will be made publicly available when our paper comes out.**
+*Preview claim: We publish the Python package that may subject to breaking changes. The source code and the full version will be made publicly available with our coming paper.*
 
-Note: hypergraph MWPF is proven to be NP-hard. Our design is taking advantage of clustering technique to lower
-the **average** time complexity and reach almost-linear **average** time complexity at small physical error rate.
+Hypergraph MWPF is proven to be **NP-hard** [1]. Our design is taking advantage of clustering technique to lower
+the **average** time complexity and reach **almost-linear** average time complexity at small physical error rate.
 Please wait for our paper for more discussion of the speed v.s. accuracy.
+
+[<img src="https://raw.githubusercontent.com/yuewuo/conference-talk-2024-APS-march-meeting/main/video_maker/small_color_code_example.gif" width="50%" alt="Color Code Example (click for YouTube video)" align="center" loop=infinite>](https://youtu.be/26jgRb669UE)
+
+## Installation
+
+```sh
+pip install MWPF
+```
 
 ## Background
 
-Solving MWPF on hypergraph is essential for QEC decoding because it can implement exact Most Likely Error (MLE) decoder 
-on topological codes assuming independent physical qubit errors. Existing work like MWPM decoder can only model independent 
-errors that generate 1 or 2 defect vertices. We model such a decoding problem as solving MWPF on the decoding graph in 
-[this tutorial](https://tutorial.fusionblossom.com/problem-definition.html). Extending the MWPF algorithm to hypergraph, 
-however, requires substantial modification over [the existing MWPF algorithm on normal graph](https://github.com/yuewuo/fusion-blossom). 
-Hypergraph MWPF algorithm can model any independent error that generates arbitrary number of defect vertices, 
-enabling applications in not only decoding depolarizing noise channel but also other decoding codes like color 
-code and tailored surface code.
+The Most-Likely Error (MLE) decoding problem can be formulated as a MWPF problem.
 
-Here is an example to use the library. Consider the simplest case 
+![](https://raw.githubusercontent.com/yuewuo/conference-talk-2024-APS-march-meeting/main/images/MLE_decoding.png)
 
-```python
-"""
-o: virtual vertex (can be matched arbitrary times)
-*: real vertex (must be matched specific times according to the syndrome)
+![](https://raw.githubusercontent.com/yuewuo/conference-talk-2024-APS-march-meeting/main/images/MWPF_definition.png)
 
-   0     1     2     3     4      edge (weights=100)
-o --- * --- * --- * --- * --- o
-0     1     2     3     4     5   vertex
+#### Naming
 
-      |     |     |
-      -------------  hyperedge 5 (weight=60) (only considered by MWPF but not MWPM)
-"""
-```
+We named it Minimum-Weight Parity Factor because of a concept called "parity $(g,f)$-factor" in Lovász's 1972 paper [2]. In the context of QEC, the functions $g(v)$ and $f(v)$ associates with the measured syndrome as shown above. Without ambiguity, we just call it "parity factor".
 
-When using traditional MWPM decoder, e.g. [fusion blossom](https://github.com/yuewuo/fusion-blossom), we would construct a solver like this
+#### Relationship with MWPM decoder
 
-```python
-import fusion_blossom as fb
+Minimum-Weight Perfect Matching decoder is the traditional decoder for QEC. When the decoding graph is a simple graph, the MLE decoding problem can be reduced to an MWPM problem on a generated complete graph with $O(|V|^2)$ edges. Two recent works [2] and [3] improves the average time complexity to almost theoretical upper bound of $O(|V|)$ by not explicitly generating the complete graph. This motivates our idea to design an algorithm directly on the model graph, hoping to reach the same $O(|V|)$ average time complexity even if the model graph is hypergraph.
 
-def prepare_fusion_solver() -> fb.SolverSerial:
-    vertex_num = 6
-    weighted_edges = [(0, 1, 100), (1, 2, 100), (2, 3, 100), (3, 4, 100), (4, 5, 100)]
-    virtual_vertices = [0, 5]
-    initializer = fb.SolverInitializer(vertex_num, weighted_edges, virtual_vertices)
-    solver = fb.SolverSerial(initializer)
-    return solver
-```
+#### Key Idea
 
-Note that we omit hyperedge 5 because MWPM decoder is not capable of handling hyperedges.
-For a syndrome of vertices `[1, 2, 4]`, a minimum weight perfect matching would be edges `[1, 4]` with weight 200.
+We try to extend the blossom algorithm that solves the MWPM problem on simple graphs. An interesting attribute of the blossom algorithm is that it deals with an **exponential** number of linear constraints in order to relax the integer constraints. The added linear constraints, which we refer to as "blossom constraints", are based on a very simple idea: filtering out invalid solutions. The blossom constraints simply say "any odd cluster cannot be perfectly matched internally", which is obviously true. However, this "filtering" requires an exponential number of linear constraints [5], which is impossible to generate efficiently. Thus, the algorithm must **implicitly** consider those exponential number of constraints without ever listing them. In fact, the blossom algorithm only keeps track of $O(|V|)$ such constraints from the exponentially many. Surprisingly, this works! Inspired by this miracle, we now have the courage to use an exponential number of linear constraints to solve MWPF.
 
-```python
-syndrome = [1, 2, 4]
-fusion = prepare_fusion_solver()
-fusion.solve(fb.SyndromePattern(syndrome))
-fusion_subgraph = fusion.subgraph()
-print(fusion_subgraph)  # out: [1, 4]
-```
+#### Rigorous Math
 
-Now, when we use a MWPF decoder (our implementation is called "Hyperion"), it's capable of considering all hyperedges.
-Note that in the MWPF decoder there is no need to define virtual vertices.
-A virtual vertex can be modeled by adding a zero-weighted hyperedge of `Hyperedge([v], 0)` to the vertex `v`.
+![](https://raw.githubusercontent.com/yuewuo/conference-talk-2024-APS-march-meeting/main/images/MWPF_to_ILP.png)
+
+The ILP problem above is very similar to that of the blossom algorithm, except for the more complex "blossom"definition: it's now a subgraph $S=(V_S, E_S), V_S \subseteq V, E_S \subseteq E$ instead of just a subset of vertices $S\subseteq V$ in the blossom algorithm. We have **mathematically** proved the equivalence between hypergraph MWPF and this ILP. In the next step, we simply relax the integer constraints.
+
+![](https://raw.githubusercontent.com/yuewuo/conference-talk-2024-APS-march-meeting/main/images/ILP_to_LP.png)
+
+Clearly, as a relaxation, the minimum objective value is no larger than that of the ILP. Unfortunately, we haven't been able to rigorously prove that they have the same optimal objective value, nor can we find a counter example. We leave this conjecture as is for now, and do not assume its correctness.
+
+##### Conjecture: $\min\text{ILP}=\min\text{LP}$. 
+
+![](https://raw.githubusercontent.com/yuewuo/conference-talk-2024-APS-march-meeting/main/images/LP_to_DLP.png)
+
+The dual problem is a transpose of the primal LP problem. According to the duality theorem, they have the same optimal value. The key is that each primal constraint becomes a dual variable, and each primal variable becomes a dual constraint. Clearly, for the dual problem, $y_S = 0, \forall S \in \mathcal{O}$ is a solution (despite usually not the optimal solution). In this way, we can keep track of only **non-zero** dual variables to implicitly considering all the exponentially many primal constraints. Since the dual LP problem becomes a maximization problem, we have the whole inequality chain as below.
+
+![](https://raw.githubusercontent.com/yuewuo/conference-talk-2024-APS-march-meeting/main/images/inequality_chain.png)
+
+If we can find a pair of feasible primal and dual solutions with the same weight, then this inequality chain **collapses** to an equality chain and the primal solution is **proven to be optimal**. Even if they are not equal, we still get a proximity bound.
+
+In fact, MWPM decoder using the blossom algorithm fits in this framework, where the alternating tree operation guarantees that in the end the primal must be equal to the dual. Union-Find decoder and hypergraph UF decoder can also be explained by this framework, but the proximity bound is usually not singleton.
+
+## Usage
+
+The decoding process is two steps (shown in [Background](#background))
+
+1. offline: construct the model graph given the QEC code and the noise model
+2. online: compute the most-likely error $\mathcal{E}\subseteq E$ given the syndrome (represented by the defect vertices $D \subseteq V$) and some dynamic weights
 
 ```python
-import mwpf
+from mwpf import HyperEdge, SolverInitializer, SolverSerialJointSingleHair, SyndromePattern
 
-def prepare_hyperion_solver() -> mwpf.SolverSerialJointSingleHair:
-    vertex_num = 6
-    weighted_edges = [
-        mwpf.HyperEdge([0, 1], 100),
-        mwpf.HyperEdge([1, 2], 100),
-        mwpf.HyperEdge([2, 3], 100),
-        mwpf.HyperEdge([3, 4], 100),
-        mwpf.HyperEdge([4, 5], 100),
-        mwpf.HyperEdge([1, 2, 3], 60),  # hyperedge
-        mwpf.HyperEdge([0], 0),  # virtual vertex
-        mwpf.HyperEdge([5], 0),  # virtual vertex
-    ]
-    initializer = mwpf.SolverInitializer(vertex_num, weighted_edges)
-    solver = mwpf.SolverSerialJointSingleHair(initializer)
-    return solver
-```
+# Offline
+vertex_num = 4
+weighted_edges = [
+    HyperEdge([0, 1], 100),  # [vertices], weight
+    HyperEdge([1, 2], 100),
+    HyperEdge([2, 3], 100),
+    HyperEdge([0], 100),  # boundary vertex
+    HyperEdge([0, 1, 2], 60),  # hyperedge
+]
+initializer = SolverInitializer(vertex_num, weighted_edges)
+hyperion = SolverSerialJointSingleHair(initializer)
 
-When solving the same syndrome, it's capable of using the lower-weighted hyperedge to find a more-likely error pattern.
-And most interestingly, although we do not guarantee most-likely error in all cases, we do have the bound for the result.
-When the lower bound is equal to the upper bound, we know the result is optimal, i.e. most-likely error pattern.
-When they're not equal, we know the worst-case proximity of the result which is useful.
-
-
-```python
-syndrome = [1, 2, 4]
-hyperion = prepare_hyperion_solver()
-hyperion.solve(mwpf.SyndromePattern(syndrome))
+# Online
+syndrome = [0, 1, 3]
+hyperion.solve(SyndromePattern(syndrome))
 hyperion_subgraph = hyperion.subgraph()
-print(hyperion_subgraph)  # out: [3, 5]
+print(hyperion_subgraph)  # out: [3, 5], weighted 160
 _, bound = hyperion.subgraph_range()
 print((bound.lower, bound.upper))  # out: (Fraction(160, 1), Fraction(160, 1))
 ```
+
+The example hyergraph is below: grey edges are weighted 100 and the purple hyperedge is weighted 60.
+
+![](https://raw.githubusercontent.com/yuewuo/conference-talk-2024-APS-march-meeting/main/images/example_hypergraph.png)
+
+In constrast, if we were to solve MWPF with MWPM decoder, then we have to ignore the hyperedge $e_4$ and thus leads to suboptimal result, as shown by the following Python script using the [Fusion Blossom](https://pypi.org/project/fusion-blossom/) library.
+
+```python
+from fusion_blossom import SolverInitializer, SolverSerial, SyndromePattern
+
+# Offline
+vertex_num = 5
+weighted_edges = [(0, 4, 100), (0, 1, 100), (1, 2, 100), (2, 3, 100)]
+virtual_vertices = [4]
+initializer = SolverInitializer(vertex_num, weighted_edges, virtual_vertices)
+fusion = SolverSerial(initializer)
+
+# Online
+syndrome = [0, 1, 3]
+fusion.solve(SyndromePattern(syndrome))
+fusion_subgraph = fusion.subgraph()
+print(fusion_subgraph)  # out: [0, 2, 3], which is weighted 300 instead of 160
+```
+
+## Advanced Usage
+
+When trading off accuracy and decoding time, we provide a timeout parameter for the decoder. Also, one can specify whether you want the clusters to all grow together or grow one by one. More parameters are coming as we develop the library.
+
+```python
+config = {
+    "primal": {
+        "timeout": 3.0,  # 3 second timeout for each cluster
+    },
+    "growing_strategy": "SingleCluster",  # growing from each defect one by one
+    # "growing_strategy": "MultipleClusters",  # every defect starts to grow at the same time
+}
+hyperion = SolverSerialJointSingleHair(initializer, config)
+```
+
+An embedded visualization tool is coming soon.
+
+## Examples
+
+For surface code with depolarizing noise mode $p_x =p_y=p_z = p/3$, here shows physical error rates 1%, 2% and 4% (left to right).
+
+[<img src="https://raw.githubusercontent.com/yuewuo/conference-talk-2024-APS-march-meeting/main/video_maker/surface_code_example.gif" alt="Surface Code Example (click for YouTube video)" align="center" loop=infinite>](https://youtu.be/SjZ8rMdYZ54)
+
+For triangle color code with X errors, here shows physical error rates 1%, 2% and 4% (left to right).
+
+[<img src="https://raw.githubusercontent.com/yuewuo/conference-talk-2024-APS-march-meeting/main/video_maker/triangle_color_code_example.gif" alt="Triangle Color Code Example (click for YouTube video)" align="center" loop=infinite>](https://youtu.be/1KN62fmR7OM)
+
+For circuit-level surface code, here shows physical error rate 0.03%, 0.1% and 0.3% (left to right).
+
+[<img src="https://raw.githubusercontent.com/yuewuo/conference-talk-2024-APS-march-meeting/main/video_maker/circuit_level_example.gif" alt="Circuit-level Surface Code Example (click for YouTube video)" align="center" loop=infinite>](https://youtu.be/ki9fHiA4Gyo)
+
+## Reference
+
+[1] Berlekamp, Elwyn, Robert McEliece, and Henk Van Tilborg. "On the inherent intractability of certain coding problems (corresp.)." IEEE Transactions on Information Theory 24.3 (1978): 384-386.
+
+[2] Lovász, László. "The factorization of graphs. II." Acta Mathematica Academiae Scientiarum Hungarica 23 (1972): 223-246.
+
+[3] Higgott, Oscar, and Craig Gidney. "Sparse Blossom: correcting a million errors per core second with minimum-weight matching." arXiv preprint arXiv:2303.15933 (2023).
+
+[4] Wu, Yue, and Lin Zhong. "Fusion Blossom: Fast MWPM Decoders for QEC." arXiv preprint arXiv:2305.08307 (2023).
+
+[5] Rothvoß, Thomas. "The matching polytope has exponential extension complexity." *Journal of the ACM (JACM)* 64.6 (2017): 1-19.
 

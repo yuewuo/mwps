@@ -482,18 +482,18 @@ pub fn print_visualize_link(filename: String) {
     print_visualize_link_with_parameters(filename, Vec::new())
 }
 
-// #[cfg(feature = "python_binding")]
-// #[pyfunction]
-// pub(crate) fn register(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
-//     m.add_class::<VisualizePosition>()?;
-//     m.add_class::<Visualizer>()?;
-//     m.add_function(wrap_pyfunction!(static_visualize_data_filename, m)?)?;
-//     m.add_function(wrap_pyfunction!(auto_visualize_data_filename, m)?)?;
-//     m.add_function(wrap_pyfunction!(print_visualize_link_with_parameters, m)?)?;
-//     m.add_function(wrap_pyfunction!(print_visualize_link, m)?)?;
-//     m.add_function(wrap_pyfunction!(center_positions, m)?)?;
-//     Ok(())
-// }
+#[cfg(feature = "python_binding")]
+#[pyfunction]
+pub(crate) fn register(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
+    m.add_class::<VisualizePosition>()?;
+    m.add_class::<Visualizer>()?;
+    m.add_function(wrap_pyfunction!(static_visualize_data_filename, m)?)?;
+    m.add_function(wrap_pyfunction!(auto_visualize_data_filename, m)?)?;
+    m.add_function(wrap_pyfunction!(print_visualize_link_with_parameters, m)?)?;
+    m.add_function(wrap_pyfunction!(print_visualize_link, m)?)?;
+    m.add_function(wrap_pyfunction!(center_positions, m)?)?;
+    Ok(())
+}
 
 #[cfg(test)]
 mod tests {}
