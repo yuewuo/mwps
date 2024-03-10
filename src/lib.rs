@@ -30,6 +30,7 @@ extern crate wasm_bindgen;
 pub mod cli;
 pub mod decoding_hypergraph;
 pub mod dual_module;
+pub mod dual_module_pq;
 pub mod dual_module_serial;
 pub mod example_codes;
 pub mod invalid_subgraph;
