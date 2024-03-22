@@ -84,7 +84,7 @@ impl std::fmt::Debug for DualModuleInterfaceWeak {
 
 /// gives the maximum absolute length to grow, if not possible, give the reason;
 /// note that strong reference is stored in `MaxUpdateLength` so dropping these temporary messages are necessary to avoid memory leakage
-#[derive(Derivative, PartialEq, Eq, Clone)]
+#[derive(Derivative, PartialEq, Eq, Clone, PartialOrd, Ord)]
 #[derivative(Debug, Default(new = "true"))]
 pub enum MaxUpdateLength {
     /// unbounded
@@ -154,6 +154,13 @@ pub trait DualModuleImpl {
     fn get_edge_nodes(&self, edge_index: EdgeIndex) -> Vec<DualNodePtr>;
     fn get_edge_slack(&self, edge_index: EdgeIndex) -> Rational;
     fn is_edge_tight(&self, edge_index: EdgeIndex) -> bool;
+
+    /// to account for residual updates of dual_nodes, needed because dual_node growth are not extracted from the dual_module itself, ideally only called at the end or very infrequently
+    /// note not all implementations need this, e.g., the serial one has all information up_to_date at all times
+    fn sync(&mut self, dual_node_ptrs: &Vec<DualNodePtr>) {
+        let _ = dual_node_ptrs;
+        return;
+    }
 }
 
 impl MaxUpdateLength {
