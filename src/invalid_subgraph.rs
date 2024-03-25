@@ -21,7 +21,7 @@ pub struct InvalidSubgraph {
     /// subset of edges
     pub edges: BTreeSet<EdgeIndex>,
     /// the hair of the invalid subgraph, to avoid repeated computation
-    pub hairs: BTreeSet<EdgeIndex>,
+    pub hair: BTreeSet<EdgeIndex>,
 }
 
 impl Hash for InvalidSubgraph {
@@ -38,7 +38,7 @@ impl Ord for InvalidSubgraph {
             Ordering::Equal
         } else {
             // rare cases: same hash value but different state
-            (&self.vertices, &self.edges, &self.hairs).cmp(&(&other.vertices, &other.edges, &other.hairs))
+            (&self.vertices, &self.edges, &self.hair).cmp(&(&other.vertices, &other.edges, &other.hair))
         }
     }
 }
@@ -70,27 +70,27 @@ impl InvalidSubgraph {
         edges: BTreeSet<EdgeIndex>,
         decoding_graph: &DecodingHyperGraph,
     ) -> Self {
-        let mut hairs = BTreeSet::new();
+        let mut hair = BTreeSet::new();
         for &vertex_index in vertices.iter() {
             let vertex = &decoding_graph.model_graph.vertices[vertex_index as usize];
             for &edge_index in vertex.edges.iter() {
                 if !edges.contains(&edge_index) {
-                    hairs.insert(edge_index);
+                    hair.insert(edge_index);
                 }
             }
         }
-        let invalid_subgraph = Self::new_raw(vertices, edges, hairs);
+        let invalid_subgraph = Self::new_raw(vertices, edges, hair);
         debug_assert_eq!(invalid_subgraph.sanity_check(decoding_graph), Ok(()));
         invalid_subgraph
     }
 
     /// create $S = (V_S, E_S)$ and $\delta(S)$ directly, without any checks
-    pub fn new_raw(vertices: BTreeSet<VertexIndex>, edges: BTreeSet<EdgeIndex>, hairs: BTreeSet<EdgeIndex>) -> Self {
+    pub fn new_raw(vertices: BTreeSet<VertexIndex>, edges: BTreeSet<EdgeIndex>, hair: BTreeSet<EdgeIndex>) -> Self {
         let mut invalid_subgraph = Self {
             hash_value: 0,
             vertices,
             edges,
-            hairs,
+            hair,
         };
         invalid_subgraph.update_hash();
         invalid_subgraph
@@ -100,7 +100,7 @@ impl InvalidSubgraph {
         let mut hasher = DefaultHasher::new();
         self.vertices.hash(&mut hasher);
         self.edges.hash(&mut hasher);
-        self.hairs.hash(&mut hasher);
+        self.hair.hash(&mut hasher);
         self.hash_value = hasher.finish();
     }
 
@@ -155,7 +155,7 @@ impl InvalidSubgraph {
 
     pub fn generate_matrix(&self, decoding_graph: &DecodingHyperGraph) -> EchelonMatrix {
         let mut matrix = EchelonMatrix::new();
-        for &edge_index in self.hairs.iter() {
+        for &edge_index in self.hair.iter() {
             matrix.add_variable(edge_index);
         }
         for &vertex_index in self.vertices.iter() {
@@ -210,7 +210,7 @@ pub mod tests {
         assert_eq!(invalid_subgraph_1.vertices, vec![2, 6, 7].into_iter().collect());
         assert_eq!(invalid_subgraph_1.edges, vec![13].into_iter().collect());
         assert_eq!(
-            invalid_subgraph_1.hairs,
+            invalid_subgraph_1.hair,
             vec![5, 6, 9, 10, 11, 12, 14, 15, 16, 17].into_iter().collect()
         );
     }
@@ -236,9 +236,9 @@ pub mod tests {
         // cargo test invalid_subgraph_hash -- --nocapture
         let vertices: BTreeSet<VertexIndex> = [1, 2, 3].into();
         let edges: BTreeSet<EdgeIndex> = [4, 5].into();
-        let hairs: BTreeSet<EdgeIndex> = [6, 7, 8].into();
-        let invalid_subgraph_1 = InvalidSubgraph::new_raw(vertices.clone(), edges.clone(), hairs.clone());
-        let invalid_subgraph_2 = InvalidSubgraph::new_raw(vertices.clone(), edges.clone(), hairs.clone());
+        let hair: BTreeSet<EdgeIndex> = [6, 7, 8].into();
+        let invalid_subgraph_1 = InvalidSubgraph::new_raw(vertices.clone(), edges.clone(), hair.clone());
+        let invalid_subgraph_2 = InvalidSubgraph::new_raw(vertices.clone(), edges.clone(), hair.clone());
         assert_eq!(invalid_subgraph_1, invalid_subgraph_2);
         // they should have the same hash value
         assert_eq!(
@@ -257,11 +257,11 @@ pub mod tests {
         // any different value would generate a different invalid subgraph
         assert_ne!(
             invalid_subgraph_1,
-            InvalidSubgraph::new_raw([1, 2].into(), edges.clone(), hairs.clone())
+            InvalidSubgraph::new_raw([1, 2].into(), edges.clone(), hair.clone())
         );
         assert_ne!(
             invalid_subgraph_1,
-            InvalidSubgraph::new_raw(vertices.clone(), [4, 5, 6].into(), hairs.clone())
+            InvalidSubgraph::new_raw(vertices.clone(), [4, 5, 6].into(), hair.clone())
         );
         assert_ne!(
             invalid_subgraph_1,

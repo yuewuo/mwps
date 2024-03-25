@@ -144,7 +144,7 @@ impl PrimalModuleImpl for PrimalModuleSerial {
             let primal_cluster_ptr = PrimalClusterPtr::new_value(PrimalCluster {
                 cluster_index: self.clusters.len() as NodeIndex,
                 nodes: vec![],
-                edges: node.invalid_subgraph.hairs.clone(),
+                edges: node.invalid_subgraph.hair.clone(),
                 vertices: node.invalid_subgraph.vertices.clone(),
                 matrix: node.invalid_subgraph.generate_matrix(&interface.decoding_graph),
                 subgraph: None,
@@ -390,12 +390,12 @@ impl PrimalModuleSerial {
                     .collect();
                 let edge_slacks: BTreeMap<EdgeIndex, Rational> = dual_variables
                     .keys()
-                    .flat_map(|invalid_subgraph: &Arc<InvalidSubgraph>| invalid_subgraph.hairs.iter().cloned())
+                    .flat_map(|invalid_subgraph: &Arc<InvalidSubgraph>| invalid_subgraph.hair.iter().cloned())
                     .chain(
                         relaxer
                             .get_direction()
                             .keys()
-                            .flat_map(|invalid_subgraph| invalid_subgraph.hairs.iter().cloned()),
+                            .flat_map(|invalid_subgraph| invalid_subgraph.hair.iter().cloned()),
                     )
                     .map(|edge_index| (edge_index, dual_module.get_edge_slack(edge_index)))
                     .collect();
@@ -446,8 +446,9 @@ pub mod tests {
     use crate::plugin_single_hair::PluginSingleHair;
     use crate::plugin_union_find::PluginUnionFind;
 
+    #[allow(clippy::too_many_arguments)]
     pub fn primal_module_serial_basic_standard_syndrome_optional_viz(
-        code: impl ExampleCode,
+        _code: impl ExampleCode,
         defect_vertices: Vec<VertexIndex>,
         final_dual: Weight,
         plugins: PluginVec,
@@ -700,7 +701,7 @@ pub mod tests {
         );
     }
 
-    // #[test]
+    #[test]
     fn primal_module_serial_basic_3_improved_with_dual_pq_impl() {
         // cargo test primal_module_serial_basic_3_improved_with_dual_pq_impl -- --nocapture
         let visualize_filename = "primal_module_serial_basic_3_improved_with_dual_pq_impl.json".to_string();
@@ -804,7 +805,7 @@ pub mod tests {
         );
     }
 
-    // #[test]
+    #[test]
     fn primal_module_serial_basic_4_single_improved_with_dual_pq_impl() {
         // cargo test primal_module_serial_basic_4_single_improved_with_dual_pq_impl -- --nocapture
         let visualize_filename = "primal_module_serial_basic_4_single_improved_with_dual_pq_impl.json".to_string();
@@ -912,7 +913,7 @@ pub mod tests {
         );
     }
 
-    // #[test]
+    #[test]
     fn primal_module_serial_basic_4_plugin_one_by_one_with_dual_pq_impl() {
         // cargo test primal_module_serial_basic_4_plugin_one_by_one_with_dual_pq_impl -- --nocapture
         let visualize_filename = "primal_module_serial_basic_4_plugin_one_by_one_with_dual_pq_impl.json".to_string();
@@ -931,6 +932,7 @@ pub mod tests {
         );
     }
 
+    #[allow(dead_code)]
     /// timeout functionality does not work, panic with
     /// bug occurs: cluster should be solved, but the subgraph is not yet generated
     /// {"[0][6][8]":"Z","[0][6][10]":"X","[0][7][1]":"Y","[0][8][6]":"Y","[0][8][8]":"Z","[0][9][5]":"X"}
@@ -955,6 +957,7 @@ pub mod tests {
         );
     }
 
+    #[allow(dead_code)]
     // #[test]
     fn primal_module_serial_debug_1_with_dual_pq_impl() {
         // cargo test primal_module_serial_debug_1_with_dual_pq_impl -- --nocapture
@@ -976,6 +979,7 @@ pub mod tests {
         );
     }
 
+    #[allow(dead_code)]
     /// runs too slow
     /// the issue is that the relaxer optimizer runs too slowly...
     // #[test]
@@ -999,6 +1003,7 @@ pub mod tests {
         );
     }
 
+    #[allow(dead_code)]
     // #[test]
     fn primal_module_serial_debug_2_with_dual_pq_impl() {
         // cargo test primal_module_serial_debug_2_with_dual_pq_impl -- --nocapture

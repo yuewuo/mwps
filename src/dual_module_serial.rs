@@ -81,7 +81,11 @@ pub type EdgeWeak = WeakRwLock<Edge>;
 impl std::fmt::Debug for EdgePtr {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         let edge = self.read_recursive();
-        write!(f, "{}", edge.edge_index)
+        write!(
+            f,
+            "[edge: {}]: weight: {}, grow_rate: {}, growth: {}",
+            edge.edge_index, edge.weight, edge.grow_rate, edge.growth
+        )
     }
 }
 
@@ -89,7 +93,11 @@ impl std::fmt::Debug for EdgeWeak {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         let edge_ptr = self.upgrade_force();
         let edge = edge_ptr.read_recursive();
-        write!(f, "{}", edge.edge_index)
+        write!(
+            f,
+            "[edge: {}]: weight: {}, grow_rate: {}, growth: {}",
+            edge.edge_index, edge.weight, edge.grow_rate, edge.growth
+        )
     }
 }
 
@@ -169,7 +177,7 @@ impl DualModuleImpl for DualModuleSerial {
         // make sure the active edges are set
         let dual_node_weak = dual_node_ptr.downgrade();
         let dual_node = dual_node_ptr.read_recursive();
-        for &edge_index in dual_node.invalid_subgraph.hairs.iter() {
+        for &edge_index in dual_node.invalid_subgraph.hair.iter() {
             let mut edge = self.edges[edge_index as usize].write();
             edge.grow_rate += &dual_node.grow_rate;
             edge.dual_nodes.push(dual_node_weak.clone());
@@ -189,7 +197,7 @@ impl DualModuleImpl for DualModuleSerial {
         dual_node.grow_rate = grow_rate;
         drop(dual_node);
         let dual_node = dual_node_ptr.read_recursive();
-        for &edge_index in dual_node.invalid_subgraph.hairs.iter() {
+        for &edge_index in dual_node.invalid_subgraph.hair.iter() {
             let mut edge = self.edges[edge_index as usize].write();
             edge.grow_rate += &grow_rate_diff;
             if edge.grow_rate.is_zero() {
@@ -213,7 +221,7 @@ impl DualModuleImpl for DualModuleSerial {
     ) -> MaxUpdateLength {
         let node = dual_node_ptr.read_recursive();
         let mut max_update_length = MaxUpdateLength::new();
-        for &edge_index in node.invalid_subgraph.hairs.iter() {
+        for &edge_index in node.invalid_subgraph.hair.iter() {
             let edge = self.edges[edge_index as usize].read_recursive();
             let mut grow_rate = Rational::zero();
             if simultaneous_update {
@@ -305,7 +313,7 @@ impl DualModuleImpl for DualModuleSerial {
         }
         let node = dual_node_ptr.read_recursive();
         let grow_amount = length * node.grow_rate.clone();
-        for &edge_index in node.invalid_subgraph.hairs.iter() {
+        for &edge_index in node.invalid_subgraph.hair.iter() {
             let mut edge = self.edges[edge_index as usize].write();
             edge.growth += grow_amount.clone();
             assert!(

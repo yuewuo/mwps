@@ -159,7 +159,6 @@ pub trait DualModuleImpl {
     /// note not all implementations need this, e.g., the serial one has all information up_to_date at all times
     fn sync(&mut self, dual_node_ptrs: &Vec<DualNodePtr>) {
         let _ = dual_node_ptrs;
-        return;
     }
 }
 
@@ -395,7 +394,7 @@ impl MWPSVisualizer for DualModuleInterfacePtr {
             dual_nodes.push(json!({
                 if abbrev { "e" } else { "edges" }: dual_node.invalid_subgraph.edges,
                 if abbrev { "v" } else { "vertices" }: dual_node.invalid_subgraph.vertices,
-                if abbrev { "h" } else { "hairs" }: dual_node.invalid_subgraph.hairs,
+                if abbrev { "h" } else { "hair" }: dual_node.invalid_subgraph.hair,
                 if abbrev { "d" } else { "dual_variable" }: dual_node.dual_variable.to_f64(),
                 if abbrev { "dn" } else { "dual_variable_numerator" }: dual_node.dual_variable.numer().to_i64(),
                 if abbrev { "dd" } else { "dual_variable_denominator" }: dual_node.dual_variable.denom().to_i64(),

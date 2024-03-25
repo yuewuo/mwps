@@ -35,7 +35,7 @@ impl PluginImpl for PluginSingleHair {
         let mut relaxers = vec![];
         for dual_node_ptr in positive_dual_nodes.iter() {
             let dual_node = dual_node_ptr.read_recursive();
-            let mut hair_view = HairView::new(matrix, dual_node.invalid_subgraph.hairs.iter().cloned());
+            let mut hair_view = HairView::new(matrix, dual_node.invalid_subgraph.hair.iter().cloned());
             debug_assert!(hair_view.get_echelon_satisfiable());
             // hair_view.printstd();
             // optimization: check if there exists a single-hair solution, if not, clear the previous relaxers
@@ -67,7 +67,7 @@ impl PluginImpl for PluginSingleHair {
                     // removes those unnecessary edges and shrinking the existing one
                     let mut vertices: BTreeSet<VertexIndex> = hair_view.get_vertices();
                     let mut edges: BTreeSet<EdgeIndex> = BTreeSet::from_iter(hair_view.get_base_view_edges());
-                    for &edge_index in dual_node.invalid_subgraph.hairs.iter() {
+                    for &edge_index in dual_node.invalid_subgraph.hair.iter() {
                         edges.remove(&edge_index);
                     }
                     for &edge_index in unnecessary_edges.iter() {

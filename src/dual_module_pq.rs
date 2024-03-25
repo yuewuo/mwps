@@ -69,6 +69,7 @@ impl Obstacle {
         dual_module_pq: &DualModulePQ<Queue>,
         event_time: &Rational, // time associated with the obstacle
     ) -> bool {
+        #[allow(clippy::unnecessary_cast)]
         match self {
             Obstacle::Conflict { edge_index } => {
                 let edge = dual_module_pq.edges[*edge_index as usize].read_recursive();
@@ -80,12 +81,7 @@ impl Obstacle {
                     &edge.growth_at_last_updated_time + (event_time - &edge.last_updated_time) * &edge.grow_rate;
                 if edge.grow_rate.is_positive() {
                     // postivie grow rate, should become tight
-                    if &growth_at_event_time != &edge.weight {
-                        return false;
-                    }
-                } else if edge.grow_rate.is_negative() {
-                    // negative grow rate, should become zero
-                    if !growth_at_event_time.is_zero() {
+                    if growth_at_event_time != edge.weight {
                         return false;
                     }
                 }
@@ -117,6 +113,9 @@ pub type MinBinaryHeap<F> = BinaryHeap<Reverse<F>>;
 pub type FutureObstacleQueue<T> = MinBinaryHeap<FutureObstacle<T>>;
 
 pub trait FutureQueueMethods<T: Ord + PartialEq + Eq, E> {
+    /// defines the behavior of `will_happen`, if the queue can contain invalid/duplicate events
+    const MAY_BE_INVALID: bool = true;
+
     /// Append an event at time T
     ///     Note: this may have multiple distinct yet valid behaviors, e,g, weather there are duplicates allowed in the data strcture, default to allow
     fn will_happen(&mut self, time: T, event: E);
@@ -129,11 +128,6 @@ pub trait FutureQueueMethods<T: Ord + PartialEq + Eq, E> {
 
     /// clear for a queue
     fn clear(&mut self);
-
-    /// defines the behavior of `will_happen`, if the queue can contain invalid events
-    fn can_contain_invalid_events(&self) -> bool {
-        return true;
-    }
 }
 
 impl<T: Ord + PartialEq + Eq, E> FutureQueueMethods<T, E> for MinBinaryHeap<FutureEvent<T, E>> {
@@ -267,18 +261,24 @@ impl<Queue> DualModulePQ<Queue>
 where
     Queue: FutureQueueMethods<Rational, Obstacle> + Default,
 {
-    /// helper function to bring an edge update to speed with current time
-    fn update_edge(&self, edge: &mut RwLockWriteGuard<RawRwLock, Edge>) {
+    /// helper function to bring an edge update to speed with current time if needed
+    fn update_edge_if_necessary(&self, edge: &mut RwLockWriteGuard<RawRwLock, Edge>) {
+        if edge.last_updated_time == self.global_time {
+            // the edge is not behind
+            return;
+        }
+
         debug_assert!(
-            &self.global_time >= &edge.last_updated_time,
+            self.global_time >= edge.last_updated_time,
             "global time is behind, maybe a wrap-around has happened"
         );
+
         let time_diff = &self.global_time - &edge.last_updated_time;
         let newly_grown_amount = &time_diff * &edge.grow_rate;
         edge.growth_at_last_updated_time += newly_grown_amount;
         edge.last_updated_time = self.global_time.clone();
         debug_assert!(
-            &edge.growth_at_last_updated_time <= &edge.weight,
+            edge.growth_at_last_updated_time <= edge.weight,
             "growth larger than weight: check if events are 1) inserted and 2) handled correctly"
         );
     }
@@ -289,46 +289,44 @@ where
             .dual_node_last_updated_times
             .get(node_index)
             .expect("node does not exist");
-        return if last_updated_time != &self.global_time {
+        if last_updated_time != &self.global_time {
             debug_assert!(
-                &self.global_time >= &last_updated_time,
+                &self.global_time >= last_updated_time,
                 "global time is behind, maybe a wrap-around has happened"
             );
             Some(self.global_time.clone() - last_updated_time.clone())
         } else {
             None
-        };
+        }
     }
 
-    /// helper function to bring a dual node update to speed with current time
-    fn update_dual_node(&mut self, node: &mut RwLockWriteGuard<RawRwLock, DualNode>, time_diff: Rational) {
-        let new_dual_variable = &time_diff * &node.grow_rate;
-        node.dual_variable += new_dual_variable;
-        self.dual_node_last_updated_times
-            .insert(node.index, self.global_time.clone())
-            .expect("node does not exist prior to updating");
-        debug_assert!(
-            !node.dual_variable.is_negative(),
-            "negative dual variable: check if events are 1) inserted and 2) handled correctly"
-        );
+    /// helper function to bring a dual node update to speed with current time if needed
+    fn update_dual_node_if_necessary(&mut self, node: &mut RwLockWriteGuard<RawRwLock, DualNode>) {
+        if let Some(time_diff) = self.get_dual_node_behind_time(&node.index) {
+            let new_dual_variable = &time_diff * &node.grow_rate;
+            node.dual_variable += new_dual_variable;
+            self.dual_node_last_updated_times
+                .insert(node.index, self.global_time.clone())
+                .expect("node does not exist prior to updating");
+            debug_assert!(
+                !node.dual_variable.is_negative(),
+                "negative dual variable: check if events are 1) inserted and 2) handled correctly"
+            );
+        }
     }
 
     /// debugging function
     #[allow(dead_code)]
-    fn debug_update_all(&mut self, dual_node_ptrs: &Vec<DualNodePtr>) {
+    fn debug_update_all(&mut self, dual_node_ptrs: &[DualNodePtr]) {
         // updating all edges
         for edge in self.edges.iter() {
             let mut edge = edge.write();
-            if &edge.last_updated_time != &self.global_time {
-                self.update_edge(&mut edge);
-            }
+            self.update_edge_if_necessary(&mut edge);
         }
         // updating all dual nodes
         for dual_node_ptr in dual_node_ptrs.iter() {
             let mut dual_node = dual_node_ptr.write();
-            if let Some(time) = self.get_dual_node_behind_time(&dual_node.index) {
-                self.update_dual_node(&mut dual_node, time);
-            }
+            self.update_dual_node_if_necessary(&mut dual_node);
         }
     }
 }
@@ -394,6 +392,7 @@ where
         self.dual_node_last_updated_times.clear();
     }
 
+    #[allow(clippy::unnecessary_cast)]
     /// Adding a defect node to the DualModule
     fn add_defect_node(&mut self, dual_node_ptr: &DualNodePtr) {
         let dual_node = dual_node_ptr.read_recursive();
@@ -411,62 +410,57 @@ where
         self.add_dual_node(dual_node_ptr);
     }
 
+    #[allow(clippy::unnecessary_cast)]
     /// Mostly invoked by `add_defect_node`, triggering a pq update, and edges updates
     fn add_dual_node(&mut self, dual_node_ptr: &DualNodePtr) {
         let dual_node_weak = dual_node_ptr.downgrade();
         let dual_node = dual_node_ptr.read_recursive();
-        let node_index = dual_node.index.clone();
+        let node_index = dual_node.index;
 
         self.dual_node_last_updated_times.insert(node_index, self.global_time.clone());
 
         if dual_node.grow_rate.is_negative() {
             self.obstacle_queue.will_happen(
-                dual_node.dual_variable.clone() / (-dual_node.grow_rate.clone()),
+                // it is okay to use global_time now, as this must be up-to-speed
+                dual_node.dual_variable.clone() / (-dual_node.grow_rate.clone()) + self.global_time.clone(),
                 Obstacle::ShrinkToZero {
                     dual_node_ptr: dual_node_ptr.clone(),
                 },
             );
         }
 
-        for &edge_index in dual_node.invalid_subgraph.hairs.iter() {
+        for &edge_index in dual_node.invalid_subgraph.hair.iter() {
             let mut edge = self.edges[edge_index as usize].write();
 
             // should make sure the edge is up-to-speed before making its variables change
-            if &edge.last_updated_time != &self.global_time {
-                self.update_edge(&mut edge);
-            }
+            self.update_edge_if_necessary(&mut edge);
 
             edge.grow_rate += &dual_node.grow_rate;
             edge.dual_nodes.push(dual_node_weak.clone());
 
             if edge.grow_rate.is_positive() {
                 self.obstacle_queue.will_happen(
+                    // it is okay to use global_time now, as this must be up-to-speed
                     (edge.weight.clone() - edge.growth_at_last_updated_time.clone()) / edge.grow_rate.clone()
                         + self.global_time.clone(),
-                    Obstacle::Conflict { edge_index },
-                );
-            } else if edge.grow_rate.is_negative() {
-                self.obstacle_queue.will_happen(
-                    -edge.growth_at_last_updated_time.clone() / edge.grow_rate.clone() + self.global_time.clone(),
                     Obstacle::Conflict { edge_index },
                 );
             }
         }
     }
 
+    #[allow(clippy::unnecessary_cast)]
     fn set_grow_rate(&mut self, dual_node_ptr: &DualNodePtr, grow_rate: Rational) {
         let mut dual_node = dual_node_ptr.write();
         let grow_rate_diff = &grow_rate - &dual_node.grow_rate;
 
-        let node_index = dual_node.index.clone();
-        if let Some(time) = self.get_dual_node_behind_time(&node_index) {
-            self.update_dual_node(&mut dual_node, time);
-        }
+        self.update_dual_node_if_necessary(&mut dual_node);
 
         dual_node.grow_rate = grow_rate;
         if dual_node.grow_rate.is_negative() {
             self.obstacle_queue.will_happen(
-                dual_node.dual_variable.clone() / (dual_node.grow_rate.clone()),
+                // it is okay to use global_time now, as this must be up-to-speed
+                dual_node.dual_variable.clone() / (-dual_node.grow_rate.clone()) + self.global_time.clone(),
                 Obstacle::ShrinkToZero {
                     dual_node_ptr: dual_node_ptr.clone(),
                 },
@@ -475,22 +469,16 @@ where
         drop(dual_node);
 
         let dual_node = dual_node_ptr.read_recursive();
-        for &edge_index in dual_node.invalid_subgraph.hairs.iter() {
+        for &edge_index in dual_node.invalid_subgraph.hair.iter() {
             let mut edge = self.edges[edge_index as usize].write();
-            if &edge.last_updated_time != &self.global_time {
-                self.update_edge(&mut edge);
-            }
+            self.update_edge_if_necessary(&mut edge);
 
             edge.grow_rate += &grow_rate_diff;
             if edge.grow_rate.is_positive() {
                 self.obstacle_queue.will_happen(
+                    // it is okay to use global_time now, as this must be up-to-speed
                     (edge.weight.clone() - edge.growth_at_last_updated_time.clone()) / edge.grow_rate.clone()
                         + self.global_time.clone(),
-                    Obstacle::Conflict { edge_index },
-                );
-            } else if edge.grow_rate.is_negative() {
-                self.obstacle_queue.will_happen(
-                    -edge.growth_at_last_updated_time.clone() / edge.grow_rate.clone() + self.global_time.clone(),
                     Obstacle::Conflict { edge_index },
                 );
             }
@@ -499,7 +487,7 @@ where
 
     fn compute_maximum_update_length(&mut self) -> GroupMaxUpdateLength {
         // finding a valid event to process, only when invalids exist
-        if self.obstacle_queue.can_contain_invalid_events() {
+        if Queue::MAY_BE_INVALID {
             // getting rid of all the invalid events
             while let Some((time, event)) = self.obstacle_queue.peek_event() {
                 // found a valid event
@@ -546,7 +534,7 @@ where
         }
 
         // nothing useful could be done, return unbounded
-        return GroupMaxUpdateLength::new();
+        GroupMaxUpdateLength::new()
     }
 
     /// for pq implementation, simply updating the global time is enough, could be part of the `compute_maximum_update_length` function
@@ -559,6 +547,7 @@ where
     }
 
     /* identical with the dual_module_serial */
+    #[allow(clippy::unnecessary_cast)]
     fn get_edge_nodes(&self, edge_index: EdgeIndex) -> Vec<DualNodePtr> {
         self.edges[edge_index as usize]
             .read_recursive()
@@ -568,32 +557,28 @@ where
             .collect()
     }
 
+    #[allow(clippy::unnecessary_cast)]
     /// how much away from saturated is the edge
     fn get_edge_slack(&self, edge_index: EdgeIndex) -> Rational {
         let edge = self.edges[edge_index as usize].read_recursive();
-        edge.weight.clone() - (self.global_time.clone() - edge.last_updated_time.clone()) * edge.grow_rate.clone()
+        edge.weight.clone()
+            - (self.global_time.clone() - edge.last_updated_time.clone()) * edge.grow_rate.clone()
+            - edge.growth_at_last_updated_time.clone()
     }
 
     /// is the edge saturated
     fn is_edge_tight(&self, edge_index: EdgeIndex) -> bool {
-        let edge = self.edges[edge_index as usize].read_recursive();
-        edge.growth_at_last_updated_time.clone()
-            + edge.grow_rate.clone() * (self.global_time.clone() - edge.last_updated_time.clone())
-            == edge.weight.clone()
+        self.get_edge_slack(edge_index).is_zero()
     }
 
     fn sync(&mut self, dual_node_ptrs: &Vec<DualNodePtr>) {
         for edge in self.edges.iter() {
             let mut edge = edge.write();
-            if &edge.last_updated_time != &self.global_time {
-                self.update_edge(&mut edge);
-            }
+            self.update_edge_if_necessary(&mut edge);
         }
         for dual_node_ptr in dual_node_ptrs.iter() {
             let mut dual_node = dual_node_ptr.write();
-            if let Some(time) = self.get_dual_node_behind_time(&dual_node.index) {
-                self.update_dual_node(&mut dual_node, time);
-            }
+            self.update_dual_node_if_necessary(&mut dual_node);
         }
     }
 }
@@ -689,7 +674,7 @@ mod tests {
 
     #[test]
     fn dual_module_pq_basics_1() {
-        // cargo test dual_module_serial_basics_1 -- --nocapture
+        // cargo test dual_module_pq_basics_1 -- --nocapture
         let visualize_filename = "dual_module_pq_basics_1.json".to_string();
         let weight = 1000;
         let code = CodeCapacityColorCode::new(7, 0.1, weight);
@@ -738,7 +723,7 @@ mod tests {
 
     #[test]
     fn dual_module_pq_basics_2() {
-        // cargo test dual_module_serial_basics_2 -- --nocapture
+        // cargo test dual_module_pq_basics_2 -- --nocapture
         let visualize_filename = "dual_module_pq_basics_2.json".to_string();
         let weight = 1000;
         let code = CodeCapacityTailoredCode::new(7, 0., 0.1, weight);
@@ -781,7 +766,7 @@ mod tests {
 
     #[test]
     fn dual_module_pq_basics_3() {
-        // cargo test dual_module_serial_basics_3 -- --nocapture
+        // cargo test dual_module_pq_basics_3 -- --nocapture
         let visualize_filename = "dual_module_pq_basics_3.json".to_string();
         let weight = 600; // do not change, the data is hard-coded
         let pxy = 0.0602828812732227;

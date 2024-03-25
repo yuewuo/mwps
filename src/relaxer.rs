@@ -61,7 +61,7 @@ impl Relaxer {
     pub fn new_raw(direction: BTreeMap<Arc<InvalidSubgraph>, Rational>) -> Self {
         let mut edges = BTreeMap::new();
         for (invalid_subgraph, speed) in direction.iter() {
-            for &edge_index in invalid_subgraph.hairs.iter() {
+            for &edge_index in invalid_subgraph.hair.iter() {
                 if let Some(edge) = edges.get_mut(&edge_index) {
                     *edge += speed;
                 } else {
@@ -172,8 +172,8 @@ mod tests {
         // cargo test relaxer_hash -- --nocapture
         let vertices: BTreeSet<VertexIndex> = [1, 2, 3].into();
         let edges: BTreeSet<EdgeIndex> = [4, 5].into();
-        let hairs: BTreeSet<EdgeIndex> = [6, 7, 8].into();
-        let invalid_subgraph = InvalidSubgraph::new_raw(vertices.clone(), edges.clone(), hairs.clone());
+        let hair: BTreeSet<EdgeIndex> = [6, 7, 8].into();
+        let invalid_subgraph = InvalidSubgraph::new_raw(vertices.clone(), edges.clone(), hair.clone());
         let relaxer_1 = Relaxer::new([(Arc::new(invalid_subgraph.clone()), Rational::one())].into());
         let relaxer_2 = Relaxer::new([(Arc::new(invalid_subgraph), Rational::one())].into());
         assert_eq!(relaxer_1, relaxer_2);
