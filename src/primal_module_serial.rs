@@ -367,7 +367,7 @@ impl PrimalModuleSerial {
                 .nodes
                 .iter()
                 .map(|p| p.read_recursive().dual_node_ptr.clone())
-                .filter(|dual_node_ptr| !dual_node_ptr.read_recursive().dual_variable.is_zero())
+                .filter(|dual_node_ptr| !dual_node_ptr.read_recursive().get_dual_variable().is_zero())
                 .collect();
             let decoding_graph = &interface_ptr.read_recursive().decoding_graph;
             let cluster_mut = &mut *cluster; // must first get mutable reference
@@ -385,7 +385,7 @@ impl PrimalModuleSerial {
                     .map(|primal_node_ptr| {
                         let primal_node = primal_node_ptr.read_recursive();
                         let dual_node = primal_node.dual_node_ptr.read_recursive();
-                        (dual_node.invalid_subgraph.clone(), dual_node.dual_variable.clone())
+                        (dual_node.invalid_subgraph.clone(), dual_node.get_dual_variable().clone())
                     })
                     .collect();
                 let edge_slacks: BTreeMap<EdgeIndex, Rational> = dual_variables

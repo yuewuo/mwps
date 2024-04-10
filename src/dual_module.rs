@@ -19,10 +19,49 @@ pub struct DualNode {
     pub index: NodeIndex,
     /// the corresponding invalid subgraph
     pub invalid_subgraph: Arc<InvalidSubgraph>,
-    /// current dual variable's value
-    pub dual_variable: Rational,
+
     /// the strategy to grow the dual variables
     pub grow_rate: Rational,
+    /// the pointer to the global time
+    /// Note: may employ some unsafe features while being sound in performance-critical cases
+    ///       and can remove option when removing dual_module_serial
+    global_time: Option<ArcRwLock<Rational>>,
+    /// the last time this dual_node is synced/updated with the global time
+    pub last_updated_time: Rational,
+    /// dual variable's value at the last updated time
+    pub dual_variable_at_last_updated_time: Rational,
+}
+
+impl DualNode {
+    /// get the current up-to-date dual_variable
+    pub fn get_dual_variable(&self) -> Rational {
+        // in the interest of performance/avoiding redundant work, this may be upgraded to taking in
+        // `&mut self` and update the value if needed
+        match self.global_time.clone() {
+            Some(global_time) => {
+                // Note: clone here to give up read lock?
+                let global_time = global_time.read_recursive();
+                if self.last_updated_time < global_time.clone() {
+                    (global_time.clone() - self.last_updated_time.clone()) * self.grow_rate.clone()
+                        + self.dual_variable_at_last_updated_time.clone()
+                } else {
+                    self.dual_variable_at_last_updated_time.clone()
+                }
+            }
+            None => self.dual_variable_at_last_updated_time.clone(),
+        }
+    }
+
+    /// setter for current dual_variable
+    pub fn set_dual_variable(&mut self, new_dual_variable: Rational) {
+        self.dual_variable_at_last_updated_time = new_dual_variable;
+    }
+
+    /// initialize the global time pointer and the last_updated_time
+    pub fn init_time(&mut self, global_time_ptr: ArcRwLock<Rational>) {
+        self.last_updated_time = global_time_ptr.read_recursive().clone();
+        self.global_time = Some(global_time_ptr);
+    }
 }
 
 pub type DualNodePtr = ArcRwLock<DualNode>;
@@ -31,7 +70,17 @@ pub type DualNodeWeak = WeakRwLock<DualNode>;
 impl std::fmt::Debug for DualNodePtr {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         let dual_node = self.read_recursive(); // reading index is consistent
-        write!(f, "{}", dual_node.index)
+        let new = ArcRwLock::new_value(Rational::zero());
+        let global_time = dual_node.global_time.as_ref().unwrap_or(&new).read_recursive();
+        write!(
+            f,
+            "\n\t\tindex: {}, global_time: {:?}, dual_variable: {}\n\t\tdual_variable_at_last_updated_time: {}, last_updated_time: {}",
+            dual_node.index,
+            global_time,
+            dual_node.get_dual_variable(),
+            dual_node.dual_variable_at_last_updated_time,
+            dual_node.last_updated_time
+        )
     }
 }
 
@@ -154,12 +203,6 @@ pub trait DualModuleImpl {
     fn get_edge_nodes(&self, edge_index: EdgeIndex) -> Vec<DualNodePtr>;
     fn get_edge_slack(&self, edge_index: EdgeIndex) -> Rational;
     fn is_edge_tight(&self, edge_index: EdgeIndex) -> bool;
-
-    /// to account for residual updates of dual_nodes, needed because dual_node growth are not extracted from the dual_module itself, ideally only called at the end or very infrequently
-    /// note not all implementations need this, e.g., the serial one has all information up_to_date at all times
-    fn sync(&mut self, dual_node_ptrs: &Vec<DualNodePtr>) {
-        let _ = dual_node_ptrs;
-    }
 }
 
 impl MaxUpdateLength {
@@ -274,7 +317,7 @@ impl DualModuleInterfacePtr {
         let mut sum = Rational::zero();
         for dual_node_ptr in interface.nodes.iter() {
             let dual_node = dual_node_ptr.read_recursive();
-            sum += dual_node.dual_variable.clone();
+            sum += dual_node.get_dual_variable();
         }
         sum
     }
@@ -305,8 +348,10 @@ impl DualModuleInterfacePtr {
         let node_ptr = DualNodePtr::new_value(DualNode {
             index: node_index,
             invalid_subgraph: invalid_subgraph.clone(),
-            dual_variable: Rational::zero(),
             grow_rate: Rational::one(),
+            dual_variable_at_last_updated_time: Rational::zero(),
+            global_time: None,
+            last_updated_time: Rational::zero(),
         });
         let cloned_node_ptr = node_ptr.clone();
         drop(interface);
@@ -339,8 +384,10 @@ impl DualModuleInterfacePtr {
         let node_ptr = DualNodePtr::new_value(DualNode {
             index: node_index,
             invalid_subgraph,
-            dual_variable: Rational::zero(),
             grow_rate: Rational::one(),
+            dual_variable_at_last_updated_time: Rational::zero(),
+            global_time: None,
+            last_updated_time: Rational::zero(),
         });
         interface.nodes.push(node_ptr.clone());
         drop(interface);
@@ -395,9 +442,9 @@ impl MWPSVisualizer for DualModuleInterfacePtr {
                 if abbrev { "e" } else { "edges" }: dual_node.invalid_subgraph.edges,
                 if abbrev { "v" } else { "vertices" }: dual_node.invalid_subgraph.vertices,
                 if abbrev { "h" } else { "hair" }: dual_node.invalid_subgraph.hair,
-                if abbrev { "d" } else { "dual_variable" }: dual_node.dual_variable.to_f64(),
-                if abbrev { "dn" } else { "dual_variable_numerator" }: dual_node.dual_variable.numer().to_i64(),
-                if abbrev { "dd" } else { "dual_variable_denominator" }: dual_node.dual_variable.denom().to_i64(),
+                if abbrev { "d" } else { "dual_variable" }: dual_node.get_dual_variable().to_f64(),
+                if abbrev { "dn" } else { "dual_variable_numerator" }: dual_node.get_dual_variable().numer().to_i64(),
+                if abbrev { "dd" } else { "dual_variable_denominator" }: dual_node.get_dual_variable().denom().to_i64(),
                 if abbrev { "r" } else { "grow_rate" }: dual_node.grow_rate.to_f64(),
                 if abbrev { "rn" } else { "grow_rate_numerator" }: dual_node.grow_rate.numer().to_i64(),
                 if abbrev { "rd" } else { "grow_rate_denominator" }: dual_node.grow_rate.denom().to_i64(),

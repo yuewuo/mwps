@@ -2,13 +2,7 @@
 //!
 //! A serial implementation of the dual module with priority queue optimization
 //!
-//! Currently Failing tests:
-//!         primal_module_serial::tests::primal_module_serial_basic_3_improved_with_dual_pq_impl
-//!         primal_module_serial::tests::primal_module_serial_basic_4_plugin_one_by_one_with_dual_pq_impl
-//!         primal_module_serial::tests::primal_module_serial_basic_4_single_improved_with_dual_pq_impl
-//!     and the debug_1 and debug_2's
-//!
-//! This is likely to have happened due to timeouts as well?
+//! Only debug tests are failing, which aligns with the dual_module_serial behavior
 //!
 
 use crate::dual_module::*;
@@ -19,7 +13,7 @@ use crate::visualize::*;
 
 use std::{
     cmp::{Ordering, Reverse},
-    collections::{BTreeMap, BTreeSet, BinaryHeap},
+    collections::{BTreeSet, BinaryHeap},
 };
 
 use derivative::Derivative;
@@ -92,13 +86,8 @@ impl Obstacle {
                 if !node.grow_rate.is_negative() {
                     return false;
                 }
-                let growth_at_event_time = &node.dual_variable
-                    + (event_time
-                        - dual_module_pq
-                            .dual_node_last_updated_times
-                            .get(&node.index)
-                            .expect("node doesn't exist"))
-                        * &node.grow_rate;
+                let growth_at_event_time =
+                    &node.dual_variable_at_last_updated_time + (event_time - &node.last_updated_time) * &node.grow_rate;
                 if !growth_at_event_time.is_zero() {
                     return false;
                 }
@@ -186,22 +175,22 @@ impl std::fmt::Debug for VertexWeak {
 #[derivative(Debug)]
 pub struct Edge {
     /// global edge index
-    pub edge_index: EdgeIndex,
+    edge_index: EdgeIndex,
     /// total weight of this edge
-    pub weight: Rational,
+    weight: Rational,
     #[derivative(Debug = "ignore")]
-    pub vertices: Vec<VertexWeak>,
+    vertices: Vec<VertexWeak>,
     /// the dual nodes that contributes to this edge
-    pub dual_nodes: Vec<DualNodeWeak>,
+    dual_nodes: Vec<DualNodeWeak>,
 
     /* fields that are different from that of dual_module_serial, or slightly differently interpreted */
     /// the speed of growth, at the current time
     ///     Note: changing this should cause the `growth_at_last_updated_time` and `last_updated_time` to update
-    pub grow_rate: Rational,
+    grow_rate: Rational,
     /// the last time this Edge is synced/updated with the global time
-    pub last_updated_time: Rational,
+    last_updated_time: Rational,
     /// growth value at the last updated time, also, growth_at_last_updated_time <= weight
-    pub growth_at_last_updated_time: Rational,
+    growth_at_last_updated_time: Rational,
 }
 
 impl Edge {
@@ -220,8 +209,8 @@ impl std::fmt::Debug for EdgePtr {
         let edge = self.read_recursive();
         write!(
             f,
-            "[edge: {}]: weight: {}, grow_rate: {}, growth_at_last_updated_time: {}, last_updated_time: {}",
-            edge.edge_index, edge.weight, edge.grow_rate, edge.growth_at_last_updated_time, edge.last_updated_time
+            "[edge: {}]: weight: {}, grow_rate: {}, growth_at_last_updated_time: {}, last_updated_time: {}\n\tdual_nodes: {:?}",
+            edge.edge_index, edge.weight, edge.grow_rate, edge.growth_at_last_updated_time, edge.last_updated_time, edge.dual_nodes
         )
     }
 }
@@ -232,8 +221,8 @@ impl std::fmt::Debug for EdgeWeak {
         let edge = edge_ptr.read_recursive();
         write!(
             f,
-            "[edge: {}]: weight: {}, grow_rate: {}, growth_at_last_updated_time: {}, last_updated_time: {}",
-            edge.edge_index, edge.weight, edge.grow_rate, edge.growth_at_last_updated_time, edge.last_updated_time
+            "[edge: {}]: weight: {}, grow_rate: {}, growth_at_last_updated_time: {}, last_updated_time: {}\n\tdual_nodes: {:?}",
+            edge.edge_index, edge.weight, edge.grow_rate, edge.growth_at_last_updated_time, edge.last_updated_time, edge.dual_nodes
         )
     }
 }
@@ -252,9 +241,7 @@ where
     obstacle_queue: Queue,
     /// the global time of this dual module
     ///     Note: Wrap-around edge case is not currently considered
-    global_time: Rational,
-    /// mapping of the dual node and its last updated time, as this information is not contained in the dual_nodes themselves
-    dual_node_last_updated_times: BTreeMap<NodeIndex, Rational>,
+    global_time: ArcRwLock<Rational>,
 }
 
 impl<Queue> DualModulePQ<Queue>
@@ -263,56 +250,47 @@ where
 {
     /// helper function to bring an edge update to speed with current time if needed
     fn update_edge_if_necessary(&self, edge: &mut RwLockWriteGuard<RawRwLock, Edge>) {
-        if edge.last_updated_time == self.global_time {
+        let global_time = self.global_time.read_recursive();
+        if edge.last_updated_time == global_time.clone() {
             // the edge is not behind
             return;
         }
 
         debug_assert!(
-            self.global_time >= edge.last_updated_time,
+            global_time.clone() >= edge.last_updated_time,
             "global time is behind, maybe a wrap-around has happened"
         );
 
-        let time_diff = &self.global_time - &edge.last_updated_time;
+        let time_diff = global_time.clone() - &edge.last_updated_time;
         let newly_grown_amount = &time_diff * &edge.grow_rate;
         edge.growth_at_last_updated_time += newly_grown_amount;
-        edge.last_updated_time = self.global_time.clone();
+        edge.last_updated_time = global_time.clone();
         debug_assert!(
             edge.growth_at_last_updated_time <= edge.weight,
             "growth larger than weight: check if events are 1) inserted and 2) handled correctly"
         );
     }
 
-    /// Function returning the time difference since a dual_node's last update time if such difference exists
-    fn get_dual_node_behind_time(&self, node_index: &NodeIndex) -> Option<Rational> {
-        let last_updated_time = self
-            .dual_node_last_updated_times
-            .get(node_index)
-            .expect("node does not exist");
-        if last_updated_time != &self.global_time {
-            debug_assert!(
-                &self.global_time >= last_updated_time,
-                "global time is behind, maybe a wrap-around has happened"
-            );
-            Some(self.global_time.clone() - last_updated_time.clone())
-        } else {
-            None
-        }
-    }
-
     /// helper function to bring a dual node update to speed with current time if needed
     fn update_dual_node_if_necessary(&mut self, node: &mut RwLockWriteGuard<RawRwLock, DualNode>) {
-        if let Some(time_diff) = self.get_dual_node_behind_time(&node.index) {
-            let new_dual_variable = &time_diff * &node.grow_rate;
-            node.dual_variable += new_dual_variable;
-            self.dual_node_last_updated_times
-                .insert(node.index, self.global_time.clone())
-                .expect("node does not exist prior to updating");
-            debug_assert!(
-                !node.dual_variable.is_negative(),
-                "negative dual variable: check if events are 1) inserted and 2) handled correctly"
-            );
+        let global_time = self.global_time.read_recursive();
+        if node.last_updated_time == global_time.clone() {
+            // the edge is not behind
+            return;
         }
+
+        debug_assert!(
+            global_time.clone() >= node.last_updated_time,
+            "global time is behind, maybe a wrap-around has happened"
+        );
+
+        let dual_variable = node.get_dual_variable();
+        node.set_dual_variable(dual_variable);
+        node.last_updated_time = global_time.clone();
+        debug_assert!(
+            !node.get_dual_variable().is_negative(),
+            "negative dual variable: check if events are 1) inserted and 2) handled correctly"
+        );
     }
 
     /// debugging function
@@ -377,8 +355,7 @@ where
             vertices,
             edges,
             obstacle_queue: Queue::default(),
-            global_time: Rational::zero(),
-            dual_node_last_updated_times: BTreeMap::default(),
+            global_time: ArcRwLock::new_value(Rational::zero()),
         }
     }
 
@@ -388,8 +365,7 @@ where
         self.edges.iter().for_each(|p| p.write().clear());
 
         self.obstacle_queue.clear();
-        self.global_time.set_zero();
-        self.dual_node_last_updated_times.clear();
+        self.global_time.write().set_zero();
     }
 
     #[allow(clippy::unnecessary_cast)]
@@ -413,16 +389,15 @@ where
     #[allow(clippy::unnecessary_cast)]
     /// Mostly invoked by `add_defect_node`, triggering a pq update, and edges updates
     fn add_dual_node(&mut self, dual_node_ptr: &DualNodePtr) {
+        dual_node_ptr.write().init_time(self.global_time.clone());
+        let global_time = self.global_time.read_recursive();
         let dual_node_weak = dual_node_ptr.downgrade();
         let dual_node = dual_node_ptr.read_recursive();
-        let node_index = dual_node.index;
-
-        self.dual_node_last_updated_times.insert(node_index, self.global_time.clone());
 
         if dual_node.grow_rate.is_negative() {
             self.obstacle_queue.will_happen(
                 // it is okay to use global_time now, as this must be up-to-speed
-                dual_node.dual_variable.clone() / (-dual_node.grow_rate.clone()) + self.global_time.clone(),
+                dual_node.get_dual_variable().clone() / (-dual_node.grow_rate.clone()) + global_time.clone(),
                 Obstacle::ShrinkToZero {
                     dual_node_ptr: dual_node_ptr.clone(),
                 },
@@ -442,7 +417,7 @@ where
                 self.obstacle_queue.will_happen(
                     // it is okay to use global_time now, as this must be up-to-speed
                     (edge.weight.clone() - edge.growth_at_last_updated_time.clone()) / edge.grow_rate.clone()
-                        + self.global_time.clone(),
+                        + global_time.clone(),
                     Obstacle::Conflict { edge_index },
                 );
             }
@@ -452,15 +427,16 @@ where
     #[allow(clippy::unnecessary_cast)]
     fn set_grow_rate(&mut self, dual_node_ptr: &DualNodePtr, grow_rate: Rational) {
         let mut dual_node = dual_node_ptr.write();
-        let grow_rate_diff = &grow_rate - &dual_node.grow_rate;
-
         self.update_dual_node_if_necessary(&mut dual_node);
+
+        let global_time = self.global_time.read_recursive();
+        let grow_rate_diff = &grow_rate - &dual_node.grow_rate;
 
         dual_node.grow_rate = grow_rate;
         if dual_node.grow_rate.is_negative() {
             self.obstacle_queue.will_happen(
                 // it is okay to use global_time now, as this must be up-to-speed
-                dual_node.dual_variable.clone() / (-dual_node.grow_rate.clone()) + self.global_time.clone(),
+                dual_node.get_dual_variable().clone() / (-dual_node.grow_rate.clone()) + global_time.clone(),
                 Obstacle::ShrinkToZero {
                     dual_node_ptr: dual_node_ptr.clone(),
                 },
@@ -478,7 +454,7 @@ where
                 self.obstacle_queue.will_happen(
                     // it is okay to use global_time now, as this must be up-to-speed
                     (edge.weight.clone() - edge.growth_at_last_updated_time.clone()) / edge.grow_rate.clone()
-                        + self.global_time.clone(),
+                        + global_time.clone(),
                     Obstacle::Conflict { edge_index },
                 );
             }
@@ -486,6 +462,7 @@ where
     }
 
     fn compute_maximum_update_length(&mut self) -> GroupMaxUpdateLength {
+        let global_time = self.global_time.read_recursive();
         // finding a valid event to process, only when invalids exist
         if Queue::MAY_BE_INVALID {
             // getting rid of all the invalid events
@@ -493,8 +470,8 @@ where
                 // found a valid event
                 if event.is_valid(self, time) {
                     // valid grow
-                    if time != &self.global_time {
-                        return GroupMaxUpdateLength::ValidGrow(time - self.global_time.clone());
+                    if time != &global_time.clone() {
+                        return GroupMaxUpdateLength::ValidGrow(time - global_time.clone());
                     }
                     // goto else
                     break;
@@ -515,7 +492,7 @@ where
 
             // append all conflicts that happen at the same time as now
             while let Some((time, _)) = self.obstacle_queue.peek_event() {
-                if &self.global_time == time {
+                if &global_time.clone() == time {
                     let (time, event) = self.obstacle_queue.pop_event().unwrap();
                     if !event.is_valid(self, &time) {
                         continue;
@@ -543,7 +520,8 @@ where
             length.is_positive(),
             "growth should be positive; if desired, please set grow rate to negative for shrinking"
         );
-        self.global_time += length;
+        let mut global_time_write = self.global_time.write();
+        *global_time_write = global_time_write.clone() + length;
     }
 
     /* identical with the dual_module_serial */
@@ -562,24 +540,13 @@ where
     fn get_edge_slack(&self, edge_index: EdgeIndex) -> Rational {
         let edge = self.edges[edge_index as usize].read_recursive();
         edge.weight.clone()
-            - (self.global_time.clone() - edge.last_updated_time.clone()) * edge.grow_rate.clone()
+            - (self.global_time.read_recursive().clone() - edge.last_updated_time.clone()) * edge.grow_rate.clone()
             - edge.growth_at_last_updated_time.clone()
     }
 
     /// is the edge saturated
     fn is_edge_tight(&self, edge_index: EdgeIndex) -> bool {
         self.get_edge_slack(edge_index).is_zero()
-    }
-
-    fn sync(&mut self, dual_node_ptrs: &Vec<DualNodePtr>) {
-        for edge in self.edges.iter() {
-            let mut edge = edge.write();
-            self.update_edge_if_necessary(&mut edge);
-        }
-        for dual_node_ptr in dual_node_ptrs.iter() {
-            let mut dual_node = dual_node_ptr.write();
-            self.update_dual_node_if_necessary(&mut dual_node);
-        }
     }
 }
 
@@ -598,8 +565,8 @@ where
         let mut edges: Vec<serde_json::Value> = vec![];
         for edge_ptr in self.edges.iter() {
             let edge = edge_ptr.read_recursive();
-            let current_growth =
-                &edge.growth_at_last_updated_time + (&self.global_time - &edge.last_updated_time) * &edge.grow_rate;
+            let current_growth = &edge.growth_at_last_updated_time
+                + (&self.global_time.read_recursive().clone() - &edge.last_updated_time) * &edge.grow_rate;
 
             let unexplored = &edge.weight - &current_growth;
             edges.push(json!({

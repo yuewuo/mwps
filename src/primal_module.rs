@@ -56,9 +56,9 @@ pub trait PrimalModuleImpl {
                 syndrome_pattern,
                 dual_module,
                 |interface, dual_module, primal_module, group_max_update_length| {
-                    if cfg!(debug_assertions) {
-                        println!("group_max_update_length: {:?}", group_max_update_length);
-                    }
+                    //     if cfg!(debug_assertions) {
+                    //         println!("group_max_update_length: {:?}", group_max_update_length);
+                    //     }
                     if group_max_update_length.is_unbounded() {
                         visualizer
                             .snapshot_combined("unbounded grow".to_string(), vec![interface, dual_module, primal_module])
@@ -109,6 +109,7 @@ pub trait PrimalModuleImpl {
         F: FnMut(&DualModuleInterfacePtr, &mut D, &mut Self, &GroupMaxUpdateLength),
     {
         let mut group_max_update_length = dual_module.compute_maximum_update_length();
+        println!("group_max_update_length: {:?}", group_max_update_length);
         while !group_max_update_length.is_unbounded() {
             callback(interface, dual_module, self, &group_max_update_length);
             if let Some(length) = group_max_update_length.get_valid_growth() {
@@ -117,6 +118,7 @@ pub trait PrimalModuleImpl {
                 self.resolve(group_max_update_length, interface, dual_module);
             }
             group_max_update_length = dual_module.compute_maximum_update_length();
+            println!("group_max_update_length: {:?}", group_max_update_length);
         }
     }
 

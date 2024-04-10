@@ -62,17 +62,17 @@ impl std::fmt::Debug for VertexWeak {
 #[derivative(Debug)]
 pub struct Edge {
     /// global edge index
-    pub edge_index: EdgeIndex,
+    edge_index: EdgeIndex,
     /// total weight of this edge
-    pub weight: Rational,
+    weight: Rational,
     #[derivative(Debug = "ignore")]
-    pub vertices: Vec<VertexWeak>,
+    vertices: Vec<VertexWeak>,
     /// growth value, growth <= weight
-    pub growth: Rational,
+    growth: Rational,
     /// the dual nodes that contributes to this edge
-    pub dual_nodes: Vec<DualNodeWeak>,
+    dual_nodes: Vec<DualNodeWeak>,
     /// the speed of growth
-    pub grow_rate: Rational,
+    grow_rate: Rational,
 }
 
 pub type EdgePtr = ArcRwLock<Edge>;
@@ -83,8 +83,8 @@ impl std::fmt::Debug for EdgePtr {
         let edge = self.read_recursive();
         write!(
             f,
-            "[edge: {}]: weight: {}, grow_rate: {}, growth: {}",
-            edge.edge_index, edge.weight, edge.grow_rate, edge.growth
+            "[edge: {}]: weight: {}, grow_rate: {}, growth: {}\n\tdual_nodes: {:?}",
+            edge.edge_index, edge.weight, edge.grow_rate, edge.growth, edge.dual_nodes
         )
     }
 }
@@ -95,8 +95,8 @@ impl std::fmt::Debug for EdgeWeak {
         let edge = edge_ptr.read_recursive();
         write!(
             f,
-            "[edge: {}]: weight: {}, grow_rate: {}, growth: {}",
-            edge.edge_index, edge.weight, edge.grow_rate, edge.growth
+            "[edge: {}]: weight: {}, grow_rate: {}, growth: {}\n\tdual_nodes: {:?}",
+            edge.edge_index, edge.weight, edge.grow_rate, edge.growth, edge.dual_nodes
         )
     }
 }
@@ -293,10 +293,9 @@ impl DualModuleImpl for DualModuleSerial {
         for node_ptr in self.active_nodes.iter() {
             let node = node_ptr.read_recursive();
             if node.grow_rate.is_negative() {
-                if node.dual_variable.is_positive() {
-                    group_max_update_length.add(MaxUpdateLength::ValidGrow(
-                        -node.dual_variable.clone() / node.grow_rate.clone(),
-                    ));
+                if node.get_dual_variable().is_positive() {
+                    group_max_update_length
+                        .add(MaxUpdateLength::ValidGrow(-node.get_dual_variable() / node.grow_rate.clone()));
                 } else {
                     group_max_update_length.add(MaxUpdateLength::ShrinkProhibited(node_ptr.clone()));
                 }
@@ -332,7 +331,9 @@ impl DualModuleImpl for DualModuleSerial {
         }
         drop(node);
         // update dual variable
-        dual_node_ptr.write().dual_variable += grow_amount;
+        let mut dual_node_ptr_write = dual_node_ptr.write();
+        let dual_variable = dual_node_ptr_write.get_dual_variable();
+        dual_node_ptr_write.set_dual_variable(dual_variable + grow_amount);
     }
 
     #[allow(clippy::unnecessary_cast)]
@@ -366,7 +367,9 @@ impl DualModuleImpl for DualModuleSerial {
         // update dual variables
         for node_ptr in self.active_nodes.iter() {
             let mut node = node_ptr.write();
-            node.dual_variable = node.dual_variable.clone() + length.clone() * node.grow_rate.clone();
+            let grow_rate = node.grow_rate.clone();
+            let dual_variable = node.get_dual_variable();
+            node.set_dual_variable(dual_variable + length.clone() * grow_rate);
         }
     }
 
