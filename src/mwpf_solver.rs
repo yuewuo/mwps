@@ -5,7 +5,8 @@
 //!
 
 use crate::dual_module::*;
-use crate::dual_module_serial::*;
+// use crate::dual_module_serial::*;
+use crate::dual_module_pq::*;
 use crate::example_codes::*;
 use crate::model_hypergraph::*;
 use crate::plugin::*;
@@ -93,7 +94,8 @@ pub mod hyperion_default_configs {
 }
 
 pub struct SolverSerialPlugins {
-    dual_module: DualModuleSerial,
+    // dual_module: DualModuleSerial,
+    dual_module: DualModulePQ<FutureObstacleQueue<Rational>>,
     primal_module: PrimalModuleSerial,
     interface_ptr: DualModuleInterfacePtr,
     model_graph: Arc<ModelHyperGraph>,
@@ -117,7 +119,7 @@ impl SolverSerialPlugins {
         primal_module.plugins = plugins;
         primal_module.config = config.primal.clone();
         Self {
-            dual_module: DualModuleSerial::new_empty(initializer),
+            dual_module: DualModulePQ::new_empty(initializer),
             primal_module,
             interface_ptr: DualModuleInterfacePtr::new(model_graph.clone()),
             model_graph,
