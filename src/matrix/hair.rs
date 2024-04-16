@@ -25,11 +25,11 @@ impl<'a, M: MatrixTail + MatrixEchelon> HairView<'a, M> {
 }
 
 impl<'a, M: MatrixTail + MatrixEchelon> HairView<'a, M> {
-    pub fn new<EdgeIter>(matrix: &'a mut M, hairs: EdgeIter) -> Self
+    pub fn new<EdgeIter>(matrix: &'a mut M, hair: EdgeIter) -> Self
     where
         EdgeIter: Iterator<Item = EdgeIndex>,
     {
-        matrix.set_tail_edges(hairs);
+        matrix.set_tail_edges(hair);
         let columns = matrix.columns();
         let rows = matrix.rows();
         let mut column_bias = columns;

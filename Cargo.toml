@@ -11,6 +11,7 @@ repository = "https://github.com/yuewuo/mwpf"
 keywords = ["QEC", "quantum-computing", "error-correction", "visualization"]
 categories = ["science"]
 exclude = ["tutorial/*", "benchmark/*", "visualize/data/persist/*", ".github/*"]
+default-run = "mwpf"
 
 # see https://doc.rust-lang.org/1.39.0/cargo/reference/manifest.html#the-documentation-field-optional
 [badges]
@@ -80,6 +81,7 @@ maplit = "1.0.2"
 qecp = { version = "0.2.4", optional = true, default-features = false, features = [
     "fusion_blossom",
 ] }
+serde_variant = "0.1.3"
 
 [dev-dependencies]
 test-case = "3.1.0"

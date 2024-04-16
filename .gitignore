@@ -28,8 +28,14 @@ __pycache__
 mwpf.egg-info/
 /dist/
 
+# local files
 *.DS_Store
 .vscode
+.idea
+/misc
+
+# rust bug reports
+rustc-ice*
 
 # visualizer files
 /*.json

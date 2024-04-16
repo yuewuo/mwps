@@ -61,7 +61,7 @@ pub trait PrimalModuleImpl {
                     }
                     if group_max_update_length.is_unbounded() {
                         visualizer
-                            .snapshot_combined(format!("unbounded grow"), vec![interface, dual_module, primal_module])
+                            .snapshot_combined("unbounded grow".to_string(), vec![interface, dual_module, primal_module])
                             .unwrap();
                     } else if let Some(length) = group_max_update_length.get_valid_growth() {
                         visualizer

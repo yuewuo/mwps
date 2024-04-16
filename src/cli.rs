@@ -11,7 +11,10 @@ use num_traits::FromPrimitive;
 use pbr::ProgressBar;
 use rand::{thread_rng, Rng, SeedableRng};
 use serde::Serialize;
+use serde_variant::to_variant_name;
 use std::env;
+
+const TEST_EACH_ROUNDS: usize = 100;
 
 #[derive(Parser, Clone)]
 #[clap(author = clap::crate_authors!(", "))]
@@ -33,6 +36,11 @@ enum Commands {
     Benchmark(BenchmarkParameters),
     /// benchmark the matrix speed
     MatrixSpeed(MatrixSpeedParameters),
+    /// built-in tests
+    Test {
+        #[clap(subcommand)]
+        command: TestCommands,
+    },
 }
 
 #[derive(Parser, Clone)]
@@ -93,6 +101,33 @@ pub struct BenchmarkParameters {
     starting_iteration: usize,
 }
 
+#[derive(Subcommand, Clone, Debug)]
+pub enum TestCommands {
+    /// test common cases
+    Common,
+    /// test various codes using code capacity noise model
+    CodeCapacity {
+        /// print out the command to test
+        #[clap(short = 'c', long, action)]
+        print_command: bool,
+        /// enable visualizer
+        #[clap(short = 'v', long, action)]
+        enable_visualizer: bool,
+        /// use strict verifier to check whether the result is always optimal
+        #[clap(short = 'u', long, action)]
+        use_strict: bool,
+        /// enable print syndrome pattern
+        #[clap(short = 's', long, action)]
+        print_syndrome_pattern: bool,
+        /// select the combination of primal and dual module
+        #[clap(short = 'p', long, value_enum, default_value_t = PrimalDualType::UnionFind)]
+        primal_dual_type: PrimalDualType,
+        /// the configuration of primal and dual module
+        #[clap(long, default_value_t = json!({}), value_parser = ValueParser::new(SerdeJsonParser))]
+        primal_dual_config: serde_json::Value,
+    },
+}
+
 /// note that these code type is only for example, to test and demonstrate the correctness of the algorithm, but not for real QEC simulation;
 /// for real simulation, please refer to <https://github.com/yuewuo/QEC-Playground>
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum, Serialize, Debug)]
@@ -110,6 +145,7 @@ pub enum ExampleCodeType {
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum, Serialize, Debug)]
+#[serde(rename_all = "kebab-case")]
 pub enum PrimalDualType {
     /// the solver from Union-Find decoder
     UnionFind,
@@ -350,8 +386,112 @@ impl Cli {
                 // call the matrix operation
                 matrix_type.run(parameters, samples);
             }
+            Commands::Test { command } => match command {
+                TestCommands::Common => {
+                    println!("[Common Test] Union-Find on Code Capacity Noise");
+                    execute_in_cli(["".to_owned(), "test".to_owned(), "code-capacity".to_owned()].iter(), true);
+                }
+                TestCommands::CodeCapacity {
+                    print_command,
+                    enable_visualizer,
+                    use_strict,
+                    print_syndrome_pattern,
+                    primal_dual_type,
+                    primal_dual_config,
+                } => {
+                    let mut parameters = vec![];
+                    for p in [0.001, 0.003, 0.01, 0.03, 0.1, 0.3, 0.499] {
+                        for d in [3, 7, 11, 15, 19] {
+                            parameters.push(vec![
+                                format!("{d}"),
+                                format!("{p}"),
+                                format!("--code-type"),
+                                format!("code-capacity-repetition-code"),
+                                format!("--pb-message"),
+                                format!("repetition {d} {p}"),
+                            ]);
+                        }
+                    }
+                    for p in [0.001, 0.003, 0.01, 0.03, 0.1, 0.3, 0.499] {
+                        for d in [3, 7, 11, 15, 19] {
+                            parameters.push(vec![
+                                format!("{d}"),
+                                format!("{p}"),
+                                format!("--code-type"),
+                                format!("code-capacity-planar-code"),
+                                format!("--pb-message"),
+                                format!("planar {d} {p}"),
+                            ]);
+                        }
+                    }
+                    for p in [0.001, 0.003, 0.01, 0.03, 0.1, 0.3, 0.499] {
+                        for d in [3, 7, 11, 15, 19] {
+                            parameters.push(vec![
+                                format!("{d}"),
+                                format!("{p}"),
+                                format!("--code-type"),
+                                format!("code-capacity-tailored-code"),
+                                format!("--pb-message"),
+                                format!("tailored {d} {p}"),
+                            ]);
+                        }
+                    }
+                    for p in [0.001, 0.003, 0.01, 0.03, 0.1, 0.3, 0.499] {
+                        for d in [3, 7, 11, 15, 19] {
+                            parameters.push(vec![
+                                format!("{d}"),
+                                format!("{p}"),
+                                format!("--code-type"),
+                                format!("code-capacity-color-code"),
+                                format!("--pb-message"),
+                                format!("color {d} {p}"),
+                            ]);
+                        }
+                    }
+                    let command_head = vec![format!(""), format!("benchmark")];
+                    let mut command_tail = vec!["--total-rounds".to_string(), format!("{TEST_EACH_ROUNDS}")];
+                    if use_strict {
+                        command_tail.append(&mut vec![format!("--verifier"), format!("strict-actual-error")]);
+                    } else {
+                        command_tail.append(&mut vec![format!("--verifier"), format!("actual-error")]);
+                    }
+                    if enable_visualizer {
+                        command_tail.append(&mut vec![format!("--enable-visualizer")]);
+                    }
+                    if print_syndrome_pattern {
+                        command_tail.append(&mut vec![format!("--print-syndrome-pattern")]);
+                    }
+                    command_tail.append(&mut vec![
+                        format!("--primal-dual-type"),
+                        format!("{}", to_variant_name(&primal_dual_type).unwrap()),
+                        format!("--primal-dual-config"),
+                        serde_json::to_string(&primal_dual_config).unwrap(),
+                    ]);
+                    for parameter in parameters.iter() {
+                        execute_in_cli(
+                            command_head.iter().chain(parameter.iter()).chain(command_tail.iter()),
+                            print_command,
+                        );
+                    }
+                }
+            },
         }
     }
+}
+
+pub fn execute_in_cli<'a>(iter: impl Iterator<Item = &'a String> + Clone, print_command: bool) {
+    if print_command {
+        print!("[command]");
+        for word in iter.clone() {
+            if word.contains(char::is_whitespace) {
+                print!("'{word}' ")
+            } else {
+                print!("{word} ")
+            }
+        }
+        println!();
+    }
+    Cli::parse_from(iter).run();
 }
 
 impl ExampleCodeType {

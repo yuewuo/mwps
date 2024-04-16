@@ -105,7 +105,7 @@ impl RelaxerOptimizer {
             constraint.rhs = dual_variable.clone();
             constraints.push(constraint);
             invalid_subgraphs.push(invalid_subgraph);
-            for &edge_index in invalid_subgraph.hairs.iter() {
+            for &edge_index in invalid_subgraph.hair.iter() {
                 edge_contributor.get_mut(&edge_index).unwrap().push(var_index);
             }
         }

@@ -62,17 +62,17 @@ impl std::fmt::Debug for VertexWeak {
 #[derivative(Debug)]
 pub struct Edge {
     /// global edge index
-    pub edge_index: EdgeIndex,
+    edge_index: EdgeIndex,
     /// total weight of this edge
-    pub weight: Rational,
+    weight: Rational,
     #[derivative(Debug = "ignore")]
-    pub vertices: Vec<VertexWeak>,
+    vertices: Vec<VertexWeak>,
     /// growth value, growth <= weight
-    pub growth: Rational,
+    growth: Rational,
     /// the dual nodes that contributes to this edge
-    pub dual_nodes: Vec<DualNodeWeak>,
+    dual_nodes: Vec<DualNodeWeak>,
     /// the speed of growth
-    pub grow_rate: Rational,
+    grow_rate: Rational,
 }
 
 pub type EdgePtr = ArcRwLock<Edge>;
@@ -81,7 +81,11 @@ pub type EdgeWeak = WeakRwLock<Edge>;
 impl std::fmt::Debug for EdgePtr {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         let edge = self.read_recursive();
-        write!(f, "{}", edge.edge_index)
+        write!(
+            f,
+            "[edge: {}]: weight: {}, grow_rate: {}, growth: {}\n\tdual_nodes: {:?}",
+            edge.edge_index, edge.weight, edge.grow_rate, edge.growth, edge.dual_nodes
+        )
     }
 }
 
@@ -89,7 +93,11 @@ impl std::fmt::Debug for EdgeWeak {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         let edge_ptr = self.upgrade_force();
         let edge = edge_ptr.read_recursive();
-        write!(f, "{}", edge.edge_index)
+        write!(
+            f,
+            "[edge: {}]: weight: {}, grow_rate: {}, growth: {}\n\tdual_nodes: {:?}",
+            edge.edge_index, edge.weight, edge.grow_rate, edge.growth, edge.dual_nodes
+        )
     }
 }
 
@@ -169,7 +177,7 @@ impl DualModuleImpl for DualModuleSerial {
         // make sure the active edges are set
         let dual_node_weak = dual_node_ptr.downgrade();
         let dual_node = dual_node_ptr.read_recursive();
-        for &edge_index in dual_node.invalid_subgraph.hairs.iter() {
+        for &edge_index in dual_node.invalid_subgraph.hair.iter() {
             let mut edge = self.edges[edge_index as usize].write();
             edge.grow_rate += &dual_node.grow_rate;
             edge.dual_nodes.push(dual_node_weak.clone());
@@ -189,7 +197,7 @@ impl DualModuleImpl for DualModuleSerial {
         dual_node.grow_rate = grow_rate;
         drop(dual_node);
         let dual_node = dual_node_ptr.read_recursive();
-        for &edge_index in dual_node.invalid_subgraph.hairs.iter() {
+        for &edge_index in dual_node.invalid_subgraph.hair.iter() {
             let mut edge = self.edges[edge_index as usize].write();
             edge.grow_rate += &grow_rate_diff;
             if edge.grow_rate.is_zero() {
@@ -213,7 +221,7 @@ impl DualModuleImpl for DualModuleSerial {
     ) -> MaxUpdateLength {
         let node = dual_node_ptr.read_recursive();
         let mut max_update_length = MaxUpdateLength::new();
-        for &edge_index in node.invalid_subgraph.hairs.iter() {
+        for &edge_index in node.invalid_subgraph.hair.iter() {
             let edge = self.edges[edge_index as usize].read_recursive();
             let mut grow_rate = Rational::zero();
             if simultaneous_update {
@@ -285,10 +293,9 @@ impl DualModuleImpl for DualModuleSerial {
         for node_ptr in self.active_nodes.iter() {
             let node = node_ptr.read_recursive();
             if node.grow_rate.is_negative() {
-                if node.dual_variable.is_positive() {
-                    group_max_update_length.add(MaxUpdateLength::ValidGrow(
-                        -node.dual_variable.clone() / node.grow_rate.clone(),
-                    ));
+                if node.get_dual_variable().is_positive() {
+                    group_max_update_length
+                        .add(MaxUpdateLength::ValidGrow(-node.get_dual_variable() / node.grow_rate.clone()));
                 } else {
                     group_max_update_length.add(MaxUpdateLength::ShrinkProhibited(node_ptr.clone()));
                 }
@@ -305,7 +312,7 @@ impl DualModuleImpl for DualModuleSerial {
         }
         let node = dual_node_ptr.read_recursive();
         let grow_amount = length * node.grow_rate.clone();
-        for &edge_index in node.invalid_subgraph.hairs.iter() {
+        for &edge_index in node.invalid_subgraph.hair.iter() {
             let mut edge = self.edges[edge_index as usize].write();
             edge.growth += grow_amount.clone();
             assert!(
@@ -324,7 +331,9 @@ impl DualModuleImpl for DualModuleSerial {
         }
         drop(node);
         // update dual variable
-        dual_node_ptr.write().dual_variable += grow_amount;
+        let mut dual_node_ptr_write = dual_node_ptr.write();
+        let dual_variable = dual_node_ptr_write.get_dual_variable();
+        dual_node_ptr_write.set_dual_variable(dual_variable + grow_amount);
     }
 
     #[allow(clippy::unnecessary_cast)]
@@ -358,7 +367,9 @@ impl DualModuleImpl for DualModuleSerial {
         // update dual variables
         for node_ptr in self.active_nodes.iter() {
             let mut node = node_ptr.write();
-            node.dual_variable = node.dual_variable.clone() + length.clone() * node.grow_rate.clone();
+            let grow_rate = node.grow_rate.clone();
+            let dual_variable = node.get_dual_variable();
+            node.set_dual_variable(dual_variable + length.clone() * grow_rate);
         }
     }
 
