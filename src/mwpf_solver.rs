@@ -89,7 +89,7 @@ pub mod hyperion_default_configs {
     }
 
     pub fn growing_strategy() -> GrowingStrategy {
-        GrowingStrategy::ModeBased
+        GrowingStrategy::ModeBased // Modified to default to use ModeBased growth
     }
 }
 

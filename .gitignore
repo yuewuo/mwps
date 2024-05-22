@@ -33,7 +33,6 @@ mwpf.egg-info/
 *.DS_Store
 .vscode
 .idea
-/misc
 misc/
 
 # rust bug reports

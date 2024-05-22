@@ -247,7 +247,7 @@ where
     global_time: ArcRwLock<Rational>,
     /// the current mode of the dual module
     mode: DualModuleMode,
-    /// cluster_id -> affinity map
+    /// increasing order map: cluster_id -> affinity (please use the get_sorted.. function to get the reverse order, higher affinity is better and should be excuted first)
     affinity_map: BTreeMap<usize, Affinity>,
 }
 
@@ -471,6 +471,7 @@ where
     }
 
     #[allow(clippy::unnecessary_cast)]
+    /// set the grow rate without removing/creating new nodes, and adding to the obstacle queue
     fn reset_grow_rate(&mut self, dual_node_ptr: &DualNodePtr, grow_rate: Rational) {
         let mut dual_node = dual_node_ptr.write();
         self.update_dual_node_if_necessary(&mut dual_node);
@@ -574,14 +575,18 @@ where
 
     add_shared_methods!();
 
+    /// clear the queue
     fn clear_queue(&mut self) {
         self.obstacle_queue.clear();
     }
 
     #[allow(clippy::unnecessary_cast)]
+    /// calculate the affinity of a cluster
     fn calculate_affinity(&mut self, cluster: PrimalClusterPtr) -> Option<Affinity> {
         // calculate affinity based on the following metric
-        // Clusters with larger primal-dual gaps will receive high affinity because working on those clusters will often reduce the gap faster. However, clusters with a large number of dual variables, vertices, and hyperedges will receive a lower affinity
+        //  > Clusters with larger primal-dual gaps will receive high affinity because working on those clusters
+        //  > will often reduce the gap faster. However, clusters with a large number of dual variables, vertices,
+        //  > and hyperedges will receive a lower affinity
         let mut start = 0.0;
         let cluster = cluster.read_recursive();
         start -= cluster.edges.len() as f64 + cluster.nodes.len() as f64;
@@ -598,7 +603,7 @@ where
             weight -= dual_node.read_recursive().get_dual_variable();
         }
         if weight.is_zero() {
-            return Some(0.0); // TODO: Fix
+            return None;
         }
         start += weight.to_f64().unwrap();
         Some(start)

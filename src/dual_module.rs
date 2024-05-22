@@ -187,6 +187,7 @@ impl DualModuleMode {
     }
 }
 
+// Each dual_module impl should have mode and affinity_map, hence these methods should be shared
 #[macro_export]
 macro_rules! add_shared_methods {
     () => {
@@ -200,10 +201,12 @@ macro_rules! add_shared_methods {
             &mut self.mode
         }
 
+        /// Returns a reference to the affinity_map
         fn affinity_map_mut(&mut self) -> &mut BTreeMap<usize, Affinity> {
             self.affinity_map.borrow_mut()
         }
 
+        /// Returns a mutable reference to the affinity_map
         fn affinity_map(&self) -> &BTreeMap<usize, Affinity> {
             &self.affinity_map
         }
@@ -227,7 +230,7 @@ pub trait DualModuleImpl: Sized {
     /// update grow rate
     fn set_grow_rate(&mut self, dual_node_ptr: &DualNodePtr, grow_rate: Rational);
 
-    /// resetting grow rate without touching anything else
+    /// update grow rate, but performs least amount of other oeprations (this usually come in pairs)
     fn reset_grow_rate(&mut self, dual_node_ptr: &DualNodePtr, grow_rate: Rational);
 
     /// An optional function that helps to break down the implementation of [`DualModuleImpl::compute_maximum_update_length`]
@@ -254,11 +257,12 @@ pub trait DualModuleImpl: Sized {
     /// note that a negative growth should be implemented by reversing the speed of each dual node
     fn grow(&mut self, length: Rational);
 
+    /// edge information retrieval
     fn get_edge_nodes(&self, edge_index: EdgeIndex) -> Vec<DualNodePtr>;
     fn get_edge_slack(&self, edge_index: EdgeIndex) -> Rational;
     fn is_edge_tight(&self, edge_index: EdgeIndex) -> bool;
 
-    /// mode mangement
+    /// mode mangements
     fn mode(&self) -> &DualModuleMode;
     fn mode_mut(&mut self) -> &mut DualModuleMode;
     fn advance_mode(&mut self) {
@@ -266,6 +270,7 @@ pub trait DualModuleImpl: Sized {
         self.mode_mut().advance();
     }
 
+    /// searching mode default implementation
     fn search<P: PrimalModuleImpl, F>(&mut self, interface: &DualModuleInterfacePtr, primal_module: &mut P, mut callback: F)
     where
         F: FnMut(&DualModuleInterfacePtr, &mut Self, &mut P, &GroupMaxUpdateLength),
@@ -276,16 +281,21 @@ pub trait DualModuleImpl: Sized {
             if let Some(length) = group_max_update_length.get_valid_growth() {
                 self.grow(length);
             } else if primal_module.resolve(group_max_update_length, interface, self) {
+                // `resolve()` returns true -> a preliminary solution is found, mode has been advanced
+
+                // calculate affinity for each cluster
                 for c in primal_module.tunable_clusters().iter() {
-                    self.update_affinity(c.clone());
+                    self.update_affinity(c.clone(), None);
                 }
-                // moving from searching mode to tuning mode
-                break;
+
+                // moving onto the tuning mode
+                return;
             }
             group_max_update_length = self.compute_maximum_update_length();
         }
     }
 
+    /// tuning mode default implementation
     fn auto_tune<P: PrimalModuleImpl, F>(
         &mut self,
         interface_ptr: &DualModuleInterfacePtr,
@@ -295,16 +305,16 @@ pub trait DualModuleImpl: Sized {
         F: FnMut(&DualModuleInterfacePtr, &mut Self, &mut P, &GroupMaxUpdateLength),
     {
         if !matches!(self.mode(), DualModuleMode::Tune) {
-            return; // no need to optimize
+            return; // no need to optimize, but this shouldn't reall be here?
         }
 
         loop {
+            // tune with each plugin
             if primal_module.has_more_plugins() {
-                // TODO: change to base on affinity
-                for (cluster_id, _) in self.get_sorted_clusters().iter() {
-                    // for cluster_id in 0..primal_module.tunable_clusters().len() {
+                // tune by each cluster, refering to its affinity for order
+                for cluster_id in self.get_sorted_clusters_by_affinity().into_iter() {
+                    self.single_tune(interface_ptr, primal_module, callback, cluster_id);
                     self.clear_queue();
-                    self.single_tune(interface_ptr, primal_module, callback, *cluster_id);
                 }
             } else {
                 break;
@@ -312,6 +322,7 @@ pub trait DualModuleImpl: Sized {
         }
     }
 
+    /// tune a single cluster
     fn single_tune<P: PrimalModuleImpl, F>(
         &mut self,
         interface_ptr: &DualModuleInterfacePtr,
@@ -321,12 +332,15 @@ pub trait DualModuleImpl: Sized {
     ) where
         F: FnMut(&DualModuleInterfacePtr, &mut Self, &mut P, &GroupMaxUpdateLength),
     {
+        // if the cluster is alreaddy solved, skip
         let solved = primal_module.resolve_cluster(cluster_index, interface_ptr, self);
         if solved {
             return;
         }
 
         let mut group_max_update_length = self.compute_maximum_update_length();
+
+        // store the original grow rates
         let mut original_grow_rates = vec![];
         for c in primal_module.tunable_clusters().iter() {
             let c_read = c.read_recursive();
@@ -337,6 +351,7 @@ pub trait DualModuleImpl: Sized {
             }
         }
 
+        // set grow rates for all other clusters to be zero
         for c in primal_module.tunable_clusters().iter() {
             let c_read = c.read_recursive();
             let c_idx = c_read.cluster_index;
@@ -350,12 +365,12 @@ pub trait DualModuleImpl: Sized {
             }
         }
 
+        // grow the current cluster with the new nodes added
         while !group_max_update_length.is_unbounded() {
             callback(interface_ptr, self, primal_module, &group_max_update_length);
             if let Some(length) = group_max_update_length.get_valid_growth() {
                 self.grow(length);
             } else {
-                // enter the tuning mode
                 primal_module.resolve(group_max_update_length, interface_ptr, self);
             }
             group_max_update_length = self.compute_maximum_update_length();
@@ -367,37 +382,52 @@ pub trait DualModuleImpl: Sized {
         }
     }
 
+    /// clear the queue
     fn clear_queue(&mut self) {
         println!("not implemented, skipping")
     }
 
+    /// get affinity_map for clusters, mutable reference
     fn affinity_map_mut(&mut self) -> &mut BTreeMap<usize, Affinity> {
         panic!("not implemented, skipping")
     }
 
+    /// get affinity_map for clusters, reference
     fn affinity_map(&self) -> &BTreeMap<usize, Affinity> {
         panic!("not implemented, skipping")
     }
 
-    #[allow(unused_variables)]
-    fn calculate_affinity(&mut self, cluster: PrimalClusterPtr) -> Option<Affinity> {
+    /// calculate affinity for a cluster
+    fn calculate_affinity(&mut self, _cluster: PrimalClusterPtr) -> Option<Affinity> {
         eprintln!("not implemented, skipping");
         None
     }
 
+    /// set affinity for a cluster
     fn set_affinity(&mut self, cluster_id: usize, affinity: Affinity) {
         self.affinity_map_mut().insert(cluster_id, affinity);
     }
 
-    fn update_affinity(&mut self, cluster: PrimalClusterPtr) {
+    /// update affinity for a cluster with the custom function if provided
+    #[allow(clippy::type_complexity)]
+    fn update_affinity(
+        &mut self,
+        cluster: PrimalClusterPtr,
+        custom_calculation_function: Option<&dyn Fn(&Self, PrimalClusterPtr) -> Option<Affinity>>,
+    ) {
         let idx = cluster.read_recursive().cluster_index;
-        if let Some(aff) = self.calculate_affinity(cluster) {
+        if let Some(f) = custom_calculation_function {
+            if let Some(aff) = f(self, cluster) {
+                self.set_affinity(idx, aff);
+            }
+        } else if let Some(aff) = self.calculate_affinity(cluster) {
             self.affinity_map_mut().insert(idx, aff);
         }
     }
 
-    fn get_sorted_clusters(&mut self) -> Vec<(usize, f64)> {
-        self.affinity_map().iter().map(|(&id, &affinity)| (id, affinity)).collect()
+    /// get sorted clusters by affinity
+    fn get_sorted_clusters_by_affinity(&mut self) -> Vec<usize> {
+        self.affinity_map().iter().map(|(&id, _)| id).rev().collect()
     }
 }
 

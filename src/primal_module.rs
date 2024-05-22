@@ -26,6 +26,9 @@ pub trait PrimalModuleImpl: Sized {
     /// and then tell dual module what to do to resolve these conflicts;
     /// note that this function doesn't necessarily resolve all the conflicts, but can return early if some major change is made.
     /// when implementing this function, it's recommended that you resolve as many conflicts as possible.
+    ///
+    /// # Returns
+    /// * `bool` - true if a solution of all clusters have a solution, otherwise not
     fn resolve(
         &mut self,
         group_max_update_length: GroupMaxUpdateLength,
@@ -142,20 +145,22 @@ pub trait PrimalModuleImpl: Sized {
         json!({})
     }
 
+    /// expose the primal clusters pointers for access in dual_module impl when tuning
     fn tunable_clusters(&mut self) -> Vec<ArcRwLock<PrimalCluster>> {
         panic!("tunable_clusters is only implemented for primal_module_serial impls")
     }
 
-    #[allow(unused_variables)]
+    /// expose the cluster-resolving method for access in dual_module impl when tuning
     fn resolve_cluster(
         &mut self,
-        cluster_index: NodeIndex,
-        interface_ptr: &DualModuleInterfacePtr,
-        dual_module: &mut impl DualModuleImpl,
+        _cluster_index: NodeIndex,
+        _interface_ptr: &DualModuleInterfacePtr,
+        _dual_module: &mut impl DualModuleImpl,
     ) -> bool {
         panic!("resolve_cluster is only implemented for primal_module_serial impls")
     }
 
+    /// expose the plugin count modification interface for access in dual_module impl when tuning
     fn has_more_plugins(&mut self) -> bool {
         panic!("has_more_plugins is only implemented for primal_module_serial impls")
     }
