@@ -6,12 +6,13 @@
 use crate::dual_module::*;
 use crate::num_traits::FromPrimitive;
 use crate::pointers::*;
+use crate::primal_module_serial::PrimalCluster;
 use crate::util::*;
 use crate::visualize::*;
 use std::sync::Arc;
 
 /// common trait that must be implemented for each implementation of primal module
-pub trait PrimalModuleImpl {
+pub trait PrimalModuleImpl: Sized {
     /// create a primal module given the dual module
     fn new_empty(solver_initializer: &SolverInitializer) -> Self;
 
@@ -30,7 +31,7 @@ pub trait PrimalModuleImpl {
         group_max_update_length: GroupMaxUpdateLength,
         interface: &DualModuleInterfacePtr,
         dual_module: &mut impl DualModuleImpl,
-    );
+    ) -> bool;
 
     fn solve(
         &mut self,
@@ -102,22 +103,15 @@ pub trait PrimalModuleImpl {
 
     fn solve_step_callback_interface_loaded<D: DualModuleImpl, F>(
         &mut self,
-        interface: &DualModuleInterfacePtr,
+        interface_ptr: &DualModuleInterfacePtr,
         dual_module: &mut D,
         mut callback: F,
     ) where
         F: FnMut(&DualModuleInterfacePtr, &mut D, &mut Self, &GroupMaxUpdateLength),
     {
-        let mut group_max_update_length = dual_module.compute_maximum_update_length();
-        while !group_max_update_length.is_unbounded() {
-            callback(interface, dual_module, self, &group_max_update_length);
-            if let Some(length) = group_max_update_length.get_valid_growth() {
-                dual_module.grow(length);
-            } else {
-                self.resolve(group_max_update_length, interface, dual_module);
-            }
-            group_max_update_length = dual_module.compute_maximum_update_length();
-        }
+        dual_module.search(interface_ptr, self, &mut callback);
+        // a solution is found already, now optimize (the tunning mode essentially)
+        dual_module.auto_tune(interface_ptr, self, &mut callback);
     }
 
     fn subgraph(&mut self, interface: &DualModuleInterfacePtr, dual_module: &mut impl DualModuleImpl) -> Subgraph;
@@ -146,5 +140,23 @@ pub trait PrimalModuleImpl {
     /// performance profiler report
     fn generate_profiler_report(&self) -> serde_json::Value {
         json!({})
+    }
+
+    fn tunable_clusters(&mut self) -> Vec<ArcRwLock<PrimalCluster>> {
+        panic!("tunable_clusters is only implemented for primal_module_serial impls")
+    }
+
+    #[allow(unused_variables)]
+    fn resolve_cluster(
+        &mut self,
+        cluster_index: NodeIndex,
+        interface_ptr: &DualModuleInterfacePtr,
+        dual_module: &mut impl DualModuleImpl,
+    ) -> bool {
+        panic!("resolve_cluster is only implemented for primal_module_serial impls")
+    }
+
+    fn has_more_plugins(&mut self) -> bool {
+        panic!("has_more_plugins is only implemented for primal_module_serial impls")
     }
 }

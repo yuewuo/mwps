@@ -5,12 +5,15 @@
 //! Only debug tests are failing, which aligns with the dual_module_serial behavior
 //!
 
-use crate::dual_module::*;
 use crate::num_traits::{ToPrimitive, Zero};
 use crate::pointers::*;
+use crate::primal_module_serial::PrimalClusterPtr;
 use crate::util::*;
 use crate::visualize::*;
+use crate::{add_shared_methods, dual_module::*};
 
+use std::borrow::BorrowMut;
+use std::collections::BTreeMap;
 use std::{
     cmp::{Ordering, Reverse},
     collections::{BTreeSet, BinaryHeap},
@@ -68,7 +71,7 @@ impl Obstacle {
             Obstacle::Conflict { edge_index } => {
                 let edge = dual_module_pq.edges[*edge_index as usize].read_recursive();
                 // not changing, cannot have conflict
-                if edge.grow_rate.is_zero() {
+                if !edge.grow_rate.is_positive() {
                     return false;
                 }
                 let growth_at_event_time =
@@ -242,6 +245,10 @@ where
     /// the global time of this dual module
     ///     Note: Wrap-around edge case is not currently considered
     global_time: ArcRwLock<Rational>,
+    /// the current mode of the dual module
+    mode: DualModuleMode,
+    /// cluster_id -> affinity map
+    affinity_map: BTreeMap<usize, Affinity>,
 }
 
 impl<Queue> DualModulePQ<Queue>
@@ -356,6 +363,8 @@ where
             edges,
             obstacle_queue: Queue::default(),
             global_time: ArcRwLock::new_value(Rational::zero()),
+            mode: DualModuleMode::default(),
+            affinity_map: BTreeMap::default(),
         }
     }
 
@@ -461,6 +470,20 @@ where
         }
     }
 
+    #[allow(clippy::unnecessary_cast)]
+    fn reset_grow_rate(&mut self, dual_node_ptr: &DualNodePtr, grow_rate: Rational) {
+        let mut dual_node = dual_node_ptr.write();
+        self.update_dual_node_if_necessary(&mut dual_node);
+        dual_node.grow_rate = grow_rate.clone();
+        drop(dual_node);
+
+        let dual_node = dual_node_ptr.read_recursive();
+        for &edge_index in dual_node.invalid_subgraph.hair.iter() {
+            let mut edge = self.edges[edge_index as usize].write();
+            edge.grow_rate += &grow_rate - &dual_node.grow_rate;
+        }
+    }
+
     fn compute_maximum_update_length(&mut self) -> GroupMaxUpdateLength {
         let global_time = self.global_time.read_recursive();
         // finding a valid event to process, only when invalids exist
@@ -547,6 +570,43 @@ where
     /// is the edge saturated
     fn is_edge_tight(&self, edge_index: EdgeIndex) -> bool {
         self.get_edge_slack(edge_index).is_zero()
+    }
+
+    add_shared_methods!();
+
+    fn clear_queue(&mut self) {
+        self.obstacle_queue.clear();
+    }
+
+    #[allow(clippy::unnecessary_cast)]
+    fn calculate_affinity(&mut self, cluster: PrimalClusterPtr) -> Option<Affinity> {
+        // calculate affinity based on the following metric
+        // Clusters with larger primal-dual gaps will receive high affinity because working on those clusters will often reduce the gap faster. However, clusters with a large number of dual variables, vertices, and hyperedges will receive a lower affinity
+        let mut start = 0.0;
+        let cluster = cluster.read_recursive();
+        start -= cluster.edges.len() as f64 + cluster.nodes.len() as f64;
+
+        let mut weight = Rational::zero();
+        for &edge_index in cluster.edges.iter() {
+            self.update_edge_if_necessary(&mut self.edges[edge_index as usize].write());
+            let edge_ptr = self.edges[edge_index as usize].read_recursive();
+            weight += edge_ptr.weight.clone() - edge_ptr.growth_at_last_updated_time.clone();
+        }
+        for node in cluster.nodes.iter() {
+            let dual_node = node.read_recursive().dual_node_ptr.clone();
+            self.update_dual_node_if_necessary(&mut dual_node.write());
+            weight -= dual_node.read_recursive().get_dual_variable();
+        }
+        if weight.is_zero() {
+            return Some(0.0); // TODO: Fix
+        }
+        start += weight.to_f64().unwrap();
+        Some(start)
+    }
+
+    fn advance_mode(&mut self) {
+        self.clear_queue();
+        self.mode_mut().advance();
     }
 }
 

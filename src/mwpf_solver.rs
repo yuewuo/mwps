@@ -89,7 +89,7 @@ pub mod hyperion_default_configs {
     }
 
     pub fn growing_strategy() -> GrowingStrategy {
-        GrowingStrategy::MultipleClusters
+        GrowingStrategy::ModeBased
     }
 }
 

@@ -4,14 +4,16 @@
 //!
 
 use crate::derivative::Derivative;
-use crate::dual_module::*;
 use crate::num_traits::sign::Signed;
 use crate::num_traits::{ToPrimitive, Zero};
 use crate::pointers::*;
+use crate::primal_module_serial::PrimalClusterPtr;
 use crate::util::*;
 use crate::visualize::*;
+use crate::{add_shared_methods, dual_module::*};
 use num_traits::FromPrimitive;
-use std::collections::BTreeSet;
+use std::borrow::BorrowMut;
+use std::collections::{BTreeMap, BTreeSet};
 
 pub struct DualModuleSerial {
     /// all vertices including virtual ones
@@ -23,6 +25,9 @@ pub struct DualModuleSerial {
     pub active_edges: BTreeSet<EdgeIndex>,
     /// active nodes
     pub active_nodes: BTreeSet<DualNodePtr>,
+
+    mode: DualModuleMode,
+    affinity_map: BTreeMap<usize, Affinity>,
 }
 
 pub type DualModuleSerialPtr = ArcRwLock<DualModuleSerial>;
@@ -141,6 +146,8 @@ impl DualModuleImpl for DualModuleSerial {
             edges,
             active_edges: BTreeSet::new(),
             active_nodes: BTreeSet::new(),
+            mode: DualModuleMode::default(),
+            affinity_map: BTreeMap::new(),
         }
     }
 
@@ -210,6 +217,16 @@ impl DualModuleImpl for DualModuleSerial {
             self.active_nodes.remove(dual_node_ptr);
         } else {
             self.active_nodes.insert(dual_node_ptr.clone());
+        }
+    }
+
+    #[allow(clippy::unnecessary_cast)]
+    fn reset_grow_rate(&mut self, dual_node_ptr: &DualNodePtr, grow_rate: Rational) {
+        dual_node_ptr.write().grow_rate = grow_rate.clone();
+        let dual_node = dual_node_ptr.read_recursive();
+        for &edge_index in dual_node.invalid_subgraph.hair.iter() {
+            let mut edge = self.edges[edge_index as usize].write();
+            edge.grow_rate += &grow_rate - &dual_node.grow_rate;
         }
     }
 
@@ -392,6 +409,32 @@ impl DualModuleImpl for DualModuleSerial {
     fn is_edge_tight(&self, edge_index: EdgeIndex) -> bool {
         let edge = self.edges[edge_index as usize].read_recursive();
         edge.growth == edge.weight
+    }
+
+    add_shared_methods!();
+
+    #[allow(clippy::unnecessary_cast)]
+    fn calculate_affinity(&mut self, cluster: PrimalClusterPtr) -> Option<Affinity> {
+        // calculate affinity based on the following metric
+        // Clusters with larger primal-dual gaps will receive high affinity because working on those clusters will often reduce the gap faster. However, clusters with a large number of dual variables, vertices, and hyperedges will receive a lower affinity
+        let mut start = 0.0;
+        let cluster = cluster.read_recursive();
+        start -= cluster.edges.len() as f64 + cluster.nodes.len() as f64;
+
+        let mut weight = Rational::zero();
+        for &edge_index in cluster.edges.iter() {
+            let edge_ptr = self.edges[edge_index as usize].read_recursive();
+            weight += edge_ptr.weight.clone() - edge_ptr.growth.clone();
+        }
+        for node in cluster.nodes.iter() {
+            let dual_node = node.read_recursive().dual_node_ptr.clone();
+            weight -= dual_node.read_recursive().get_dual_variable();
+        }
+        if weight.is_zero() {
+            return None;
+        }
+        start += weight.to_f64().unwrap();
+        Some(start)
     }
 }
 

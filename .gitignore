@@ -23,6 +23,7 @@ node_modules/
 visualize/rendered.png
 
 __pycache__
+.venv
 
 /wheelhouse/
 mwpf.egg-info/
@@ -33,6 +34,7 @@ mwpf.egg-info/
 .vscode
 .idea
 /misc
+misc/
 
 # rust bug reports
 rustc-ice*
@@ -44,3 +46,6 @@ rustc-ice*
 /tutorial-dist/
 
 *-uncompressed.png
+
+# logs
+*.log
