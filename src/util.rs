@@ -1,4 +1,5 @@
 use crate::mwpf_solver::*;
+#[cfg(not(feature = "f64_weight"))]
 use crate::num_rational;
 use crate::num_traits::ToPrimitive;
 use crate::rand_xoshiro;
@@ -17,6 +18,8 @@ pub type Weight = usize; // only used as input, all internal weight representati
 cfg_if::cfg_if! {
     if #[cfg(feature="r64_weight")] {
         pub type Rational = num_rational::Rational64;
+    } else if #[cfg(feature="f64_weight")] {
+        pub type Rational = crate::ordered_float::OrderedFloat;
     } else {
         pub type Rational = num_rational::BigRational;
     }

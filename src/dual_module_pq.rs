@@ -507,7 +507,7 @@ where
         // else , it is a valid conflict to resolve
         if let Some((_, event)) = self.obstacle_queue.pop_event() {
             // this is used, since queues are not sets, and can contain duplicate events
-            // Note: chekc that this is the assumption, though not much more overhead anyway
+            // Note: check that this is the assumption, though not much more overhead anyway
             let mut group_max_update_length_set = BTreeSet::default();
             group_max_update_length_set.insert(match event {
                 Obstacle::Conflict { edge_index } => MaxUpdateLength::Conflicting(edge_index),

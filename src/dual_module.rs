@@ -340,17 +340,6 @@ pub trait DualModuleImpl: Sized {
 
         let mut group_max_update_length = self.compute_maximum_update_length();
 
-        // store the original grow rates
-        let mut original_grow_rates = vec![];
-        for c in primal_module.tunable_clusters().iter() {
-            let c_read = c.read_recursive();
-            for node in c_read.nodes.iter() {
-                let dual_node_ptr = node.read_recursive().dual_node_ptr.clone();
-                let grow_rate = dual_node_ptr.read_recursive().grow_rate.clone();
-                original_grow_rates.push((dual_node_ptr, grow_rate));
-            }
-        }
-
         // set grow rates for all other clusters to be zero
         for c in primal_module.tunable_clusters().iter() {
             let c_read = c.read_recursive();
@@ -374,11 +363,6 @@ pub trait DualModuleImpl: Sized {
                 primal_module.resolve(group_max_update_length, interface_ptr, self);
             }
             group_max_update_length = self.compute_maximum_update_length();
-        }
-
-        // Reset all the dual variables to their original grow rates
-        for (dual_node_ptr, original_grow_rate) in &original_grow_rates {
-            self.reset_grow_rate(dual_node_ptr, original_grow_rate.clone());
         }
     }
 
