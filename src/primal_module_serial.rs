@@ -511,9 +511,8 @@ impl PrimalModuleSerial {
         }
         debug_assert!(!group_max_update_length.is_unbounded() && group_max_update_length.get_valid_growth().is_none());
         drop(interface);
-        if *self.plugin_count.read_recursive() != 0 && self.time_resolve > self.config.timeout {
-            *self.plugin_count.write() = 0; // force only the first plugin
-        }
+
+        // check if all clusters are solved based on optization level
         let mut all_solved = true;
         for &cluster_index in active_clusters.iter() {
             let solved = self.resolve_cluster(cluster_index, interface_ptr, dual_module);
@@ -522,38 +521,20 @@ impl PrimalModuleSerial {
         if !all_solved {
             return false; // already give dual module something to do
         }
-        while !self.pending_nodes.is_empty() {
-            let primal_node_weak = self.pending_nodes.pop_front().unwrap();
-            let primal_node_ptr = primal_node_weak.upgrade_force();
-            let primal_node = primal_node_ptr.read_recursive();
-            let cluster_ptr = primal_node.cluster_weak.upgrade_force();
-            if cluster_ptr.read_recursive().subgraph.is_none() {
-                dual_module.set_grow_rate(&primal_node.dual_node_ptr, Rational::one());
-                return false; // let the dual module to find more obstacles
-            }
-        }
-        if *self.plugin_count.read_recursive() == 0 {
-            return false;
-        }
 
         // case that we actually can make use of two modes
         match dual_module.mode() {
             DualModuleMode::Search => {
                 // search mode's job is to determine if we can proceed onto the next mode
-                for &cluster_index in active_clusters.iter() {
-                    let solved = self.resolve_cluster(cluster_index, interface_ptr, dual_module);
-                    all_solved &= solved;
-                }
-                if !all_solved {
-                    return false;
-                }
-
                 dual_module.advance_mode();
                 // println!("ADVANCING MODE!!!!!!!!");
                 true
             }
             DualModuleMode::Tune => {
                 // should grow each clsuters seperately now
+                if *self.plugin_count.read_recursive() != 0 && self.time_resolve > self.config.timeout {
+                    *self.plugin_count.write() = 0; // force only the first plugin
+                }
 
                 // check that all clusters have passed the plugins, basically the core operation of the second phase, using lp/incremental lp to optimize each clusters
                 loop {
