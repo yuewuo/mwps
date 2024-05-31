@@ -30,7 +30,16 @@ pub trait PrimalModuleImpl {
         group_max_update_length: GroupMaxUpdateLength,
         interface: &DualModuleInterfacePtr,
         dual_module: &mut impl DualModuleImpl,
-    );
+    ) -> bool;
+
+    fn resolve_tune(
+        &mut self,
+        group_max_update_length: GroupMaxUpdateLength,
+        interface: &DualModuleInterfacePtr,
+        dual_module: &mut impl DualModuleImpl,
+    ) -> bool {
+        panic!("not implemented")
+    }
 
     fn solve(
         &mut self,
@@ -108,16 +117,58 @@ pub trait PrimalModuleImpl {
     ) where
         F: FnMut(&DualModuleInterfacePtr, &mut D, &mut Self, &GroupMaxUpdateLength),
     {
+        // let mut group_max_update_length = dual_module.compute_maximum_update_length();
+        // while !group_max_update_length.is_unbounded() {
+        //     callback(interface, dual_module, self, &group_max_update_length);
+        //     if let Some(length) = group_max_update_length.get_valid_growth() {
+        //         dual_module.grow(length);
+        //     } else {
+        //         self.resolve(group_max_update_length, interface, dual_module);
+        //     }
+        //     group_max_update_length = dual_module.compute_maximum_update_length();
+        // }
+
+        // Search
         let mut group_max_update_length = dual_module.compute_maximum_update_length();
         while !group_max_update_length.is_unbounded() {
             callback(interface, dual_module, self, &group_max_update_length);
             if let Some(length) = group_max_update_length.get_valid_growth() {
                 dual_module.grow(length);
-            } else {
-                self.resolve(group_max_update_length, interface, dual_module);
+            } else if self.resolve(group_max_update_length, interface, dual_module) {
+                // println!("ADVANCING MODE: {:?}", dual_module.mode());
+                // dual_module.advance_mode();
+                // dual_module.grow(Rational::one());
+                // moving onto the tuning mode
+                break;
             }
             group_max_update_length = dual_module.compute_maximum_update_length();
         }
+
+        // Tune
+        group_max_update_length = dual_module.compute_maximum_update_length();
+
+        while !group_max_update_length.is_unbounded() {
+            callback(interface, dual_module, self, &group_max_update_length);
+            if let Some(length) = group_max_update_length.get_valid_growth() {
+                dual_module.grow(length);
+                println!("didn't invoke");
+            } else {
+                println!("should be invoking");
+                if self.resolve(group_max_update_length, interface, dual_module) {
+                    //     // eprintln!("RESOLVED!!!!!!");
+                    break;
+                }
+            }
+            group_max_update_length = dual_module.compute_maximum_update_length();
+        }
+
+        // loop {
+        //     if self.resolve_tune(dual_module.compute_maximum_update_length(), interface, dual_module) {
+        //         // eprintln!("RESOLVED!!!!!!");
+        //         break;
+        //     }
+        //     dual_module.grow(Rational::one());
+        // }
     }
 
     fn subgraph(&mut self, interface: &DualModuleInterfacePtr, dual_module: &mut impl DualModuleImpl) -> Subgraph;
