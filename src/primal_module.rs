@@ -4,7 +4,7 @@
 //!
 
 use crate::dual_module::*;
-use crate::num_traits::FromPrimitive;
+use crate::num_traits::{FromPrimitive, One};
 use crate::pointers::*;
 use crate::util::*;
 use crate::visualize::*;
@@ -31,6 +31,15 @@ pub trait PrimalModuleImpl {
         interface: &DualModuleInterfacePtr,
         dual_module: &mut impl DualModuleImpl,
     ) -> bool;
+
+    fn old_resolve(
+        &mut self,
+        group_max_update_length: GroupMaxUpdateLength,
+        interface: &DualModuleInterfacePtr,
+        dual_module: &mut impl DualModuleImpl,
+    ) -> bool {
+        false
+    }
 
     fn resolve_tune(
         &mut self,
@@ -129,9 +138,13 @@ pub trait PrimalModuleImpl {
         // }
 
         // Search
+        let mut resolved = false;
         let mut group_max_update_length = dual_module.compute_maximum_update_length();
         while !group_max_update_length.is_unbounded() {
             callback(interface, dual_module, self, &group_max_update_length);
+            if resolved {
+                // println!("group_max_update_length: {:?}", group_max_update_length);
+            }
             if let Some(length) = group_max_update_length.get_valid_growth() {
                 dual_module.grow(length);
             } else if self.resolve(group_max_update_length, interface, dual_module) {
@@ -139,35 +152,67 @@ pub trait PrimalModuleImpl {
                 // dual_module.advance_mode();
                 // dual_module.grow(Rational::one());
                 // moving onto the tuning mode
-                break;
+                // println!("RESOLVED");
+                resolved = true;
+                // let length = dual_module.compute_maximum_update_length().get_valid_growth().unwrap();
+                // dual_module.grow(length);
+                // break;
             }
             group_max_update_length = dual_module.compute_maximum_update_length();
+            if group_max_update_length.is_unbounded() {
+                // println!("UNBOUNDED");
+            }
         }
 
+        let mut resolved = false;
         // Tune
-        group_max_update_length = dual_module.compute_maximum_update_length();
-
-        while !group_max_update_length.is_unbounded() {
-            callback(interface, dual_module, self, &group_max_update_length);
-            if let Some(length) = group_max_update_length.get_valid_growth() {
-                dual_module.grow(length);
-                println!("didn't invoke");
-            } else {
-                println!("should be invoking");
-                if self.resolve(group_max_update_length, interface, dual_module) {
-                    //     // eprintln!("RESOLVED!!!!!!");
-                    break;
+        while self.has_more_plugins() {
+            for cluster_index in self.pending_clusters() {
+                if !self.resolve_cluster(cluster_index, interface, dual_module) {
+                    // println!("TUNING");
+                    let mut group_max_update_length = dual_module.compute_maximum_update_length();
+                    while !group_max_update_length.is_unbounded() {
+                        callback(interface, dual_module, self, &group_max_update_length);
+                        if let Some(length) = group_max_update_length.get_valid_growth() {
+                            // println!("TUNING GROW: {:?}", length);
+                            if resolved {
+                                // println!("RESOLVED: group_max_update_length: {:?}", group_max_update_length);
+                            }
+                            dual_module.grow(length);
+                        } else if self.resolve(group_max_update_length, interface, dual_module) {
+                            // println!("ADVANCING MODE: {:?}", dual_module.mode());
+                            // dual_module.advance_mode();
+                            dual_module.grow(Rational::one());
+                            // moving onto the tuning mode
+                            // group_max_update_length = dual_module.compute_maximum_update_length();
+                            break;
+                            // resolved = true;
+                        }
+                        group_max_update_length = dual_module.compute_maximum_update_length();
+                    }
                 }
             }
-            group_max_update_length = dual_module.compute_maximum_update_length();
         }
 
-        // loop {
-        //     if self.resolve_tune(dual_module.compute_maximum_update_length(), interface, dual_module) {
-        //         // eprintln!("RESOLVED!!!!!!");
-        //         break;
+        // while self.has_more_plugins() {
+        //     while !self.is_solved(interface, dual_module) {
+        //         group_max_update_length = dual_module.compute_maximum_update_length();
+
+        //         while !group_max_update_length.is_unbounded() {
+        //             callback(interface, dual_module, self, &group_max_update_length);
+        //             if let Some(length) = group_max_update_length.get_valid_growth() {
+        //                 dual_module.grow(length);
+        //             } else {
+        //                 if self.resolve(group_max_update_length, interface, dual_module) {
+        //                     break;
+        //                 }
+        //                 //     // eprintln!("RESOLVED!!!!!!");
+        //                 //     break;
+        //                 // }
+        //             }
+        //             group_max_update_length = dual_module.compute_maximum_update_length();
+        //         }
         //     }
-        //     dual_module.grow(Rational::one());
         // }
     }
 
@@ -197,5 +242,26 @@ pub trait PrimalModuleImpl {
     /// performance profiler report
     fn generate_profiler_report(&self) -> serde_json::Value {
         json!({})
+    }
+
+    fn has_more_plugins(&mut self) -> bool {
+        false
+    }
+
+    fn pending_clusters(&mut self) -> Vec<usize> {
+        panic!("!!!");
+    }
+
+    fn is_solved<D: DualModuleImpl>(&mut self, interface_ptr: &DualModuleInterfacePtr, dual_module: &mut D) -> bool {
+        false
+    }
+
+    fn resolve_cluster(
+        &mut self,
+        cluster_index: NodeIndex,
+        interface_ptr: &DualModuleInterfacePtr,
+        dual_module: &mut impl DualModuleImpl,
+    ) -> bool {
+        panic!("falskdj")
     }
 }
