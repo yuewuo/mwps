@@ -11,6 +11,7 @@ use crate::pointers::*;
 use crate::util::*;
 use crate::visualize::*;
 
+use core::panic;
 use std::{
     cmp::{Ordering, Reverse},
     collections::{BTreeSet, BinaryHeap},
@@ -209,8 +210,14 @@ impl std::fmt::Debug for EdgePtr {
         let edge = self.read_recursive();
         write!(
             f,
-            "[edge: {}]: weight: {}, grow_rate: {}, growth_at_last_updated_time: {}, last_updated_time: {}\n\tdual_nodes: {:?}",
-            edge.edge_index, edge.weight, edge.grow_rate, edge.growth_at_last_updated_time, edge.last_updated_time, edge.dual_nodes
+            // "[edge: {}]: weight: {}, grow_rate: {}, growth_at_last_updated_time: {}, last_updated_time: {}\n",
+            "[edge: {}]: weight: {}, grow_rate: {}, growth_at_last_updated_time: {}, last_updated_time: {}\n\tdual_nodes: {:?}\n",
+            edge.edge_index, edge.weight, edge.grow_rate, edge.growth_at_last_updated_time, edge.last_updated_time, edge.dual_nodes.iter().filter(|node| !node.upgrade_force().read_recursive().grow_rate.is_zero()).collect::<Vec<_>>()
+            // edge.edge_index,
+            // edge.weight,
+            // edge.grow_rate,
+            // edge.growth_at_last_updated_time,
+            // edge.last_updated_time,
         )
     }
 }
@@ -221,8 +228,8 @@ impl std::fmt::Debug for EdgeWeak {
         let edge = edge_ptr.read_recursive();
         write!(
             f,
-            "[edge: {}]: weight: {}, grow_rate: {}, growth_at_last_updated_time: {}, last_updated_time: {}\n\tdual_nodes: {:?}",
-            edge.edge_index, edge.weight, edge.grow_rate, edge.growth_at_last_updated_time, edge.last_updated_time, edge.dual_nodes
+            "[edge: {}]: weight: {}, grow_rate: {}, growth_at_last_updated_time: {}, last_updated_time: {}\n\tdual_nodes: {:?}\n",
+            edge.edge_index, edge.weight, edge.grow_rate, edge.growth_at_last_updated_time, edge.last_updated_time, edge.dual_nodes.iter().filter(|node| !node.upgrade_force().read_recursive().grow_rate.is_zero()).collect::<Vec<_>>()
         )
     }
 }
@@ -316,6 +323,32 @@ impl<Queue> DualModuleImpl for DualModulePQ<Queue>
 where
     Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug,
 {
+    fn calculate_grow_rate(&self, dual_node_ptr: &DualNodePtr) -> Rational {
+        for edge in self.edges.iter() {
+            let edge = edge.read_recursive();
+            if edge
+                .dual_nodes
+                .iter()
+                .any(|node| node.upgrade_force().read_recursive().index == dual_node_ptr.read_recursive().index)
+            {
+                return edge.weight.clone() / edge.grow_rate.clone();
+            }
+        }
+        panic!("dual node not found in any edge");
+    }
+    fn debug_print(&self) {
+        println!("\n[current states]");
+        println!("global time: {:?}", self.global_time.read_recursive());
+        println!(
+            "edges: {:?}",
+            self.edges
+                .iter()
+                .filter(|e| !e.read_recursive().grow_rate.is_zero())
+                .collect::<Vec<&EdgePtr>>()
+        );
+        println!("pq: {:?}", self.obstacle_queue);
+    }
+
     /// initialize the dual module, which is supposed to be reused for multiple decoding tasks with the same structure
     #[allow(clippy::unnecessary_cast)]
     fn new_empty(initializer: &SolverInitializer) -> Self {

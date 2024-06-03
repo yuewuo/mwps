@@ -330,8 +330,140 @@ impl PrimalModuleImpl for PrimalModuleSerial {
                     cluster.nodes.push(primal_node_ptr.clone());
                     self.nodes.push(primal_node_ptr);
                 }
+
                 dual_module.set_grow_rate(&dual_node_ptr, grow_rate.clone());
             }
+            cluster.relaxer_optimizer.insert(relaxer);
+            return false;
+        }
+
+        // TODO idea: plugins can suggest subgraph (ideally, a global maximum), if so, then it will adopt th
+        // subgraph with minimum weight from all plugins as the starting point to do local minimum
+
+        // find a local minimum (hopefully a global minimum)
+        let interface = interface_ptr.read_recursive();
+        let initializer = interface.decoding_graph.model_graph.initializer.as_ref();
+        let weight_of = |edge_index: EdgeIndex| initializer.weighted_edges[edge_index].weight;
+        cluster.subgraph = Some(cluster.matrix.get_solution_local_minimum(weight_of).expect("satisfiable"));
+        true
+    }
+
+    /// analyze a cluster and return whether there exists an optimal solution (depending on optimization levels)
+    #[allow(clippy::unnecessary_cast)]
+    fn resolve_cluster_tune(
+        &mut self,
+        cluster_index: NodeIndex,
+        interface_ptr: &DualModuleInterfacePtr,
+        dual_module: &mut impl DualModuleImpl,
+    ) -> bool {
+        let cluster_ptr = self.clusters[cluster_index as usize].clone();
+        let mut cluster = cluster_ptr.write();
+        if cluster.nodes.is_empty() {
+            return true; // no longer a cluster, no need to handle
+        }
+        // set all nodes to stop growing in the cluster
+        for primal_node_ptr in cluster.nodes.iter() {
+            let dual_node_ptr = primal_node_ptr.read_recursive().dual_node_ptr.clone();
+            dual_module.set_grow_rate(&dual_node_ptr, Rational::zero());
+        }
+        // update the matrix with new tight edges
+        let cluster = &mut *cluster;
+        for &edge_index in cluster.edges.iter() {
+            cluster
+                .matrix
+                .update_edge_tightness(edge_index, dual_module.is_edge_tight(edge_index));
+        }
+
+        // find an executable relaxer from the plugin manager
+        let relaxer = {
+            let positive_dual_variables: Vec<DualNodePtr> = cluster
+                .nodes
+                .iter()
+                .map(|p| p.read_recursive().dual_node_ptr.clone())
+                .filter(|dual_node_ptr| !dual_node_ptr.read_recursive().get_dual_variable().is_zero())
+                .collect();
+            let decoding_graph = &interface_ptr.read_recursive().decoding_graph;
+            let cluster_mut = &mut *cluster; // must first get mutable reference
+            let plugin_manager = &mut cluster_mut.plugin_manager;
+            let matrix = &mut cluster_mut.matrix;
+            plugin_manager.find_relaxer(decoding_graph, matrix, &positive_dual_variables)
+        };
+
+        // if a relaxer is found, execute it and return
+        if let Some(mut relaxer) = relaxer {
+            let mut optimized = false;
+            let should_optimize = cluster.relaxer_optimizer.should_optimize(&relaxer);
+            if !cluster.plugin_manager.is_empty() {
+                let dual_variables: BTreeMap<Arc<InvalidSubgraph>, Rational> = cluster
+                    .nodes
+                    .iter()
+                    .map(|primal_node_ptr| {
+                        let primal_node = primal_node_ptr.read_recursive();
+                        let dual_node = primal_node.dual_node_ptr.read_recursive();
+                        (dual_node.invalid_subgraph.clone(), dual_node.get_dual_variable().clone())
+                    })
+                    .collect();
+                let edge_slacks: BTreeMap<EdgeIndex, Rational> = dual_variables
+                    .keys()
+                    .flat_map(|invalid_subgraph: &Arc<InvalidSubgraph>| invalid_subgraph.hair.iter().cloned())
+                    .chain(
+                        relaxer
+                            .get_direction()
+                            .keys()
+                            .flat_map(|invalid_subgraph| invalid_subgraph.hair.iter().cloned()),
+                    )
+                    .map(|edge_index| (edge_index, dual_module.get_edge_slack(edge_index)))
+                    .collect();
+                relaxer = cluster
+                    .relaxer_optimizer
+                    .optimize_tune(relaxer, edge_slacks, dual_variables, dual_module);
+                optimized = true;
+                if !cluster.relaxer_optimizer.should_optimize(&relaxer) {
+                    // println!("relaxer_optimizer extra optimized");
+                }
+            }
+            if optimized {
+                // println!("optimized");
+            } else {
+                // println!("not optimized");
+                // print the reason why it's not optimized, which of this is the reason: !cluster.plugin_manager.is_empty() && cluster.relaxer_optimizer.should_optimize(&relaxer)
+                if cluster.plugin_manager.is_empty() {
+                    // println!("plugin_manager is empty");
+                }
+                if !cluster.relaxer_optimizer.should_optimize(&relaxer) {
+                    // println!("relaxer_optimizer should not optimize");
+                }
+            }
+            for (invalid_subgraph, grow_rate) in relaxer.get_direction() {
+                let (existing, dual_node_ptr) = interface_ptr.find_or_create_node(invalid_subgraph, dual_module);
+                if !existing {
+                    // create the corresponding primal node and add it to cluster
+                    let primal_node_ptr = PrimalModuleSerialNodePtr::new_value(PrimalModuleSerialNode {
+                        dual_node_ptr: dual_node_ptr.clone(),
+                        cluster_weak: cluster_ptr.downgrade(),
+                    });
+                    cluster.nodes.push(primal_node_ptr.clone());
+                    self.nodes.push(primal_node_ptr);
+                    // println!("created dual_node: {:?}", dual_node_ptr.read_recursive().index);
+                }
+                // println!(
+                //     "setting dual_node_ptr: {:?} to grow_rate: {:?}",
+                //     dual_node_ptr.read_recursive().index,
+                //     grow_rate
+                // );
+                // if !should_optimize {
+                //     println!("can we infer from the current dual node ptr? : {:?}", dual_node_ptr);
+                //     // self.get_grow_rate(cluster_index, &dual_node_ptr);
+                //     let grow_rate = dual_module.calculate_grow_rate(&dual_node_ptr);
+                //     println!("calculated grow_rate: {:?}", grow_rate);
+                //     dual_module.set_grow_rate(&dual_node_ptr, grow_rate.clone());
+                // } else {
+                // didn't optimize, set the grow_rate correctly
+                dual_module.set_grow_rate(&dual_node_ptr, grow_rate.clone());
+                // dual_module.set_grow_rate(&dual_node_ptr, dual_node_ptr.read_recursive().get_dual_variable());
+                // }
+            }
+            // dual_module.grow(Rational::one());
             cluster.relaxer_optimizer.insert(relaxer);
             return false;
         }
@@ -586,7 +718,7 @@ impl PrimalModuleSerial {
         interface_ptr: &DualModuleInterfacePtr,
         dual_module: &mut impl DualModuleImpl,
     ) -> bool {
-        debug_assert!(!group_max_update_length.is_unbounded() && group_max_update_length.get_valid_growth().is_none());
+        // debug_assert!(!group_max_update_length.is_unbounded() && group_max_update_length.get_valid_growth().is_none());
         let mut active_clusters = BTreeSet::<NodeIndex>::new();
         let interface = interface_ptr.read_recursive();
         let decoding_graph = &interface.decoding_graph;
@@ -631,6 +763,9 @@ impl PrimalModuleSerial {
                     let cluster_index = cluster_ptr.read_recursive().cluster_index;
                     active_clusters.insert(cluster_index);
                 }
+                MaxUpdateLength::Skip => {
+                    return false;
+                }
                 _ => {
                     unreachable!()
                 }
@@ -642,7 +777,7 @@ impl PrimalModuleSerial {
         }
         let mut all_solved = true;
         for &cluster_index in active_clusters.iter() {
-            let solved = self.resolve_cluster(cluster_index, interface_ptr, dual_module);
+            let solved = self.resolve_cluster_tune(cluster_index, interface_ptr, dual_module);
             all_solved &= solved;
         }
         if !all_solved {
@@ -650,6 +785,16 @@ impl PrimalModuleSerial {
         }
         true
     }
+
+    // fn get_grow_rate(&self, cluster_index: NodeIndex, dual_node_ptr: &DualNodePtr) {
+    //     let dual_node = dual_node_ptr.read_recursive();
+
+    //     for edge_index in self.clusters[cluster_index as usize].read_recursive().edges.iter() {
+    //         let edge = dual_node.invalid_subgraph.hair.iter().find(|&edge| edge == edge_index);
+    //     }
+    //     let grow_rate = dual_node.get_grow_rate();
+    //     println!("grow_rate: {:?}", grow_rate);
+    // }
 }
 
 impl MWPSVisualizer for PrimalModuleSerial {

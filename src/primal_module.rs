@@ -12,6 +12,9 @@ use std::sync::Arc;
 
 /// common trait that must be implemented for each implementation of primal module
 pub trait PrimalModuleImpl {
+    fn get_grow_rate(&self, cluster_index: NodeIndex, dual_node_ptr: &DualNodePtr) -> Rational {
+        panic!("not implemented lol");
+    }
     /// create a primal module given the dual module
     fn new_empty(solver_initializer: &SolverInitializer) -> Self;
 
@@ -146,49 +149,121 @@ pub trait PrimalModuleImpl {
                 // println!("group_max_update_length: {:?}", group_max_update_length);
             }
             if let Some(length) = group_max_update_length.get_valid_growth() {
+                if resolved {
+                    // println!("resolved; growing: {:?}", length);
+                }
                 dual_module.grow(length);
             } else if self.resolve(group_max_update_length, interface, dual_module) {
                 // println!("ADVANCING MODE: {:?}", dual_module.mode());
                 // dual_module.advance_mode();
                 // dual_module.grow(Rational::one());
                 // moving onto the tuning mode
-                // println!("RESOLVED");
+                // if resolved {
+                //     println!("double resolved")
+                // } else {
+                //     println!("RESOLVED");
+                // }
                 resolved = true;
                 // let length = dual_module.compute_maximum_update_length().get_valid_growth().unwrap();
                 // dual_module.grow(length);
+                // dual_module.grow(Rational::one());
                 // break;
+            } else {
+                // println!("failed to resolve");
+                if resolved {
+                    // println!("turned back being unresolved");
+                }
             }
             group_max_update_length = dual_module.compute_maximum_update_length();
             if group_max_update_length.is_unbounded() {
                 // println!("UNBOUNDED");
+            } else {
+                if resolved {
+                    // println!("another iteration");
+                }
             }
         }
 
-        let mut resolved = false;
+        let resolve = 0;
+        let grow = 1;
+        let mut start = true;
         // Tune
         while self.has_more_plugins() {
             for cluster_index in self.pending_clusters() {
-                if !self.resolve_cluster(cluster_index, interface, dual_module) {
+                let mut new_start = true;
+                if !self.resolve_cluster_tune(cluster_index, interface, dual_module) {
                     // println!("TUNING");
+
+                    // let mut group_max_update_length = dual_module.compute_maximum_update_length();
+                    // if group_max_update_length.is_unbounded() {
+                    //     println!("UNBOUNDED123");
+                    // } else {
+                    //     // println!("\n135 group_max_update_length: {:?}", group_max_update_length);
+                    // }
+                    // let mut curr = 0;
+                    // // dual_module.debug_print();
+
+                    // while !group_max_update_length.is_unbounded() {
+                    //     callback(interface, dual_module, self, &group_max_update_length);
+                    //     if let Some(length) = group_max_update_length.get_valid_growth() {
+                    //         // println!("\nTUNING GROW: {:?}", length);
+                    //         // if resolved {
+                    //         //     println!("RESOLVED: group_max_update_length: {:?}", group_max_update_length);
+                    //         // }
+                    //         if (length != Rational::one()) {
+                    //             println!("wurf");
+                    //             dual_module.debug_print();
+                    //         }
+                    //         dual_module.grow(length);
+                    //         // println!("growing: is last operation resolve: {:?}", curr == resolve);
+                    //         // println!("is this start: 1{:?}", start);
+                    //         // println!("is this new start: 2{:?}", new_start);
+                    //         curr = grow;
+                    //         start = false;
+                    //         new_start = false;
+                    //     } else {
+                    //         if self.resolve_tune(group_max_update_length, interface, dual_module) {
+                    //             // println!("ADVANCING MODE: {:?}", dual_module.mode());
+                    //             // dual_module.advance_mode();
+                    //             // println!("last growth 1");
+                    //             dual_module.grow(Rational::one());
+                    //             // println!("\nBroken");
+                    //             // moving onto the tuning mode
+                    //             // group_max_update_length = dual_module.compute_maximum_update_length();
+                    //             // println!("last operation is: {:?}", if curr == resolve { "resolve" } else { "grow" });
+                    //             break;
+                    //             // resolved = true;
+                    //         }
+                    //         // println!("resolving: is last operation grow: {:?}", curr == grow);
+                    //         // println!("is this start: 1{:?}", start);
+                    //         // println!("is this new start: 2{:?}", new_start);
+
+                    //         start = false;
+
+                    //         curr = resolve;
+                    //         new_start = false;
+                    //     }
+                    //     group_max_update_length = dual_module.compute_maximum_update_length();
+                    //     if group_max_update_length.is_unbounded() {
+                    //         println!("UNBOUNDED456");
+                    //     }
+                    //     // dual_module.debug_print();
+                    // }
+
                     let mut group_max_update_length = dual_module.compute_maximum_update_length();
-                    while !group_max_update_length.is_unbounded() {
-                        callback(interface, dual_module, self, &group_max_update_length);
-                        if let Some(length) = group_max_update_length.get_valid_growth() {
-                            // println!("TUNING GROW: {:?}", length);
-                            if resolved {
-                                // println!("RESOLVED: group_max_update_length: {:?}", group_max_update_length);
-                            }
-                            dual_module.grow(length);
-                        } else if self.resolve(group_max_update_length, interface, dual_module) {
-                            // println!("ADVANCING MODE: {:?}", dual_module.mode());
-                            // dual_module.advance_mode();
-                            dual_module.grow(Rational::one());
-                            // moving onto the tuning mode
-                            // group_max_update_length = dual_module.compute_maximum_update_length();
-                            break;
-                            // resolved = true;
-                        }
+                    if group_max_update_length.is_unbounded() {
+                        continue;
+                    }
+                    if group_max_update_length.get_valid_growth().is_some() {
+                        dual_module.grow(Rational::one());
+                        group_max_update_length = dual_module.compute_maximum_update_length()
+                    }
+                    while !self.resolve_tune(group_max_update_length, interface, dual_module) {
+                        self.resolve_tune(dual_module.compute_maximum_update_length(), interface, dual_module);
+                        dual_module.grow(Rational::one());
                         group_max_update_length = dual_module.compute_maximum_update_length();
+                        // println!("group_max_update_length after growth: {:?}", group_max_update_length);
+                        // dual_module.compute_maximum_update_length();
                     }
                 }
             }
@@ -257,6 +332,14 @@ pub trait PrimalModuleImpl {
     }
 
     fn resolve_cluster(
+        &mut self,
+        cluster_index: NodeIndex,
+        interface_ptr: &DualModuleInterfacePtr,
+        dual_module: &mut impl DualModuleImpl,
+    ) -> bool {
+        panic!("falskdj")
+    }
+    fn resolve_cluster_tune(
         &mut self,
         cluster_index: NodeIndex,
         interface_ptr: &DualModuleInterfacePtr,

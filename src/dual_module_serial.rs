@@ -84,7 +84,14 @@ impl std::fmt::Debug for EdgePtr {
         write!(
             f,
             "[edge: {}]: weight: {}, grow_rate: {}, growth: {}\n\tdual_nodes: {:?}",
-            edge.edge_index, edge.weight, edge.grow_rate, edge.growth, edge.dual_nodes
+            edge.edge_index,
+            edge.weight,
+            edge.grow_rate,
+            edge.growth,
+            edge.dual_nodes
+                .iter()
+                .filter(|node| !node.upgrade_force().read_recursive().grow_rate.is_zero())
+                .collect::<Vec<_>>()
         )
     }
 }
@@ -96,12 +103,25 @@ impl std::fmt::Debug for EdgeWeak {
         write!(
             f,
             "[edge: {}]: weight: {}, grow_rate: {}, growth: {}\n\tdual_nodes: {:?}",
-            edge.edge_index, edge.weight, edge.grow_rate, edge.growth, edge.dual_nodes
+            edge.edge_index,
+            edge.weight,
+            edge.grow_rate,
+            edge.growth,
+            edge.dual_nodes
+                .iter()
+                .filter(|node| !node.upgrade_force().read_recursive().grow_rate.is_zero())
+                .collect::<Vec<_>>()
         )
     }
 }
 
 impl DualModuleImpl for DualModuleSerial {
+    // dual_module_serial
+    fn debug_print(&self) {
+        println!("\n[current states]");
+        println!("edges: {:?}", self.edges);
+    }
+
     /// initialize the dual module, which is supposed to be reused for multiple decoding tasks with the same structure
     #[allow(clippy::unnecessary_cast)]
     fn new_empty(initializer: &SolverInitializer) -> Self {

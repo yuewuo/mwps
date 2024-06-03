@@ -6,6 +6,8 @@
 //! is detected, and remains minimum in all other cases to avoid reduce time complexity.
 //!
 
+use crate::dual_module;
+use crate::dual_module::DualModuleImpl;
 use crate::invalid_subgraph::*;
 use crate::relaxer::*;
 use crate::util::*;
@@ -159,6 +161,108 @@ impl RelaxerOptimizer {
             _ => unreachable!(),
         }
         self.relaxers.insert(relaxer);
+        Relaxer::new(direction)
+    }
+
+    pub fn optimize_tune<D: DualModuleImpl>(
+        &mut self,
+        relaxer: Relaxer,
+        edge_slacks: BTreeMap<EdgeIndex, Rational>,
+        mut dual_variables: BTreeMap<Arc<InvalidSubgraph>, Rational>,
+        dual_module: &mut D,
+    ) -> Relaxer {
+        for invalid_subgraph in relaxer.get_direction().keys() {
+            if !dual_variables.contains_key(invalid_subgraph) {
+                dual_variables.insert(invalid_subgraph.clone(), Rational::zero());
+            }
+        }
+        // look at all existing invalid subgraphs and propose a best direction
+        // each invalid subgraph corresponds to a variable
+        // each edge_slack or dual_variable correspond to a constraint
+        // the objective function is the summation of all dual variables
+        let mut x_vars = vec![];
+        let mut y_vars = vec![];
+        let mut constraints = vec![];
+        let mut invalid_subgraphs = Vec::with_capacity(dual_variables.len());
+        let mut edge_contributor: BTreeMap<EdgeIndex, Vec<usize>> =
+            edge_slacks.keys().map(|&edge_index| (edge_index, vec![])).collect();
+        for (var_index, (invalid_subgraph, dual_variable)) in dual_variables.iter().enumerate() {
+            // slp only allows >= 0 variables, make this adaption
+            let var_x = format!("x{var_index}");
+            let var_y = format!("y{var_index}");
+            x_vars.push(var_x.clone());
+            y_vars.push(var_y.clone());
+            // constraint of the dual variable >= 0
+            let mut constraint = ConstraintLine::new();
+            constraint.lhs.push((-Rational::one(), var_x.clone()));
+            constraint.lhs.push((Rational::one(), var_y.clone()));
+            constraint.rhs = dual_variable.clone();
+            constraints.push(constraint);
+            invalid_subgraphs.push(invalid_subgraph);
+            for &edge_index in invalid_subgraph.hair.iter() {
+                edge_contributor.get_mut(&edge_index).unwrap().push(var_index);
+            }
+        }
+        for (&edge_index, slack) in edge_slacks.iter() {
+            // constraint of edge: sum(y_S) <= weight
+            let mut constraint = ConstraintLine::new();
+            for &var_index in edge_contributor[&edge_index].iter() {
+                constraint.lhs.push((Rational::one(), x_vars[var_index].clone()));
+                constraint.lhs.push((-Rational::one(), y_vars[var_index].clone()));
+            }
+            constraint.rhs = slack.clone();
+            constraints.push(constraint);
+        }
+        let vars_line = "vars ".to_string()
+            + &x_vars
+                .iter()
+                .chain(y_vars.iter())
+                .map(|var| format!("{var}>=0"))
+                .collect::<Vec<_>>()
+                .join(", ");
+        let max_line = "max ".to_string() + &x_vars.to_vec().join("+") + "-" + &y_vars.to_vec().join("-");
+        let input = vars_line
+            + "\n"
+            + &max_line
+            + "\n"
+            + "subject to\n"
+            + &constraints
+                .iter()
+                .map(|constraint| constraint.to_string())
+                .collect::<Vec<_>>()
+                .join(",\n");
+        let mut solver = slp::Solver::<slp::Ratio<slp::BigInt>>::new(&input);
+        let solution = solver.solve();
+        let mut direction: BTreeMap<Arc<InvalidSubgraph>, Rational> = BTreeMap::new();
+        match solution {
+            slp::Solution::Optimal(optimal_objective, model) => {
+                if !optimal_objective.is_positive() {
+                    return relaxer;
+                }
+                for (var_index, (invalid_subgraph, _)) in dual_variables.iter().enumerate() {
+                    let overall_growth = model[var_index].clone() - model[var_index + x_vars.len()].clone();
+                    if !overall_growth.is_zero() {
+                        // println!("Overall growth: {}/{}", overall_growth.numer(), overall_growth.denom());
+                        direction.insert(
+                            invalid_subgraph.clone(),
+                            Rational::from_str(&overall_growth.numer().to_string()).unwrap()
+                                / Rational::from_str(&overall_growth.denom().to_string()).unwrap(),
+                        );
+                    }
+                }
+            }
+            _ => unreachable!(),
+        }
+        // println!("Old Directions:");
+        // for (invalid_subgraph, speed) in relaxer.get_direction().iter() {
+        //     println!("{:?}: {}/{}", invalid_subgraph, speed.numer(), speed.denom());
+        // }
+        self.relaxers.insert(relaxer);
+        // print out each direction on a single line
+        // println!("Directions:");
+        // for (invalid_subgraph, speed) in direction.iter() {
+        //     println!("{:?}: {}/{}", invalid_subgraph, speed.numer(), speed.denom());
+        // }
         Relaxer::new(direction)
     }
 }

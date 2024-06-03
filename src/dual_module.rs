@@ -74,9 +74,10 @@ impl std::fmt::Debug for DualNodePtr {
         let global_time = dual_node.global_time.as_ref().unwrap_or(&new).read_recursive();
         write!(
             f,
-            "\n\t\tindex: {}, global_time: {:?}, dual_variable: {}\n\t\tdual_variable_at_last_updated_time: {}, last_updated_time: {}",
+            "\n\t\tindex: {}, global_time: {:?}, grow_rate: {:?}, dual_variable: {}\n\t\tdual_variable_at_last_updated_time: {}, last_updated_time: {}",
             dual_node.index,
             global_time,
+            dual_node.grow_rate,
             dual_node.get_dual_variable(),
             dual_node.dual_variable_at_last_updated_time,
             dual_node.last_updated_time
@@ -145,6 +146,8 @@ pub enum MaxUpdateLength {
     Conflicting(EdgeIndex),
     /// hitting 0 dual variable while shrinking, only happens when `grow_rate` < 0
     ShrinkProhibited(DualNodePtr),
+    ///
+    Skip,
 }
 
 #[derive(Derivative, Clone)]
@@ -161,6 +164,15 @@ pub enum GroupMaxUpdateLength {
 
 /// common trait that must be implemented for each implementation of dual module
 pub trait DualModuleImpl {
+    fn calculate_grow_rate(&self, dual_node_ptr: &DualNodePtr) -> Rational {
+        panic!("bad lol");
+    }
+
+    // dual_module.rs
+    fn debug_print(&self) {
+        println!("this dual_module doesn't support this print");
+    }
+
     /// create a new dual module with empty syndrome
     fn new_empty(initializer: &SolverInitializer) -> Self;
 
@@ -175,6 +187,9 @@ pub trait DualModuleImpl {
 
     /// update grow rate
     fn set_grow_rate(&mut self, dual_node_ptr: &DualNodePtr, grow_rate: Rational);
+    fn set_grow_rate_tune(&mut self, dual_node_ptr: &DualNodePtr, grow_rate: Rational) -> BTreeSet<MaxUpdateLength> {
+        panic!("as;dlfkj")
+    }
 
     /// An optional function that helps to break down the implementation of [`DualModuleImpl::compute_maximum_update_length`]
     /// check the maximum length to grow (shrink) specific dual node, if length is 0, give the reason of why it cannot further grow (shrink).
@@ -273,7 +288,10 @@ impl GroupMaxUpdateLength {
     pub fn pop(&mut self) -> Option<MaxUpdateLength> {
         match self {
             Self::Unbounded | Self::ValidGrow(_) => {
-                panic!("please call GroupMaxUpdateLength::get_valid_growth to check if this group is none_zero_growth");
+                println!("I am {:?}", self);
+                // panic!("please call GroupMaxUpdateLength::get_valid_growth to check if this group is none_zero_growth");
+                // conflicts.pop();
+                Some(MaxUpdateLength::Skip)
             }
             Self::Conflicts(conflicts) => conflicts.pop(),
         }
