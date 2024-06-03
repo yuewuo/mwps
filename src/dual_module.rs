@@ -3,6 +3,8 @@
 //! Generics for dual modules
 //!
 
+use parking_lot::lock_api::RwLockReadGuard;
+
 use crate::decoding_hypergraph::*;
 use crate::derivative::Derivative;
 use crate::invalid_subgraph::*;
@@ -166,6 +168,35 @@ pub enum GroupMaxUpdateLength {
 pub trait DualModuleImpl {
     fn calculate_grow_rate(&self, dual_node_ptr: &DualNodePtr) -> Rational {
         panic!("bad lol");
+    }
+
+    fn get_conflicts_for_node(
+        &self,
+        dual_node_ptr: RwLockReadGuard<parking_lot::RawRwLock, DualNode>,
+        all_conflicts: &mut BTreeSet<MaxUpdateLength>,
+    ) {
+        panic!("bad lol 1213");
+    }
+
+    fn set_nodes_to_zero(&mut self) {
+        panic!("bad lol 121345");
+    }
+
+    fn sync(&mut self) {
+        panic!("BAd bad lol");
+    }
+
+    fn get_edges_for_node(&self, dual_node_ptr: &DualNodePtr) -> BTreeSet<EdgeIndex> {
+        // FIXME: Don't use EdgeIndex, but a generic type for edges please
+        panic!("bad lol 1212341345");
+    }
+
+    fn get_current_conflicts(
+        &self,
+        edges: &BTreeSet<EdgeIndex>,
+        nodes: &BTreeSet<DualNodePtr>,
+    ) -> BTreeSet<MaxUpdateLength> {
+        panic!("bad lol lol 1212341345");
     }
 
     // dual_module.rs

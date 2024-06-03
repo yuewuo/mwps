@@ -20,6 +20,7 @@ use std::{
 use derivative::Derivative;
 use itertools::Itertools;
 use num_traits::{FromPrimitive, Signed};
+use parking_lot::lock_api::RwLockReadGuard;
 use parking_lot::{lock_api::RwLockWriteGuard, RawRwLock};
 
 /* Helper structs for events/obstacles during growing */
@@ -102,7 +103,7 @@ pub type FutureObstacle<T> = FutureEvent<T, Obstacle>;
 pub type MinBinaryHeap<F> = BinaryHeap<Reverse<F>>;
 pub type FutureObstacleQueue<T> = MinBinaryHeap<FutureObstacle<T>>;
 
-pub trait FutureQueueMethods<T: Ord + PartialEq + Eq, E> {
+pub trait FutureQueueMethods<T: Ord + PartialEq + Eq + std::fmt::Debug, E: std::fmt::Debug> {
     /// defines the behavior of `will_happen`, if the queue can contain invalid/duplicate events
     const MAY_BE_INVALID: bool = true;
 
@@ -120,8 +121,11 @@ pub trait FutureQueueMethods<T: Ord + PartialEq + Eq, E> {
     fn clear(&mut self);
 }
 
-impl<T: Ord + PartialEq + Eq, E> FutureQueueMethods<T, E> for MinBinaryHeap<FutureEvent<T, E>> {
+impl<T: Ord + PartialEq + Eq + std::fmt::Debug, E: std::fmt::Debug> FutureQueueMethods<T, E>
+    for MinBinaryHeap<FutureEvent<T, E>>
+{
     fn will_happen(&mut self, time: T, event: E) {
+        // println!("will_happen invoked on {:?} at time {:?}", event, time);
         self.push(Reverse(FutureEvent { time, event }))
     }
     fn peek_event(&self) -> Option<(&T, &E)> {
@@ -133,6 +137,8 @@ impl<T: Ord + PartialEq + Eq, E> FutureQueueMethods<T, E> for MinBinaryHeap<Futu
     fn clear(&mut self) {
         self.clear();
     }
+
+    const MAY_BE_INVALID: bool = true;
 }
 
 /* Vertices and Edges */
@@ -336,6 +342,159 @@ where
         }
         panic!("dual node not found in any edge");
     }
+
+    fn get_conflicts_for_node(
+        &self,
+        dual_node: RwLockReadGuard<parking_lot::RawRwLock, DualNode>,
+        all_conflicts: &mut BTreeSet<MaxUpdateLength>,
+    ) {
+        println!("impacted edges: {:?}", dual_node.invalid_subgraph.hair);
+        for &edge_index in dual_node.invalid_subgraph.hair.iter() {
+            let edge = self.edges[edge_index as usize].read_recursive();
+            println!("\tedge: {:?}", edge);
+            if edge.grow_rate.is_positive() && edge.weight == edge.growth_at_last_updated_time {
+                all_conflicts.insert(MaxUpdateLength::Conflicting(edge_index));
+            }
+        }
+    }
+
+    fn set_nodes_to_zero(&mut self) {
+        println!("Setting things to be zero");
+        for edges in self.edges.iter_mut() {
+            let mut edge = edges.write();
+
+            // update if necessary
+            let global_time = self.global_time.read_recursive();
+            if edge.last_updated_time != global_time.clone() {
+                // the edge is behind
+                debug_assert!(
+                    global_time.clone() >= edge.last_updated_time,
+                    "global time is behind, maybe a wrap-around has happened"
+                );
+
+                let time_diff = global_time.clone() - &edge.last_updated_time;
+                let newly_grown_amount = &time_diff * &edge.grow_rate;
+                edge.growth_at_last_updated_time += newly_grown_amount;
+                edge.last_updated_time = global_time.clone();
+                debug_assert!(
+                    edge.growth_at_last_updated_time <= edge.weight,
+                    "growth larger than weight: check if events are 1) inserted and 2) handled correctly"
+                );
+            }
+
+            edge.grow_rate = Rational::zero();
+            for dual_node_ptr in edge.dual_nodes.iter() {
+                let dual_node_ptr_write = dual_node_ptr.upgrade_force();
+                let mut node = dual_node_ptr_write.write();
+
+                // update if necessary
+                let global_time = self.global_time.read_recursive();
+                if node.last_updated_time != global_time.clone() {
+                    // the edge is not behind
+                    debug_assert!(
+                        global_time.clone() >= node.last_updated_time,
+                        "global time is behind, maybe a wrap-around has happened"
+                    );
+
+                    let dual_variable = node.get_dual_variable();
+                    node.set_dual_variable(dual_variable);
+                    node.last_updated_time = global_time.clone();
+                    debug_assert!(
+                        !node.get_dual_variable().is_negative(),
+                        "negative dual variable: check if events are 1) inserted and 2) handled correctly"
+                    );
+                }
+
+                node.grow_rate = Rational::zero();
+            }
+        }
+    }
+
+    fn sync(&mut self) {
+        for edges in self.edges.iter_mut() {
+            let mut edge = edges.write();
+
+            // update if necessary
+            let global_time = self.global_time.read_recursive();
+            if edge.last_updated_time != global_time.clone() {
+                // the edge is behind
+                debug_assert!(
+                    global_time.clone() >= edge.last_updated_time,
+                    "global time is behind, maybe a wrap-around has happened"
+                );
+
+                let time_diff = global_time.clone() - &edge.last_updated_time;
+                let newly_grown_amount = &time_diff * &edge.grow_rate;
+                edge.growth_at_last_updated_time += newly_grown_amount;
+                edge.last_updated_time = global_time.clone();
+                debug_assert!(
+                    edge.growth_at_last_updated_time <= edge.weight,
+                    "growth larger than weight: check if events are 1) inserted and 2) handled correctly"
+                );
+            }
+
+            for dual_node_ptr in edge.dual_nodes.iter() {
+                let dual_node_ptr_write = dual_node_ptr.upgrade_force();
+                let mut node = dual_node_ptr_write.write();
+
+                // update if necessary
+                let global_time = self.global_time.read_recursive();
+                if node.last_updated_time != global_time.clone() {
+                    // the edge is behind
+                    debug_assert!(
+                        global_time.clone() >= node.last_updated_time,
+                        "global time is behind, maybe a wrap-around has happened"
+                    );
+
+                    let dual_variable = node.get_dual_variable();
+                    node.set_dual_variable(dual_variable);
+                    node.last_updated_time = global_time.clone();
+                    debug_assert!(
+                        !node.get_dual_variable().is_negative(),
+                        "negative dual variable: check if events are 1) inserted and 2) handled correctly"
+                    );
+                }
+            }
+        }
+    }
+
+    fn get_edges_for_node(&self, dual_node_ptr: &DualNodePtr) -> BTreeSet<EdgeIndex> {
+        let mut edges = BTreeSet::default();
+        for edge in self.edges.iter() {
+            let edge = edge.read_recursive();
+            if edge
+                .dual_nodes
+                .iter()
+                .any(|node| node.upgrade_force().read_recursive().index == dual_node_ptr.read_recursive().index)
+            {
+                edges.insert(edge.edge_index);
+            }
+        }
+        edges
+    }
+
+    fn get_current_conflicts(
+        &self,
+        edges: &BTreeSet<EdgeIndex>,
+        nodes: &BTreeSet<DualNodePtr>,
+    ) -> BTreeSet<MaxUpdateLength> {
+        let mut conflicts = BTreeSet::default();
+        for edge_index in edges.iter() {
+            let edge = self.edges[*edge_index].read_recursive();
+            if edge.grow_rate.is_positive() && edge.weight == edge.growth_at_last_updated_time {
+                conflicts.insert(MaxUpdateLength::Conflicting(*edge_index));
+            }
+        }
+        for node_ptr in nodes.iter() {
+            println!("node_ptr is {:?}", node_ptr);
+            let node = node_ptr.read_recursive();
+            if node.grow_rate.is_negative() && node.get_dual_variable().is_zero() {
+                conflicts.insert(MaxUpdateLength::ShrinkProhibited(node_ptr.clone()));
+            }
+        }
+        conflicts
+    }
+
     fn debug_print(&self) {
         println!("\n[current states]");
         println!("global time: {:?}", self.global_time.read_recursive());
@@ -459,6 +618,7 @@ where
 
     #[allow(clippy::unnecessary_cast)]
     fn set_grow_rate(&mut self, dual_node_ptr: &DualNodePtr, grow_rate: Rational) {
+        // println!("set_grow_rate invoked on {:?}, to be {:?}", dual_node_ptr, grow_rate);
         let mut dual_node = dual_node_ptr.write();
         self.update_dual_node_if_necessary(&mut dual_node);
 
@@ -492,6 +652,38 @@ where
                 );
             }
         }
+    }
+
+    #[allow(clippy::unnecessary_cast)]
+    fn set_grow_rate_tune(&mut self, dual_node_ptr: &DualNodePtr, grow_rate: Rational) -> BTreeSet<MaxUpdateLength> {
+        // println!("set_grow_rate_tune invoked on {:?}, to be {:?}", dual_node_ptr, grow_rate);
+
+        let mut conflicts = BTreeSet::default();
+        // time must be now.
+        let mut dual_node = dual_node_ptr.write();
+        self.update_dual_node_if_necessary(&mut dual_node);
+
+        let global_time = self.global_time.read_recursive();
+        let grow_rate_diff = &grow_rate - &dual_node.grow_rate;
+
+        dual_node.grow_rate = grow_rate;
+        // if dual_node.grow_rate.is_negative() && dual_node.get_dual_variable().is_zero() {
+        //     conflicts.insert(MaxUpdateLength::ShrinkProhibited(dual_node_ptr.clone()));
+        // }
+        drop(dual_node);
+
+        let dual_node = dual_node_ptr.read_recursive();
+        for &edge_index in dual_node.invalid_subgraph.hair.iter() {
+            let mut edge = self.edges[edge_index as usize].write();
+            self.update_edge_if_necessary(&mut edge);
+
+            edge.grow_rate += &grow_rate_diff;
+            // if edge.grow_rate.is_positive() && edge.weight == edge.growth_at_last_updated_time {
+            //     conflicts.insert(MaxUpdateLength::Conflicting(edge_index));
+            // }
+        }
+
+        conflicts
     }
 
     fn compute_maximum_update_length(&mut self) -> GroupMaxUpdateLength {
