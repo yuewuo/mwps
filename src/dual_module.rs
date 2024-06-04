@@ -302,6 +302,11 @@ pub trait DualModuleImpl {
     fn reset_mode(&mut self) {
         *self.mode_mut() = DualModuleMode::default();
     }
+
+    /// misc
+    fn grow_edge(&self, edge_index: EdgeIndex, amount: &Rational) {
+        panic!("not yet implemented `grow_edge`");
+    }
 }
 
 impl MaxUpdateLength {
@@ -455,6 +460,7 @@ impl DualModuleInterfacePtr {
             global_time: None,
             last_updated_time: Rational::zero(),
         });
+        // println!("created node in create_defect_node {:?}", node_ptr);
         let cloned_node_ptr = node_ptr.clone();
         drop(interface);
         let mut interface = self.write();
@@ -494,6 +500,34 @@ impl DualModuleInterfacePtr {
         interface.nodes.push(node_ptr.clone());
         drop(interface);
         dual_module.add_dual_node(&node_ptr);
+        // println!("created node in create_node {:?}", node_ptr);
+        node_ptr
+    }
+
+    pub fn create_node_tune(
+        &self,
+        invalid_subgraph: Arc<InvalidSubgraph>,
+        dual_module: &mut impl DualModuleImpl,
+    ) -> DualNodePtr {
+        debug_assert!(
+            self.find_node(&invalid_subgraph).is_none(),
+            "do not create the same node twice"
+        );
+        let mut interface = self.write();
+        let node_index = interface.nodes.len() as NodeIndex;
+        interface.hashmap.insert(invalid_subgraph.clone(), node_index);
+        let node_ptr = DualNodePtr::new_value(DualNode {
+            index: node_index,
+            invalid_subgraph,
+            grow_rate: Rational::zero(),
+            dual_variable_at_last_updated_time: Rational::zero(),
+            global_time: None,
+            last_updated_time: Rational::zero(),
+        });
+        interface.nodes.push(node_ptr.clone());
+        drop(interface);
+        dual_module.add_dual_node(&node_ptr);
+        // println!("created node in create_node {:?}", node_ptr);
         node_ptr
     }
 
@@ -506,6 +540,18 @@ impl DualModuleInterfacePtr {
         match self.find_node(invalid_subgraph) {
             Some(node_ptr) => (true, node_ptr),
             None => (false, self.create_node(invalid_subgraph.clone(), dual_module)),
+        }
+    }
+
+    /// return whether it's existing node or not
+    pub fn find_or_create_node_tune(
+        &self,
+        invalid_subgraph: &Arc<InvalidSubgraph>,
+        dual_module: &mut impl DualModuleImpl,
+    ) -> (bool, DualNodePtr) {
+        match self.find_node(invalid_subgraph) {
+            Some(node_ptr) => (true, node_ptr),
+            None => (false, self.create_node_tune(invalid_subgraph.clone(), dual_module)),
         }
     }
 }

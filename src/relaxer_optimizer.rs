@@ -8,7 +8,15 @@
 
 use crate::dual_module;
 use crate::dual_module::DualModuleImpl;
+use crate::dual_module::DualModuleInterfacePtr;
 use crate::invalid_subgraph::*;
+use crate::pointers::RwLockPtr;
+use crate::primal_module;
+use crate::primal_module::PrimalModuleImpl;
+use crate::primal_module_serial::PrimalCluster;
+use crate::primal_module_serial::PrimalClusterPtr;
+use crate::primal_module_serial::PrimalModuleSerialNode;
+use crate::primal_module_serial::PrimalModuleSerialNodePtr;
 use crate::relaxer::*;
 use crate::util::*;
 use derivative::Derivative;
@@ -170,6 +178,7 @@ impl RelaxerOptimizer {
         edge_slacks: BTreeMap<EdgeIndex, Rational>,
         mut dual_variables: BTreeMap<Arc<InvalidSubgraph>, Rational>,
         dual_module: &mut D,
+        interface_ptr: &DualModuleInterfacePtr,
     ) -> Relaxer {
         for invalid_subgraph in relaxer.get_direction().keys() {
             if !dual_variables.contains_key(invalid_subgraph) {
@@ -239,15 +248,41 @@ impl RelaxerOptimizer {
                 if !optimal_objective.is_positive() {
                     return relaxer;
                 }
-                for (var_index, (invalid_subgraph, _)) in dual_variables.iter().enumerate() {
+                for (var_index, (invalid_subgraph, _)) in dual_variables.into_iter().enumerate() {
                     let overall_growth = model[var_index].clone() - model[var_index + x_vars.len()].clone();
                     if !overall_growth.is_zero() {
+                        // let (existing, dual_node_ptr) = interface_ptr.find_or_create_node(invalid_subgraph, dual_module);
+                        // if !existing {
+                        // //create the corresponding primal node and add it to cluster
+                        // let primal_node_ptr = PrimalModuleSerialNodePtr::new_value(PrimalModuleSerialNode {
+                        //     dual_node_ptr: dual_node_ptr.clone(),
+                        //     cluster_weak: cluster_ptr.downgrade(),
+                        // });
+                        // cluster.nodes.push(primal_node_ptr.clone());
+                        // primal_module.push_node(primal_node_ptr);
+                        // println!("created dual_node: {:?}", dual_node_ptr.read_recursive().index);
+
+                        // // return it out
+                        // }
+
                         // println!("Overall growth: {}/{}", overall_growth.numer(), overall_growth.denom());
                         direction.insert(
-                            invalid_subgraph.clone(),
+                            // NOTE: Should care during benchmark, how much time does it take to serialize it to string and convert it back? Seems Redundant
+                            invalid_subgraph,
                             Rational::from_str(&overall_growth.numer().to_string()).unwrap()
                                 / Rational::from_str(&overall_growth.denom().to_string()).unwrap(),
                         );
+
+                        // let dual_node_write = dual_node_ptr.write();
+                        // dual_node_write.dual_variable_at_last_updated_time =
+                        //     Rational::from_str(&final_val.numer().to_string()).unwrap()
+                        //         / Rational::from_str(&final_val.denom().to_string()).unwrap();
+
+                        // dual_module.get_edges_for_node(dual_node_ptr)
+                        // for edge_index in dual_node_write.invalid_subgraph.hair.iter() {
+                        //     let edge_slack = edge_slacks.get(edge_index).unwrap();
+                        //     dual_node_write.edge_slacks.insert(edge_index.clone(), edge_slack.clone());
+                        // }
                     }
                 }
             }

@@ -216,6 +216,7 @@ impl DualModuleImpl for DualModuleSerial {
 
     #[allow(clippy::unnecessary_cast)]
     fn set_grow_rate(&mut self, dual_node_ptr: &DualNodePtr, grow_rate: Rational) {
+        println!("no way I am here right?");
         let mut dual_node = dual_node_ptr.write();
         let grow_rate_diff = grow_rate.clone() - &dual_node.grow_rate;
         dual_node.grow_rate = grow_rate;

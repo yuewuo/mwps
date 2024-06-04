@@ -143,13 +143,9 @@ pub trait PrimalModuleImpl {
             group_max_update_length = dual_module.compute_maximum_update_length();
         }
 
-        // println!("start");
-        // dual_module.debug_print();
-        // dual_module.sync();
-        // return;
-
         // from here, all things should be syncronized
         let mut start = true;
+
         // We know that things are in an unbounded state here: All edges and nodes are not growing as of now
         // Tune
         while self.has_more_plugins() {
@@ -161,55 +157,17 @@ pub trait PrimalModuleImpl {
                 let (_impacted_edges, _impacted_nodes, _resolved) =
                     self.resolve_cluster_tune(cluster_index, interface, dual_module);
                 if !_resolved {
-                    // check if any of the current moves will be conflict
-
-                    // if not, we grow once
-
-                    // what about now?
                     let mut conflicts = dual_module.get_current_conflicts(&_impacted_edges, &_impacted_nodes);
-                    if conflicts.is_empty() {
-                        dual_module.grow(Rational::one());
-                        // dual_module.debug_print();
-                        dual_module.sync(); // FIXME: should jsut set to the optimize value, so don't need to care about time any more
-                                            // println!("grew one 0");
-                        conflicts = dual_module.get_current_conflicts(&_impacted_edges, &_impacted_nodes);
-                        // dual_module.set_nodes_to_zero();
-                    } else {
-                        // dual_module.set_nodes_to_zero();
-                        println!("AAAAAAAAA need to resolve again");
-                    }
 
                     loop {
-                        // dual_module.debug_print();
-
                         let (impacted_edges, impacted_nodes, resolved) =
                             self.resolve_tune(conflicts, interface, dual_module);
-                        // dual_module.set_nodes_to_zero();
-                        conflicts = dual_module.get_current_conflicts(&impacted_edges, &impacted_nodes);
-                        // println!("_conflicts: {:?}", conflicts);
                         if resolved {
-                            // println!("_resolved");
                             break;
                         }
-                        if !conflicts.is_empty() {
-                            println!("BBBBBB need to resolve again");
-                            // println!("conflicts: {:?}", conflicts);
-                            continue;
-                        }
-                        if conflicts.is_empty() {
-                            dual_module.grow(Rational::one());
-                            dual_module.sync();
-                            // println!("grew one 3");
-                            // dual_module.debug_print();
-                        }
                         conflicts = dual_module.get_current_conflicts(&impacted_edges, &impacted_nodes);
-                        // println!("conflicts: {:?}", conflicts);
-                        // dual_module.set_nodes_to_zero();
-                        // println!("jacking off");
                     }
                 }
-                // println!("done");
-                // dual_module.set_nodes_to_zero();
             }
         }
     }

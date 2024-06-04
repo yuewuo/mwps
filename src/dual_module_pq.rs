@@ -632,8 +632,8 @@ where
 
     #[allow(clippy::unnecessary_cast)]
     fn set_grow_rate(&mut self, dual_node_ptr: &DualNodePtr, grow_rate: Rational) {
-        // println!("set_grow_rate invoked on {:?}, to be {:?}", dual_node_ptr, grow_rate);
         let mut dual_node = dual_node_ptr.write();
+        // println!("set_grow_rate invoked on {:?}, to be {:?}", dual_node.index, grow_rate);
         self.update_dual_node_if_necessary(&mut dual_node);
 
         let global_time = self.global_time.read_recursive();
@@ -673,9 +673,16 @@ where
         // println!("set_grow_rate_tune invoked on {:?}, to be {:?}", dual_node_ptr, grow_rate);
 
         let mut conflicts = BTreeSet::default();
+        // println!(
+        //     "dual_node index: {:?}, grow_rate123: {:?}, target grow_rate: {:?}",
+        //     dual_node_ptr.read_recursive().index,
+        //     dual_node_ptr.read_recursive().grow_rate,
+        //     grow_rate
+        // );
         // time must be now.
         let mut dual_node = dual_node_ptr.write();
-        self.update_dual_node_if_necessary(&mut dual_node);
+        // printout dual_node and the grow_rate it is being set to:
+        // self.update_dual_node_if_necessary(&mut dual_node);
 
         let global_time = self.global_time.read_recursive();
         let grow_rate_diff = &grow_rate - &dual_node.grow_rate;
@@ -689,7 +696,7 @@ where
         let dual_node = dual_node_ptr.read_recursive();
         for &edge_index in dual_node.invalid_subgraph.hair.iter() {
             let mut edge = self.edges[edge_index as usize].write();
-            self.update_edge_if_necessary(&mut edge);
+            // self.update_edge_if_necessary(&mut edge);
 
             edge.grow_rate += &grow_rate_diff;
             // if edge.grow_rate.is_positive() && edge.weight == edge.growth_at_last_updated_time {
@@ -795,6 +802,12 @@ where
         self.mode_mut().advance();
         self.obstacle_queue.clear();
         self.sync();
+    }
+
+    fn grow_edge(&self, edge_index: EdgeIndex, amount: &Rational) {
+        let mut edge = self.edges[edge_index as usize].write();
+        edge.grow_rate += amount;
+        edge.growth_at_last_updated_time += amount;
     }
 }
 

@@ -416,11 +416,13 @@ impl PrimalModuleImpl for PrimalModuleSerial {
                 )
                 .map(|edge_index| (edge_index, dual_module.get_edge_slack(edge_index)))
                 .collect();
-            relaxer = cluster
-                .relaxer_optimizer
-                .optimize_tune(relaxer, edge_slacks, dual_variables, dual_module);
+            relaxer =
+                cluster
+                    .relaxer_optimizer
+                    .optimize_tune(relaxer, edge_slacks, dual_variables, dual_module, interface_ptr);
+            // println!("\nrelaxer direction: {:?}", relaxer.get_direction());
             for (invalid_subgraph, grow_rate) in relaxer.get_direction() {
-                let (existing, dual_node_ptr) = interface_ptr.find_or_create_node(invalid_subgraph, dual_module);
+                let (existing, dual_node_ptr) = interface_ptr.find_or_create_node_tune(invalid_subgraph, dual_module);
                 if !existing {
                     // create the corresponding primal node and add it to cluster
                     let primal_node_ptr = PrimalModuleSerialNodePtr::new_value(PrimalModuleSerialNode {
@@ -431,8 +433,21 @@ impl PrimalModuleImpl for PrimalModuleSerial {
                     self.nodes.push(primal_node_ptr);
                     // println!("created dual_node: {:?}", dual_node_ptr.read_recursive().index);
                 }
-                dual_module.set_grow_rate_tune(&dual_node_ptr, grow_rate.clone());
+                // dual_module.set_grow_rate_tune(&dual_node_ptr, grow_rate.clone());
                 // all_conflicts.extend(conflicts);
+
+                // println!("getting write lock");
+                let mut node_ptr_write = dual_node_ptr.write();
+                // println!("got write lock");
+                node_ptr_write.grow_rate = grow_rate.clone();
+                node_ptr_write.dual_variable_at_last_updated_time += grow_rate.clone();
+                for edge_index in node_ptr_write.invalid_subgraph.hair.iter() {
+                    dual_module.grow_edge(*edge_index, grow_rate);
+                }
+                drop(node_ptr_write);
+
+                // dual_module.set_grow_rate_tune(&dual_node_ptr, grow_rate.clone());
+                // dual_node_ptr.read_recursive().invalid_subgraph.hair
                 // dual_module.set_grow_rate(&dual_node_ptr, dual_node_ptr.read_recursive().get_dual_variable());
                 // }
                 impacted_nodes.insert(dual_node_ptr);
@@ -440,7 +455,7 @@ impl PrimalModuleImpl for PrimalModuleSerial {
 
             // println!("dual_nodes_changed: {:?}", impacted_nodes);
             for dual_node_ptr in impacted_nodes.iter() {
-                let edges = dual_module.get_edges_for_node(dual_node_ptr);
+                let edges = dual_node_ptr.read_recursive().invalid_subgraph.hair.clone();
                 impacted_edges.extend(edges);
 
                 // dual_module.get_conflicts_for_node(dual_node, &mut all_conflicts);
