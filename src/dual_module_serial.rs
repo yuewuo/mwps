@@ -4,12 +4,12 @@
 //!
 
 use crate::derivative::Derivative;
-use crate::dual_module::*;
 use crate::num_traits::sign::Signed;
 use crate::num_traits::{ToPrimitive, Zero};
 use crate::pointers::*;
 use crate::util::*;
 use crate::visualize::*;
+use crate::{add_shared_methods, dual_module::*};
 use num_traits::FromPrimitive;
 use std::collections::BTreeSet;
 
@@ -23,6 +23,9 @@ pub struct DualModuleSerial {
     pub active_edges: BTreeSet<EdgeIndex>,
     /// active nodes
     pub active_nodes: BTreeSet<DualNodePtr>,
+
+    /// the current mode of the dual module
+    mode: DualModuleMode,
 }
 
 pub type DualModuleSerialPtr = ArcRwLock<DualModuleSerial>;
@@ -161,6 +164,7 @@ impl DualModuleImpl for DualModuleSerial {
             edges,
             active_edges: BTreeSet::new(),
             active_nodes: BTreeSet::new(),
+            mode: DualModuleMode::default(),
         }
     }
 
@@ -413,6 +417,8 @@ impl DualModuleImpl for DualModuleSerial {
         let edge = self.edges[edge_index as usize].read_recursive();
         edge.growth == edge.weight
     }
+
+    add_shared_methods!();
 }
 
 /*

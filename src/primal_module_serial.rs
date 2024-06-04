@@ -396,37 +396,29 @@ impl PrimalModuleImpl for PrimalModuleSerial {
 
         // if a relaxer is found, execute it and return
         if let Some(mut relaxer) = relaxer {
-            let mut optimized = false;
-            let should_optimize = cluster.relaxer_optimizer.should_optimize(&relaxer);
-            if !cluster.plugin_manager.is_empty() {
-                let dual_variables: BTreeMap<Arc<InvalidSubgraph>, Rational> = cluster
-                    .nodes
-                    .iter()
-                    .map(|primal_node_ptr| {
-                        let primal_node = primal_node_ptr.read_recursive();
-                        let dual_node = primal_node.dual_node_ptr.read_recursive();
-                        (dual_node.invalid_subgraph.clone(), dual_node.get_dual_variable().clone())
-                    })
-                    .collect();
-                let edge_slacks: BTreeMap<EdgeIndex, Rational> = dual_variables
-                    .keys()
-                    .flat_map(|invalid_subgraph: &Arc<InvalidSubgraph>| invalid_subgraph.hair.iter().cloned())
-                    .chain(
-                        relaxer
-                            .get_direction()
-                            .keys()
-                            .flat_map(|invalid_subgraph| invalid_subgraph.hair.iter().cloned()),
-                    )
-                    .map(|edge_index| (edge_index, dual_module.get_edge_slack(edge_index)))
-                    .collect();
-                relaxer = cluster
-                    .relaxer_optimizer
-                    .optimize_tune(relaxer, edge_slacks, dual_variables, dual_module);
-                optimized = true;
-                if !cluster.relaxer_optimizer.should_optimize(&relaxer) {
-                    // println!("relaxer_optimizer extra optimized");
-                }
-            }
+            let dual_variables: BTreeMap<Arc<InvalidSubgraph>, Rational> = cluster
+                .nodes
+                .iter()
+                .map(|primal_node_ptr| {
+                    let primal_node = primal_node_ptr.read_recursive();
+                    let dual_node = primal_node.dual_node_ptr.read_recursive();
+                    (dual_node.invalid_subgraph.clone(), dual_node.get_dual_variable().clone())
+                })
+                .collect();
+            let edge_slacks: BTreeMap<EdgeIndex, Rational> = dual_variables
+                .keys()
+                .flat_map(|invalid_subgraph: &Arc<InvalidSubgraph>| invalid_subgraph.hair.iter().cloned())
+                .chain(
+                    relaxer
+                        .get_direction()
+                        .keys()
+                        .flat_map(|invalid_subgraph| invalid_subgraph.hair.iter().cloned()),
+                )
+                .map(|edge_index| (edge_index, dual_module.get_edge_slack(edge_index)))
+                .collect();
+            relaxer = cluster
+                .relaxer_optimizer
+                .optimize_tune(relaxer, edge_slacks, dual_variables, dual_module);
             for (invalid_subgraph, grow_rate) in relaxer.get_direction() {
                 let (existing, dual_node_ptr) = interface_ptr.find_or_create_node(invalid_subgraph, dual_module);
                 if !existing {
@@ -439,24 +431,6 @@ impl PrimalModuleImpl for PrimalModuleSerial {
                     self.nodes.push(primal_node_ptr);
                     // println!("created dual_node: {:?}", dual_node_ptr.read_recursive().index);
                 }
-                // println!(
-                //     "setting dual_node_ptr: {:?} to grow_rate: {:?}",
-                //     dual_node_ptr.read_recursive().index,
-                //     grow_rate
-                // );
-                // if !should_optimize {
-                //     println!("can we infer from the current dual node ptr? : {:?}", dual_node_ptr);
-                //     // self.get_grow_rate(cluster_index, &dual_node_ptr);
-                //     let grow_rate = dual_module.calculate_grow_rate(&dual_node_ptr);
-                //     println!("calculated grow_rate: {:?}", grow_rate);
-                //     dual_module.set_grow_rate(&dual_node_ptr, grow_rate.clone());
-                // } else {
-                // didn't optimize, set the grow_rate correctly
-                println!(
-                    "setting dual_node_ptr: {:?} to grow_rate: {:?}",
-                    dual_node_ptr.read_recursive().index,
-                    grow_rate
-                );
                 dual_module.set_grow_rate_tune(&dual_node_ptr, grow_rate.clone());
                 // all_conflicts.extend(conflicts);
                 // dual_module.set_grow_rate(&dual_node_ptr, dual_node_ptr.read_recursive().get_dual_variable());
@@ -464,7 +438,7 @@ impl PrimalModuleImpl for PrimalModuleSerial {
                 impacted_nodes.insert(dual_node_ptr);
             }
 
-            println!("dual_nodes_changed: {:?}", impacted_nodes);
+            // println!("dual_nodes_changed: {:?}", impacted_nodes);
             for dual_node_ptr in impacted_nodes.iter() {
                 let edges = dual_module.get_edges_for_node(dual_node_ptr);
                 impacted_edges.extend(edges);
@@ -477,6 +451,8 @@ impl PrimalModuleImpl for PrimalModuleSerial {
             return (impacted_edges, impacted_nodes, false);
         }
 
+        // println!("here");
+
         // TODO idea: plugins can suggest subgraph (ideally, a global maximum), if so, then it will adopt th
         // subgraph with minimum weight from all plugins as the starting point to do local minimum
 
@@ -485,6 +461,12 @@ impl PrimalModuleImpl for PrimalModuleSerial {
         let initializer = interface.decoding_graph.model_graph.initializer.as_ref();
         let weight_of = |edge_index: EdgeIndex| initializer.weighted_edges[edge_index].weight;
         cluster.subgraph = Some(cluster.matrix.get_solution_local_minimum(weight_of).expect("satisfiable"));
+
+        // assert both impacted_edges and impacted_nodes are empty
+        assert!(impacted_edges.is_empty());
+        assert!(impacted_nodes.is_empty());
+
+        // FIXME: Change to use Options
         (impacted_edges, impacted_nodes, true)
     }
 }
@@ -732,7 +714,7 @@ impl PrimalModuleSerial {
         let interface = interface_ptr.read_recursive();
         let decoding_graph = &interface.decoding_graph;
         for conflict in group_max_update_length.into_iter() {
-            println!("resolving conflict: {:?}", conflict);
+            // println!("resolving conflict: {:?}", conflict);
             match conflict {
                 MaxUpdateLength::Conflicting(edge_index) => {
                     // union all the dual nodes in the edge index and create new dual node by adding this edge to `internal_edges`

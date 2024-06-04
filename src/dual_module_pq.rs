@@ -5,11 +5,11 @@
 //! Only debug tests are failing, which aligns with the dual_module_serial behavior
 //!
 
-use crate::dual_module::*;
 use crate::num_traits::{ToPrimitive, Zero};
-use crate::pointers::*;
 use crate::util::*;
 use crate::visualize::*;
+use crate::{add_shared_methods, dual_module::*};
+use crate::{dual_module, pointers::*};
 
 use core::panic;
 use std::{
@@ -255,6 +255,9 @@ where
     /// the global time of this dual module
     ///     Note: Wrap-around edge case is not currently considered
     global_time: ArcRwLock<Rational>,
+
+    /// the current mode of the dual module
+    mode: DualModuleMode,
 }
 
 impl<Queue> DualModulePQ<Queue>
@@ -304,6 +307,15 @@ where
             !node.get_dual_variable().is_negative(),
             "negative dual variable: check if events are 1) inserted and 2) handled correctly"
         );
+    }
+
+    fn is_searching(&self) -> bool {
+        matches!(self.mode(), DualModuleMode::Search)
+        // true
+    }
+
+    fn is_tuning(&self) -> bool {
+        matches!(self.mode(), DualModuleMode::Tune)
     }
 
     /// debugging function
@@ -486,7 +498,7 @@ where
             }
         }
         for node_ptr in nodes.iter() {
-            println!("node_ptr is {:?}", node_ptr);
+            // println!("node_ptr is {:?}", node_ptr);
             let node = node_ptr.read_recursive();
             if node.grow_rate.is_negative() && node.get_dual_variable().is_zero() {
                 conflicts.insert(MaxUpdateLength::ShrinkProhibited(node_ptr.clone()));
@@ -548,6 +560,7 @@ where
             edges,
             obstacle_queue: Queue::default(),
             global_time: ArcRwLock::new_value(Rational::zero()),
+            mode: DualModuleMode::default(),
         }
     }
 
@@ -558,6 +571,7 @@ where
 
         self.obstacle_queue.clear();
         self.global_time.write().set_zero();
+        self.mode_mut().reset();
     }
 
     #[allow(clippy::unnecessary_cast)]
@@ -586,7 +600,7 @@ where
         let dual_node_weak = dual_node_ptr.downgrade();
         let dual_node = dual_node_ptr.read_recursive();
 
-        if dual_node.grow_rate.is_negative() {
+        if self.is_searching() && dual_node.grow_rate.is_negative() {
             self.obstacle_queue.will_happen(
                 // it is okay to use global_time now, as this must be up-to-speed
                 dual_node.get_dual_variable().clone() / (-dual_node.grow_rate.clone()) + global_time.clone(),
@@ -605,7 +619,7 @@ where
             edge.grow_rate += &dual_node.grow_rate;
             edge.dual_nodes.push(dual_node_weak.clone());
 
-            if edge.grow_rate.is_positive() {
+            if self.is_searching() && edge.grow_rate.is_positive() {
                 self.obstacle_queue.will_happen(
                     // it is okay to use global_time now, as this must be up-to-speed
                     (edge.weight.clone() - edge.growth_at_last_updated_time.clone()) / edge.grow_rate.clone()
@@ -626,7 +640,7 @@ where
         let grow_rate_diff = &grow_rate - &dual_node.grow_rate;
 
         dual_node.grow_rate = grow_rate;
-        if dual_node.grow_rate.is_negative() {
+        if self.is_searching() && dual_node.grow_rate.is_negative() {
             self.obstacle_queue.will_happen(
                 // it is okay to use global_time now, as this must be up-to-speed
                 dual_node.get_dual_variable().clone() / (-dual_node.grow_rate.clone()) + global_time.clone(),
@@ -643,7 +657,7 @@ where
             self.update_edge_if_necessary(&mut edge);
 
             edge.grow_rate += &grow_rate_diff;
-            if edge.grow_rate.is_positive() {
+            if self.is_searching() && edge.grow_rate.is_positive() {
                 self.obstacle_queue.will_happen(
                     // it is okay to use global_time now, as this must be up-to-speed
                     (edge.weight.clone() - edge.growth_at_last_updated_time.clone()) / edge.grow_rate.clone()
@@ -687,6 +701,7 @@ where
     }
 
     fn compute_maximum_update_length(&mut self) -> GroupMaxUpdateLength {
+        // debug_assert!(!self.is_tuning(), "tuning mode is not supported"); // FIXME:!
         let global_time = self.global_time.read_recursive();
         // finding a valid event to process, only when invalids exist
         if Queue::MAY_BE_INVALID {
@@ -772,6 +787,14 @@ where
     /// is the edge saturated
     fn is_edge_tight(&self, edge_index: EdgeIndex) -> bool {
         self.get_edge_slack(edge_index).is_zero()
+    }
+
+    add_shared_methods!();
+
+    fn advance_mode(&mut self) {
+        self.mode_mut().advance();
+        self.obstacle_queue.clear();
+        self.sync();
     }
 }
 

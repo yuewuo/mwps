@@ -16,6 +16,49 @@ use crate::visualize::*;
 use std::collections::{BTreeSet, HashMap};
 use std::sync::Arc;
 
+#[derive(Default, Debug)]
+pub enum DualModuleMode {
+    /// Mode 1
+    #[default]
+    Search, // Searching for a solution
+
+    /// Mode 2
+    Tune, // Tuning for the optimal solution
+}
+
+impl DualModuleMode {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn advance(&mut self) {
+        match self {
+            Self::Search => *self = Self::Tune,
+            Self::Tune => panic!("dual module mode is already in tune mode"),
+        }
+    }
+
+    pub fn reset(&mut self) {
+        *self = Self::Search;
+    }
+}
+
+// Each dual_module impl should have mode and affinity_map, hence these methods should be shared
+#[macro_export]
+macro_rules! add_shared_methods {
+    () => {
+        /// Returns a reference to the mode field.
+        fn mode(&self) -> &DualModuleMode {
+            &self.mode
+        }
+
+        /// Returns a mutable reference to the mode field.
+        fn mode_mut(&mut self) -> &mut DualModuleMode {
+            &mut self.mode
+        }
+    };
+}
+
 pub struct DualNode {
     /// the index of this dual node, helps to locate internal details of this dual node
     pub index: NodeIndex,
@@ -249,6 +292,16 @@ pub trait DualModuleImpl {
     fn get_edge_nodes(&self, edge_index: EdgeIndex) -> Vec<DualNodePtr>;
     fn get_edge_slack(&self, edge_index: EdgeIndex) -> Rational;
     fn is_edge_tight(&self, edge_index: EdgeIndex) -> bool;
+
+    /// mode mangements
+    fn mode(&self) -> &DualModuleMode;
+    fn mode_mut(&mut self) -> &mut DualModuleMode;
+    fn advance_mode(&mut self) {
+        println!("this dual_module does not imlement different modes");
+    }
+    fn reset_mode(&mut self) {
+        *self.mode_mut() = DualModuleMode::default();
+    }
 }
 
 impl MaxUpdateLength {
