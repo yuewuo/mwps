@@ -1,4 +1,5 @@
 use crate::mwpf_solver::*;
+#[cfg(not(feature = "float_lp"))]
 use crate::num_rational;
 use crate::num_traits::ToPrimitive;
 use crate::rand_xoshiro;
@@ -17,7 +18,9 @@ pub type Weight = usize; // only used as input, all internal weight representati
 cfg_if::cfg_if! {
     if #[cfg(feature="r64_weight")] {
         pub type Rational = num_rational::Rational64;
-    } else {
+    } else if #[cfg(feature="float_lp")] {
+        pub type Rational = crate::ordered_float::OrderedFloat;
+    } else  {
         pub type Rational = num_rational::BigRational;
     }
 }
@@ -114,10 +117,18 @@ impl SolverInitializer {
         let mut defect_vertices = defect_vertices.to_owned();
         defect_vertices.sort();
         if defect_vertices.len() != subgraph_defect_vertices.len() {
+            println!(
+                "defect vertices: {:?}, subgraph_defect_vertices: {:?}",
+                defect_vertices, subgraph_defect_vertices
+            );
             return false;
         }
         for i in 0..defect_vertices.len() {
             if defect_vertices[i] != subgraph_defect_vertices[i] {
+                println!(
+                    "defect vertices: {:?}, subgraph_defect_vertices: {:?}",
+                    defect_vertices, subgraph_defect_vertices
+                );
                 return false;
             }
         }

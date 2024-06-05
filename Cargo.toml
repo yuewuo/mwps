@@ -35,11 +35,11 @@ path = "src/main.rs"
 debug = true
 
 [features]
-# to enable a feature, use `--features xxx`
 default = ["cli"]
 cli = ["pbr"]
 r64_weight = []                 # use Rational64 instead of BigRational as weight type
-f64_weight = []                 # use f64 instead of BigRational as weight type
+f64_weight = ["float_lp"]       # use f64 instead of BigRational as weight type
+f32_weight = ["float_lp"]       # use f64 instead of BigRational as weight type
 u32_index = []                  # use u32 instead of usize as index type, to save memory
 python_binding = ["pyo3"]       # bind to Python
 wasm_binding = ["wasm-bindgen"] # bind to wasm
@@ -89,3 +89,4 @@ test-case = "3.1.0"
 [package.metadata.docs.rs]
 rustdoc-args = ["--html-in-header", "katex-header.html"]
 # to run locally: `RUSTDOCFLAGS="--html-in-header katex-header.html" cargo doc --no-deps`
+# to enable a feature, use `--features xxx`
