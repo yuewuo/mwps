@@ -58,7 +58,7 @@ pub enum Obstacle {
 
 impl Obstacle {
     /// return if the current obstacle is valid, only needed for pq that allows for invalid (duplicates that are different) events
-    fn is_valid<Queue: FutureQueueMethods<Rational, Obstacle> + Default>(
+    fn is_valid<Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug>(
         &self,
         dual_module_pq: &DualModulePQ<Queue>,
         event_time: &Rational, // time associated with the obstacle
@@ -68,7 +68,7 @@ impl Obstacle {
             Obstacle::Conflict { edge_index } => {
                 let edge = dual_module_pq.edges[*edge_index as usize].read_recursive();
                 // not changing, cannot have conflict
-                if edge.grow_rate.is_zero() {
+                if !edge.grow_rate.is_positive() {
                     return false;
                 }
                 let growth_at_event_time =
@@ -230,7 +230,7 @@ impl std::fmt::Debug for EdgeWeak {
 /* the actual dual module */
 pub struct DualModulePQ<Queue>
 where
-    Queue: FutureQueueMethods<Rational, Obstacle> + Default,
+    Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug,
 {
     /// all vertices including virtual ones
     pub vertices: Vec<VertexPtr>,
@@ -246,7 +246,7 @@ where
 
 impl<Queue> DualModulePQ<Queue>
 where
-    Queue: FutureQueueMethods<Rational, Obstacle> + Default,
+    Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug,
 {
     /// helper function to bring an edge update to speed with current time if needed
     fn update_edge_if_necessary(&self, edge: &mut RwLockWriteGuard<RawRwLock, Edge>) {
@@ -552,7 +552,7 @@ where
 
 impl<Queue> MWPSVisualizer for DualModulePQ<Queue>
 where
-    Queue: FutureQueueMethods<Rational, Obstacle> + Default,
+    Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug,
 {
     fn snapshot(&self, abbrev: bool) -> serde_json::Value {
         let mut vertices: Vec<serde_json::Value> = vec![];

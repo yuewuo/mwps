@@ -32,7 +32,7 @@ mwpf.egg-info/
 *.DS_Store
 .vscode
 .idea
-/misc
+misc/
 
 # rust bug reports
 rustc-ice*
@@ -44,3 +44,6 @@ rustc-ice*
 /tutorial-dist/
 
 *-uncompressed.png
+
+# logs
+*.log
