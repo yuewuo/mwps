@@ -9,10 +9,13 @@ use clap::{Parser, Subcommand, ValueEnum};
 use more_asserts::assert_le;
 use num_traits::FromPrimitive;
 use pbr::ProgressBar;
+use rand::rngs::SmallRng;
+use rand::RngCore;
 use rand::{thread_rng, Rng, SeedableRng};
 use serde::Serialize;
 use serde_variant::to_variant_name;
 use std::env;
+use std::os::unix::thread;
 
 const TEST_EACH_ROUNDS: usize = 100;
 
@@ -99,6 +102,9 @@ pub struct BenchmarkParameters {
     /// skip some iterations, useful when debugging
     #[clap(long, default_value_t = 0)]
     starting_iteration: usize,
+    /// apply deterministic seed for debugging purpose
+    #[clap(long, action)]
+    apply_deterministic_seed: Option<u64>,
 }
 
 #[derive(Subcommand, Clone, Debug)]
@@ -283,6 +289,7 @@ impl Cli {
                 print_syndrome_pattern,
                 starting_iteration,
                 print_error_pattern,
+                apply_deterministic_seed,
             }) => {
                 // whether to disable progress bar, useful when running jobs in background
                 let disable_progress_bar = env::var("DISABLE_PROGRESS_BAR").is_ok();
@@ -310,10 +317,20 @@ impl Cli {
                     }
                     None
                 };
-                let mut rng = thread_rng();
+
+                // let mut rng = thread_rng();
+                thread_rng().gen::<u64>();
+                let mut seed = match apply_deterministic_seed {
+                    Some(seed) => seed,
+                    None => thread_rng().gen::<u64>(),
+                };
+                let mut rng = SmallRng::seed_from_u64(seed);
+                println!("ORIGINAL rng seed: {:?}", seed);
                 for round in (starting_iteration as u64)..(total_rounds as u64) {
                     pb.as_mut().map(|pb| pb.set(round));
-                    let seed = if use_deterministic_seed { round } else { rng.gen() };
+                    // let seed = if use_deterministic_seed { round } else { rng.gen() };
+                    seed = rng.next_u64();
+                    println!("{:?}", seed);
                     let (syndrome_pattern, error_pattern) = code.generate_random_errors(seed);
                     if print_syndrome_pattern {
                         println!("syndrome_pattern: {:?}", syndrome_pattern);

@@ -228,14 +228,15 @@ impl RelaxerOptimizer {
             let solution = solved.get_solution();
 
             // calculate the objective function
-            let mut res = 0.0;
+            let mut res = OrderedFloat::new(0.0);
             let cols = solution.columns();
             for i in 0..x_vars.len() {
-                res += cols[2 * i] - cols[2 * i + 1];
+                res += OrderedFloat::new(cols[2 * i] - cols[2 * i + 1]);
             }
 
             // check positivity of the objective
-            if !res.is_positive() {
+            if !(res.is_positive()) {
+                println!("early return");
                 return relaxer;
             }
 
@@ -246,6 +247,7 @@ impl RelaxerOptimizer {
                 }
             }
         } else {
+            // println!("solved status: {:?}", solved.status());
             unreachable!();
         }
 

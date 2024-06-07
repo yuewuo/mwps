@@ -74,9 +74,10 @@ impl std::fmt::Debug for DualNodePtr {
         let global_time = dual_node.global_time.as_ref().unwrap_or(&new).read_recursive();
         write!(
             f,
-            "\n\t\tindex: {}, global_time: {:?}, dual_variable: {}\n\t\tdual_variable_at_last_updated_time: {}, last_updated_time: {}",
+            "\n\t\tindex: {}, global_time: {:?}, grow_rate: {:?}, dual_variable: {}\n\t\tdual_variable_at_last_updated_time: {}, last_updated_time: {}\n",
             dual_node.index,
             global_time,
+            dual_node.grow_rate,
             dual_node.get_dual_variable(),
             dual_node.dual_variable_at_last_updated_time,
             dual_node.last_updated_time
@@ -161,6 +162,11 @@ pub enum GroupMaxUpdateLength {
 
 /// common trait that must be implemented for each implementation of dual module
 pub trait DualModuleImpl {
+    // dual_module.rs
+    fn debug_print(&self) {
+        println!("this dual_module doesn't support this print");
+    }
+
     /// create a new dual module with empty syndrome
     fn new_empty(initializer: &SolverInitializer) -> Self;
 
