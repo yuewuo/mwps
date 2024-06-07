@@ -448,11 +448,6 @@ where
 
     #[allow(clippy::unnecessary_cast)]
     fn set_grow_rate(&mut self, dual_node_ptr: &DualNodePtr, grow_rate: Rational) {
-        // println!(
-        //     "set_grow_rate: dual_node index: {:?}, grow_rate: {:?}",
-        //     dual_node_ptr.read_recursive().index,
-        //     grow_rate,
-        // );
         let mut dual_node = dual_node_ptr.write();
         self.update_dual_node_if_necessary(&mut dual_node);
 

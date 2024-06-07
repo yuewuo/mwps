@@ -109,20 +109,15 @@ pub trait PrimalModuleImpl {
         F: FnMut(&DualModuleInterfacePtr, &mut D, &mut Self, &GroupMaxUpdateLength),
     {
         let mut group_max_update_length = dual_module.compute_maximum_update_length();
-        // println!("group_max_update_length: {:?}", group_max_update_length);
-        // dual_module.debug_print();
 
         while !group_max_update_length.is_unbounded() {
             callback(interface, dual_module, self, &group_max_update_length);
             if let Some(length) = group_max_update_length.get_valid_growth() {
-                // println!("\ngrow {:?}\n", length);
                 dual_module.grow(length);
             } else {
                 self.resolve(group_max_update_length, interface, dual_module);
             }
             group_max_update_length = dual_module.compute_maximum_update_length();
-            // println!("group_max_update_length: {:?}", group_max_update_length);
-            // dual_module.debug_print();
         }
     }
 
