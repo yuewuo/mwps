@@ -102,8 +102,8 @@ pub fn get_version() -> String {
 
 #[cfg(feature = "f64_weight")]
 type BaseFloat = f64;
-#[cfg(ffeature = "32_weight")]
-type BaseFloat = f32;
+#[cfg(feature = "f32_weight")]
+type BaseFloat = f32; // there's actually no point in using this, as HIGHs don't support f32
 
 #[cfg(feature = "float_lp")]
 pub mod ordered_float {
