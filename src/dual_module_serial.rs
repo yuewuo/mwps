@@ -120,6 +120,11 @@ impl std::fmt::Debug for EdgeWeak {
 }
 
 impl DualModuleImpl for DualModuleSerial {
+    // dual_module_serial
+    fn debug_print(&self) {
+        println!("\n[current states]");
+        println!("edges: {:?}", self.edges);
+    }
     /// initialize the dual module, which is supposed to be reused for multiple decoding tasks with the same structure
     #[allow(clippy::unnecessary_cast)]
     fn new_empty(initializer: &SolverInitializer) -> Self {

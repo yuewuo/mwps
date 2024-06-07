@@ -22,7 +22,7 @@ use num_traits::{FromPrimitive, Signed};
 use parking_lot::{lock_api::RwLockWriteGuard, RawRwLock};
 
 /* Helper structs for events/obstacles during growing */
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct FutureEvent<T: Ord + PartialEq + Eq, E> {
     /// when the event will happen
     pub time: T,
@@ -50,7 +50,7 @@ impl<T: Ord + PartialEq + Eq, E> PartialOrd for FutureEvent<T, E> {
     }
 }
 
-#[derive(PartialEq, Eq, Debug)]
+#[derive(PartialEq, Eq, Debug, Clone)]
 pub enum Obstacle {
     Conflict { edge_index: EdgeIndex },
     ShrinkToZero { dual_node_ptr: DualNodePtr },
@@ -58,7 +58,7 @@ pub enum Obstacle {
 
 impl Obstacle {
     /// return if the current obstacle is valid, only needed for pq that allows for invalid (duplicates that are different) events
-    fn is_valid<Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug>(
+    fn is_valid<Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug + Clone>(
         &self,
         dual_module_pq: &DualModulePQ<Queue>,
         event_time: &Rational, // time associated with the obstacle
@@ -239,7 +239,7 @@ impl std::fmt::Debug for EdgeWeak {
 /* the actual dual module */
 pub struct DualModulePQ<Queue>
 where
-    Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug,
+    Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug + Clone,
 {
     /// all vertices including virtual ones
     pub vertices: Vec<VertexPtr>,
@@ -259,7 +259,7 @@ where
 
 impl<Queue> DualModulePQ<Queue>
 where
-    Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug,
+    Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug + Clone,
 {
     /// helper function to bring an edge update to speed with current time if needed
     fn update_edge_if_necessary(&self, edge: &mut RwLockWriteGuard<RawRwLock, Edge>) {
@@ -327,8 +327,30 @@ pub type DualModulePQWeak<Queue> = WeakRwLock<DualModulePQ<Queue>>;
 
 impl<Queue> DualModuleImpl for DualModulePQ<Queue>
 where
-    Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug,
+    Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug + Clone,
 {
+    fn debug_print(&self) {
+        println!("\n[current states]");
+        println!("global time: {:?}", self.global_time.read_recursive());
+        println!(
+            "edges: {:?}",
+            self.edges
+                .iter()
+                .filter(|e| !e.read_recursive().grow_rate.is_zero())
+                .collect::<Vec<&EdgePtr>>()
+        );
+        println!("printing obstacle queue");
+        // print each element of the queue on a separate line
+        let mut obstacle_queue = self.obstacle_queue.clone();
+        let mut events = vec![];
+        while let Some((time, event)) = obstacle_queue.pop_event() {
+            events.push((time, event));
+        }
+        for (time, event) in events {
+            println!("\ttime: {:?}, event: {:?}", time, event);
+        }
+    }
+
     /// initialize the dual module, which is supposed to be reused for multiple decoding tasks with the same structure
     #[allow(clippy::unnecessary_cast)]
     fn new_empty(initializer: &SolverInitializer) -> Self {
@@ -454,6 +476,11 @@ where
 
     #[allow(clippy::unnecessary_cast)]
     fn set_grow_rate(&mut self, dual_node_ptr: &DualNodePtr, grow_rate: Rational) {
+        // println!(
+        //     "set_grow_rate: dual_node index: {:?}, grow_rate: {:?}",
+        //     dual_node_ptr.read_recursive().index,
+        //     grow_rate,
+        // );
         let mut dual_node = dual_node_ptr.write();
         // println!("set_grow_rate invoked on {:?}, to be {:?}", dual_node.index, grow_rate);
         self.update_dual_node_if_necessary(&mut dual_node);
@@ -687,7 +714,7 @@ where
 
 impl<Queue> MWPSVisualizer for DualModulePQ<Queue>
 where
-    Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug,
+    Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug + Clone,
 {
     fn snapshot(&self, abbrev: bool) -> serde_json::Value {
         let mut vertices: Vec<serde_json::Value> = vec![];

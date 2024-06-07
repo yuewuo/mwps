@@ -67,7 +67,7 @@ parking_lot = { version = "0.12.1", features = ["hardware-lock-elision"] }
 num-rational = "0.4.1"
 num-traits = "0.2.15"
 more-asserts = "0.3.1"
-rand = "0.8.5"
+rand = { version = "0.8.5", features = ["small_rng"] }
 prettytable-rs = "0.10.0"
 itertools = "0.11.0"
 cfg-if = "1.0.0"
