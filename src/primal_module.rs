@@ -133,8 +133,6 @@ pub trait PrimalModuleImpl {
     {
         // Search, this part is unchanged
         let mut group_max_update_length = dual_module.compute_maximum_update_length();
-        // println!("group_max_update_length: {:?}", group_max_update_length);
-        // dual_module.debug_print();
 
         while !group_max_update_length.is_unbounded() {
             callback(interface, dual_module, self, &group_max_update_length);
