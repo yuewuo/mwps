@@ -15,7 +15,6 @@ use rand::{thread_rng, Rng, SeedableRng};
 use serde::Serialize;
 use serde_variant::to_variant_name;
 use std::env;
-use std::os::unix::thread;
 
 const TEST_EACH_ROUNDS: usize = 100;
 
@@ -325,12 +324,11 @@ impl Cli {
                     None => thread_rng().gen::<u64>(),
                 };
                 let mut rng = SmallRng::seed_from_u64(seed);
-                println!("ORIGINAL rng seed: {:?}", seed);
+                // println!("ORIGINAL rng seed: {:?}", seed);
                 for round in (starting_iteration as u64)..(total_rounds as u64) {
                     pb.as_mut().map(|pb| pb.set(round));
-                    // let seed = if use_deterministic_seed { round } else { rng.gen() };
-                    seed = rng.next_u64();
-                    println!("{:?}", seed);
+                    seed = if use_deterministic_seed { round } else { rng.next_u64() };
+                    // println!("{:?}", seed);
                     let (syndrome_pattern, error_pattern) = code.generate_random_errors(seed);
                     if print_syndrome_pattern {
                         println!("syndrome_pattern: {:?}", syndrome_pattern);
