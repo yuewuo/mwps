@@ -35,6 +35,7 @@ path = "src/main.rs"
 debug = true
 
 [features]
+# to enable a feature, use `--features xxx`
 default = ["cli"]
 cli = ["pbr"]
 r64_weight = []                 # use Rational64 instead of BigRational as weight type
@@ -87,6 +88,5 @@ serde_variant = "0.1.3"
 test-case = "3.1.0"
 
 [package.metadata.docs.rs]
-rustdoc-args = ["--html-in-header", "katex-header.html"]
 # to run locally: `RUSTDOCFLAGS="--html-in-header katex-header.html" cargo doc --no-deps`
-# to enable a feature, use `--features xxx`
+rustdoc-args = ["--html-in-header", "katex-header.html"]
