@@ -82,6 +82,8 @@ qecp = { version = "0.2.4", optional = true, default-features = false, features 
     "fusion_blossom",
 ] }
 serde_variant = "0.1.3"
+rayon = "1.7.0"
+weak-table = "0.3.2"
 
 [dev-dependencies]
 test-case = "3.1.0"

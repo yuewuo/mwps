@@ -1,4 +1,5 @@
 use crate::mwpf_solver::*;
+use crate::pointers::*;
 use crate::num_rational;
 use crate::num_traits::ToPrimitive;
 use crate::rand_xoshiro;
@@ -149,6 +150,9 @@ impl SolverInitializer {
         defect_vertices
     }
 }
+
+/// timestamp type determines how many fast clear before a hard clear is required, see [`FastClear`]
+pub type FastClearTimestamp = usize;
 
 impl MWPSVisualizer for SolverInitializer {
     fn snapshot(&self, abbrev: bool) -> serde_json::Value {

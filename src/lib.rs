@@ -26,6 +26,9 @@ extern crate urlencoding;
 #[cfg(feature = "wasm_binding")]
 extern crate wasm_bindgen;
 
+extern crate rayon;
+extern crate weak_table;
+
 #[cfg(feature = "cli")]
 pub mod cli;
 pub mod decoding_hypergraph;
