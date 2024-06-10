@@ -359,6 +359,9 @@ impl Cli {
                     }
                     println!();
                 }
+
+                println!("total resolve time {:?}", benchmark_profiler.sum_round_time);
+
             }
             Commands::MatrixSpeed(parameters) => {
                 let MatrixSpeedParameters {

@@ -13,7 +13,7 @@ use derivative::Derivative;
 use num_traits::Signed;
 use num_traits::{One, Zero};
 use std::collections::{BTreeMap, BTreeSet};
-use std::str::FromStr;
+// use std::str::FromStr;
 use std::sync::Arc;
 
 #[derive(Derivative)]
@@ -145,14 +145,10 @@ impl RelaxerOptimizer {
                 if !optimal_objective.is_positive() {
                     return relaxer;
                 }
-                for (var_index, (invalid_subgraph, _)) in dual_variables.iter().enumerate() {
+                for (var_index, (invalid_subgraph, _)) in dual_variables.into_iter().enumerate() {
                     let overall_growth = model[var_index].clone() - model[var_index + x_vars.len()].clone();
                     if !overall_growth.is_zero() {
-                        direction.insert(
-                            invalid_subgraph.clone(),
-                            Rational::from_str(&overall_growth.numer().to_string()).unwrap()
-                                / Rational::from_str(&overall_growth.denom().to_string()).unwrap(),
-                        );
+                        direction.insert(invalid_subgraph, overall_growth);
                     }
                 }
             }
