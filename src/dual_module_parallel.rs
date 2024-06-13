@@ -1223,587 +1223,602 @@ pub struct Interface {
     pub data: Weak<InterfaceData>,
 }
 
+// #[cfg(test)]
+// pub mod tests {
+//     use super::super::example_codes::*;
+//     use super::super::primal_module::*;
+//     use super::super::primal_module_serial::*;
+//     use super::*;
+
+//     pub fn dual_module_parallel_basic_standard_syndrome_optional_viz<F>(
+//         mut code: impl ExampleCode,
+//         visualize_filename: Option<String>,
+//         mut defect_vertices: Vec<VertexIndex>,
+//         final_dual: Weight,
+//         partition_func: F,
+//         reordered_vertices: Option<Vec<VertexIndex>>,
+//     ) -> (
+//         DualModuleInterfacePtr,
+//         PrimalModuleSerialPtr,
+//         DualModuleParallel<DualModuleSerial>,
+//     )
+//     where
+//         F: Fn(&SolverInitializer, &mut PartitionConfig),
+//     {
+//         println!("{defect_vertices:?}");
+//         println!("helaodfadfalkfjalskfjsa");
+//         if let Some(reordered_vertices) = &reordered_vertices {
+//             code.reorder_vertices(reordered_vertices);
+//             defect_vertices = translated_defect_to_reordered(reordered_vertices, &defect_vertices);
+//         }
+//         let mut visualizer = match visualize_filename.as_ref() {
+//             Some(visualize_filename) => {
+//                 let visualizer = Visualizer::new(
+//                     Some(visualize_data_folder() + visualize_filename.as_str()),
+//                     code.get_positions(),
+//                     true,
+//                 )
+//                 .unwrap();
+//                 print_visualize_link(visualize_filename.clone());
+//                 Some(visualizer)
+//             }
+//             None => None,
+//         };
+//         let initializer = code.get_initializer();
+//         let mut partition_config = PartitionConfig::new(initializer.vertex_num);
+//         partition_func(&initializer, &mut partition_config);
+//         println!("partition_config: {partition_config:?}");
+//         let partition_info = partition_config.info();
+//         // create dual module
+//         let mut dual_module =
+//             DualModuleParallel::new_config(&initializer, &partition_info, DualModuleParallelConfig::default());
+//         dual_module.static_fuse_all();
+//         // create primal module
+//         let mut primal_module = PrimalModuleSerialPtr::new_empty(&initializer);
+//         primal_module.write().debug_resolve_only_one = true; // to enable debug mode
+//                                                              // try to work on a simple syndrome
+//         code.set_defect_vertices(&defect_vertices);
+//         let interface_ptr = DualModuleInterfacePtr::new_empty();
+//         primal_module.solve_visualizer(&interface_ptr, &code.get_syndrome(), &mut dual_module, visualizer.as_mut());
+//         let perfect_matching = primal_module.perfect_matching(&interface_ptr, &mut dual_module);
+//         let mut subgraph_builder = SubGraphBuilder::new(&initializer);
+//         subgraph_builder.load_perfect_matching(&perfect_matching);
+//         let subgraph = subgraph_builder.get_subgraph();
+//         if let Some(visualizer) = visualizer.as_mut() {
+//             visualizer
+//                 .snapshot_combined(
+//                     "perfect matching and subgraph".to_string(),
+//                     vec![
+//                         &interface_ptr,
+//                         &dual_module,
+//                         &perfect_matching,
+//                         &VisualizeSubgraph::new(&subgraph),
+//                     ],
+//                 )
+//                 .unwrap();
+//         }
+//         assert_eq!(
+//             interface_ptr.sum_dual_variables(),
+//             subgraph_builder.total_weight(),
+//             "unmatched sum dual variables"
+//         );
+//         assert_eq!(
+//             interface_ptr.sum_dual_variables(),
+//             final_dual * 2,
+//             "unexpected final dual variable sum"
+//         );
+//         (interface_ptr, primal_module, dual_module)
+//     }
+
+//     pub fn dual_module_parallel_standard_syndrome<F>(
+//         code: impl ExampleCode,
+//         visualize_filename: String,
+//         defect_vertices: Vec<VertexIndex>,
+//         final_dual: Weight,
+//         partition_func: F,
+//         reordered_vertices: Option<Vec<VertexIndex>>,
+//     ) -> (
+//         DualModuleInterfacePtr,
+//         PrimalModuleSerialPtr,
+//         DualModuleParallel<DualModuleSerial>,
+//     )
+//     where
+//         F: Fn(&SolverInitializer, &mut PartitionConfig),
+//     {
+//         dual_module_parallel_basic_standard_syndrome_optional_viz(
+//             code,
+//             Some(visualize_filename),
+//             defect_vertices,
+//             final_dual,
+//             partition_func,
+//             reordered_vertices,
+//         )
+//     }
+
+//     #[test]
+//     fn temp_test_print_hello() {
+//         println!("print hello!");
+//     }
+
+//     /// test a simple case
+//     #[test]
+//     fn dual_module_parallel_basic_1() {
+//         // cargo test dual_module_parallel_basic_1 -- --nocapture
+//         println!("hello there! ");
+//         let visualize_filename = "dual_module_parallel_basic_1.json".to_string();
+//         let defect_vertices = vec![39, 52, 63, 90, 100];
+//         let half_weight = 500;
+//         dual_module_parallel_standard_syndrome(
+//             CodeCapacityPlanarCode::new(11, 0.1, half_weight),
+//             visualize_filename,
+//             defect_vertices,
+//             9 * half_weight,
+//             |initializer, _config| {
+//                 println!("initializer: {initializer:?}");
+//             },
+//             None,
+//         );
+//     }
+
+//     /// split into 2, with no syndrome vertex on the interface
+//     #[test]
+//     fn dual_module_parallel_basic_2() {
+//         // cargo test dual_module_parallel_basic_2 -- --nocapture
+//         let visualize_filename = "dual_module_parallel_basic_2.json".to_string();
+//         let defect_vertices = vec![39, 52, 63, 90, 100];
+//         let half_weight = 500;
+//         dual_module_parallel_standard_syndrome(
+//             CodeCapacityPlanarCode::new(11, 0.1, half_weight),
+//             visualize_filename,
+//             defect_vertices,
+//             9 * half_weight,
+//             |_initializer, config| {
+//                 config.partitions = vec![
+//                     VertexRange::new(0, 72),   // unit 0
+//                     VertexRange::new(84, 132), // unit 1
+//                 ];
+//                 config.fusions = vec![
+//                     (0, 1), // unit 2, by fusing 0 and 1
+//                 ];
+//             },
+//             None,
+//         );
+//     }
+
+//     /// split into 2, with a syndrome vertex on the interface
+//     #[test]
+//     fn dual_module_parallel_basic_3() {
+//         // cargo test dual_module_parallel_basic_3 -- --nocapture
+//         let visualize_filename = "dual_module_parallel_basic_3.json".to_string();
+//         let defect_vertices = vec![39, 52, 63, 90, 100];
+//         let half_weight = 500;
+//         dual_module_parallel_standard_syndrome(
+//             CodeCapacityPlanarCode::new(11, 0.1, half_weight),
+//             visualize_filename,
+//             defect_vertices,
+//             9 * half_weight,
+//             |_initializer, config| {
+//                 config.partitions = vec![
+//                     VertexRange::new(0, 60),   // unit 0
+//                     VertexRange::new(72, 132), // unit 1
+//                 ];
+//                 config.fusions = vec![
+//                     (0, 1), // unit 2, by fusing 0 and 1
+//                 ];
+//             },
+//             None,
+//         );
+//     }
+
+//     /// split into 4, with no syndrome vertex on the interface
+//     #[test]
+//     fn dual_module_parallel_basic_4() {
+//         // cargo test dual_module_parallel_basic_4 -- --nocapture
+//         let visualize_filename = "dual_module_parallel_basic_4.json".to_string();
+//         // reorder vertices to enable the partition;
+//         let defect_vertices = vec![39, 52, 63, 90, 100]; // indices are before the reorder
+//         let half_weight = 500;
+//         dual_module_parallel_standard_syndrome(
+//             CodeCapacityPlanarCode::new(11, 0.1, half_weight),
+//             visualize_filename,
+//             defect_vertices,
+//             9 * half_weight,
+//             |_initializer, config| {
+//                 config.partitions = vec![
+//                     VertexRange::new(0, 36),
+//                     VertexRange::new(42, 72),
+//                     VertexRange::new(84, 108),
+//                     VertexRange::new(112, 132),
+//                 ];
+//                 config.fusions = vec![(0, 1), (2, 3), (4, 5)];
+//             },
+//             Some({
+//                 let mut reordered_vertices = vec![];
+//                 let split_horizontal = 6;
+//                 let split_vertical = 5;
+//                 for i in 0..split_horizontal {
+//                     // left-top block
+//                     for j in 0..split_vertical {
+//                         reordered_vertices.push(i * 12 + j);
+//                     }
+//                     reordered_vertices.push(i * 12 + 11);
+//                 }
+//                 for i in 0..split_horizontal {
+//                     // interface between the left-top block and the right-top block
+//                     reordered_vertices.push(i * 12 + split_vertical);
+//                 }
+//                 for i in 0..split_horizontal {
+//                     // right-top block
+//                     for j in (split_vertical + 1)..10 {
+//                         reordered_vertices.push(i * 12 + j);
+//                     }
+//                     reordered_vertices.push(i * 12 + 10);
+//                 }
+//                 {
+//                     // the big interface between top and bottom
+//                     for j in 0..12 {
+//                         reordered_vertices.push(split_horizontal * 12 + j);
+//                     }
+//                 }
+//                 for i in (split_horizontal + 1)..11 {
+//                     // left-bottom block
+//                     for j in 0..split_vertical {
+//                         reordered_vertices.push(i * 12 + j);
+//                     }
+//                     reordered_vertices.push(i * 12 + 11);
+//                 }
+//                 for i in (split_horizontal + 1)..11 {
+//                     // interface between the left-bottom block and the right-bottom block
+//                     reordered_vertices.push(i * 12 + split_vertical);
+//                 }
+//                 for i in (split_horizontal + 1)..11 {
+//                     // right-bottom block
+//                     for j in (split_vertical + 1)..10 {
+//                         reordered_vertices.push(i * 12 + j);
+//                     }
+//                     reordered_vertices.push(i * 12 + 10);
+//                 }
+//                 reordered_vertices
+//             }),
+//         );
+//     }
+
+//     /// split into 4, with 2 defect vertices on parent interfaces
+//     #[test]
+//     fn dual_module_parallel_basic_5() {
+//         // cargo test dual_module_parallel_basic_5 -- --nocapture
+//         let visualize_filename = "dual_module_parallel_basic_5.json".to_string();
+//         // reorder vertices to enable the partition;
+//         let defect_vertices = vec![39, 52, 63, 90, 100]; // indices are before the reorder
+//         let half_weight = 500;
+//         dual_module_parallel_standard_syndrome(
+//             CodeCapacityPlanarCode::new(11, 0.1, half_weight),
+//             visualize_filename,
+//             defect_vertices,
+//             9 * half_weight,
+//             |_initializer, config| {
+//                 config.partitions = vec![
+//                     VertexRange::new(0, 25),
+//                     VertexRange::new(30, 60),
+//                     VertexRange::new(72, 97),
+//                     VertexRange::new(102, 132),
+//                 ];
+//                 config.fusions = vec![(0, 1), (2, 3), (4, 5)];
+//             },
+//             Some({
+//                 let mut reordered_vertices = vec![];
+//                 let split_horizontal = 5;
+//                 let split_vertical = 4;
+//                 for i in 0..split_horizontal {
+//                     // left-top block
+//                     for j in 0..split_vertical {
+//                         reordered_vertices.push(i * 12 + j);
+//                     }
+//                     reordered_vertices.push(i * 12 + 11);
+//                 }
+//                 for i in 0..split_horizontal {
+//                     // interface between the left-top block and the right-top block
+//                     reordered_vertices.push(i * 12 + split_vertical);
+//                 }
+//                 for i in 0..split_horizontal {
+//                     // right-top block
+//                     for j in (split_vertical + 1)..10 {
+//                         reordered_vertices.push(i * 12 + j);
+//                     }
+//                     reordered_vertices.push(i * 12 + 10);
+//                 }
+//                 {
+//                     // the big interface between top and bottom
+//                     for j in 0..12 {
+//                         reordered_vertices.push(split_horizontal * 12 + j);
+//                     }
+//                 }
+//                 for i in (split_horizontal + 1)..11 {
+//                     // left-bottom block
+//                     for j in 0..split_vertical {
+//                         reordered_vertices.push(i * 12 + j);
+//                     }
+//                     reordered_vertices.push(i * 12 + 11);
+//                 }
+//                 for i in (split_horizontal + 1)..11 {
+//                     // interface between the left-bottom block and the right-bottom block
+//                     reordered_vertices.push(i * 12 + split_vertical);
+//                 }
+//                 for i in (split_horizontal + 1)..11 {
+//                     // right-bottom block
+//                     for j in (split_vertical + 1)..10 {
+//                         reordered_vertices.push(i * 12 + j);
+//                     }
+//                     reordered_vertices.push(i * 12 + 10);
+//                 }
+//                 reordered_vertices
+//             }),
+//         );
+//     }
+
+//     fn dual_module_parallel_debug_repetition_code_common(
+//         d: VertexNum,
+//         visualize_filename: String,
+//         defect_vertices: Vec<VertexIndex>,
+//         final_dual: Weight,
+//     ) {
+//         let half_weight = 500;
+//         let split_vertical = (d + 1) / 2;
+//         dual_module_parallel_standard_syndrome(
+//             CodeCapacityRepetitionCode::new(d, 0.1, half_weight),
+//             visualize_filename,
+//             defect_vertices,
+//             final_dual * half_weight,
+//             |initializer, config| {
+//                 config.partitions = vec![
+//                     VertexRange::new(0, split_vertical + 1),
+//                     VertexRange::new(split_vertical + 2, initializer.vertex_num),
+//                 ];
+//                 config.fusions = vec![(0, 1)];
+//             },
+//             Some({
+//                 let mut reordered_vertices = vec![];
+//                 for j in 0..split_vertical {
+//                     reordered_vertices.push(j);
+//                 }
+//                 reordered_vertices.push(d);
+//                 for j in split_vertical..d {
+//                     reordered_vertices.push(j);
+//                 }
+//                 reordered_vertices
+//             }),
+//         );
+//     }
+
+//     /// debug blossom not growing properly
+//     #[test]
+//     fn dual_module_parallel_debug_1() {
+//         // cargo test dual_module_parallel_debug_1 -- --nocapture
+//         let visualize_filename = "dual_module_parallel_debug_1.json".to_string();
+//         let defect_vertices = vec![2, 3, 4, 5, 6, 7, 8]; // indices are before the reorder
+//         dual_module_parallel_debug_repetition_code_common(11, visualize_filename, defect_vertices, 5);
+//     }
+
+//     /// debug 'internal error: entered unreachable code: VertexShrinkStop conflict cannot be solved by primal module
+//     /// the reason of this bug is that a shrinking node on the interface is sandwiched by two growing nodes resides on different children units
+//     /// for the serial implementation, this event can be easily handled by doing special configs
+//     /// but for the fused units, how to do it?
+//     /// This is the benefit of using software to develop first; if directly working on the hardware implementation, one would have to add more interface
+//     /// to support it, which could be super time-consuming
+//     #[test]
+//     fn dual_module_parallel_debug_2() {
+//         // cargo test dual_module_parallel_debug_2 -- --nocapture
+//         let visualize_filename = "dual_module_parallel_debug_2.json".to_string();
+//         let defect_vertices = vec![5, 6, 7]; // indices are before the reorder
+//         dual_module_parallel_debug_repetition_code_common(11, visualize_filename, defect_vertices, 4);
+//     }
+
+//     /// the reason for this bug is that I forgot to set dual_variable correctly, leading to false VertexShrinkStop event at the
+//     #[test]
+//     fn dual_module_parallel_debug_3() {
+//         // cargo test dual_module_parallel_debug_3 -- --nocapture
+//         let visualize_filename = "dual_module_parallel_debug_3.json".to_string();
+//         let defect_vertices = vec![3, 5, 7]; // indices are before the reorder
+//         dual_module_parallel_debug_repetition_code_common(11, visualize_filename, defect_vertices, 5);
+//     }
+
+//     /// incorrect final result
+//     /// the reason is I didn't search through all the representative vertices of all children nodes, causing the parent blossom not propagating correctly
+//     #[test]
+//     fn dual_module_parallel_debug_4() {
+//         // cargo test dual_module_parallel_debug_4 -- --nocapture
+//         let visualize_filename = "dual_module_parallel_debug_4.json".to_string();
+//         let defect_vertices = vec![2, 3, 5, 6, 7]; // indices are before the reorder
+//         dual_module_parallel_debug_repetition_code_common(11, visualize_filename, defect_vertices, 5);
+//     }
+
+//     /// unwrap fail on dual node to internal dual node
+//     /// the reason is I forgot to implement the remove_blossom API...
+//     #[test]
+//     fn dual_module_parallel_debug_5() {
+//         // cargo test dual_module_parallel_debug_5 -- --nocapture
+//         let visualize_filename = "dual_module_parallel_debug_5.json".to_string();
+//         let defect_vertices = vec![0, 4, 7, 8, 9, 11]; // indices are before the reorder
+//         dual_module_parallel_debug_repetition_code_common(15, visualize_filename, defect_vertices, 7);
+//     }
+
+//     fn dual_module_parallel_debug_planar_code_common(
+//         d: VertexNum,
+//         visualize_filename: String,
+//         defect_vertices: Vec<VertexIndex>,
+//         final_dual: Weight,
+//     ) {
+//         let half_weight = 500;
+//         let split_horizontal = (d + 1) / 2;
+//         let row_count = d + 1;
+//         dual_module_parallel_standard_syndrome(
+//             CodeCapacityPlanarCode::new(d, 0.1, half_weight),
+//             visualize_filename,
+//             defect_vertices,
+//             final_dual * half_weight,
+//             |initializer, config| {
+//                 config.partitions = vec![
+//                     VertexRange::new(0, split_horizontal * row_count),
+//                     VertexRange::new((split_horizontal + 1) * row_count, initializer.vertex_num),
+//                 ];
+//                 config.fusions = vec![(0, 1)];
+//             },
+//             None,
+//         );
+//     }
+
+//     /// panic 'one cannot conflict with itself, double check to avoid deadlock'
+//     /// reason: when merging two `VertexShrinkStop` events into a single `Conflicting` event, I forget to check whether the two pointers are the same;
+//     /// if so, I should simply ignore it
+//     #[test]
+//     fn dual_module_parallel_debug_6() {
+//         // cargo test dual_module_parallel_debug_6 -- --nocapture
+//         let visualize_filename = "dual_module_parallel_debug_6.json".to_string();
+//         let defect_vertices = vec![10, 11, 13, 32, 36, 37, 40, 44]; // indices are before the reorder
+//         dual_module_parallel_debug_planar_code_common(7, visualize_filename, defect_vertices, 5);
+//     }
+
+//     /// panic 'one cannot conflict with itself, double check to avoid deadlock'
+//     /// reason: when comparing the pointers of two `VertexShrinkStop` events, only compare their conflicting dual node, not the touching dual node
+//     #[test]
+//     fn dual_module_parallel_debug_7() {
+//         // cargo test dual_module_parallel_debug_7 -- --nocapture
+//         let visualize_filename = "dual_module_parallel_debug_7.json".to_string();
+//         let defect_vertices = vec![3, 12, 21, 24, 27, 28, 33, 35, 36, 43, 50, 51]; // indices are before the reorder
+//         dual_module_parallel_debug_planar_code_common(7, visualize_filename, defect_vertices, 10);
+//     }
+
+//     /// panic `Option::unwrap()` on a `None` value', src/dual_module.rs:242:1
+//     #[test]
+//     fn dual_module_parallel_debug_8() {
+//         // cargo test dual_module_parallel_debug_8 -- --nocapture
+//         let visualize_filename = "dual_module_parallel_debug_8.json".to_string();
+//         let defect_vertices = vec![1, 2, 3, 4, 9, 10, 13, 16, 17, 19, 24, 29, 33, 36, 37, 44, 48, 49, 51, 52]; // indices are before the reorder
+//         dual_module_parallel_debug_planar_code_common(7, visualize_filename, defect_vertices, 13);
+//     }
+
+//     /// panicked at 'dual node of edge should be some', src/dual_module_serial.rs:379:13
+//     /// reason: blossom's boundary has duplicate edges, solved by adding dedup functionality to edges
+//     #[test]
+//     fn dual_module_parallel_debug_9() {
+//         // cargo test dual_module_parallel_debug_9 -- --nocapture
+//         let visualize_filename = "dual_module_parallel_debug_9.json".to_string();
+//         let defect_vertices = vec![60, 61, 72, 74, 84, 85, 109]; // indices are before the reorder
+//         dual_module_parallel_debug_planar_code_common(11, visualize_filename, defect_vertices, 6);
+//     }
+
+//     /// infinite loop at group_max_update_length: Conflicts(([Conflicting((12, 4), (15, 5))], {}))
+//     /// reason: I falsely use representative_vertex of the blossom instead of the representative vertices in the nodes circle in sync_prepare_blossom_initial_shrink
+//     #[test]
+//     fn dual_module_parallel_debug_10() {
+//         // cargo test dual_module_parallel_debug_10 -- --nocapture
+//         let visualize_filename = "dual_module_parallel_debug_10.json".to_string();
+//         let defect_vertices = vec![145, 146, 165, 166, 183, 185, 203, 204, 205, 225, 264]; // indices are before the reorder
+//         dual_module_parallel_debug_planar_code_common(19, visualize_filename, defect_vertices, 11);
+//     }
+
+//     /// panicked at 'dual node of edge should be none', src/dual_module_serial.rs:400:25
+//     /// reason: duplicate edge in the boundary... again...
+//     /// this time it's because when judging whether an edge is already in the boundary, I mistakenly put the clearing edge logic into
+//     /// the if condition as well... when the edge is duplicate in the boundary already, my code will not clear the edge properly
+//     #[test]
+//     fn dual_module_parallel_debug_11() {
+//         // cargo test dual_module_parallel_debug_11 -- --nocapture
+//         let visualize_filename = "dual_module_parallel_debug_11.json".to_string();
+//         let defect_vertices = vec![192, 193, 194, 212, 214, 232, 233]; // indices are before the reorder
+//         dual_module_parallel_debug_planar_code_common(19, visualize_filename, defect_vertices, 7);
+//     }
+
+//     /// panicked at 'no sync requests should arise here; make sure to deal with all sync requests before growing', src/dual_module_serial.rs:582:13
+//     /// just loop the synchronization process until no sync requests emerge
+//     #[test]
+//     fn dual_module_parallel_debug_12() {
+//         // cargo test dual_module_parallel_debug_12 -- --nocapture
+//         let visualize_filename = "dual_module_parallel_debug_12.json".to_string();
+//         let defect_vertices = vec![197, 216, 235, 275, 296, 316]; // indices are before the reorder
+//         dual_module_parallel_debug_planar_code_common(19, visualize_filename, defect_vertices, 5);
+//     }
+
+//     /// test rayon global thread pool
+//     #[test]
+//     fn dual_module_parallel_rayon_test_1() {
+//         // cargo test dual_module_parallel_rayon_test_1 -- --nocapture
+//         rayon::scope(|_| {
+//             println!("A");
+//             rayon::scope(|s| {
+//                 s.spawn(|_| println!("B"));
+//                 s.spawn(|_| println!("C"));
+//                 s.spawn(|_| println!("D"));
+//                 s.spawn(|_| println!("E"));
+//             });
+//             println!("F");
+//             rayon::scope(|s| {
+//                 s.spawn(|_| println!("G"));
+//                 s.spawn(|_| println!("H"));
+//                 s.spawn(|_| println!("J"));
+//             });
+//             println!("K");
+//         });
+//     }
+
+//     #[test]
+//     fn dual_module_parallel_rayon_test_2() {
+//         // cargo test dual_module_parallel_rayon_test_2 -- --nocapture
+//         let mut results = vec![];
+//         rayon::scope(|_| {
+//             results.push("A");
+//             let (mut ret_b, mut ret_c, mut ret_d, mut ret_e) = (None, None, None, None);
+//             rayon::scope(|s| {
+//                 s.spawn(|_| ret_b = Some("B"));
+//                 s.spawn(|_| ret_c = Some("C"));
+//                 s.spawn(|_| ret_d = Some("D"));
+//                 s.spawn(|_| ret_e = Some("E"));
+//             });
+//             results.push(ret_b.unwrap());
+//             results.push(ret_c.unwrap());
+//             results.push(ret_d.unwrap());
+//             results.push(ret_e.unwrap());
+//             results.push("F");
+//             let (mut ret_g, mut ret_h, mut ret_j) = (None, None, None);
+//             rayon::scope(|s| {
+//                 s.spawn(|_| ret_g = Some("G"));
+//                 s.spawn(|_| ret_h = Some("H"));
+//                 s.spawn(|_| ret_j = Some("J"));
+//             });
+//             results.push(ret_g.unwrap());
+//             results.push(ret_h.unwrap());
+//             results.push(ret_j.unwrap());
+//             results.push("K");
+//         });
+//         println!("results: {results:?}");
+//     }
+
+//     #[test]
+//     fn dual_module_parallel_rayon_test_3() {
+//         // cargo test dual_module_parallel_rayon_test_3 -- --nocapture
+//         let mut results = vec![];
+//         rayon::scope(|_| {
+//             results.push("A");
+//             results.par_extend(["B", "C", "D", "E"].into_par_iter().map(|id| {
+//                 // some complex calculation
+//                 id
+//             }));
+//             results.push("F");
+//             results.par_extend(["G", "H", "J"].into_par_iter().map(|id| {
+//                 // some complex calculation
+//                 id
+//             }));
+//             results.push("K");
+//         });
+//         println!("results: {results:?}");
+//     }
+// }
+
+
 #[cfg(test)]
-pub mod tests {
-    use super::super::example_codes::*;
-    use super::super::primal_module::*;
-    use super::super::primal_module_serial::*;
-    use super::*;
-
-    pub fn dual_module_parallel_basic_standard_syndrome_optional_viz<F>(
-        mut code: impl ExampleCode,
-        visualize_filename: Option<String>,
-        mut defect_vertices: Vec<VertexIndex>,
-        final_dual: Weight,
-        partition_func: F,
-        reordered_vertices: Option<Vec<VertexIndex>>,
-    ) -> (
-        DualModuleInterfacePtr,
-        PrimalModuleSerialPtr,
-        DualModuleParallel<DualModuleSerial>,
-    )
-    where
-        F: Fn(&SolverInitializer, &mut PartitionConfig),
-    {
-        println!("{defect_vertices:?}");
-        if let Some(reordered_vertices) = &reordered_vertices {
-            code.reorder_vertices(reordered_vertices);
-            defect_vertices = translated_defect_to_reordered(reordered_vertices, &defect_vertices);
-        }
-        let mut visualizer = match visualize_filename.as_ref() {
-            Some(visualize_filename) => {
-                let visualizer = Visualizer::new(
-                    Some(visualize_data_folder() + visualize_filename.as_str()),
-                    code.get_positions(),
-                    true,
-                )
-                .unwrap();
-                print_visualize_link(visualize_filename.clone());
-                Some(visualizer)
-            }
-            None => None,
-        };
-        let initializer = code.get_initializer();
-        let mut partition_config = PartitionConfig::new(initializer.vertex_num);
-        partition_func(&initializer, &mut partition_config);
-        println!("partition_config: {partition_config:?}");
-        let partition_info = partition_config.info();
-        // create dual module
-        let mut dual_module =
-            DualModuleParallel::new_config(&initializer, &partition_info, DualModuleParallelConfig::default());
-        dual_module.static_fuse_all();
-        // create primal module
-        let mut primal_module = PrimalModuleSerialPtr::new_empty(&initializer);
-        primal_module.write().debug_resolve_only_one = true; // to enable debug mode
-                                                             // try to work on a simple syndrome
-        code.set_defect_vertices(&defect_vertices);
-        let interface_ptr = DualModuleInterfacePtr::new_empty();
-        primal_module.solve_visualizer(&interface_ptr, &code.get_syndrome(), &mut dual_module, visualizer.as_mut());
-        let perfect_matching = primal_module.perfect_matching(&interface_ptr, &mut dual_module);
-        let mut subgraph_builder = SubGraphBuilder::new(&initializer);
-        subgraph_builder.load_perfect_matching(&perfect_matching);
-        let subgraph = subgraph_builder.get_subgraph();
-        if let Some(visualizer) = visualizer.as_mut() {
-            visualizer
-                .snapshot_combined(
-                    "perfect matching and subgraph".to_string(),
-                    vec![
-                        &interface_ptr,
-                        &dual_module,
-                        &perfect_matching,
-                        &VisualizeSubgraph::new(&subgraph),
-                    ],
-                )
-                .unwrap();
-        }
-        assert_eq!(
-            interface_ptr.sum_dual_variables(),
-            subgraph_builder.total_weight(),
-            "unmatched sum dual variables"
-        );
-        assert_eq!(
-            interface_ptr.sum_dual_variables(),
-            final_dual * 2,
-            "unexpected final dual variable sum"
-        );
-        (interface_ptr, primal_module, dual_module)
-    }
-
-    pub fn dual_module_parallel_standard_syndrome<F>(
-        code: impl ExampleCode,
-        visualize_filename: String,
-        defect_vertices: Vec<VertexIndex>,
-        final_dual: Weight,
-        partition_func: F,
-        reordered_vertices: Option<Vec<VertexIndex>>,
-    ) -> (
-        DualModuleInterfacePtr,
-        PrimalModuleSerialPtr,
-        DualModuleParallel<DualModuleSerial>,
-    )
-    where
-        F: Fn(&SolverInitializer, &mut PartitionConfig),
-    {
-        dual_module_parallel_basic_standard_syndrome_optional_viz(
-            code,
-            Some(visualize_filename),
-            defect_vertices,
-            final_dual,
-            partition_func,
-            reordered_vertices,
-        )
-    }
-
-    /// test a simple case
+mod tests {
     #[test]
-    fn dual_module_parallel_basic_1() {
-        // cargo test dual_module_parallel_basic_1 -- --nocapture
-        println!("hello there! ");
-        let visualize_filename = "dual_module_parallel_basic_1.json".to_string();
-        let defect_vertices = vec![39, 52, 63, 90, 100];
-        let half_weight = 500;
-        dual_module_parallel_standard_syndrome(
-            CodeCapacityPlanarCode::new(11, 0.1, half_weight),
-            visualize_filename,
-            defect_vertices,
-            9 * half_weight,
-            |initializer, _config| {
-                println!("initializer: {initializer:?}");
-            },
-            None,
-        );
-    }
-
-    /// split into 2, with no syndrome vertex on the interface
-    #[test]
-    fn dual_module_parallel_basic_2() {
-        // cargo test dual_module_parallel_basic_2 -- --nocapture
-        let visualize_filename = "dual_module_parallel_basic_2.json".to_string();
-        let defect_vertices = vec![39, 52, 63, 90, 100];
-        let half_weight = 500;
-        dual_module_parallel_standard_syndrome(
-            CodeCapacityPlanarCode::new(11, 0.1, half_weight),
-            visualize_filename,
-            defect_vertices,
-            9 * half_weight,
-            |_initializer, config| {
-                config.partitions = vec![
-                    VertexRange::new(0, 72),   // unit 0
-                    VertexRange::new(84, 132), // unit 1
-                ];
-                config.fusions = vec![
-                    (0, 1), // unit 2, by fusing 0 and 1
-                ];
-            },
-            None,
-        );
-    }
-
-    /// split into 2, with a syndrome vertex on the interface
-    #[test]
-    fn dual_module_parallel_basic_3() {
-        // cargo test dual_module_parallel_basic_3 -- --nocapture
-        let visualize_filename = "dual_module_parallel_basic_3.json".to_string();
-        let defect_vertices = vec![39, 52, 63, 90, 100];
-        let half_weight = 500;
-        dual_module_parallel_standard_syndrome(
-            CodeCapacityPlanarCode::new(11, 0.1, half_weight),
-            visualize_filename,
-            defect_vertices,
-            9 * half_weight,
-            |_initializer, config| {
-                config.partitions = vec![
-                    VertexRange::new(0, 60),   // unit 0
-                    VertexRange::new(72, 132), // unit 1
-                ];
-                config.fusions = vec![
-                    (0, 1), // unit 2, by fusing 0 and 1
-                ];
-            },
-            None,
-        );
-    }
-
-    /// split into 4, with no syndrome vertex on the interface
-    #[test]
-    fn dual_module_parallel_basic_4() {
-        // cargo test dual_module_parallel_basic_4 -- --nocapture
-        let visualize_filename = "dual_module_parallel_basic_4.json".to_string();
-        // reorder vertices to enable the partition;
-        let defect_vertices = vec![39, 52, 63, 90, 100]; // indices are before the reorder
-        let half_weight = 500;
-        dual_module_parallel_standard_syndrome(
-            CodeCapacityPlanarCode::new(11, 0.1, half_weight),
-            visualize_filename,
-            defect_vertices,
-            9 * half_weight,
-            |_initializer, config| {
-                config.partitions = vec![
-                    VertexRange::new(0, 36),
-                    VertexRange::new(42, 72),
-                    VertexRange::new(84, 108),
-                    VertexRange::new(112, 132),
-                ];
-                config.fusions = vec![(0, 1), (2, 3), (4, 5)];
-            },
-            Some({
-                let mut reordered_vertices = vec![];
-                let split_horizontal = 6;
-                let split_vertical = 5;
-                for i in 0..split_horizontal {
-                    // left-top block
-                    for j in 0..split_vertical {
-                        reordered_vertices.push(i * 12 + j);
-                    }
-                    reordered_vertices.push(i * 12 + 11);
-                }
-                for i in 0..split_horizontal {
-                    // interface between the left-top block and the right-top block
-                    reordered_vertices.push(i * 12 + split_vertical);
-                }
-                for i in 0..split_horizontal {
-                    // right-top block
-                    for j in (split_vertical + 1)..10 {
-                        reordered_vertices.push(i * 12 + j);
-                    }
-                    reordered_vertices.push(i * 12 + 10);
-                }
-                {
-                    // the big interface between top and bottom
-                    for j in 0..12 {
-                        reordered_vertices.push(split_horizontal * 12 + j);
-                    }
-                }
-                for i in (split_horizontal + 1)..11 {
-                    // left-bottom block
-                    for j in 0..split_vertical {
-                        reordered_vertices.push(i * 12 + j);
-                    }
-                    reordered_vertices.push(i * 12 + 11);
-                }
-                for i in (split_horizontal + 1)..11 {
-                    // interface between the left-bottom block and the right-bottom block
-                    reordered_vertices.push(i * 12 + split_vertical);
-                }
-                for i in (split_horizontal + 1)..11 {
-                    // right-bottom block
-                    for j in (split_vertical + 1)..10 {
-                        reordered_vertices.push(i * 12 + j);
-                    }
-                    reordered_vertices.push(i * 12 + 10);
-                }
-                reordered_vertices
-            }),
-        );
-    }
-
-    /// split into 4, with 2 defect vertices on parent interfaces
-    #[test]
-    fn dual_module_parallel_basic_5() {
-        // cargo test dual_module_parallel_basic_5 -- --nocapture
-        let visualize_filename = "dual_module_parallel_basic_5.json".to_string();
-        // reorder vertices to enable the partition;
-        let defect_vertices = vec![39, 52, 63, 90, 100]; // indices are before the reorder
-        let half_weight = 500;
-        dual_module_parallel_standard_syndrome(
-            CodeCapacityPlanarCode::new(11, 0.1, half_weight),
-            visualize_filename,
-            defect_vertices,
-            9 * half_weight,
-            |_initializer, config| {
-                config.partitions = vec![
-                    VertexRange::new(0, 25),
-                    VertexRange::new(30, 60),
-                    VertexRange::new(72, 97),
-                    VertexRange::new(102, 132),
-                ];
-                config.fusions = vec![(0, 1), (2, 3), (4, 5)];
-            },
-            Some({
-                let mut reordered_vertices = vec![];
-                let split_horizontal = 5;
-                let split_vertical = 4;
-                for i in 0..split_horizontal {
-                    // left-top block
-                    for j in 0..split_vertical {
-                        reordered_vertices.push(i * 12 + j);
-                    }
-                    reordered_vertices.push(i * 12 + 11);
-                }
-                for i in 0..split_horizontal {
-                    // interface between the left-top block and the right-top block
-                    reordered_vertices.push(i * 12 + split_vertical);
-                }
-                for i in 0..split_horizontal {
-                    // right-top block
-                    for j in (split_vertical + 1)..10 {
-                        reordered_vertices.push(i * 12 + j);
-                    }
-                    reordered_vertices.push(i * 12 + 10);
-                }
-                {
-                    // the big interface between top and bottom
-                    for j in 0..12 {
-                        reordered_vertices.push(split_horizontal * 12 + j);
-                    }
-                }
-                for i in (split_horizontal + 1)..11 {
-                    // left-bottom block
-                    for j in 0..split_vertical {
-                        reordered_vertices.push(i * 12 + j);
-                    }
-                    reordered_vertices.push(i * 12 + 11);
-                }
-                for i in (split_horizontal + 1)..11 {
-                    // interface between the left-bottom block and the right-bottom block
-                    reordered_vertices.push(i * 12 + split_vertical);
-                }
-                for i in (split_horizontal + 1)..11 {
-                    // right-bottom block
-                    for j in (split_vertical + 1)..10 {
-                        reordered_vertices.push(i * 12 + j);
-                    }
-                    reordered_vertices.push(i * 12 + 10);
-                }
-                reordered_vertices
-            }),
-        );
-    }
-
-    fn dual_module_parallel_debug_repetition_code_common(
-        d: VertexNum,
-        visualize_filename: String,
-        defect_vertices: Vec<VertexIndex>,
-        final_dual: Weight,
-    ) {
-        let half_weight = 500;
-        let split_vertical = (d + 1) / 2;
-        dual_module_parallel_standard_syndrome(
-            CodeCapacityRepetitionCode::new(d, 0.1, half_weight),
-            visualize_filename,
-            defect_vertices,
-            final_dual * half_weight,
-            |initializer, config| {
-                config.partitions = vec![
-                    VertexRange::new(0, split_vertical + 1),
-                    VertexRange::new(split_vertical + 2, initializer.vertex_num),
-                ];
-                config.fusions = vec![(0, 1)];
-            },
-            Some({
-                let mut reordered_vertices = vec![];
-                for j in 0..split_vertical {
-                    reordered_vertices.push(j);
-                }
-                reordered_vertices.push(d);
-                for j in split_vertical..d {
-                    reordered_vertices.push(j);
-                }
-                reordered_vertices
-            }),
-        );
-    }
-
-    /// debug blossom not growing properly
-    #[test]
-    fn dual_module_parallel_debug_1() {
-        // cargo test dual_module_parallel_debug_1 -- --nocapture
-        let visualize_filename = "dual_module_parallel_debug_1.json".to_string();
-        let defect_vertices = vec![2, 3, 4, 5, 6, 7, 8]; // indices are before the reorder
-        dual_module_parallel_debug_repetition_code_common(11, visualize_filename, defect_vertices, 5);
-    }
-
-    /// debug 'internal error: entered unreachable code: VertexShrinkStop conflict cannot be solved by primal module
-    /// the reason of this bug is that a shrinking node on the interface is sandwiched by two growing nodes resides on different children units
-    /// for the serial implementation, this event can be easily handled by doing special configs
-    /// but for the fused units, how to do it?
-    /// This is the benefit of using software to develop first; if directly working on the hardware implementation, one would have to add more interface
-    /// to support it, which could be super time-consuming
-    #[test]
-    fn dual_module_parallel_debug_2() {
-        // cargo test dual_module_parallel_debug_2 -- --nocapture
-        let visualize_filename = "dual_module_parallel_debug_2.json".to_string();
-        let defect_vertices = vec![5, 6, 7]; // indices are before the reorder
-        dual_module_parallel_debug_repetition_code_common(11, visualize_filename, defect_vertices, 4);
-    }
-
-    /// the reason for this bug is that I forgot to set dual_variable correctly, leading to false VertexShrinkStop event at the
-    #[test]
-    fn dual_module_parallel_debug_3() {
-        // cargo test dual_module_parallel_debug_3 -- --nocapture
-        let visualize_filename = "dual_module_parallel_debug_3.json".to_string();
-        let defect_vertices = vec![3, 5, 7]; // indices are before the reorder
-        dual_module_parallel_debug_repetition_code_common(11, visualize_filename, defect_vertices, 5);
-    }
-
-    /// incorrect final result
-    /// the reason is I didn't search through all the representative vertices of all children nodes, causing the parent blossom not propagating correctly
-    #[test]
-    fn dual_module_parallel_debug_4() {
-        // cargo test dual_module_parallel_debug_4 -- --nocapture
-        let visualize_filename = "dual_module_parallel_debug_4.json".to_string();
-        let defect_vertices = vec![2, 3, 5, 6, 7]; // indices are before the reorder
-        dual_module_parallel_debug_repetition_code_common(11, visualize_filename, defect_vertices, 5);
-    }
-
-    /// unwrap fail on dual node to internal dual node
-    /// the reason is I forgot to implement the remove_blossom API...
-    #[test]
-    fn dual_module_parallel_debug_5() {
-        // cargo test dual_module_parallel_debug_5 -- --nocapture
-        let visualize_filename = "dual_module_parallel_debug_5.json".to_string();
-        let defect_vertices = vec![0, 4, 7, 8, 9, 11]; // indices are before the reorder
-        dual_module_parallel_debug_repetition_code_common(15, visualize_filename, defect_vertices, 7);
-    }
-
-    fn dual_module_parallel_debug_planar_code_common(
-        d: VertexNum,
-        visualize_filename: String,
-        defect_vertices: Vec<VertexIndex>,
-        final_dual: Weight,
-    ) {
-        let half_weight = 500;
-        let split_horizontal = (d + 1) / 2;
-        let row_count = d + 1;
-        dual_module_parallel_standard_syndrome(
-            CodeCapacityPlanarCode::new(d, 0.1, half_weight),
-            visualize_filename,
-            defect_vertices,
-            final_dual * half_weight,
-            |initializer, config| {
-                config.partitions = vec![
-                    VertexRange::new(0, split_horizontal * row_count),
-                    VertexRange::new((split_horizontal + 1) * row_count, initializer.vertex_num),
-                ];
-                config.fusions = vec![(0, 1)];
-            },
-            None,
-        );
-    }
-
-    /// panic 'one cannot conflict with itself, double check to avoid deadlock'
-    /// reason: when merging two `VertexShrinkStop` events into a single `Conflicting` event, I forget to check whether the two pointers are the same;
-    /// if so, I should simply ignore it
-    #[test]
-    fn dual_module_parallel_debug_6() {
-        // cargo test dual_module_parallel_debug_6 -- --nocapture
-        let visualize_filename = "dual_module_parallel_debug_6.json".to_string();
-        let defect_vertices = vec![10, 11, 13, 32, 36, 37, 40, 44]; // indices are before the reorder
-        dual_module_parallel_debug_planar_code_common(7, visualize_filename, defect_vertices, 5);
-    }
-
-    /// panic 'one cannot conflict with itself, double check to avoid deadlock'
-    /// reason: when comparing the pointers of two `VertexShrinkStop` events, only compare their conflicting dual node, not the touching dual node
-    #[test]
-    fn dual_module_parallel_debug_7() {
-        // cargo test dual_module_parallel_debug_7 -- --nocapture
-        let visualize_filename = "dual_module_parallel_debug_7.json".to_string();
-        let defect_vertices = vec![3, 12, 21, 24, 27, 28, 33, 35, 36, 43, 50, 51]; // indices are before the reorder
-        dual_module_parallel_debug_planar_code_common(7, visualize_filename, defect_vertices, 10);
-    }
-
-    /// panic `Option::unwrap()` on a `None` value', src/dual_module.rs:242:1
-    #[test]
-    fn dual_module_parallel_debug_8() {
-        // cargo test dual_module_parallel_debug_8 -- --nocapture
-        let visualize_filename = "dual_module_parallel_debug_8.json".to_string();
-        let defect_vertices = vec![1, 2, 3, 4, 9, 10, 13, 16, 17, 19, 24, 29, 33, 36, 37, 44, 48, 49, 51, 52]; // indices are before the reorder
-        dual_module_parallel_debug_planar_code_common(7, visualize_filename, defect_vertices, 13);
-    }
-
-    /// panicked at 'dual node of edge should be some', src/dual_module_serial.rs:379:13
-    /// reason: blossom's boundary has duplicate edges, solved by adding dedup functionality to edges
-    #[test]
-    fn dual_module_parallel_debug_9() {
-        // cargo test dual_module_parallel_debug_9 -- --nocapture
-        let visualize_filename = "dual_module_parallel_debug_9.json".to_string();
-        let defect_vertices = vec![60, 61, 72, 74, 84, 85, 109]; // indices are before the reorder
-        dual_module_parallel_debug_planar_code_common(11, visualize_filename, defect_vertices, 6);
-    }
-
-    /// infinite loop at group_max_update_length: Conflicts(([Conflicting((12, 4), (15, 5))], {}))
-    /// reason: I falsely use representative_vertex of the blossom instead of the representative vertices in the nodes circle in sync_prepare_blossom_initial_shrink
-    #[test]
-    fn dual_module_parallel_debug_10() {
-        // cargo test dual_module_parallel_debug_10 -- --nocapture
-        let visualize_filename = "dual_module_parallel_debug_10.json".to_string();
-        let defect_vertices = vec![145, 146, 165, 166, 183, 185, 203, 204, 205, 225, 264]; // indices are before the reorder
-        dual_module_parallel_debug_planar_code_common(19, visualize_filename, defect_vertices, 11);
-    }
-
-    /// panicked at 'dual node of edge should be none', src/dual_module_serial.rs:400:25
-    /// reason: duplicate edge in the boundary... again...
-    /// this time it's because when judging whether an edge is already in the boundary, I mistakenly put the clearing edge logic into
-    /// the if condition as well... when the edge is duplicate in the boundary already, my code will not clear the edge properly
-    #[test]
-    fn dual_module_parallel_debug_11() {
-        // cargo test dual_module_parallel_debug_11 -- --nocapture
-        let visualize_filename = "dual_module_parallel_debug_11.json".to_string();
-        let defect_vertices = vec![192, 193, 194, 212, 214, 232, 233]; // indices are before the reorder
-        dual_module_parallel_debug_planar_code_common(19, visualize_filename, defect_vertices, 7);
-    }
-
-    /// panicked at 'no sync requests should arise here; make sure to deal with all sync requests before growing', src/dual_module_serial.rs:582:13
-    /// just loop the synchronization process until no sync requests emerge
-    #[test]
-    fn dual_module_parallel_debug_12() {
-        // cargo test dual_module_parallel_debug_12 -- --nocapture
-        let visualize_filename = "dual_module_parallel_debug_12.json".to_string();
-        let defect_vertices = vec![197, 216, 235, 275, 296, 316]; // indices are before the reorder
-        dual_module_parallel_debug_planar_code_common(19, visualize_filename, defect_vertices, 5);
-    }
-
-    /// test rayon global thread pool
-    #[test]
-    fn dual_module_parallel_rayon_test_1() {
-        // cargo test dual_module_parallel_rayon_test_1 -- --nocapture
-        rayon::scope(|_| {
-            println!("A");
-            rayon::scope(|s| {
-                s.spawn(|_| println!("B"));
-                s.spawn(|_| println!("C"));
-                s.spawn(|_| println!("D"));
-                s.spawn(|_| println!("E"));
-            });
-            println!("F");
-            rayon::scope(|s| {
-                s.spawn(|_| println!("G"));
-                s.spawn(|_| println!("H"));
-                s.spawn(|_| println!("J"));
-            });
-            println!("K");
-        });
-    }
-
-    #[test]
-    fn dual_module_parallel_rayon_test_2() {
-        // cargo test dual_module_parallel_rayon_test_2 -- --nocapture
-        let mut results = vec![];
-        rayon::scope(|_| {
-            results.push("A");
-            let (mut ret_b, mut ret_c, mut ret_d, mut ret_e) = (None, None, None, None);
-            rayon::scope(|s| {
-                s.spawn(|_| ret_b = Some("B"));
-                s.spawn(|_| ret_c = Some("C"));
-                s.spawn(|_| ret_d = Some("D"));
-                s.spawn(|_| ret_e = Some("E"));
-            });
-            results.push(ret_b.unwrap());
-            results.push(ret_c.unwrap());
-            results.push(ret_d.unwrap());
-            results.push(ret_e.unwrap());
-            results.push("F");
-            let (mut ret_g, mut ret_h, mut ret_j) = (None, None, None);
-            rayon::scope(|s| {
-                s.spawn(|_| ret_g = Some("G"));
-                s.spawn(|_| ret_h = Some("H"));
-                s.spawn(|_| ret_j = Some("J"));
-            });
-            results.push(ret_g.unwrap());
-            results.push(ret_h.unwrap());
-            results.push(ret_j.unwrap());
-            results.push("K");
-        });
-        println!("results: {results:?}");
-    }
-
-    #[test]
-    fn dual_module_parallel_rayon_test_3() {
-        // cargo test dual_module_parallel_rayon_test_3 -- --nocapture
-        let mut results = vec![];
-        rayon::scope(|_| {
-            results.push("A");
-            results.par_extend(["B", "C", "D", "E"].into_par_iter().map(|id| {
-                // some complex calculation
-                id
-            }));
-            results.push("F");
-            results.par_extend(["G", "H", "J"].into_par_iter().map(|id| {
-                // some complex calculation
-                id
-            }));
-            results.push("K");
-        });
-        println!("results: {results:?}");
+    fn exploration() {
+        assert_eq!(2 + 2, 4);
     }
 }

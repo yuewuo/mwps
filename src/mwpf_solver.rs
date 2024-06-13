@@ -350,3 +350,125 @@ pub(crate) fn register(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<SolverErrorPatternLogger>()?;
     Ok(())
 }
+
+
+
+// ////////////////////////////////////////////////////////////////////////////
+// ////////////////////////////////////////////////////////////////////////////
+// ///////////////////////////Solver Parallel /////////////////////////////////
+// ////////////////////////////////////////////////////////////////////////////
+// ////////////////////////////////////////////////////////////////////////////
+
+
+// pub struct SolverParallel {
+//     pub dual_module: DualModuleParallel<DualModuleSerial>,
+//     pub primal_module: PrimalModuleParallel,
+//     pub subgraph_builder: SubGraphBuilder,
+// }
+
+// impl SolverParallel {
+//     pub fn new(
+//         initializer: &SolverInitializer,
+//         partition_info: &PartitionInfo,
+//         mut primal_dual_config: serde_json::Value,
+//     ) -> Self {
+//         let primal_dual_config = primal_dual_config.as_object_mut().expect("config must be JSON object");
+//         let mut dual_config = DualModuleParallelConfig::default();
+//         let mut primal_config = PrimalModuleParallelConfig::default();
+//         // remove the key "dual" from the primal_dual_config map and returns Some(value) if the key existed, or None if it did not.
+//         // If the key "dual" is found, its associated value is assigned to the variable value.
+//         if let Some(value) = primal_dual_config.remove("dual") {
+//             dual_config = serde_json::from_value(value).unwrap();
+//         }
+//         // similarly, do the same to assign primal
+//         if let Some(value) = primal_dual_config.remove("primal") {
+//             primal_config = serde_json::from_value(value).unwrap();
+//         }
+//         // after removing the "dual" and "primal", if primal_dual_config is still not empty, panic
+//         if !primal_dual_config.is_empty() {
+//             panic!(
+//                 "unknown primal_dual_config keys: {:?}",
+//                 primal_dual_config.keys().collect::<Vec<&String>>()
+//             );
+//         }
+
+//         // return 
+//         Self {
+//             dual_module: DualModuleParallel::new_config(initializer, partition_info, dual_config),
+//             primal_module: PrimalModuleParallel::new_config(initializer, partition_info, primal_config),
+//             subgraph_builder: SubGraphBuilder::new(initializer),
+//         }
+//     }
+// }
+
+// impl PrimalDualSolver for SolverParallel {
+//     fn clear(&mut self) {
+//         self.dual_module.clear(); // function defined for DualModuleParallel
+//         self.primal_module.clear();
+//         self.subgraph_builder.clear();
+//     }
+
+//     fn solve_visualizer(&mut self, syndrome_pattern: &SyndromePattern, visualizer: Option<&mut Visualizer>) {
+//         // if erasure is not empty, load it 
+//         if !syndrome_pattern.erasures.is_empty() {
+//             self.subgraph_builder.load_erasures(&syndrome_pattern.erasures);
+//         }
+
+//         // return 
+//         self.primal_module.parallel_solve_visualizer(syndrome_pattern, &self.dual_module, visualizer);
+//     }
+
+//     fn perfect_matching_visualizer(&mut self, visualizer: Option<&mut Visualizer>) -> PerfectMatching {
+//         let useless_interface_ptr = DualModuleInterfacePtr::new_empty(); // don't actually use it
+//         let perfect_matching = self
+//             .primal_module
+//             .perfect_matching(&useless_interface_ptr, &mut self.dual_module);
+//         if let Some(visualizer) = visualizer {
+//             let last_interface_ptr = &self.primal_module.units.last().unwrap().read_recursive().interface_ptr;
+//             visualizer
+//                 .snapshot_combined(
+//                     "perfect matching".to_string(),
+//                     vec![last_interface_ptr, &self.dual_module, &perfect_matching],
+//                 )
+//                 .unwrap();
+//         }
+
+//         // return 
+//         perfect_matching
+//     }
+
+//     // 
+//     // fn subgraph_visualizer(&mut self, visualizer: Option<&mut Visualizer>) -> Vec<EdgeIndex> {
+//     //     let perfect_matching = self.perfect_matching();
+//     //     self.subgraph_builder.load_perfect_matching(&perfect_matching);
+//     //     let subgraph = self.subgraph_builder.get_subgraph();
+//     //     if let Some(visualizer) = visualizer {
+//     //         let last_interface_ptr = &self.primal_module.units.last().unwrap().read_recursive().interface_ptr;
+//     //         visualizer
+//     //             .snapshot_combined(
+//     //                 "perfect matching and subgraph".to_string(),
+//     //                 vec![
+//     //                     last_interface_ptr,
+//     //                     &self.dual_module,
+//     //                     &perfect_matching,
+//     //                     &VisualizeSubgraph::new(&subgraph),
+//     //                 ],
+//     //             )
+//     //             .unwrap();
+//     //     }
+//     //     subgraph
+//     // }
+
+//     // fn sum_dual_variables(&self) -> Weight {
+//     //     let last_unit = self.primal_module.units.last().unwrap().write(); // use the interface in the last unit
+//     //     let sum_dual_variables = last_unit.interface_ptr.read_recursive().sum_dual_variables;
+//     //     sum_dual_variables
+//     // }
+//     // fn generate_profiler_report(&self) -> serde_json::Value {
+//     //     json!({
+//     //         "dual": self.dual_module.generate_profiler_report(),
+//     //         "primal": self.primal_module.generate_profiler_report(),
+//     //     })
+//     // }
+
+// }
