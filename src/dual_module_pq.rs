@@ -6,10 +6,10 @@
 //!
 
 use crate::num_traits::{ToPrimitive, Zero};
+use crate::pointers::*;
 use crate::util::*;
 use crate::visualize::*;
 use crate::{add_shared_methods, dual_module::*};
-use crate::{dual_module, pointers::*};
 
 use core::panic;
 use std::{
@@ -341,87 +341,6 @@ impl<Queue> DualModuleImpl for DualModulePQ<Queue>
 where
     Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug,
 {
-    fn calculate_grow_rate(&self, dual_node_ptr: &DualNodePtr) -> Rational {
-        for edge in self.edges.iter() {
-            let edge = edge.read_recursive();
-            if edge
-                .dual_nodes
-                .iter()
-                .any(|node| node.upgrade_force().read_recursive().index == dual_node_ptr.read_recursive().index)
-            {
-                return edge.weight.clone() / edge.grow_rate.clone();
-            }
-        }
-        panic!("dual node not found in any edge");
-    }
-
-    fn get_conflicts_for_node(
-        &self,
-        dual_node: RwLockReadGuard<parking_lot::RawRwLock, DualNode>,
-        all_conflicts: &mut BTreeSet<MaxUpdateLength>,
-    ) {
-        println!("impacted edges: {:?}", dual_node.invalid_subgraph.hair);
-        for &edge_index in dual_node.invalid_subgraph.hair.iter() {
-            let edge = self.edges[edge_index as usize].read_recursive();
-            println!("\tedge: {:?}", edge);
-            if edge.grow_rate.is_positive() && edge.weight == edge.growth_at_last_updated_time {
-                all_conflicts.insert(MaxUpdateLength::Conflicting(edge_index));
-            }
-        }
-    }
-
-    fn set_nodes_to_zero(&mut self) {
-        println!("Setting things to be zero");
-        for edges in self.edges.iter_mut() {
-            let mut edge = edges.write();
-
-            // update if necessary
-            let global_time = self.global_time.read_recursive();
-            if edge.last_updated_time != global_time.clone() {
-                // the edge is behind
-                debug_assert!(
-                    global_time.clone() >= edge.last_updated_time,
-                    "global time is behind, maybe a wrap-around has happened"
-                );
-
-                let time_diff = global_time.clone() - &edge.last_updated_time;
-                let newly_grown_amount = &time_diff * &edge.grow_rate;
-                edge.growth_at_last_updated_time += newly_grown_amount;
-                edge.last_updated_time = global_time.clone();
-                debug_assert!(
-                    edge.growth_at_last_updated_time <= edge.weight,
-                    "growth larger than weight: check if events are 1) inserted and 2) handled correctly"
-                );
-            }
-
-            edge.grow_rate = Rational::zero();
-            for dual_node_ptr in edge.dual_nodes.iter() {
-                let dual_node_ptr_write = dual_node_ptr.upgrade_force();
-                let mut node = dual_node_ptr_write.write();
-
-                // update if necessary
-                let global_time = self.global_time.read_recursive();
-                if node.last_updated_time != global_time.clone() {
-                    // the edge is not behind
-                    debug_assert!(
-                        global_time.clone() >= node.last_updated_time,
-                        "global time is behind, maybe a wrap-around has happened"
-                    );
-
-                    let dual_variable = node.get_dual_variable();
-                    node.set_dual_variable(dual_variable);
-                    node.last_updated_time = global_time.clone();
-                    debug_assert!(
-                        !node.get_dual_variable().is_negative(),
-                        "negative dual variable: check if events are 1) inserted and 2) handled correctly"
-                    );
-                }
-
-                node.grow_rate = Rational::zero();
-            }
-        }
-    }
-
     fn sync(&mut self) {
         for edges in self.edges.iter_mut() {
             let mut edge = edges.write();
@@ -468,43 +387,6 @@ where
                 }
             }
         }
-    }
-
-    fn get_edges_for_node(&self, dual_node_ptr: &DualNodePtr) -> BTreeSet<EdgeIndex> {
-        let mut edges = BTreeSet::default();
-        for edge in self.edges.iter() {
-            let edge = edge.read_recursive();
-            if edge
-                .dual_nodes
-                .iter()
-                .any(|node| node.upgrade_force().read_recursive().index == dual_node_ptr.read_recursive().index)
-            {
-                edges.insert(edge.edge_index);
-            }
-        }
-        edges
-    }
-
-    fn get_current_conflicts(
-        &self,
-        edges: &BTreeSet<EdgeIndex>,
-        nodes: &BTreeSet<DualNodePtr>,
-    ) -> BTreeSet<MaxUpdateLength> {
-        let mut conflicts = BTreeSet::default();
-        for edge_index in edges.iter() {
-            let edge = self.edges[*edge_index].read_recursive();
-            if edge.grow_rate.is_positive() && edge.weight == edge.growth_at_last_updated_time {
-                conflicts.insert(MaxUpdateLength::Conflicting(*edge_index));
-            }
-        }
-        for node_ptr in nodes.iter() {
-            // println!("node_ptr is {:?}", node_ptr);
-            let node = node_ptr.read_recursive();
-            if node.grow_rate.is_negative() && node.get_dual_variable().is_zero() {
-                conflicts.insert(MaxUpdateLength::ShrinkProhibited(node_ptr.clone()));
-            }
-        }
-        conflicts
     }
 
     fn debug_print(&self) {
@@ -734,7 +616,11 @@ where
             let mut group_max_update_length_set = BTreeSet::default();
             group_max_update_length_set.insert(match event {
                 Obstacle::Conflict { edge_index } => MaxUpdateLength::Conflicting(edge_index),
-                Obstacle::ShrinkToZero { dual_node_ptr } => MaxUpdateLength::ShrinkProhibited(dual_node_ptr),
+                Obstacle::ShrinkToZero { dual_node_ptr } => {
+                    let index = dual_node_ptr.read_recursive().index;
+                    // FIXME: change the Obstacle::ShrinkToZero to also use ordered dual node ptr?
+                    MaxUpdateLength::ShrinkProhibited(OrderedDualNodePtr::new(index, dual_node_ptr))
+                }
             });
 
             // append all conflicts that happen at the same time as now
@@ -747,7 +633,11 @@ where
                     // add
                     group_max_update_length_set.insert(match event {
                         Obstacle::Conflict { edge_index } => MaxUpdateLength::Conflicting(edge_index),
-                        Obstacle::ShrinkToZero { dual_node_ptr } => MaxUpdateLength::ShrinkProhibited(dual_node_ptr),
+                        Obstacle::ShrinkToZero { dual_node_ptr } => {
+                            let index = dual_node_ptr.read_recursive().index;
+                            // FIXME: change the Obstacle::ShrinkToZero to also use ordered dual node ptr?
+                            MaxUpdateLength::ShrinkProhibited(OrderedDualNodePtr::new(index, dual_node_ptr))
+                        }
                     });
                 } else {
                     break;
@@ -793,7 +683,13 @@ where
 
     /// is the edge saturated
     fn is_edge_tight(&self, edge_index: EdgeIndex) -> bool {
-        self.get_edge_slack(edge_index).is_zero()
+        match self.mode {
+            DualModuleMode::Search => self.get_edge_slack(edge_index).is_zero(),
+            DualModuleMode::Tune => {
+                let edge = self.edges[edge_index as usize].read_recursive();
+                edge.weight == edge.growth_at_last_updated_time
+            }
+        }
     }
 
     add_shared_methods!();
@@ -806,7 +702,6 @@ where
 
     fn grow_edge(&self, edge_index: EdgeIndex, amount: &Rational) {
         let mut edge = self.edges[edge_index as usize].write();
-        edge.grow_rate += amount;
         edge.growth_at_last_updated_time += amount;
     }
 }

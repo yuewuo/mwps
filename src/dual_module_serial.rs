@@ -22,7 +22,7 @@ pub struct DualModuleSerial {
     /// note that this list may contain duplicate nodes
     pub active_edges: BTreeSet<EdgeIndex>,
     /// active nodes
-    pub active_nodes: BTreeSet<DualNodePtr>,
+    pub active_nodes: BTreeSet<OrderedDualNodePtr>,
 
     /// the current mode of the dual module
     mode: DualModuleMode,
@@ -211,7 +211,8 @@ impl DualModuleImpl for DualModuleSerial {
                 self.active_edges.insert(edge_index);
             }
         }
-        self.active_nodes.insert(dual_node_ptr.clone());
+        self.active_nodes
+            .insert(OrderedDualNodePtr::new(dual_node.index, dual_node_ptr.clone()));
     }
 
     #[allow(clippy::unnecessary_cast)]
@@ -232,9 +233,11 @@ impl DualModuleImpl for DualModuleSerial {
             }
         }
         if dual_node.grow_rate.is_zero() {
-            self.active_nodes.remove(dual_node_ptr);
+            self.active_nodes
+                .remove(&OrderedDualNodePtr::new(dual_node.index, dual_node_ptr.clone()));
         } else {
-            self.active_nodes.insert(dual_node_ptr.clone());
+            self.active_nodes
+                .insert(OrderedDualNodePtr::new(dual_node.index, dual_node_ptr.clone()));
         }
     }
 
@@ -267,14 +270,19 @@ impl DualModuleImpl for DualModuleSerial {
             } else if grow_rate.is_negative() {
                 if edge.growth.is_zero() {
                     if node.grow_rate.is_negative() {
-                        max_update_length.merge(MaxUpdateLength::ShrinkProhibited(dual_node_ptr.clone()));
+                        max_update_length.merge(MaxUpdateLength::ShrinkProhibited(OrderedDualNodePtr::new(
+                            node.index,
+                            dual_node_ptr.clone(),
+                        )));
                     } else {
                         // find a negatively growing edge
                         let mut found = false;
                         for node_weak in edge.dual_nodes.iter() {
                             let node_ptr = node_weak.upgrade_force();
                             if node_ptr.read_recursive().grow_rate.is_negative() {
-                                max_update_length.merge(MaxUpdateLength::ShrinkProhibited(node_ptr));
+                                let index = node_ptr.read_recursive().index;
+                                max_update_length
+                                    .merge(MaxUpdateLength::ShrinkProhibited(OrderedDualNodePtr::new(index, node_ptr)));
                                 found = true;
                                 break;
                             }
@@ -316,7 +324,7 @@ impl DualModuleImpl for DualModuleSerial {
             }
         }
         for node_ptr in self.active_nodes.iter() {
-            let node = node_ptr.read_recursive();
+            let node = node_ptr.ptr.read_recursive();
             if node.grow_rate.is_negative() {
                 if node.get_dual_variable().is_positive() {
                     group_max_update_length
@@ -391,7 +399,7 @@ impl DualModuleImpl for DualModuleSerial {
         }
         // update dual variables
         for node_ptr in self.active_nodes.iter() {
-            let mut node = node_ptr.write();
+            let mut node = node_ptr.ptr.write();
             let grow_rate = node.grow_rate.clone();
             let dual_variable = node.get_dual_variable();
             node.set_dual_variable(dual_variable + length.clone() * grow_rate);

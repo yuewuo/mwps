@@ -110,6 +110,7 @@ impl DualNode {
 }
 
 pub type DualNodePtr = ArcRwLock<DualNode>;
+// Note: it may be worthwhile to try to have everyone uses the ordered version, as index shouldn't be mutable from multiple places at once
 pub type DualNodeWeak = WeakRwLock<DualNode>;
 
 impl std::fmt::Debug for DualNodePtr {
@@ -136,17 +137,18 @@ impl std::fmt::Debug for DualNodeWeak {
     }
 }
 
-impl Ord for DualNodePtr {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.read_recursive().index.cmp(&other.read_recursive().index)
-    }
-}
+// fixme: Remove these
+// impl Ord for DualNodePtr {
+//     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+//         self.read_recursive().index.cmp(&other.read_recursive().index)
+//     }
+// }
 
-impl PartialOrd for DualNodePtr {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
+// impl PartialOrd for DualNodePtr {
+//     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+//         Some(self.cmp(other))
+//     }
+// }
 
 /// an array of dual nodes
 /// dual nodes, once created, will never be deconstructed until the next run
@@ -179,6 +181,8 @@ impl std::fmt::Debug for DualModuleInterfaceWeak {
 
 /// gives the maximum absolute length to grow, if not possible, give the reason;
 /// note that strong reference is stored in `MaxUpdateLength` so dropping these temporary messages are necessary to avoid memory leakage
+///
+/// FIXME: Remove Ord and PartialOrd for MaxUpdateLength
 #[derive(Derivative, PartialEq, Eq, Clone, PartialOrd, Ord)]
 #[derivative(Debug, Default(new = "true"))]
 pub enum MaxUpdateLength {
@@ -190,9 +194,34 @@ pub enum MaxUpdateLength {
     /// conflicting growth, violating the slackness constraint
     Conflicting(EdgeIndex),
     /// hitting 0 dual variable while shrinking, only happens when `grow_rate` < 0
-    ShrinkProhibited(DualNodePtr),
+    /// note: Using OrderedDualNodePtr since we can compare without acquiring the lock, for enabling btreeset/hashset/pq etc. with lower overhead
+    ShrinkProhibited(OrderedDualNodePtr),
     ///
     Skip,
+}
+
+#[derive(Derivative, PartialEq, Eq, Clone, Debug)]
+pub struct OrderedDualNodePtr {
+    pub index: NodeIndex,
+    pub ptr: DualNodePtr,
+}
+
+impl OrderedDualNodePtr {
+    pub fn new(index: NodeIndex, ptr: DualNodePtr) -> Self {
+        Self { index, ptr }
+    }
+}
+
+impl PartialOrd for OrderedDualNodePtr {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.index.cmp(&other.index))
+    }
+}
+
+impl Ord for OrderedDualNodePtr {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.index.cmp(&other.index)
+    }
 }
 
 #[derive(Derivative, Clone)]
@@ -209,37 +238,8 @@ pub enum GroupMaxUpdateLength {
 
 /// common trait that must be implemented for each implementation of dual module
 pub trait DualModuleImpl {
-    fn calculate_grow_rate(&self, dual_node_ptr: &DualNodePtr) -> Rational {
-        panic!("bad lol");
-    }
-
-    fn get_conflicts_for_node(
-        &self,
-        dual_node_ptr: RwLockReadGuard<parking_lot::RawRwLock, DualNode>,
-        all_conflicts: &mut BTreeSet<MaxUpdateLength>,
-    ) {
-        panic!("bad lol 1213");
-    }
-
-    fn set_nodes_to_zero(&mut self) {
-        panic!("bad lol 121345");
-    }
-
     fn sync(&mut self) {
         panic!("BAd bad lol");
-    }
-
-    fn get_edges_for_node(&self, dual_node_ptr: &DualNodePtr) -> BTreeSet<EdgeIndex> {
-        // FIXME: Don't use EdgeIndex, but a generic type for edges please
-        panic!("bad lol 1212341345");
-    }
-
-    fn get_current_conflicts(
-        &self,
-        edges: &BTreeSet<EdgeIndex>,
-        nodes: &BTreeSet<DualNodePtr>,
-    ) -> BTreeSet<MaxUpdateLength> {
-        panic!("bad lol lol 1212341345");
     }
 
     // dual_module.rs

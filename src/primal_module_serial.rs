@@ -102,6 +102,15 @@ pub type PrimalClusterPtr = ArcRwLock<PrimalCluster>;
 pub type PrimalClusterWeak = WeakRwLock<PrimalCluster>;
 
 impl PrimalModuleImpl for PrimalModuleSerial {
+    fn set_zeros<D: DualModuleImpl>(&mut self, dual_module: &mut D) {
+        for cluster in self.clusters.iter() {
+            let cluster_r = cluster.read_recursive();
+            for primal_node_ptr in cluster_r.nodes.iter() {
+                let dual_node_ptr = primal_node_ptr.read_recursive().dual_node_ptr.clone();
+                dual_module.set_grow_rate(&dual_node_ptr, Rational::zero()); // FIXME: should be reset here
+            }
+        }
+    }
     fn new_empty(_initializer: &SolverInitializer) -> Self {
         Self {
             growing_strategy: GrowingStrategy::SingleCluster,
@@ -203,7 +212,7 @@ impl PrimalModuleImpl for PrimalModuleSerial {
         group_max_update_length: BTreeSet<MaxUpdateLength>,
         interface_ptr: &DualModuleInterfacePtr,
         dual_module: &mut impl DualModuleImpl,
-    ) -> (BTreeSet<EdgeIndex>, BTreeSet<DualNodePtr>, bool) {
+    ) -> (BTreeSet<MaxUpdateLength>, bool) {
         let begin = Instant::now();
         let res = self.resolve_core_tune(group_max_update_length, interface_ptr, dual_module);
         self.time_resolve += begin.elapsed().as_secs_f64();
@@ -237,18 +246,6 @@ impl PrimalModuleImpl for PrimalModuleSerial {
         } else {
             false
         };
-    }
-
-    fn is_solved<D: DualModuleImpl>(&mut self, interface_ptr: &DualModuleInterfacePtr, dual_module: &mut D) -> bool {
-        let mut all_solved = true;
-        while let Some(cluster_index) = self.plugin_pending_clusters.pop() {
-            let solved = self.resolve_cluster(cluster_index, interface_ptr, dual_module);
-            all_solved &= solved;
-            // if !solved {
-            //     return false; // let the dual module to handle one
-            // }
-        }
-        all_solved
     }
 
     fn pending_clusters(&mut self) -> Vec<usize> {
@@ -357,20 +354,15 @@ impl PrimalModuleImpl for PrimalModuleSerial {
         cluster_index: NodeIndex,
         interface_ptr: &DualModuleInterfacePtr,
         dual_module: &mut impl DualModuleImpl,
-    ) -> (BTreeSet<EdgeIndex>, BTreeSet<DualNodePtr>, bool) {
-        // make this generic later
-        let mut impacted_edges = BTreeSet::default();
-        let mut impacted_nodes = BTreeSet::default();
+        edge_deltas: &mut BTreeMap<EdgeIndex, Rational>,
+    ) -> (BTreeSet<MaxUpdateLength>, bool) {
+        let mut conflicts = BTreeSet::default();
         let cluster_ptr = self.clusters[cluster_index as usize].clone();
         let mut cluster = cluster_ptr.write();
         if cluster.nodes.is_empty() {
-            return (impacted_edges, impacted_nodes, true); // no longer a cluster, no need to handle
+            return (conflicts, true); // no longer a cluster, no need to handle
         }
         // set all nodes to stop growing in the cluster
-        for primal_node_ptr in cluster.nodes.iter() {
-            let dual_node_ptr = primal_node_ptr.read_recursive().dual_node_ptr.clone();
-            dual_module.set_grow_rate(&dual_node_ptr, Rational::zero()); // FIXME: should be reset here
-        }
         // update the matrix with new tight edges
         let cluster = &mut *cluster;
         for &edge_index in cluster.edges.iter() {
@@ -385,7 +377,7 @@ impl PrimalModuleImpl for PrimalModuleSerial {
                 .nodes
                 .iter()
                 .map(|p| p.read_recursive().dual_node_ptr.clone())
-                .filter(|dual_node_ptr| !dual_node_ptr.read_recursive().get_dual_variable().is_zero())
+                .filter(|dual_node_ptr| !dual_node_ptr.read_recursive().dual_variable_at_last_updated_time.is_zero())
                 .collect();
             let decoding_graph = &interface_ptr.read_recursive().decoding_graph;
             let cluster_mut = &mut *cluster; // must first get mutable reference
@@ -431,39 +423,43 @@ impl PrimalModuleImpl for PrimalModuleSerial {
                     });
                     cluster.nodes.push(primal_node_ptr.clone());
                     self.nodes.push(primal_node_ptr);
-                    // println!("created dual_node: {:?}", dual_node_ptr.read_recursive().index);
                 }
-                // dual_module.set_grow_rate_tune(&dual_node_ptr, grow_rate.clone());
-                // all_conflicts.extend(conflicts);
 
-                // println!("getting write lock");
-                let mut node_ptr_write = dual_node_ptr.write();
-                // println!("got write lock");
-                node_ptr_write.grow_rate = grow_rate.clone();
+                // println!("deadlockgin?");
+                let mut node_ptr_write: parking_lot::lock_api::RwLockWriteGuard<parking_lot::RawRwLock, DualNode> =
+                    dual_node_ptr.write();
+                // println!("not really");
+                // node_ptr_write.grow_rate = grow_rate.clone();
                 node_ptr_write.dual_variable_at_last_updated_time += grow_rate.clone();
-                for edge_index in node_ptr_write.invalid_subgraph.hair.iter() {
-                    dual_module.grow_edge(*edge_index, grow_rate);
+                // println!("dual_node_ptr: {:?}", dual_node_ptr);
+                if grow_rate.is_negative() && node_ptr_write.dual_variable_at_last_updated_time.is_zero() {
+                    // println!("here");
+                    conflicts.insert(MaxUpdateLength::ShrinkProhibited(OrderedDualNodePtr::new(
+                        node_ptr_write.index,
+                        dual_node_ptr.clone(),
+                    )));
                 }
-                drop(node_ptr_write);
-
-                // dual_module.set_grow_rate_tune(&dual_node_ptr, grow_rate.clone());
-                // dual_node_ptr.read_recursive().invalid_subgraph.hair
-                // dual_module.set_grow_rate(&dual_node_ptr, dual_node_ptr.read_recursive().get_dual_variable());
-                // }
-                impacted_nodes.insert(dual_node_ptr);
-            }
-
-            // println!("dual_nodes_changed: {:?}", impacted_nodes);
-            for dual_node_ptr in impacted_nodes.iter() {
-                let edges = dual_node_ptr.read_recursive().invalid_subgraph.hair.clone();
-                impacted_edges.extend(edges);
-
-                // dual_module.get_conflicts_for_node(dual_node, &mut all_conflicts);
+                // println!("able to proceed");
+                for edge_index in node_ptr_write.invalid_subgraph.hair.iter() {
+                    match edge_deltas.entry(edge_index.clone()) {
+                        std::collections::btree_map::Entry::Vacant(v) => {
+                            v.insert(grow_rate.clone());
+                        }
+                        std::collections::btree_map::Entry::Occupied(mut o) => {
+                            let current = o.get_mut();
+                            *current += grow_rate.clone();
+                            if current.is_zero() {
+                                o.remove();
+                            }
+                        }
+                    }
+                }
+                // println!("got to the end");
             }
 
             // dual_module.grow(Rational::one());
             cluster.relaxer_optimizer.insert(relaxer);
-            return (impacted_edges, impacted_nodes, false);
+            return (conflicts, false);
         }
 
         // println!("here");
@@ -478,11 +474,12 @@ impl PrimalModuleImpl for PrimalModuleSerial {
         cluster.subgraph = Some(cluster.matrix.get_solution_local_minimum(weight_of).expect("satisfiable"));
 
         // assert both impacted_edges and impacted_nodes are empty
-        assert!(impacted_edges.is_empty());
-        assert!(impacted_nodes.is_empty());
+        // assert!(impacted_edges.is_empty());
+        // assert!(impacted_nodes.is_empty());
+        assert!(conflicts.is_empty());
 
         // FIXME: Change to use Options
-        (impacted_edges, impacted_nodes, true)
+        (conflicts, true)
     }
 }
 
@@ -566,7 +563,7 @@ impl PrimalModuleSerial {
                     active_clusters.insert(cluster.cluster_index);
                 }
                 MaxUpdateLength::ShrinkProhibited(dual_node_ptr) => {
-                    let cluster_ptr = self.nodes[dual_node_ptr.read_recursive().index as usize]
+                    let cluster_ptr = self.nodes[dual_node_ptr.index as usize]
                         .read_recursive()
                         .cluster_weak
                         .upgrade_force();
@@ -661,7 +658,7 @@ impl PrimalModuleSerial {
                     active_clusters.insert(cluster.cluster_index);
                 }
                 MaxUpdateLength::ShrinkProhibited(dual_node_ptr) => {
-                    let cluster_ptr = self.nodes[dual_node_ptr.read_recursive().index as usize]
+                    let cluster_ptr = self.nodes[dual_node_ptr.index as usize]
                         .read_recursive()
                         .cluster_weak
                         .upgrade_force();
@@ -723,7 +720,7 @@ impl PrimalModuleSerial {
         mut group_max_update_length: BTreeSet<MaxUpdateLength>,
         interface_ptr: &DualModuleInterfacePtr,
         dual_module: &mut impl DualModuleImpl,
-    ) -> (BTreeSet<EdgeIndex>, BTreeSet<DualNodePtr>, bool) {
+    ) -> (BTreeSet<MaxUpdateLength>, bool) {
         // returns (resolved, should_grow)
         let mut active_clusters = BTreeSet::<NodeIndex>::new();
         let interface = interface_ptr.read_recursive();
@@ -763,7 +760,7 @@ impl PrimalModuleSerial {
                     active_clusters.insert(cluster.cluster_index);
                 }
                 MaxUpdateLength::ShrinkProhibited(dual_node_ptr) => {
-                    let cluster_ptr = self.nodes[dual_node_ptr.read_recursive().index as usize]
+                    let cluster_ptr = self.nodes[dual_node_ptr.index as usize]
                         .read_recursive()
                         .cluster_weak
                         .upgrade_force();
@@ -780,17 +777,23 @@ impl PrimalModuleSerial {
             *self.plugin_count.write() = 0; // force only the first plugin
         }
         let mut all_solved = true;
-        let mut all_impacted_edges = BTreeSet::default();
-        let mut all_impacted_nodes = BTreeSet::default();
+        let mut all_conflicts = BTreeSet::default();
+        let mut edge_deltas = BTreeMap::new();
+        // let mut all_impacted_nodes = BTreeSet::default();
         for &cluster_index in active_clusters.iter() {
-            let (impacted_edges, impacted_nodes, solved) =
-                self.resolve_cluster_tune(cluster_index, interface_ptr, dual_module);
+            let (conflicts, solved) = self.resolve_cluster_tune(cluster_index, interface_ptr, dual_module, &mut edge_deltas);
             all_solved &= solved;
-            all_impacted_edges.extend(impacted_edges);
-            all_impacted_nodes.extend(impacted_nodes);
+            all_conflicts.extend(conflicts);
+            // all_impacted_nodes.extend(impacted_nodes);
             // FIXME: Maybe wrap the btreesets into options
         }
-        (all_impacted_edges, all_impacted_nodes, all_solved)
+        for (edge_index, grow_rate) in edge_deltas.into_iter() {
+            dual_module.grow_edge(edge_index, &grow_rate);
+            if grow_rate.is_positive() && dual_module.is_edge_tight(edge_index) {
+                all_conflicts.insert(MaxUpdateLength::Conflicting(edge_index));
+            }
+        }
+        (all_conflicts, all_solved)
     }
 
     // fn get_grow_rate(&self, cluster_index: NodeIndex, dual_node_ptr: &DualNodePtr) {

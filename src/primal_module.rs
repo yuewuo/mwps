@@ -4,17 +4,21 @@
 //!
 
 use crate::dual_module::*;
-use crate::num_traits::{FromPrimitive, One};
+use crate::num_traits::{FromPrimitive, One, Signed};
 use crate::pointers::*;
 use crate::util::*;
 use crate::visualize::*;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 /// common trait that must be implemented for each implementation of primal module
 pub trait PrimalModuleImpl {
     fn get_grow_rate(&self, cluster_index: NodeIndex, dual_node_ptr: &DualNodePtr) -> Rational {
         panic!("not implemented lol");
+    }
+
+    fn set_zeros<D: DualModuleImpl>(&mut self, dual_module: &mut D) {
+        panic!("not implemented lol 345");
     }
     /// create a primal module given the dual module
     fn new_empty(solver_initializer: &SolverInitializer) -> Self;
@@ -50,7 +54,7 @@ pub trait PrimalModuleImpl {
         group_max_update_length: BTreeSet<MaxUpdateLength>,
         interface: &DualModuleInterfacePtr,
         dual_module: &mut impl DualModuleImpl,
-    ) -> (BTreeSet<EdgeIndex>, BTreeSet<DualNodePtr>, bool) {
+    ) -> (BTreeSet<MaxUpdateLength>, bool) {
         panic!("not implemented")
     }
 
@@ -152,21 +156,25 @@ pub trait PrimalModuleImpl {
             if start {
                 start = false;
                 dual_module.advance_mode();
+                self.set_zeros(dual_module);
             }
             for cluster_index in self.pending_clusters() {
-                let (_impacted_edges, _impacted_nodes, _resolved) =
-                    self.resolve_cluster_tune(cluster_index, interface, dual_module);
-                if !_resolved {
-                    let mut conflicts = dual_module.get_current_conflicts(&_impacted_edges, &_impacted_nodes);
-
-                    loop {
-                        let (impacted_edges, impacted_nodes, resolved) =
-                            self.resolve_tune(conflicts, interface, dual_module);
-                        if resolved {
-                            break;
-                        }
-                        conflicts = dual_module.get_current_conflicts(&impacted_edges, &impacted_nodes);
+                let mut edge_deltas = BTreeMap::new();
+                let (mut conflicts, mut resolved) =
+                    self.resolve_cluster_tune(cluster_index, interface, dual_module, &mut edge_deltas);
+                for (edge_index, grow_rate) in edge_deltas.into_iter() {
+                    dual_module.grow_edge(edge_index, &grow_rate);
+                    if grow_rate.is_positive() && dual_module.is_edge_tight(edge_index) {
+                        conflicts.insert(MaxUpdateLength::Conflicting(edge_index));
                     }
+                }
+                while !resolved {
+                    let (_conflicts, _resolved) = self.resolve_tune(conflicts, interface, dual_module);
+                    if resolved {
+                        break;
+                    }
+                    conflicts = _conflicts;
+                    resolved = _resolved;
                 }
             }
         }
@@ -200,16 +208,14 @@ pub trait PrimalModuleImpl {
         json!({})
     }
 
+    /// check if there are more plugins to be applied, defaulted to having no plugins
     fn has_more_plugins(&mut self) -> bool {
         false
     }
 
+    /// in "tune" mode, return the list of clusters that need to be resolved
     fn pending_clusters(&mut self) -> Vec<usize> {
         panic!("!!!");
-    }
-
-    fn is_solved<D: DualModuleImpl>(&mut self, interface_ptr: &DualModuleInterfacePtr, dual_module: &mut D) -> bool {
-        false
     }
 
     fn resolve_cluster(
@@ -225,7 +231,8 @@ pub trait PrimalModuleImpl {
         cluster_index: NodeIndex,
         interface_ptr: &DualModuleInterfacePtr,
         dual_module: &mut impl DualModuleImpl,
-    ) -> (BTreeSet<EdgeIndex>, BTreeSet<DualNodePtr>, bool) {
+        edge_deltas: &mut BTreeMap<EdgeIndex, Rational>,
+    ) -> (BTreeSet<MaxUpdateLength>, bool) {
         panic!("falskdj")
     }
 }
