@@ -203,6 +203,54 @@ pub trait DualModuleImpl {
     fn get_edge_nodes(&self, edge_index: EdgeIndex) -> Vec<DualNodePtr>;
     fn get_edge_slack(&self, edge_index: EdgeIndex) -> Rational;
     fn is_edge_tight(&self, edge_index: EdgeIndex) -> bool;
+
+    // /*
+    //  * similar to fusion blossom, the following apis are only required when this dual module can be used as a partitioned one
+    //  * I am not sure whether these apis are used or not
+    //  */
+    // /// create a partitioned dual module (hosting only a subgraph and subset of dual nodes) to be used in the parallel dual module
+    // fn new_partitioned(_partitioned_initializer: &PartitionedSolverInitializer) -> Self
+    // where
+    //     Self: std::marker::Sized,
+    // {
+    //     panic!("the dual module implementation doesn't support this function, please use another dual module")
+    // }
+
+    // /// prepare the growing or shrinking state of all nodes and return a list of sync requests in case of mirrored vertices are changed
+    // fn prepare_all(&mut self) -> &mut Vec<SyncRequest> {
+    //     panic!("the dual module implementation doesn't support this function, please use another dual module")
+    // }
+
+    // /// execute a synchronize event by updating the state of a vertex and also update the internal dual node accordingly
+    // fn execute_sync_event(&mut self, _sync_event: &SyncRequest) {
+    //     panic!("the dual module implementation doesn't support this function, please use another dual module")
+    // }
+
+    // /// judge whether the current module hosts the dual node
+    // fn contains_dual_node(&self, _dual_node_ptr: &DualNodePtr) -> bool {
+    //     panic!("the dual module implementation doesn't support this function, please use another dual module")
+    // }
+
+    // /// judge whether the current module hosts any of these dual node
+    // fn contains_dual_nodes_any(&self, dual_node_ptrs: &[DualNodePtr]) -> bool {
+    //     for dual_node_ptr in dual_node_ptrs.iter() {
+    //         if self.contains_dual_node(dual_node_ptr) {
+    //             return true;
+    //         }
+    //     }
+    //     false
+    // }
+
+    // /// judge whether the current module hosts a vertex
+    // fn contains_vertex(&self, _vertex_index: VertexIndex) -> bool {
+    //     panic!("the dual module implementation doesn't support this function, please use another dual module")
+    // }
+
+    // /// bias the global dual node indices
+    // fn bias_dual_node_index(&mut self, _bias: NodeIndex) {
+    //     panic!("the dual module implementation doesn't support this function, please use another dual module")
+    // }
+    
 }
 
 impl MaxUpdateLength {
@@ -459,5 +507,42 @@ impl MWPSVisualizer for DualModuleInterfacePtr {
             },
             "dual_nodes": dual_nodes,
         })
+    }
+}
+
+
+
+/// this dual module is a parallel version that hosts many partitioned ones
+pub trait DualModuleParallelImpl {
+    type UnitType: DualModuleImpl + Send + Sync;
+
+    fn get_unit(&self, unit_index: usize) -> ArcManualSafeLock<Self::UnitType>;
+}
+
+/// synchronize request on vertices, when a vertex is mirrored
+#[derive(Derivative)]
+#[derivative(Debug)]
+pub struct SyncRequest {
+    /// the unit that owns this vertex
+    pub mirror_unit_weak: PartitionUnitWeak,
+    /// the vertex index to be synchronized
+    pub vertex_index: VertexIndex,
+    /// propagated dual node index and the dual variable of the propagated dual node;
+    /// this field is necessary to differentiate between normal shrink and the one that needs to report VertexShrinkStop event, when the syndrome is on the interface;
+    /// it also includes the representative vertex of the dual node, so that parents can keep track of whether it should be elevated
+    pub propagated_dual_node: Option<(DualNodeWeak, Weight, VertexIndex)>,
+    /// propagated grandson node: must be a syndrome node
+    pub propagated_grandson_dual_node: Option<(DualNodeWeak, Weight, VertexIndex)>,
+}
+
+impl SyncRequest {
+    /// update all the interface nodes to be up-to-date, only necessary when there are fusion
+    pub fn update(&self) {
+        if let Some((weak, ..)) = &self.propagated_dual_node {
+            weak.upgrade_force().update();
+        }
+        if let Some((weak, ..)) = &self.propagated_grandson_dual_node {
+            weak.upgrade_force().update();
+        }
     }
 }
