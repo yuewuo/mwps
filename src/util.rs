@@ -1,7 +1,7 @@
 use crate::mwpf_solver::*;
-use crate::pointers::*;
 use crate::num_rational;
 use crate::num_traits::ToPrimitive;
+use crate::pointers::*; // modified by yl
 use crate::rand_xoshiro;
 use crate::rand_xoshiro::rand_core::RngCore;
 use crate::visualize::*;
@@ -150,9 +150,6 @@ impl SolverInitializer {
         defect_vertices
     }
 }
-
-/// timestamp type determines how many fast clear before a hard clear is required, see [`FastClear`]
-pub type FastClearTimestamp = usize;
 
 impl MWPSVisualizer for SolverInitializer {
     fn snapshot(&self, abbrev: bool) -> serde_json::Value {
@@ -552,18 +549,11 @@ pub(crate) fn register(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
     Ok(())
 }
 
-
-
-
 //////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////
-//////////////////////////////////////////////////////////////////////////////
-//////////////////////////////////////////////////////////////////////////////
-// copied from util.rs in Fusion Blossom 
-
-
-/// an efficient representation of partitioned vertices and erasures when they're ordered
+// /// Added by yl, Partition
+/// 
 #[derive(Debug, Clone, Serialize)]
 pub struct PartitionedSyndromePattern<'a> {
     /// the original syndrome pattern to be partitioned
@@ -576,9 +566,9 @@ impl<'a> PartitionedSyndromePattern<'a> {
     pub fn new(syndrome_pattern: &'a SyndromePattern) -> Self {
         assert!(
             syndrome_pattern.erasures.is_empty(),
-            "erasure partition not supported yet;
-        even if the edges in the erasure is well ordered, they may not be able to be represented as
-        a single range simply because the partition is vertex-based. need more consideration"
+            "erasure partition not supported yet; even if the edges in the erasure is well ordered, 
+            they may not be able to be represented as a single range simply because the partition is vertex-based.
+            need more consideration"
         );
         Self {
             syndrome_pattern,
@@ -587,12 +577,13 @@ impl<'a> PartitionedSyndromePattern<'a> {
     }
 }
 
+/// we define DefectRange, DefectVertex here
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(transparent)]
-#[cfg_attr(feature = "python_binding", cfg_eval)]
-#[cfg_attr(feature = "python_binding", pyclass)]
+// #[cfg_attr(feature = "python_binding", cfg_eval)]
+// #[cfg_attr(feature = "python_binding", pyclass)]
 pub struct IndexRange {
-    pub range: [VertexNodeIndex; 2],
+    pub range: [VertexNodeIndex; 2], // 2 elements of type VertexNodeIndex
 }
 
 // just to distinguish them in code, essentially nothing different
@@ -600,69 +591,69 @@ pub type VertexRange = IndexRange;
 pub type NodeRange = IndexRange;
 pub type DefectRange = IndexRange;
 
-#[cfg_attr(feature = "python_binding", cfg_eval)]
-#[cfg_attr(feature = "python_binding", pymethods)]
 impl IndexRange {
-    #[cfg_attr(feature = "python_binding", new)]
     pub fn new(start: VertexNodeIndex, end: VertexNodeIndex) -> Self {
-        debug_assert!(end >= start, "invalid range [{}, {})", start, end);
-        Self { range: [start, end] }
+        debug_assert!(end >= start, "invalid range [{}, {}]", start, end);
+        Self { range: [start, end]}
     }
-    #[cfg_attr(feature = "python_binding", staticmethod)]
+
     pub fn new_length(start: VertexNodeIndex, length: VertexNodeIndex) -> Self {
         Self::new(start, start + length)
     }
+
     pub fn is_empty(&self) -> bool {
         self.range[1] == self.range[0]
     }
-    #[allow(clippy::unnecessary_cast)]
+
     pub fn len(&self) -> usize {
         (self.range[1] - self.range[0]) as usize
     }
+
     pub fn start(&self) -> VertexNodeIndex {
         self.range[0]
     }
+
     pub fn end(&self) -> VertexNodeIndex {
         self.range[1]
     }
+
     pub fn append_by(&mut self, append_count: VertexNodeIndex) {
         self.range[1] += append_count;
     }
+
     pub fn bias_by(&mut self, bias: VertexNodeIndex) {
         self.range[0] += bias;
         self.range[1] += bias;
     }
+
     pub fn sanity_check(&self) {
         assert!(self.start() <= self.end(), "invalid vertex range {:?}", self);
     }
+
     pub fn contains(&self, vertex_index: VertexNodeIndex) -> bool {
         vertex_index >= self.start() && vertex_index < self.end()
     }
-    /// fuse two ranges together, returning (the whole range, the interfacing range)
+
+    /// fuse 2 ranges together, returning (the whole range, the interfacing range)
     pub fn fuse(&self, other: &Self) -> (Self, Self) {
         self.sanity_check();
         other.sanity_check();
         assert!(self.range[1] <= other.range[0], "only lower range can fuse higher range");
         (
             Self::new(self.range[0], other.range[1]),
-            Self::new(self.range[1], other.range[0]),
+            Self::new(self.range[1], other.range[0])
         )
     }
-    #[cfg(feature = "python_binding")]
-    #[pyo3(name = "contains_any")]
-    pub fn python_contains_any(&self, vertex_indices: Vec<VertexNodeIndex>) -> bool {
-        self.contains_any(&vertex_indices)
-    }
-    #[cfg(feature = "python_binding")]
-    fn __repr__(&self) -> String {
-        format!("{:?}", self)
-    }
 }
+
 
 impl IndexRange {
     pub fn iter(&self) -> std::ops::Range<VertexNodeIndex> {
         self.range[0]..self.range[1]
     }
+
+    /// checks if any of the vertex indices in the vertex_indices vector/array fall within the range 
+    /// defined by self.range.
     pub fn contains_any(&self, vertex_indices: &[VertexNodeIndex]) -> bool {
         for vertex_index in vertex_indices.iter() {
             if self.contains(*vertex_index) {
@@ -682,9 +673,10 @@ pub struct PartitionUnit {
     pub enabled: bool,
 }
 
-pub type PartitionUnitPtr = ArcManualSafeLock<PartitionUnit>;
-pub type PartitionUnitWeak = WeakManualSafeLock<PartitionUnit>;
+pub type PartitionUnitPtr = ArcRwLock<PartitionUnit>;
+pub type PartitionUnitWeak = WeakRwLock<PartitionUnit>;
 
+/// I am not sure what these 2 functions are doing
 impl std::fmt::Debug for PartitionUnitPtr {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         let partition_unit = self.read_recursive();
@@ -706,27 +698,16 @@ impl std::fmt::Debug for PartitionUnitWeak {
 /// user input partition configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-#[cfg_attr(feature = "python_binding", cfg_eval)]
-#[cfg_attr(feature = "python_binding", pyclass)]
 pub struct PartitionConfig {
     /// the number of vertices
-    #[cfg_attr(feature = "python_binding", pyo3(get, set))]
     pub vertex_num: VertexNum,
     /// detailed plan of partitioning serial modules: each serial module possesses a list of vertices, including all interface vertices
-    #[cfg_attr(feature = "python_binding", pyo3(get, set))]
     pub partitions: Vec<VertexRange>,
     /// detailed plan of interfacing vertices
-    #[cfg_attr(feature = "python_binding", pyo3(get, set))]
     pub fusions: Vec<(usize, usize)>,
 }
 
-#[cfg(feature = "python_binding")]
-bind_trait_python_json! {PartitionConfig}
-
-#[cfg_attr(feature = "python_binding", cfg_eval)]
-#[cfg_attr(feature = "python_binding", pymethods)]
 impl PartitionConfig {
-    #[cfg_attr(feature = "python_binding", new)]
     pub fn new(vertex_num: VertexNum) -> Self {
         Self {
             vertex_num,
@@ -735,12 +716,6 @@ impl PartitionConfig {
         }
     }
 
-    #[cfg(feature = "python_binding")]
-    fn __repr__(&self) -> String {
-        format!("{:?}", self)
-    }
-
-    #[allow(clippy::unnecessary_cast)]
     pub fn info(&self) -> PartitionInfo {
         assert!(!self.partitions.is_empty(), "at least one partition must exist");
         let mut whole_ranges = vec![];
@@ -840,25 +815,16 @@ impl PartitionConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "python_binding", cfg_eval)]
-#[cfg_attr(feature = "python_binding", pyclass)]
 pub struct PartitionInfo {
     /// the initial configuration that creates this info
-    #[cfg_attr(feature = "python_binding", pyo3(get, set))]
     pub config: PartitionConfig,
     /// individual info of each unit
-    #[cfg_attr(feature = "python_binding", pyo3(get, set))]
     pub units: Vec<PartitionUnitInfo>,
     /// the mapping from vertices to the owning unit: serial unit (holding real vertices) as well as parallel units (holding interfacing vertices);
     /// used for loading syndrome to the holding units
-    #[cfg_attr(feature = "python_binding", pyo3(get, set))]
     pub vertex_to_owning_unit: Vec<usize>,
 }
 
-#[cfg(feature = "python_binding")]
-bind_trait_python_json! {PartitionInfo}
-
-#[cfg_attr(feature = "python_binding", pymethods)]
 impl PartitionInfo {
     /// split a sequence of syndrome into multiple parts, each corresponds to a unit;
     /// this is a slow method and should only be used when the syndrome pattern is not well-ordered
@@ -871,11 +837,6 @@ impl PartitionInfo {
         }
         // TODO: partition edges
         partitioned_syndrome
-    }
-
-    #[cfg(feature = "python_binding")]
-    fn __repr__(&self) -> String {
-        format!("{:?}", self)
     }
 }
 
@@ -941,39 +902,21 @@ impl<'a> PartitionedSyndromePattern<'a> {
     }
 }
 
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "python_binding", cfg_eval)]
-#[cfg_attr(feature = "python_binding", pyclass)]
 pub struct PartitionUnitInfo {
     /// the whole range of units
-    #[cfg_attr(feature = "python_binding", pyo3(get, set))]
     pub whole_range: VertexRange,
     /// the owning range of units, meaning vertices inside are exclusively belonging to the unit
-    #[cfg_attr(feature = "python_binding", pyo3(get, set))]
     pub owning_range: VertexRange,
     /// left and right
-    #[cfg_attr(feature = "python_binding", pyo3(get, set))]
     pub children: Option<(usize, usize)>,
     /// parent dual module
-    #[cfg_attr(feature = "python_binding", pyo3(get, set))]
     pub parent: Option<usize>,
     /// all the leaf dual modules
-    #[cfg_attr(feature = "python_binding", pyo3(get, set))]
     pub leaves: Vec<usize>,
     /// all the descendants
-    #[cfg_attr(feature = "python_binding", pyo3(get, set))]
     pub descendants: BTreeSet<usize>,
-}
-
-#[cfg(feature = "python_binding")]
-bind_trait_python_json! {PartitionUnitInfo}
-
-#[cfg(feature = "python_binding")]
-#[pymethods]
-impl PartitionUnitInfo {
-    fn __repr__(&self) -> String {
-        format!("{:?}", self)
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -1022,3 +965,43 @@ pub fn translated_defect_to_reordered(
         .map(|old_index| old_to_new[*old_index as usize].unwrap())
         .collect()
 }
+
+#[cfg(test)]
+pub mod tests {
+    use super::*;
+
+    /// test syndrome partition utilities
+    #[test]
+    fn util_partitioned_syndrome_pattern_1() {
+        // cargo test util_partitioned_syndrome_pattern_1 -- --nocapture
+        let mut partition_config = PartitionConfig::new(132);
+        partition_config.partitions = vec![
+            VertexRange::new(0, 72),   // unit 0
+            VertexRange::new(84, 132), // unit 1
+        ];
+        partition_config.fusions = vec![
+            (0, 1), // unit 2, by fusing 0 and 1
+        ];
+        let partition_info = partition_config.info();
+        let tests = vec![
+            (vec![10, 11, 12, 71, 72, 73, 84, 85, 111], DefectRange::new(4, 6)),
+            (vec![10, 11, 12, 13, 71, 72, 73, 84, 85, 111], DefectRange::new(5, 7)),
+            (vec![10, 11, 12, 71, 72, 73, 83, 84, 85, 111], DefectRange::new(4, 7)),
+            (
+                vec![10, 11, 12, 71, 72, 73, 84, 85, 100, 101, 102, 103, 111],
+                DefectRange::new(4, 6),
+            ),
+        ];
+        for (defect_vertices, expected_defect_range) in tests.into_iter() {
+            let syndrome_pattern = SyndromePattern::new(defect_vertices, vec![]);
+            let partitioned_syndrome_pattern = PartitionedSyndromePattern::new(&syndrome_pattern);
+            let (owned_partitioned, (_left_partitioned, _right_partitioned)) =
+                partitioned_syndrome_pattern.partition(&partition_info.units[2]);
+            println!("defect_range: {:?}", owned_partitioned.whole_defect_range);
+            assert_eq!(owned_partitioned.whole_defect_range, expected_defect_range);
+        }
+    }
+}
+
+//////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////

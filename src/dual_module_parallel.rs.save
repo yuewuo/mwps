@@ -495,7 +495,7 @@ impl<SerialModule: DualModuleImpl + Send + Sync> DualModuleImpl for DualModulePa
         })
     }
 
-    fn compute_maximum_update_length_dual_node(&mut self, dual_node_ptr: &DualNodePtr, simultaneous_update: bool) {
+    fn compute_maximum_update_length_dual_node(&mut self, dual_node_ptr: &DualNodePtr, simultaneous_update: bool) -> MaxUpdateLength {
         let unit_ptr = self.find_active_ancestor(dual_node_ptr);
         self.thread_pool.scope(|_| {
             lock_write!(unit, unit_ptr);
@@ -632,8 +632,8 @@ impl<SerialModule: DualModuleImpl + Send + Sync> DualModuleParallelUnit<SerialMo
         self.serial_module.bias_dual_node_index(bias);
     }
 
-     /// if any descendant unit mirror or own the vertex
-     pub fn is_vertex_in_descendant(&self, vertex_index: VertexIndex) -> bool {
+    /// if any descendant unit mirror or own the vertex
+    pub fn is_vertex_in_descendant(&self, vertex_index: VertexIndex) -> bool {
         self.whole_range.contains(vertex_index) || self.extra_descendant_mirrored_vertices.contains(&vertex_index)
     }
 
@@ -642,7 +642,7 @@ impl<SerialModule: DualModuleImpl + Send + Sync> DualModuleParallelUnit<SerialMo
         // println!("sync_requests: {sync_requests:?}");
         for sync_request in sync_requests.iter() {
             sync_request.update();
-            self.execute_sync_event(sync_request);
+            self.execute_sync_events(sync_request);
         }
     }
 
@@ -1091,6 +1091,11 @@ impl<SerialModule: DualModuleImpl + Send + Sync> DualModuleImpl for DualModulePa
         self.serial_module.clear()
     }
 
+    /// add defect node 
+    fn add_defect_node(&mut self, dual_node_ptr: &DualNodePtr) {
+        unimplemented!();
+    }
+
     /// add a new dual node from dual module root
     fn add_dual_node(&mut self, dual_node_ptr: &DualNodePtr) {
         self.has_active_node = true;
@@ -1218,7 +1223,7 @@ impl<SerialModule: DualModuleImpl + Send + Sync> DualModuleImpl for DualModulePa
         group_max_update_length
     }
 
-    fn grow_dual_node(&mut self, dual_node_ptr: &DualNodePtr, length: Weight) {
+    fn grow_dual_node(&mut self, dual_node_ptr: &DualNodePtr, length: Rational) {
         let representative_vertex = dual_node_ptr.get_representative_vertex();
         debug_assert!(
             self.whole_range.contains(representative_vertex),
@@ -1229,21 +1234,24 @@ impl<SerialModule: DualModuleImpl + Send + Sync> DualModuleImpl for DualModulePa
 
     /// grow a specific length globally, length must be positive.
     /// note that a negative growth should be implemented by reversing the speed of each dual node
-    fn grow(&mut self, length: Weight) {
+    fn grow(&mut self, length: Rational) {
         self.iterative_grow(length);
     }
 
     // not sure about this
     fn get_edge_nodes(&self, edge_index: EdgeIndex) -> Vec<DualNodePtr> {
-        self.serial_module.get_edge_nodes(edge_index)
+        // self.serial_module.get_edge_nodes(edge_index)
+        unimplemented!()
     }
 
     fn get_edge_slack(&self, edge_index: EdgeIndex) -> Rational {
-        self.serial_module.get_edge_slack(edge_index)
+        // self.serial_module.get_edge_slack(edge_index)
+        unimplemented!()
     }
 
     fn is_edge_tight(&self, edge_index: EdgeIndex) -> bool {
-        self.serial_module.is_edge_tight(edge_index)
+        // self.serial_module.is_edge_tight(edge_index)
+        unimplemented!()
     }
 
     // fn load_edge_modifier(&mut self, edge_modifier: &[(EdgeIndex, Weight)]) {
