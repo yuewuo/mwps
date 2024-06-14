@@ -114,6 +114,25 @@ impl<T> std::ops::Deref for ArcRwLock<T> {
     }
 }
 
+cfg_if::cfg_if! {
+    if #[cfg(feature="unsafe_pointer")] {
+        #[macro_export]
+        macro_rules! lock_write {
+            ($variable:ident, $lock:expr) => { let $variable = $lock.write(); };
+            ($variable:ident, $lock:expr, $timestamp:expr) => { let $variable = $lock.write($timestamp); };
+        }
+        #[allow(unused_imports)] pub use lock_write;
+    } else {
+        #[macro_export]
+        macro_rules! lock_write {
+            ($variable:ident, $lock:expr) => { let mut $variable = $lock.write(); };
+            ($variable:ident, $lock:expr, $timestamp:expr) => { let mut $variable = $lock.write($timestamp); };
+        }
+        #[allow(unused_imports)] pub use lock_write;
+    }
+}
+
+
 #[cfg(test)]
 mod tests {
     use super::*;

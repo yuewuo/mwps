@@ -171,6 +171,34 @@ impl std::fmt::Debug for DualModuleInterfaceWeak {
     }
 }
 
+/// synchronize request on vertices, when a vertex is mirrored
+#[derive(Derivative)]
+#[derivative(Debug)]
+pub struct SyncRequest {
+    /// the unit that owns this vertex
+    pub mirror_unit_weak: PartitionUnitWeak,
+    /// the vertex index to be synchronized
+    pub vertex_index: VertexIndex,
+    /// propagated dual node index and the dual variable of the propagated dual node;
+    /// this field is necessary to differentiate between normal shrink and the one that needs to report VertexShrinkStop event, when the syndrome is on the interface;
+    /// it also includes the representative vertex of the dual node, so that parents can keep track of whether it should be elevated
+    pub propagated_dual_node: Option<(DualNodeWeak, Weight, VertexIndex)>,
+    /// propagated grandson node: must be a syndrome node
+    pub propagated_grandson_dual_node: Option<(DualNodeWeak, Weight, VertexIndex)>,
+}
+
+impl SyncRequest {
+    /// update all the interface nodes to be up-to-date, only necessary when there are fusion
+    pub fn update(&self) {
+        if let Some((weak, ..)) = &self.propagated_dual_node {
+            weak.upgrade_force().update();
+        }
+        if let Some((weak, ..)) = &self.propagated_grandson_dual_node {
+            weak.upgrade_force().update();
+        }
+    }
+}
+
 /// gives the maximum absolute length to grow, if not possible, give the reason;
 /// note that strong reference is stored in `MaxUpdateLength` so dropping these temporary messages are necessary to avoid memory leakage
 #[derive(Derivative, PartialEq, Eq, Clone, PartialOrd, Ord)]
