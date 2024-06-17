@@ -167,7 +167,7 @@ impl<SerialModule: DualModuleImpl + Send + Sync> DualModuleParallel<SerialModule
                                 }
                             }
                             if is_incident {
-                                mirror_vertices.push((vertex_index, is_vertex_virtual[vertex_index as usize]));
+                                mirror_vertices.push(vertex_index);
                                 contained_vertices.insert(vertex_index);
                             }
                         }
@@ -189,7 +189,7 @@ impl<SerialModule: DualModuleImpl + Send + Sync> DualModuleParallel<SerialModule
                         if has_incident {
                             // add all vertices as mirrored
                             for vertex_index in partition_info.units[*parent_index].owning_range.iter() {
-                                mirror_vertices.push((vertex_index, is_vertex_virtual[vertex_index as usize]));
+                                mirror_vertices.push(vertex_index);
                                 contained_vertices.insert(vertex_index);
                             }
                         }
@@ -213,10 +213,6 @@ impl<SerialModule: DualModuleImpl + Send + Sync> DualModuleParallel<SerialModule
                     },
                     weighted_edges: vec![], // to be filled later
                     interfaces,
-                    virtual_vertices: owning_range
-                        .iter()
-                        .filter(|vertex_index| is_vertex_virtual[*vertex_index as usize])
-                        .collect(),
                 } // note that all fields can be modified later
             })
             .collect();
@@ -227,7 +223,7 @@ impl<SerialModule: DualModuleImpl + Send + Sync> DualModuleParallel<SerialModule
                 assert!(vertex_index < initializer.vertex_num, "hyperedge {edge_index} connected to an invalid vertex {vertex_index}");
             }
 
-            
+
         }
         for (edge_index, &(i, j, weight)) in initializer.weighted_edges.iter().enumerate() {
             assert_ne!(i, j, "invalid edge from and to the same vertex {}", i);

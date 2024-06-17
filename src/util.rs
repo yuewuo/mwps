@@ -934,12 +934,10 @@ pub struct PartitionedSolverInitializer {
     /// if applicable, parent interface comes first, then the grandparent interface, ... note that some ancestor might be skipped because it has no mirrored vertices;
     /// we skip them because if the partition is in a chain, most of them would only have to know two interfaces on the left and on the right; nothing else necessary.
     /// (unit_index, list of vertices owned by this ancestor unit and should be mirrored at this partition and whether it's virtual)
-    pub interfaces: Vec<(PartitionUnitWeak, Vec<(VertexIndex, bool)>)>,
+    pub interfaces: Vec<(PartitionUnitWeak, Vec<VertexIndex>)>,
     /// weighted edges, where the first vertex index is within the range [vertex_index_bias, vertex_index_bias + vertex_num) and
     /// the second is either in [vertex_index_bias, vertex_index_bias + vertex_num) or inside
     pub weighted_edges: Vec<(VertexIndex, VertexIndex, Weight, EdgeIndex)>,
-    /// the virtual vertices
-    pub virtual_vertices: Vec<VertexIndex>,
 }
 
 /// perform index transformation
