@@ -12,6 +12,9 @@ use crate::util::*;
 use crate::visualize::*;
 use num_traits::FromPrimitive;
 use std::collections::BTreeSet;
+use std::sync::Arc;
+use std::collections::HashMap;
+
 
 pub struct DualModuleSerial {
     /// all vertices including virtual ones
@@ -38,6 +41,14 @@ pub struct Vertex {
     /// all neighbor edges, in surface code this should be constant number of edges
     #[derivative(Debug = "ignore")]
     pub edges: Vec<EdgeWeak>,
+    /// (added by yl) if it's a mirrored vertex (present on multiple units), then this is the parallel unit that exclusively owns it
+    pub mirror_unit: Option<PartitionUnitWeak>,
+    /// all neighbor edges, in surface code this should be constant number of edges
+    #[derivative(Debug = "ignore")]
+    /// propagated dual node
+    pub propagated_dual_node: Option<DualNodeInternalWeak>,
+    /// propagated grandson node: must be a syndrome node
+    pub propagated_grandson_dual_node: Option<DualNodeInternalWeak>,
 }
 
 pub type VertexPtr = ArcRwLock<Vertex>;
@@ -101,6 +112,48 @@ impl std::fmt::Debug for EdgeWeak {
     }
 }
 
+///////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////
+
+/// internal information of the dual node, added to the [`DualNode`]
+#[derive(Derivative)]
+#[derivative(Debug)]
+pub struct DualNodeInternal {
+    /// the pointer to the origin [`DualNode`]
+    pub origin: DualNodeWeak,
+    /// local index, to find myself in [`DualModuleSerial::nodes`]
+    index: NodeIndex,
+    /// dual variable of this node
+    pub dual_variable: Weight,
+    /// edges on the boundary of this node, (`is_left`, `edge`)
+    pub boundary: Vec<(bool, EdgeWeak)>,
+    /// over-grown vertices on the boundary of this node, this is to solve a bug where all surrounding edges are fully grown
+    /// so all edges are deleted from the boundary... this will lose track of the real boundary when shrinking back
+    pub overgrown_stack: Vec<(VertexWeak, Weight)>,
+    /// helps to prevent duplicate visit in a single cycle
+    last_visit_cycle: usize,
+}
+
+// when using feature `dangerous_pointer`, it doesn't provide the `upgrade()` function, so we have to fall back to the safe solution
+pub type DualNodeInternalPtr = ArcRwLock<DualNodeInternal>;
+pub type DualNodeInternalWeak = WeakRwLock<DualNodeInternal>;
+
+impl std::fmt::Debug for DualNodeInternalPtr {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let dual_node_internal = self.read_recursive();
+        write!(f, "{}", dual_node_internal.index)
+    }
+}
+
+impl std::fmt::Debug for DualNodeInternalWeak {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        self.upgrade_force().fmt(f)
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////
+
 impl DualModuleImpl for DualModuleSerial {
     /// initialize the dual module, which is supposed to be reused for multiple decoding tasks with the same structure
     #[allow(clippy::unnecessary_cast)]
@@ -113,6 +166,9 @@ impl DualModuleImpl for DualModuleSerial {
                     vertex_index,
                     is_defect: false,
                     edges: vec![],
+                    mirror_unit: None,
+                    propagated_dual_node: None,
+                    propagated_grandson_dual_node: None,
                 })
             })
             .collect();
@@ -393,6 +449,136 @@ impl DualModuleImpl for DualModuleSerial {
         let edge = self.edges[edge_index as usize].read_recursive();
         edge.growth == edge.weight
     }
+
+    #[allow(clippy::unnecessary_cast)]
+    fn new_partitioned(partitioned_initializer: &PartitionedSolverInitializer) -> Self {
+        let active_timestamp = 0;
+        // create vertices
+        let mut vertices: Vec<VertexPtr> = partitioned_initializer
+            .owning_range
+            .iter()
+            .map(|vertex_index| {
+                VertexPtr::new_value(Vertex {
+                    vertex_index,
+                    is_defect: false,
+                    mirror_unit: partitioned_initializer.owning_interface.clone(),
+                    edges: Vec::new(),
+                    propagated_dual_node: None,
+                    propagated_grandson_dual_node: None,
+                })
+            })
+            .collect();
+        // add interface vertices
+        let mut mirrored_vertices = HashMap::<VertexIndex, VertexIndex>::new(); // all mirrored vertices mapping to their local indices
+        for (mirror_unit, interface_vertices) in partitioned_initializer.interfaces.iter() {
+            for vertex_index in interface_vertices.iter() {
+                mirrored_vertices.insert(*vertex_index, vertices.len() as VertexIndex);
+                vertices.push(VertexPtr::new_value(Vertex {
+                    vertex_index: *vertex_index,
+                    is_defect: false,
+                    mirror_unit: Some(mirror_unit.clone()),
+                    edges: Vec::new(),
+                    propagated_dual_node: None,
+                    propagated_grandson_dual_node: None,
+                }))
+            }
+        }
+        // set edges
+        let mut edges = Vec::<EdgePtr>::new();
+        for hyperedge in partitioned_initializer.weighted_edges.iter() {
+            assert_ne!(i, j, "invalid edge from and to the same vertex {}", i);
+            assert!(
+                weight % 2 == 0,
+                "edge ({}, {}) has odd weight value; weight should be even",
+                i,
+                j
+            );
+            assert!(weight >= 0, "edge ({}, {}) is negative-weighted", i, j);
+            debug_assert!(
+                partitioned_initializer.owning_range.contains(i) || mirrored_vertices.contains_key(&i),
+                "edge ({}, {}) connected to an invalid vertex {}",
+                i,
+                j,
+                i
+            );
+            debug_assert!(
+                partitioned_initializer.owning_range.contains(j) || mirrored_vertices.contains_key(&j),
+                "edge ({}, {}) connected to an invalid vertex {}",
+                i,
+                j,
+                j
+            );
+            let left = VertexIndex::min(i, j);
+            let right = VertexIndex::max(i, j);
+            let left_index = if partitioned_initializer.owning_range.contains(left) {
+                left - partitioned_initializer.owning_range.start()
+            } else {
+                mirrored_vertices[&left]
+            };
+            let right_index = if partitioned_initializer.owning_range.contains(right) {
+                right - partitioned_initializer.owning_range.start()
+            } else {
+                mirrored_vertices[&right]
+            };
+            let edge_ptr = EdgePtr::new_value(Edge {
+                edge_index,
+                weight,
+                left: vertices[left_index as usize].downgrade(),
+                right: vertices[right_index as usize].downgrade(),
+                left_growth: 0,
+                right_growth: 0,
+                left_dual_node: None,
+                left_grandson_dual_node: None,
+                right_dual_node: None,
+                right_grandson_dual_node: None,
+                timestamp: 0,
+                dedup_timestamp: (0, 0),
+            });
+            for (a, b) in [(left_index, right_index), (right_index, left_index)] {
+                lock_write!(vertex, vertices[a as usize], active_timestamp);
+                debug_assert!({
+                    // O(N^2) sanity check, debug mode only (actually this bug is not critical, only the shorter edge will take effect)
+                    let mut no_duplicate = true;
+                    for edge_weak in vertex.edges.iter() {
+                        let edge_ptr = edge_weak.upgrade_force();
+                        let edge = edge_ptr.read_recursive(active_timestamp);
+                        if edge.left == vertices[b as usize].downgrade() || edge.right == vertices[b as usize].downgrade() {
+                            no_duplicate = false;
+                            eprintln!("duplicated edge between {} and {} with weight w1 = {} and w2 = {}, consider merge them into a single edge", i, j, weight, edge.weight);
+                            break;
+                        }
+                    }
+                    no_duplicate
+                });
+                vertex.edges.push(edge_ptr.downgrade());
+            }
+            edges.push(edge_ptr);
+        }
+        Self {
+            vertices,
+            nodes: vec![],
+            nodes_length: 0,
+            edges,
+            active_timestamp: 0,
+            vertex_num: partitioned_initializer.vertex_num,
+            edge_num: partitioned_initializer.edge_num,
+            owning_range: partitioned_initializer.owning_range,
+            unit_module_info: Some(UnitModuleInfo {
+                unit_index: partitioned_initializer.unit_index,
+                mirrored_vertices,
+                owning_dual_range: VertexRange::new(0, 0),
+                dual_node_pointers: PtrWeakKeyHashMap::<DualNodeWeak, usize>::new(),
+            }),
+            active_list: vec![],
+            current_cycle: 0,
+            edge_modifier: EdgeWeightModifier::new(),
+            edge_dedup_timestamp: 0,
+            sync_requests: vec![],
+            updated_boundary: vec![],
+            propagating_vertices: vec![],
+        }
+    }
+
 }
 
 /*

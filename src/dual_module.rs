@@ -271,6 +271,55 @@ pub trait DualModuleImpl {
     fn get_edge_nodes(&self, edge_index: EdgeIndex) -> Vec<DualNodePtr>;
     fn get_edge_slack(&self, edge_index: EdgeIndex) -> Rational;
     fn is_edge_tight(&self, edge_index: EdgeIndex) -> bool;
+
+
+    /*
+     * the following apis are only required when this dual module can be used as a partitioned one
+     */
+
+    /// create a partitioned dual module (hosting only a subgraph and subset of dual nodes) to be used in the parallel dual module
+    fn new_partitioned(_partitioned_initializer: &PartitionedSolverInitializer) -> Self
+    where
+        Self: std::marker::Sized,
+    {
+        panic!("the dual module implementation doesn't support this function, please use another dual module")
+    }
+
+    /// prepare the growing or shrinking state of all nodes and return a list of sync requests in case of mirrored vertices are changed
+    fn prepare_all(&mut self) -> &mut Vec<SyncRequest> {
+        panic!("the dual module implementation doesn't support this function, please use another dual module")
+    }
+
+    /// execute a synchronize event by updating the state of a vertex and also update the internal dual node accordingly
+    fn execute_sync_event(&mut self, _sync_event: &SyncRequest) {
+        panic!("the dual module implementation doesn't support this function, please use another dual module")
+    }
+
+    /// judge whether the current module hosts the dual node
+    fn contains_dual_node(&self, _dual_node_ptr: &DualNodePtr) -> bool {
+        panic!("the dual module implementation doesn't support this function, please use another dual module")
+    }
+
+    /// judge whether the current module hosts any of these dual node
+    fn contains_dual_nodes_any(&self, dual_node_ptrs: &[DualNodePtr]) -> bool {
+        for dual_node_ptr in dual_node_ptrs.iter() {
+            if self.contains_dual_node(dual_node_ptr) {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// judge whether the current module hosts a vertex
+    fn contains_vertex(&self, _vertex_index: VertexIndex) -> bool {
+        panic!("the dual module implementation doesn't support this function, please use another dual module")
+    }
+
+    /// bias the global dual node indices
+    fn bias_dual_node_index(&mut self, _bias: NodeIndex) {
+        panic!("the dual module implementation doesn't support this function, please use another dual module")
+    }
+
 }
 
 impl MaxUpdateLength {

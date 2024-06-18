@@ -937,7 +937,7 @@ pub struct PartitionedSolverInitializer {
     pub interfaces: Vec<(PartitionUnitWeak, Vec<VertexIndex>)>,
     /// weighted edges, where the first vertex index is within the range [vertex_index_bias, vertex_index_bias + vertex_num) and
     /// the second is either in [vertex_index_bias, vertex_index_bias + vertex_num) or inside
-    pub weighted_edges: Vec<(VertexIndex, VertexIndex, Weight, EdgeIndex)>,
+    pub weighted_edges: Vec<HyperEdge>,
 }
 
 /// perform index transformation
