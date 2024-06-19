@@ -452,7 +452,6 @@ impl DualModuleImpl for DualModuleSerial {
 
     #[allow(clippy::unnecessary_cast)]
     fn new_partitioned(partitioned_initializer: &PartitionedSolverInitializer) -> Self {
-        let active_timestamp = 0;
         // create vertices
         let mut vertices: Vec<VertexPtr> = partitioned_initializer
             .owning_range
@@ -486,6 +485,13 @@ impl DualModuleImpl for DualModuleSerial {
         // set edges
         let mut edges = Vec::<EdgePtr>::new();
         for hyperedge in partitioned_initializer.weighted_edges.iter() {
+            // sanity check, turn off for performance, added by yl
+            for i in 0..hyper_edge.vertices.len() {
+                for j in i+1..hyper_edge.vertices.len() {
+                    assert_ne!(hyper_edge.vertices[i], hyper_edge.vertices[j], "invalid edge connecting 2 same vertex {}", hyper_edge.vertices[i]);
+                }
+            }
+
             assert_ne!(i, j, "invalid edge from and to the same vertex {}", i);
             assert!(
                 weight % 2 == 0,
@@ -493,7 +499,7 @@ impl DualModuleImpl for DualModuleSerial {
                 i,
                 j
             );
-            assert!(weight >= 0, "edge ({}, {}) is negative-weighted", i, j);
+            assert!(hyper_edge.weight >= 0, "edge ({}, {}) is negative-weighted", i, j);
             debug_assert!(
                 partitioned_initializer.owning_range.contains(i) || mirrored_vertices.contains_key(&i),
                 "edge ({}, {}) connected to an invalid vertex {}",

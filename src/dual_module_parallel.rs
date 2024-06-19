@@ -229,16 +229,21 @@ impl<SerialModule: DualModuleImpl + Send + Sync> DualModuleParallel<SerialModule
             }
 
             for i in 0..vertices_unit_indices.len() {
-                for j in 0..vertices_unit_indices.len() {
+                for j in i..vertices_unit_indices.len() {
                     let i_unit_index = vertices_unit_indices[i];
                     let j_unit_index = vertices_unit_indices[j];
                     let is_i_ancestor = partition_info.units[i_unit_index].descendants.contains(&vertices_unit_indices[j]);
                     let is_j_ancestor = partition_info.units[j_unit_index].descendants.contains(&vertices_unit_indices[i]);
 
+                    // if both is_i_ancestor and is_j_ancestor are false, that means the 2 units are independent, we skip to the next iteration
+                    if (!is_i_ancestor && !is_j_ancestor) {
+                        continue;
+                    }
+
                     let anscestor_unit_index = if is_i_ancestor {i_unit_index} else {j_unit_index};
                     let descendant_unit_index: usize = if is_i_ancestor {j_unit_index} else {i_unit_index};
 
-                    // it seems that this is always set to True
+                    // it seems that edges_in_fusion_unit is always set to True
                     if config.edges_in_fusion_unit {
                         // the edge should be added to the descendant, and it's guaranteed that the descendant unit contains (although not necessarily owned) the vertex
                         partitioned_initializers[descendant_unit_index]
