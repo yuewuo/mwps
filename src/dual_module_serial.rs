@@ -322,6 +322,8 @@ impl DualModuleImpl for DualModuleSerial {
 
     #[allow(clippy::unnecessary_cast)]
     fn compute_maximum_update_length(&mut self) -> GroupMaxUpdateLength {
+        // added by yl
+        
         let mut group_max_update_length = GroupMaxUpdateLength::new();
         for &edge_index in self.active_edges.iter() {
             let edge = self.edges[edge_index as usize].read_recursive();
@@ -484,104 +486,49 @@ impl DualModuleImpl for DualModuleSerial {
         }
         // set edges
         let mut edges = Vec::<EdgePtr>::new();
-        for hyperedge in partitioned_initializer.weighted_edges.iter() {
+        for (edge_index, hyper_edge) in partitioned_initializer.weighted_edges.iter().enumerate() {
             // sanity check, turn off for performance, added by yl
             for i in 0..hyper_edge.vertices.len() {
                 for j in i+1..hyper_edge.vertices.len() {
                     assert_ne!(hyper_edge.vertices[i], hyper_edge.vertices[j], "invalid edge connecting 2 same vertex {}", hyper_edge.vertices[i]);
                 }
             }
-
-            assert_ne!(i, j, "invalid edge from and to the same vertex {}", i);
-            assert!(
-                weight % 2 == 0,
-                "edge ({}, {}) has odd weight value; weight should be even",
-                i,
-                j
-            );
-            assert!(hyper_edge.weight >= 0, "edge ({}, {}) is negative-weighted", i, j);
-            debug_assert!(
-                partitioned_initializer.owning_range.contains(i) || mirrored_vertices.contains_key(&i),
-                "edge ({}, {}) connected to an invalid vertex {}",
-                i,
-                j,
-                i
-            );
-            debug_assert!(
-                partitioned_initializer.owning_range.contains(j) || mirrored_vertices.contains_key(&j),
-                "edge ({}, {}) connected to an invalid vertex {}",
-                i,
-                j,
-                j
-            );
-            let left = VertexIndex::min(i, j);
-            let right = VertexIndex::max(i, j);
-            let left_index = if partitioned_initializer.owning_range.contains(left) {
-                left - partitioned_initializer.owning_range.start()
-            } else {
-                mirrored_vertices[&left]
-            };
-            let right_index = if partitioned_initializer.owning_range.contains(right) {
-                right - partitioned_initializer.owning_range.start()
-            } else {
-                mirrored_vertices[&right]
-            };
+            assert!(hyper_edge.weight >= 0, "edge ({}) is negative-weighted", edge_index);
+            // calculate the vertex index in partition
+            let mut partitioned_vertex_indicies = Vec::new();
+            let mut verticies_in_partition = Vec::new();
+            for vertex_index in hyper_edge.vertices.iter() {
+                debug_assert!(
+                    partitioned_initializer.owning_range.contains(vertex_index.clone()) || mirrored_vertices.contains_key(vertex_index),
+                    "edge ({}) connected to an invalid vertex {}", edge_index, vertex_index
+                );
+                let vertex_index_in_partition = if partitioned_initializer.owning_range.contains(vertex_index.clone()) {
+                    vertex_index - partitioned_initializer.owning_range.start()
+                } else {
+                    mirrored_vertices[vertex_index]
+                };
+                partitioned_vertex_indicies.push(vertex_index_in_partition);
+                verticies_in_partition.push(vertices[vertex_index_in_partition].downgrade())
+            }
+            // define new edge_ptr
             let edge_ptr = EdgePtr::new_value(Edge {
-                edge_index,
-                weight,
-                left: vertices[left_index as usize].downgrade(),
-                right: vertices[right_index as usize].downgrade(),
-                left_growth: 0,
-                right_growth: 0,
-                left_dual_node: None,
-                left_grandson_dual_node: None,
-                right_dual_node: None,
-                right_grandson_dual_node: None,
-                timestamp: 0,
-                dedup_timestamp: (0, 0),
+                edge_index: edge_index as EdgeIndex,
+                weight: Rational::from_usize(hyper_edge.weight).unwrap(),
+                vertices: verticies_in_partition,
+                growth: Rational::zero(),
+                dual_nodes: vec![],
+                grow_rate: Rational::zero(),
             });
-            for (a, b) in [(left_index, right_index), (right_index, left_index)] {
-                lock_write!(vertex, vertices[a as usize], active_timestamp);
-                debug_assert!({
-                    // O(N^2) sanity check, debug mode only (actually this bug is not critical, only the shorter edge will take effect)
-                    let mut no_duplicate = true;
-                    for edge_weak in vertex.edges.iter() {
-                        let edge_ptr = edge_weak.upgrade_force();
-                        let edge = edge_ptr.read_recursive(active_timestamp);
-                        if edge.left == vertices[b as usize].downgrade() || edge.right == vertices[b as usize].downgrade() {
-                            no_duplicate = false;
-                            eprintln!("duplicated edge between {} and {} with weight w1 = {} and w2 = {}, consider merge them into a single edge", i, j, weight, edge.weight);
-                            break;
-                        }
-                    }
-                    no_duplicate
-                });
-                vertex.edges.push(edge_ptr.downgrade());
+            for &vertex_index in hyper_edge.vertices.iter() {
+                vertices[vertex_index as usize].write().edges.push(edge_ptr.downgrade());
             }
             edges.push(edge_ptr);
         }
         Self {
             vertices,
-            nodes: vec![],
-            nodes_length: 0,
             edges,
-            active_timestamp: 0,
-            vertex_num: partitioned_initializer.vertex_num,
-            edge_num: partitioned_initializer.edge_num,
-            owning_range: partitioned_initializer.owning_range,
-            unit_module_info: Some(UnitModuleInfo {
-                unit_index: partitioned_initializer.unit_index,
-                mirrored_vertices,
-                owning_dual_range: VertexRange::new(0, 0),
-                dual_node_pointers: PtrWeakKeyHashMap::<DualNodeWeak, usize>::new(),
-            }),
-            active_list: vec![],
-            current_cycle: 0,
-            edge_modifier: EdgeWeightModifier::new(),
-            edge_dedup_timestamp: 0,
-            sync_requests: vec![],
-            updated_boundary: vec![],
-            propagating_vertices: vec![],
+            active_edges: BTreeSet::new(),
+            active_nodes: BTreeSet::new(),
         }
     }
 
