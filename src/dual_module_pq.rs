@@ -309,15 +309,6 @@ where
         );
     }
 
-    fn is_searching(&self) -> bool {
-        matches!(self.mode(), DualModuleMode::Search)
-        // true
-    }
-
-    fn is_tuning(&self) -> bool {
-        matches!(self.mode(), DualModuleMode::Tune)
-    }
-
     /// debugging function
     #[allow(dead_code)]
     fn debug_update_all(&mut self, dual_node_ptrs: &[DualNodePtr]) {
@@ -482,7 +473,7 @@ where
         let dual_node_weak = dual_node_ptr.downgrade();
         let dual_node = dual_node_ptr.read_recursive();
 
-        if self.is_searching() && dual_node.grow_rate.is_negative() {
+        if dual_node.grow_rate.is_negative() {
             self.obstacle_queue.will_happen(
                 // it is okay to use global_time now, as this must be up-to-speed
                 dual_node.get_dual_variable().clone() / (-dual_node.grow_rate.clone()) + global_time.clone(),
@@ -501,7 +492,7 @@ where
             edge.grow_rate += &dual_node.grow_rate;
             edge.dual_nodes.push(dual_node_weak.clone());
 
-            if self.is_searching() && edge.grow_rate.is_positive() {
+            if edge.grow_rate.is_positive() {
                 self.obstacle_queue.will_happen(
                     // it is okay to use global_time now, as this must be up-to-speed
                     (edge.weight.clone() - edge.growth_at_last_updated_time.clone()) / edge.grow_rate.clone()
@@ -509,6 +500,20 @@ where
                     Obstacle::Conflict { edge_index },
                 );
             }
+        }
+    }
+
+    #[allow(clippy::unnecessary_cast)]
+    /// Mostly invoked by `add_defect_node`, triggering a pq update, and edges updates
+    fn add_dual_node_tune(&mut self, dual_node_ptr: &DualNodePtr) {
+        let dual_node_weak = dual_node_ptr.downgrade();
+        let dual_node = dual_node_ptr.read_recursive();
+
+        for &edge_index in dual_node.invalid_subgraph.hair.iter() {
+            let mut edge = self.edges[edge_index as usize].write();
+
+            edge.grow_rate += &dual_node.grow_rate;
+            edge.dual_nodes.push(dual_node_weak.clone());
         }
     }
 
@@ -522,7 +527,7 @@ where
         let grow_rate_diff = &grow_rate - &dual_node.grow_rate;
 
         dual_node.grow_rate = grow_rate;
-        if self.is_searching() && dual_node.grow_rate.is_negative() {
+        if dual_node.grow_rate.is_negative() {
             self.obstacle_queue.will_happen(
                 // it is okay to use global_time now, as this must be up-to-speed
                 dual_node.get_dual_variable().clone() / (-dual_node.grow_rate.clone()) + global_time.clone(),
@@ -539,7 +544,7 @@ where
             self.update_edge_if_necessary(&mut edge);
 
             edge.grow_rate += &grow_rate_diff;
-            if self.is_searching() && edge.grow_rate.is_positive() {
+            if edge.grow_rate.is_positive() {
                 self.obstacle_queue.will_happen(
                     // it is okay to use global_time now, as this must be up-to-speed
                     (edge.weight.clone() - edge.growth_at_last_updated_time.clone()) / edge.grow_rate.clone()
@@ -551,42 +556,17 @@ where
     }
 
     #[allow(clippy::unnecessary_cast)]
-    fn set_grow_rate_tune(&mut self, dual_node_ptr: &DualNodePtr, grow_rate: Rational) -> BTreeSet<MaxUpdateLength> {
-        // println!("set_grow_rate_tune invoked on {:?}, to be {:?}", dual_node_ptr, grow_rate);
-
-        let mut conflicts = BTreeSet::default();
-        // println!(
-        //     "dual_node index: {:?}, grow_rate123: {:?}, target grow_rate: {:?}",
-        //     dual_node_ptr.read_recursive().index,
-        //     dual_node_ptr.read_recursive().grow_rate,
-        //     grow_rate
-        // );
+    fn set_grow_rate_tune(&mut self, dual_node_ptr: &DualNodePtr, grow_rate: Rational) {
         // time must be now.
         let mut dual_node = dual_node_ptr.write();
-        // printout dual_node and the grow_rate it is being set to:
-        // self.update_dual_node_if_necessary(&mut dual_node);
 
-        let global_time = self.global_time.read_recursive();
         let grow_rate_diff = &grow_rate - &dual_node.grow_rate;
-
         dual_node.grow_rate = grow_rate;
-        // if dual_node.grow_rate.is_negative() && dual_node.get_dual_variable().is_zero() {
-        //     conflicts.insert(MaxUpdateLength::ShrinkProhibited(dual_node_ptr.clone()));
-        // }
-        drop(dual_node);
 
-        let dual_node = dual_node_ptr.read_recursive();
         for &edge_index in dual_node.invalid_subgraph.hair.iter() {
             let mut edge = self.edges[edge_index as usize].write();
-            // self.update_edge_if_necessary(&mut edge);
-
             edge.grow_rate += &grow_rate_diff;
-            // if edge.grow_rate.is_positive() && edge.weight == edge.growth_at_last_updated_time {
-            //     conflicts.insert(MaxUpdateLength::Conflicting(edge_index));
-            // }
         }
-
-        conflicts
     }
 
     fn compute_maximum_update_length(&mut self) -> GroupMaxUpdateLength {

@@ -134,7 +134,7 @@ pub trait PrimalModuleImpl {
     ) where
         F: FnMut(&DualModuleInterfacePtr, &mut D, &mut Self, &GroupMaxUpdateLength),
     {
-        // Search
+        // Search, this part is unchanged
         let mut group_max_update_length = dual_module.compute_maximum_update_length();
         while !group_max_update_length.is_unbounded() {
             callback(interface, dual_module, self, &group_max_update_length);
@@ -215,24 +215,24 @@ pub trait PrimalModuleImpl {
 
     /// in "tune" mode, return the list of clusters that need to be resolved
     fn pending_clusters(&mut self) -> Vec<usize> {
-        panic!("!!!");
+        panic!("not implemented `pending_clusters`");
     }
 
     fn resolve_cluster(
         &mut self,
-        cluster_index: NodeIndex,
-        interface_ptr: &DualModuleInterfacePtr,
-        dual_module: &mut impl DualModuleImpl,
+        _cluster_index: NodeIndex,
+        _interface_ptr: &DualModuleInterfacePtr,
+        _dual_module: &mut impl DualModuleImpl,
     ) -> bool {
-        panic!("falskdj")
+        panic!("not implemented `resolve_cluster`");
     }
     fn resolve_cluster_tune(
         &mut self,
-        cluster_index: NodeIndex,
-        interface_ptr: &DualModuleInterfacePtr,
-        dual_module: &mut impl DualModuleImpl,
-        edge_deltas: &mut BTreeMap<EdgeIndex, Rational>,
+        _cluster_index: NodeIndex,
+        _interface_ptr: &DualModuleInterfacePtr,
+        _dual_module: &mut impl DualModuleImpl,
+        _edge_deltas: &mut BTreeMap<EdgeIndex, Rational>,
     ) -> (BTreeSet<MaxUpdateLength>, bool) {
-        panic!("falskdj")
+        panic!("not implemented `resolve_cluster_tune`");
     }
 }

@@ -238,15 +238,6 @@ pub enum GroupMaxUpdateLength {
 
 /// common trait that must be implemented for each implementation of dual module
 pub trait DualModuleImpl {
-    fn sync(&mut self) {
-        panic!("BAd bad lol");
-    }
-
-    // dual_module.rs
-    fn debug_print(&self) {
-        println!("this dual_module doesn't support this print");
-    }
-
     /// create a new dual module with empty syndrome
     fn new_empty(initializer: &SolverInitializer) -> Self;
 
@@ -261,9 +252,6 @@ pub trait DualModuleImpl {
 
     /// update grow rate
     fn set_grow_rate(&mut self, dual_node_ptr: &DualNodePtr, grow_rate: Rational);
-    fn set_grow_rate_tune(&mut self, dual_node_ptr: &DualNodePtr, grow_rate: Rational) -> BTreeSet<MaxUpdateLength> {
-        panic!("as;dlfkj")
-    }
 
     /// An optional function that helps to break down the implementation of [`DualModuleImpl::compute_maximum_update_length`]
     /// check the maximum length to grow (shrink) specific dual node, if length is 0, give the reason of why it cannot further grow (shrink).
@@ -293,19 +281,38 @@ pub trait DualModuleImpl {
     fn get_edge_slack(&self, edge_index: EdgeIndex) -> Rational;
     fn is_edge_tight(&self, edge_index: EdgeIndex) -> bool;
 
+    /* New tuning-related methods */
     /// mode mangements
     fn mode(&self) -> &DualModuleMode;
     fn mode_mut(&mut self) -> &mut DualModuleMode;
     fn advance_mode(&mut self) {
-        println!("this dual_module does not imlement different modes");
+        println!("this dual_module does not implement different modes");
     }
     fn reset_mode(&mut self) {
         *self.mode_mut() = DualModuleMode::default();
     }
 
+    /// "set_grow_rate", but in tuning phase
+    fn set_grow_rate_tune(&mut self, dual_node_ptr: &DualNodePtr, grow_rate: Rational) {
+        panic!("this dual_module does not implement tuning");
+    }
+
+    /// "add_dual_node", but in tuning phase
+    fn add_dual_node_tune(&mut self, dual_node_ptr: &DualNodePtr) {
+        panic!("this dual_module does not implement tuning");
+    }
+
+    fn sync(&mut self) {
+        panic!("this dual_module does not have global time and does not need to sync");
+    }
+
+    fn debug_print(&self) {
+        println!("this dual_module doesn't support debug print");
+    }
+
     /// misc
     fn grow_edge(&self, edge_index: EdgeIndex, amount: &Rational) {
-        panic!("not yet implemented `grow_edge`");
+        panic!("this dual_module doesn't support edge growth");
     }
 }
 
@@ -500,7 +507,7 @@ impl DualModuleInterfacePtr {
         interface.nodes.push(node_ptr.clone());
         drop(interface);
         dual_module.add_dual_node(&node_ptr);
-        // println!("created node in create_node {:?}", node_ptr);
+
         node_ptr
     }
 
@@ -526,7 +533,7 @@ impl DualModuleInterfacePtr {
         });
         interface.nodes.push(node_ptr.clone());
         drop(interface);
-        dual_module.add_dual_node(&node_ptr);
+        dual_module.add_dual_node_tune(&node_ptr);
         // println!("created node in create_node {:?}", node_ptr);
         node_ptr
     }

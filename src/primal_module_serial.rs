@@ -107,7 +107,8 @@ impl PrimalModuleImpl for PrimalModuleSerial {
             let cluster_r = cluster.read_recursive();
             for primal_node_ptr in cluster_r.nodes.iter() {
                 let dual_node_ptr = primal_node_ptr.read_recursive().dual_node_ptr.clone();
-                dual_module.set_grow_rate(&dual_node_ptr, Rational::zero()); // FIXME: should be reset here
+                dual_module.set_grow_rate_tune(&dual_node_ptr, Rational::zero());
+                // FIXME: should be reset here
             }
         }
     }
@@ -238,6 +239,9 @@ impl PrimalModuleImpl for PrimalModuleSerial {
     }
 
     fn has_more_plugins(&mut self) -> bool {
+        if self.time_resolve > self.config.timeout {
+            return false;
+        }
         return if *self.plugin_count.read_recursive() < self.plugins.len() {
             // increment the plugin count
             *self.plugin_count.write() += 1;
@@ -412,7 +416,7 @@ impl PrimalModuleImpl for PrimalModuleSerial {
                 cluster
                     .relaxer_optimizer
                     .optimize_tune(relaxer, edge_slacks, dual_variables, dual_module, interface_ptr);
-            // println!("\nrelaxer direction: {:?}", relaxer.get_direction());
+
             for (invalid_subgraph, grow_rate) in relaxer.get_direction() {
                 let (existing, dual_node_ptr) = interface_ptr.find_or_create_node_tune(invalid_subgraph, dual_module);
                 if !existing {
@@ -425,21 +429,15 @@ impl PrimalModuleImpl for PrimalModuleSerial {
                     self.nodes.push(primal_node_ptr);
                 }
 
-                // println!("deadlockgin?");
                 let mut node_ptr_write: parking_lot::lock_api::RwLockWriteGuard<parking_lot::RawRwLock, DualNode> =
                     dual_node_ptr.write();
-                // println!("not really");
-                // node_ptr_write.grow_rate = grow_rate.clone();
                 node_ptr_write.dual_variable_at_last_updated_time += grow_rate.clone();
-                // println!("dual_node_ptr: {:?}", dual_node_ptr);
                 if grow_rate.is_negative() && node_ptr_write.dual_variable_at_last_updated_time.is_zero() {
-                    // println!("here");
                     conflicts.insert(MaxUpdateLength::ShrinkProhibited(OrderedDualNodePtr::new(
                         node_ptr_write.index,
                         dual_node_ptr.clone(),
                     )));
                 }
-                // println!("able to proceed");
                 for edge_index in node_ptr_write.invalid_subgraph.hair.iter() {
                     match edge_deltas.entry(edge_index.clone()) {
                         std::collections::btree_map::Entry::Vacant(v) => {
@@ -454,15 +452,11 @@ impl PrimalModuleImpl for PrimalModuleSerial {
                         }
                     }
                 }
-                // println!("got to the end");
             }
 
-            // dual_module.grow(Rational::one());
             cluster.relaxer_optimizer.insert(relaxer);
             return (conflicts, false);
         }
-
-        // println!("here");
 
         // TODO idea: plugins can suggest subgraph (ideally, a global maximum), if so, then it will adopt th
         // subgraph with minimum weight from all plugins as the starting point to do local minimum
@@ -472,11 +466,6 @@ impl PrimalModuleImpl for PrimalModuleSerial {
         let initializer = interface.decoding_graph.model_graph.initializer.as_ref();
         let weight_of = |edge_index: EdgeIndex| initializer.weighted_edges[edge_index].weight;
         cluster.subgraph = Some(cluster.matrix.get_solution_local_minimum(weight_of).expect("satisfiable"));
-
-        // assert both impacted_edges and impacted_nodes are empty
-        // assert!(impacted_edges.is_empty());
-        // assert!(impacted_nodes.is_empty());
-        assert!(conflicts.is_empty());
 
         // FIXME: Change to use Options
         (conflicts, true)
@@ -589,27 +578,6 @@ impl PrimalModuleSerial {
         }
 
         true
-
-        // if *self.plugin_count.read_recursive() == 0 {
-        //     return true;
-        // }
-        // // check that all clusters have passed the plugins
-        // loop {
-        //     while let Some(cluster_index) = self.plugin_pending_clusters.pop() {
-        //         let solved = self.resolve_cluster(cluster_index, interface_ptr, dual_module);
-        //         if !solved {
-        //             return false; // let the dual module to handle one
-        //         }
-        //     }
-        //     if *self.plugin_count.read_recursive() < self.plugins.len() {
-        //         // increment the plugin count
-        //         *self.plugin_count.write() += 1;
-        //         self.plugin_pending_clusters = (0..self.clusters.len()).collect();
-        //     } else {
-        //         break; // nothing more to check
-        //     }
-        // }
-        // true
     }
 
     #[allow(clippy::unnecessary_cast)]
@@ -715,18 +683,17 @@ impl PrimalModuleSerial {
     }
 
     #[allow(clippy::unnecessary_cast)]
+    // returns (conflicts_needing_to_be_resolved, should_grow)
     fn resolve_core_tune(
         &mut self,
-        mut group_max_update_length: BTreeSet<MaxUpdateLength>,
+        group_max_update_length: BTreeSet<MaxUpdateLength>,
         interface_ptr: &DualModuleInterfacePtr,
         dual_module: &mut impl DualModuleImpl,
     ) -> (BTreeSet<MaxUpdateLength>, bool) {
-        // returns (resolved, should_grow)
         let mut active_clusters = BTreeSet::<NodeIndex>::new();
         let interface = interface_ptr.read_recursive();
         let decoding_graph = &interface.decoding_graph;
         for conflict in group_max_update_length.into_iter() {
-            // println!("resolving conflict: {:?}", conflict);
             match conflict {
                 MaxUpdateLength::Conflicting(edge_index) => {
                     // union all the dual nodes in the edge index and create new dual node by adding this edge to `internal_edges`
@@ -775,16 +742,15 @@ impl PrimalModuleSerial {
         drop(interface);
         if *self.plugin_count.read_recursive() != 0 && self.time_resolve > self.config.timeout {
             *self.plugin_count.write() = 0; // force only the first plugin
+                                            // return (BTreeSet::default(), true);
         }
         let mut all_solved = true;
         let mut all_conflicts = BTreeSet::default();
         let mut edge_deltas = BTreeMap::new();
-        // let mut all_impacted_nodes = BTreeSet::default();
         for &cluster_index in active_clusters.iter() {
             let (conflicts, solved) = self.resolve_cluster_tune(cluster_index, interface_ptr, dual_module, &mut edge_deltas);
             all_solved &= solved;
             all_conflicts.extend(conflicts);
-            // all_impacted_nodes.extend(impacted_nodes);
             // FIXME: Maybe wrap the btreesets into options
         }
         for (edge_index, grow_rate) in edge_deltas.into_iter() {
@@ -795,16 +761,6 @@ impl PrimalModuleSerial {
         }
         (all_conflicts, all_solved)
     }
-
-    // fn get_grow_rate(&self, cluster_index: NodeIndex, dual_node_ptr: &DualNodePtr) {
-    //     let dual_node = dual_node_ptr.read_recursive();
-
-    //     for edge_index in self.clusters[cluster_index as usize].read_recursive().edges.iter() {
-    //         let edge = dual_node.invalid_subgraph.hair.iter().find(|&edge| edge == edge_index);
-    //     }
-    //     let grow_rate = dual_node.get_grow_rate();
-    //     println!("grow_rate: {:?}", grow_rate);
-    // }
 }
 
 impl MWPSVisualizer for PrimalModuleSerial {
