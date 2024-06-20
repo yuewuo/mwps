@@ -4,7 +4,7 @@
 //!
 
 use crate::dual_module::*;
-use crate::num_traits::{FromPrimitive, One, Signed};
+use crate::num_traits::{FromPrimitive, Signed};
 use crate::pointers::*;
 use crate::util::*;
 use crate::visualize::*;
@@ -13,13 +13,6 @@ use std::sync::Arc;
 
 /// common trait that must be implemented for each implementation of primal module
 pub trait PrimalModuleImpl {
-    fn get_grow_rate(&self, cluster_index: NodeIndex, dual_node_ptr: &DualNodePtr) -> Rational {
-        panic!("not implemented lol");
-    }
-
-    fn set_zeros<D: DualModuleImpl>(&mut self, dual_module: &mut D) {
-        panic!("not implemented lol 345");
-    }
     /// create a primal module given the dual module
     fn new_empty(solver_initializer: &SolverInitializer) -> Self;
 
@@ -33,6 +26,8 @@ pub trait PrimalModuleImpl {
     /// and then tell dual module what to do to resolve these conflicts;
     /// note that this function doesn't necessarily resolve all the conflicts, but can return early if some major change is made.
     /// when implementing this function, it's recommended that you resolve as many conflicts as possible.
+    ///
+    /// note: this is only ran in the "search" mode
     fn resolve(
         &mut self,
         group_max_update_length: GroupMaxUpdateLength,
@@ -40,22 +35,24 @@ pub trait PrimalModuleImpl {
         dual_module: &mut impl DualModuleImpl,
     ) -> bool;
 
+    /// kept in case of future need for this deprecated function (backwards compatibility for cases such as `SingleCluster` growing strategy)
     fn old_resolve(
         &mut self,
-        group_max_update_length: GroupMaxUpdateLength,
-        interface: &DualModuleInterfacePtr,
-        dual_module: &mut impl DualModuleImpl,
+        _group_max_update_length: GroupMaxUpdateLength,
+        _interface: &DualModuleInterfacePtr,
+        _dual_module: &mut impl DualModuleImpl,
     ) -> bool {
         false
     }
 
+    /// resolve the conflicts in the "tune" mode
     fn resolve_tune(
         &mut self,
-        group_max_update_length: BTreeSet<MaxUpdateLength>,
-        interface: &DualModuleInterfacePtr,
-        dual_module: &mut impl DualModuleImpl,
+        _group_max_update_length: BTreeSet<MaxUpdateLength>,
+        _interface: &DualModuleInterfacePtr,
+        _dual_module: &mut impl DualModuleImpl,
     ) -> (BTreeSet<MaxUpdateLength>, bool) {
-        panic!("not implemented")
+        panic!("`resolve_tune` not implemented, this primal module does not work with tuning mode");
     }
 
     fn solve(
@@ -147,10 +144,10 @@ pub trait PrimalModuleImpl {
             group_max_update_length = dual_module.compute_maximum_update_length();
         }
 
-        // from here, all things should be syncronized
+        // from here, all states should be syncronized
         let mut start = true;
 
-        // We know that things are in an unbounded state here: All edges and nodes are not growing as of now
+        // starting with unbounded state here: All edges and nodes are not growing as of now
         // Tune
         while self.has_more_plugins() {
             if start {
@@ -208,6 +205,7 @@ pub trait PrimalModuleImpl {
         json!({})
     }
 
+    /* tune mode methods */
     /// check if there are more plugins to be applied, defaulted to having no plugins
     fn has_more_plugins(&mut self) -> bool {
         false
@@ -218,6 +216,12 @@ pub trait PrimalModuleImpl {
         panic!("not implemented `pending_clusters`");
     }
 
+    /// in "tune" mode, set all the grow_rates to zero
+    fn set_zeros<D: DualModuleImpl>(&mut self, _dual_module: &mut D) {
+        panic!("`set_zeros` not implemented for this primal module");
+    }
+
+    /// check if a cluster has been solved, if not then resolve it
     fn resolve_cluster(
         &mut self,
         _cluster_index: NodeIndex,
@@ -226,6 +230,8 @@ pub trait PrimalModuleImpl {
     ) -> bool {
         panic!("not implemented `resolve_cluster`");
     }
+
+    /// `resolve_cluster` but in tuning mode
     fn resolve_cluster_tune(
         &mut self,
         _cluster_index: NodeIndex,

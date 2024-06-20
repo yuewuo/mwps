@@ -172,13 +172,12 @@ impl RelaxerOptimizer {
         Relaxer::new(direction)
     }
 
-    pub fn optimize_tune<D: DualModuleImpl>(
+    /// optimize but for tuning phase
+    pub fn optimize_tune(
         &mut self,
         relaxer: Relaxer,
         edge_slacks: BTreeMap<EdgeIndex, Rational>,
         mut dual_variables: BTreeMap<Arc<InvalidSubgraph>, Rational>,
-        dual_module: &mut D,
-        interface_ptr: &DualModuleInterfacePtr,
     ) -> Relaxer {
         for invalid_subgraph in relaxer.get_direction().keys() {
             if !dual_variables.contains_key(invalid_subgraph) {

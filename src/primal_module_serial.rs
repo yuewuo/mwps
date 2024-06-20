@@ -22,7 +22,6 @@ use std::collections::{BTreeSet, VecDeque};
 use std::fmt::Debug;
 use std::sync::Arc;
 use std::time::Instant;
-use std::vec;
 
 pub struct PrimalModuleSerial {
     /// growing strategy, default to single-tree approach for easier debugging and better locality
@@ -62,10 +61,10 @@ pub mod primal_serial_default_configs {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum GrowingStrategy {
     /// focus on a single cluster at a time, for easier debugging and better locality
-    SingleCluster,
+    SingleCluster, // Question: Should this be deprecated?
     /// all clusters grow at the same time at the same speed
     MultipleClusters,
-    /// FIXME:
+    /// utilizing the search/tune mode separation
     ModeBased,
 }
 
@@ -108,7 +107,6 @@ impl PrimalModuleImpl for PrimalModuleSerial {
             for primal_node_ptr in cluster_r.nodes.iter() {
                 let dual_node_ptr = primal_node_ptr.read_recursive().dual_node_ptr.clone();
                 dual_module.set_grow_rate_tune(&dual_node_ptr, Rational::zero());
-                // FIXME: should be reset here
             }
         }
     }
@@ -238,6 +236,8 @@ impl PrimalModuleImpl for PrimalModuleSerial {
         subgraph
     }
 
+    /// check if there are more plugins to be applied
+    ///     will return false if timeout has been reached, else consume a plugin
     fn has_more_plugins(&mut self) -> bool {
         if self.time_resolve > self.config.timeout {
             return false;
@@ -252,9 +252,12 @@ impl PrimalModuleImpl for PrimalModuleSerial {
         };
     }
 
+    /// get the pending clusters
     fn pending_clusters(&mut self) -> Vec<usize> {
         self.plugin_pending_clusters.clone()
     }
+
+    // TODO: extract duplicate codes
 
     /// analyze a cluster and return whether there exists an optimal solution (depending on optimization levels)
     #[allow(clippy::unnecessary_cast)]
@@ -366,13 +369,12 @@ impl PrimalModuleImpl for PrimalModuleSerial {
         if cluster.nodes.is_empty() {
             return (conflicts, true); // no longer a cluster, no need to handle
         }
-        // set all nodes to stop growing in the cluster
         // update the matrix with new tight edges
         let cluster = &mut *cluster;
         for &edge_index in cluster.edges.iter() {
             cluster
                 .matrix
-                .update_edge_tightness(edge_index, dual_module.is_edge_tight(edge_index));
+                .update_edge_tightness(edge_index, dual_module.is_edge_tight_tune(edge_index));
         }
 
         // find an executable relaxer from the plugin manager
@@ -412,10 +414,7 @@ impl PrimalModuleImpl for PrimalModuleSerial {
                 )
                 .map(|edge_index| (edge_index, dual_module.get_edge_slack(edge_index)))
                 .collect();
-            relaxer =
-                cluster
-                    .relaxer_optimizer
-                    .optimize_tune(relaxer, edge_slacks, dual_variables, dual_module, interface_ptr);
+            relaxer = cluster.relaxer_optimizer.optimize_tune(relaxer, edge_slacks, dual_variables);
 
             for (invalid_subgraph, grow_rate) in relaxer.get_direction() {
                 let (existing, dual_node_ptr) = interface_ptr.find_or_create_node_tune(invalid_subgraph, dual_module);
@@ -755,7 +754,7 @@ impl PrimalModuleSerial {
         }
         for (edge_index, grow_rate) in edge_deltas.into_iter() {
             dual_module.grow_edge(edge_index, &grow_rate);
-            if grow_rate.is_positive() && dual_module.is_edge_tight(edge_index) {
+            if grow_rate.is_positive() && dual_module.is_edge_tight_tune(edge_index) {
                 all_conflicts.insert(MaxUpdateLength::Conflicting(edge_index));
             }
         }
@@ -771,8 +770,6 @@ impl MWPSVisualizer for PrimalModuleSerial {
 
 #[cfg(test)]
 pub mod tests {
-    use ntest::timeout;
-
     use super::super::dual_module_pq::*;
     use super::super::dual_module_serial::*;
     use super::super::example_codes::*;

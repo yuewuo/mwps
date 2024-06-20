@@ -150,6 +150,7 @@ pub mod tests {
             defect_vertices,
             4,
             vec![PluginSingleHair::entry_with_strategy(RepeatStrategy::Once)],
+            // GrowingStrategy::ModeBased,
             GrowingStrategy::SingleCluster,
         );
     }
@@ -247,6 +248,7 @@ pub mod tests {
                 max_repetition: usize::MAX,
             })],
             GrowingStrategy::SingleCluster,
+            // GrowingStrategy::ModeBased,
         );
     }
 

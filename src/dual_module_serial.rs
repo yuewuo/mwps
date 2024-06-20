@@ -25,6 +25,7 @@ pub struct DualModuleSerial {
     pub active_nodes: BTreeSet<OrderedDualNodePtr>,
 
     /// the current mode of the dual module
+    ///     note: currently does not have too much functionality
     mode: DualModuleMode,
 }
 
@@ -119,12 +120,6 @@ impl std::fmt::Debug for EdgeWeak {
 }
 
 impl DualModuleImpl for DualModuleSerial {
-    // dual_module_serial
-    fn debug_print(&self) {
-        println!("\n[current states]");
-        println!("edges: {:?}", self.edges);
-    }
-
     /// initialize the dual module, which is supposed to be reused for multiple decoding tasks with the same structure
     #[allow(clippy::unnecessary_cast)]
     fn new_empty(initializer: &SolverInitializer) -> Self {
@@ -217,7 +212,6 @@ impl DualModuleImpl for DualModuleSerial {
 
     #[allow(clippy::unnecessary_cast)]
     fn set_grow_rate(&mut self, dual_node_ptr: &DualNodePtr, grow_rate: Rational) {
-        println!("no way I am here right?");
         let mut dual_node = dual_node_ptr.write();
         let grow_rate_diff = grow_rate.clone() - &dual_node.grow_rate;
         dual_node.grow_rate = grow_rate;
@@ -428,6 +422,12 @@ impl DualModuleImpl for DualModuleSerial {
     }
 
     add_shared_methods!();
+
+    /// miscs
+    fn debug_print(&self) {
+        println!("\n[current states]");
+        println!("edges: {:?}", self.edges);
+    }
 }
 
 /*

@@ -3,8 +3,6 @@
 //! Generics for dual modules
 //!
 
-use parking_lot::lock_api::RwLockReadGuard;
-
 use crate::decoding_hypergraph::*;
 use crate::derivative::Derivative;
 use crate::invalid_subgraph::*;
@@ -16,6 +14,7 @@ use crate::visualize::*;
 use std::collections::{BTreeSet, HashMap};
 use std::sync::Arc;
 
+// this is not effecitively doing much right now due to the My (Leo's) desire for ultra performance (inlining function > branches)
 #[derive(Default, Debug)]
 pub enum DualModuleMode {
     /// Mode 1
@@ -44,6 +43,7 @@ impl DualModuleMode {
 }
 
 // Each dual_module impl should have mode and affinity_map, hence these methods should be shared
+//      Note: Affinity Map is not implemented in this branch, but a different file/branch (there incurs performance overhead)
 #[macro_export]
 macro_rules! add_shared_methods {
     () => {
@@ -110,7 +110,6 @@ impl DualNode {
 }
 
 pub type DualNodePtr = ArcRwLock<DualNode>;
-// Note: it may be worthwhile to try to have everyone uses the ordered version, as index shouldn't be mutable from multiple places at once
 pub type DualNodeWeak = WeakRwLock<DualNode>;
 
 impl std::fmt::Debug for DualNodePtr {
@@ -136,19 +135,6 @@ impl std::fmt::Debug for DualNodeWeak {
         self.upgrade_force().fmt(f)
     }
 }
-
-// fixme: Remove these
-// impl Ord for DualNodePtr {
-//     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-//         self.read_recursive().index.cmp(&other.read_recursive().index)
-//     }
-// }
-
-// impl PartialOrd for DualNodePtr {
-//     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-//         Some(self.cmp(other))
-//     }
-// }
 
 /// an array of dual nodes
 /// dual nodes, once created, will never be deconstructed until the next run
@@ -181,8 +167,6 @@ impl std::fmt::Debug for DualModuleInterfaceWeak {
 
 /// gives the maximum absolute length to grow, if not possible, give the reason;
 /// note that strong reference is stored in `MaxUpdateLength` so dropping these temporary messages are necessary to avoid memory leakage
-///
-/// FIXME: Remove Ord and PartialOrd for MaxUpdateLength
 #[derive(Derivative, PartialEq, Eq, Clone, PartialOrd, Ord)]
 #[derivative(Debug, Default(new = "true"))]
 pub enum MaxUpdateLength {
@@ -194,12 +178,12 @@ pub enum MaxUpdateLength {
     /// conflicting growth, violating the slackness constraint
     Conflicting(EdgeIndex),
     /// hitting 0 dual variable while shrinking, only happens when `grow_rate` < 0
-    /// note: Using OrderedDualNodePtr since we can compare without acquiring the lock, for enabling btreeset/hashset/pq etc. with lower overhead
+    ///     note: Using OrderedDualNodePtr since we can compare without acquiring the lock, for enabling btreeset/hashset/pq etc. with lower overhead
     ShrinkProhibited(OrderedDualNodePtr),
-    ///
-    Skip,
 }
 
+/// a pair of node index and dual node pointer, used for comparison without acquiring the lock
+/// useful for when inserting into sets
 #[derive(Derivative, PartialEq, Eq, Clone, Debug)]
 pub struct OrderedDualNodePtr {
     pub index: NodeIndex,
@@ -211,13 +195,11 @@ impl OrderedDualNodePtr {
         Self { index, ptr }
     }
 }
-
 impl PartialOrd for OrderedDualNodePtr {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.index.cmp(&other.index))
     }
 }
-
 impl Ord for OrderedDualNodePtr {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         self.index.cmp(&other.index)
@@ -293,26 +275,33 @@ pub trait DualModuleImpl {
     }
 
     /// "set_grow_rate", but in tuning phase
-    fn set_grow_rate_tune(&mut self, dual_node_ptr: &DualNodePtr, grow_rate: Rational) {
+    fn set_grow_rate_tune(&mut self, _dual_node_ptr: &DualNodePtr, _grow_rate: Rational) {
         panic!("this dual_module does not implement tuning");
     }
 
     /// "add_dual_node", but in tuning phase
-    fn add_dual_node_tune(&mut self, dual_node_ptr: &DualNodePtr) {
+    fn add_dual_node_tune(&mut self, _dual_node_ptr: &DualNodePtr) {
         panic!("this dual_module does not implement tuning");
     }
 
+    /// syncing all possible states (dual_variable and edge_weights) with global time, so global_time can be discarded later
     fn sync(&mut self) {
         panic!("this dual_module does not have global time and does not need to sync");
     }
 
-    fn debug_print(&self) {
-        println!("this dual_module doesn't support debug print");
+    /// grow a specific edge on the spot
+    fn grow_edge(&self, _edge_index: EdgeIndex, _amount: &Rational) {
+        panic!("this dual_module doesn't support edge growth");
     }
 
-    /// misc
-    fn grow_edge(&self, edge_index: EdgeIndex, amount: &Rational) {
-        panic!("this dual_module doesn't support edge growth");
+    /// `is_edge_tight` but in tuning phase
+    fn is_edge_tight_tune(&self, edge_index: EdgeIndex) -> bool {
+        panic!("this dual_module does not implement tuning");
+    }
+
+    /* miscs */
+    fn debug_print(&self) {
+        println!("this dual_module doesn't support debug print");
     }
 }
 
@@ -384,10 +373,8 @@ impl GroupMaxUpdateLength {
     pub fn pop(&mut self) -> Option<MaxUpdateLength> {
         match self {
             Self::Unbounded | Self::ValidGrow(_) => {
-                println!("I am {:?}", self);
-                // panic!("please call GroupMaxUpdateLength::get_valid_growth to check if this group is none_zero_growth");
-                // conflicts.pop();
-                Some(MaxUpdateLength::Skip)
+                // println!("I am {:?}", self);
+                panic!("please call GroupMaxUpdateLength::get_valid_growth to check if this group is none_zero_growth");
             }
             Self::Conflicts(conflicts) => conflicts.pop(),
         }
@@ -467,7 +454,7 @@ impl DualModuleInterfacePtr {
             global_time: None,
             last_updated_time: Rational::zero(),
         });
-        // println!("created node in create_defect_node {:?}", node_ptr);
+
         let cloned_node_ptr = node_ptr.clone();
         drop(interface);
         let mut interface = self.write();
@@ -511,6 +498,7 @@ impl DualModuleInterfacePtr {
         node_ptr
     }
 
+    /// `create_node` for tuning
     pub fn create_node_tune(
         &self,
         invalid_subgraph: Arc<InvalidSubgraph>,
@@ -534,7 +522,7 @@ impl DualModuleInterfacePtr {
         interface.nodes.push(node_ptr.clone());
         drop(interface);
         dual_module.add_dual_node_tune(&node_ptr);
-        // println!("created node in create_node {:?}", node_ptr);
+
         node_ptr
     }
 
@@ -550,7 +538,7 @@ impl DualModuleInterfacePtr {
         }
     }
 
-    /// return whether it's existing node or not
+    /// `find_or_create_node` for tuning
     pub fn find_or_create_node_tune(
         &self,
         invalid_subgraph: &Arc<InvalidSubgraph>,

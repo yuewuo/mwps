@@ -11,7 +11,6 @@ use crate::util::*;
 use crate::visualize::*;
 use crate::{add_shared_methods, dual_module::*};
 
-use core::panic;
 use std::{
     cmp::{Ordering, Reverse},
     collections::{BTreeSet, BinaryHeap},
@@ -20,7 +19,6 @@ use std::{
 use derivative::Derivative;
 use itertools::Itertools;
 use num_traits::{FromPrimitive, Signed};
-use parking_lot::lock_api::RwLockReadGuard;
 use parking_lot::{lock_api::RwLockWriteGuard, RawRwLock};
 
 /* Helper structs for events/obstacles during growing */
@@ -125,7 +123,6 @@ impl<T: Ord + PartialEq + Eq + std::fmt::Debug, E: std::fmt::Debug> FutureQueueM
     for MinBinaryHeap<FutureEvent<T, E>>
 {
     fn will_happen(&mut self, time: T, event: E) {
-        // println!("will_happen invoked on {:?} at time {:?}", event, time);
         self.push(Reverse(FutureEvent { time, event }))
     }
     fn peek_event(&self) -> Option<(&T, &E)> {
@@ -216,14 +213,13 @@ impl std::fmt::Debug for EdgePtr {
         let edge = self.read_recursive();
         write!(
             f,
-            // "[edge: {}]: weight: {}, grow_rate: {}, growth_at_last_updated_time: {}, last_updated_time: {}\n",
             "[edge: {}]: weight: {}, grow_rate: {}, growth_at_last_updated_time: {}, last_updated_time: {}\n\tdual_nodes: {:?}\n",
-            edge.edge_index, edge.weight, edge.grow_rate, edge.growth_at_last_updated_time, edge.last_updated_time, edge.dual_nodes.iter().filter(|node| !node.upgrade_force().read_recursive().grow_rate.is_zero()).collect::<Vec<_>>()
-            // edge.edge_index,
-            // edge.weight,
-            // edge.grow_rate,
-            // edge.growth_at_last_updated_time,
-            // edge.last_updated_time,
+            edge.edge_index, 
+            edge.weight, 
+            edge.grow_rate, 
+            edge.growth_at_last_updated_time, 
+            edge.last_updated_time, 
+            edge.dual_nodes.iter().filter(|node| !node.upgrade_force().read_recursive().grow_rate.is_zero()).collect::<Vec<_>>()
         )
     }
 }
@@ -257,6 +253,7 @@ where
     global_time: ArcRwLock<Rational>,
 
     /// the current mode of the dual module
+    ///     note: currently does not have too much functionality
     mode: DualModuleMode,
 }
 
@@ -504,7 +501,6 @@ where
     }
 
     #[allow(clippy::unnecessary_cast)]
-    /// Mostly invoked by `add_defect_node`, triggering a pq update, and edges updates
     fn add_dual_node_tune(&mut self, dual_node_ptr: &DualNodePtr) {
         let dual_node_weak = dual_node_ptr.downgrade();
         let dual_node = dual_node_ptr.read_recursive();
@@ -557,7 +553,6 @@ where
 
     #[allow(clippy::unnecessary_cast)]
     fn set_grow_rate_tune(&mut self, dual_node_ptr: &DualNodePtr, grow_rate: Rational) {
-        // time must be now.
         let mut dual_node = dual_node_ptr.write();
 
         let grow_rate_diff = &grow_rate - &dual_node.grow_rate;
@@ -570,7 +565,6 @@ where
     }
 
     fn compute_maximum_update_length(&mut self) -> GroupMaxUpdateLength {
-        // debug_assert!(!self.is_tuning(), "tuning mode is not supported"); // FIXME:!
         let global_time = self.global_time.read_recursive();
         // finding a valid event to process, only when invalids exist
         if Queue::MAY_BE_INVALID {
@@ -598,7 +592,6 @@ where
                 Obstacle::Conflict { edge_index } => MaxUpdateLength::Conflicting(edge_index),
                 Obstacle::ShrinkToZero { dual_node_ptr } => {
                     let index = dual_node_ptr.read_recursive().index;
-                    // FIXME: change the Obstacle::ShrinkToZero to also use ordered dual node ptr?
                     MaxUpdateLength::ShrinkProhibited(OrderedDualNodePtr::new(index, dual_node_ptr))
                 }
             });
@@ -615,7 +608,6 @@ where
                         Obstacle::Conflict { edge_index } => MaxUpdateLength::Conflicting(edge_index),
                         Obstacle::ShrinkToZero { dual_node_ptr } => {
                             let index = dual_node_ptr.read_recursive().index;
-                            // FIXME: change the Obstacle::ShrinkToZero to also use ordered dual node ptr?
                             MaxUpdateLength::ShrinkProhibited(OrderedDualNodePtr::new(index, dual_node_ptr))
                         }
                     });
@@ -663,13 +655,12 @@ where
 
     /// is the edge saturated
     fn is_edge_tight(&self, edge_index: EdgeIndex) -> bool {
-        match self.mode {
-            DualModuleMode::Search => self.get_edge_slack(edge_index).is_zero(),
-            DualModuleMode::Tune => {
-                let edge = self.edges[edge_index as usize].read_recursive();
-                edge.weight == edge.growth_at_last_updated_time
-            }
-        }
+        self.get_edge_slack(edge_index).is_zero()
+    }
+
+    fn is_edge_tight_tune(&self, edge_index: EdgeIndex) -> bool {
+        let edge = self.edges[edge_index as usize].read_recursive();
+        edge.weight == edge.growth_at_last_updated_time
     }
 
     add_shared_methods!();
