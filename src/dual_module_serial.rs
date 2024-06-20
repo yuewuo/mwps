@@ -428,6 +428,11 @@ impl DualModuleImpl for DualModuleSerial {
         println!("\n[current states]");
         println!("edges: {:?}", self.edges);
     }
+
+    fn grow_edge(&self, edge_index: EdgeIndex, amount: &Rational) {
+        let mut edge = self.edges[edge_index as usize].write();
+        edge.growth += amount;
+    }
 }
 
 /*

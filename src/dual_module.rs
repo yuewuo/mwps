@@ -268,20 +268,22 @@ pub trait DualModuleImpl {
     fn mode(&self) -> &DualModuleMode;
     fn mode_mut(&mut self) -> &mut DualModuleMode;
     fn advance_mode(&mut self) {
-        println!("this dual_module does not implement different modes");
+        eprintln!("this dual_module does not implement different modes");
     }
     fn reset_mode(&mut self) {
         *self.mode_mut() = DualModuleMode::default();
     }
 
     /// "set_grow_rate", but in tuning phase
-    fn set_grow_rate_tune(&mut self, _dual_node_ptr: &DualNodePtr, _grow_rate: Rational) {
-        panic!("this dual_module does not implement tuning");
+    fn set_grow_rate_tune(&mut self, dual_node_ptr: &DualNodePtr, grow_rate: Rational) {
+        eprintln!("this dual_module does not implement tuning");
+        self.set_grow_rate(dual_node_ptr, grow_rate)
     }
 
     /// "add_dual_node", but in tuning phase
-    fn add_dual_node_tune(&mut self, _dual_node_ptr: &DualNodePtr) {
-        panic!("this dual_module does not implement tuning");
+    fn add_dual_node_tune(&mut self, dual_node_ptr: &DualNodePtr) {
+        eprintln!("this dual_module does not implement tuning");
+        self.add_dual_node(dual_node_ptr);
     }
 
     /// syncing all possible states (dual_variable and edge_weights) with global time, so global_time can be discarded later
@@ -296,7 +298,8 @@ pub trait DualModuleImpl {
 
     /// `is_edge_tight` but in tuning phase
     fn is_edge_tight_tune(&self, edge_index: EdgeIndex) -> bool {
-        panic!("this dual_module does not implement tuning");
+        eprintln!("this dual_module does not implement tuning");
+        self.is_edge_tight(edge_index)
     }
 
     /* miscs */

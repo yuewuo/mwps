@@ -914,25 +914,23 @@ pub mod tests {
     }
 
     /// test a simple case
-    // #[test]
-    // // #[timeout(1000)]
-    // fn primal_module_serial_basic_1_m() {
-    //     // cargo test primal_module_serial_basic_1_m -- --nocapture
-    //     let visualize_filename = "primal_module_serial_basic_1_m.json".to_string();
-    //     let defect_vertices = vec![23, 24, 29, 30];
-    //     let code = CodeCapacityTailoredCode::new(7, 0., 0.01, 1);
-    //     primal_module_serial_basic_standard_syndrome(
-    //         code,
-    //         visualize_filename,
-    //         defect_vertices,
-    //         1,
-    //         vec![],
-    //         GrowingStrategy::ModeBased,
-    //     );
-    // }
+    #[test]
+    fn primal_module_serial_basic_1_m() {
+        // cargo test primal_module_serial_basic_1_m -- --nocapture
+        let visualize_filename = "primal_module_serial_basic_1_m.json".to_string();
+        let defect_vertices = vec![23, 24, 29, 30];
+        let code = CodeCapacityTailoredCode::new(7, 0., 0.01, 1);
+        primal_module_serial_basic_standard_syndrome(
+            code,
+            visualize_filename,
+            defect_vertices,
+            1,
+            vec![],
+            GrowingStrategy::ModeBased,
+        );
+    }
 
     #[test]
-    // #[timeout(1000)]
     fn primal_module_serial_basic_1_with_dual_pq_impl_m() {
         // cargo test primal_module_serial_basic_1_with_dual_pq_impl_m -- --nocapture
         let visualize_filename = "primal_module_serial_basic_1_with_dual_pq_impl_m.json".to_string();
@@ -948,25 +946,23 @@ pub mod tests {
         );
     }
 
-    // #[test]
-    // // #[timeout(1000)]
-    // fn primal_module_serial_basic_2_m() {
-    //     // cargo test primal_module_serial_basic_2_m -- --nocapture
-    //     let visualize_filename = "primal_module_serial_basic_2_m.json".to_string();
-    //     let defect_vertices = vec![16, 17, 23, 25, 29, 30];
-    //     let code = CodeCapacityTailoredCode::new(7, 0., 0.01, 1);
-    //     primal_module_serial_basic_standard_syndrome(
-    //         code,
-    //         visualize_filename,
-    //         defect_vertices,
-    //         2,
-    //         vec![],
-    //         GrowingStrategy::ModeBased,
-    //     );
-    // }
+    #[test]
+    fn primal_module_serial_basic_2_m() {
+        // cargo test primal_module_serial_basic_2_m -- --nocapture
+        let visualize_filename = "primal_module_serial_basic_2_m.json".to_string();
+        let defect_vertices = vec![16, 17, 23, 25, 29, 30];
+        let code = CodeCapacityTailoredCode::new(7, 0., 0.01, 1);
+        primal_module_serial_basic_standard_syndrome(
+            code,
+            visualize_filename,
+            defect_vertices,
+            2,
+            vec![],
+            GrowingStrategy::ModeBased,
+        );
+    }
 
     #[test]
-    // #[timeout(1000)]
     fn primal_module_serial_basic_2_with_dual_pq_impl_m() {
         // cargo test primal_module_serial_basic_2_with_dual_pq_impl_m -- --nocapture
         let visualize_filename = "primal_module_serial_basic_2_with_dual_pq_impl_m.json".to_string();
@@ -983,27 +979,24 @@ pub mod tests {
     }
 
     // should fail because single growing will have sum y_S = 3 instead of 5
-
-    // #[test]
-    // // #[timeout(1000)]
-    // // #[should_panic] no more panics, as we are not using the single growing strategy
-    // fn primal_module_serial_basic_3_single_m() {
-    //     // cargo test primal_module_serial_basic_3_single_m -- --nocapture
-    //     let visualize_filename = "primal_module_serial_basic_3_single_m.json".to_string();
-    //     let defect_vertices = vec![14, 15, 16, 17, 22, 25, 28, 31, 36, 37, 38, 39];
-    //     let code = CodeCapacityTailoredCode::new(7, 0., 0.01, 1);
-    //     primal_module_serial_basic_standard_syndrome(
-    //         code,
-    //         visualize_filename,
-    //         defect_vertices,
-    //         5,
-    //         vec![],
-    //         GrowingStrategy::ModeBased,
-    //     );
-    // }
+    #[test]
+    // #[should_panic] no more panics, as we are not using the single growing strategy
+    fn primal_module_serial_basic_3_single_m() {
+        // cargo test primal_module_serial_basic_3_single_m -- --nocapture
+        let visualize_filename = "primal_module_serial_basic_3_single_m.json".to_string();
+        let defect_vertices = vec![14, 15, 16, 17, 22, 25, 28, 31, 36, 37, 38, 39];
+        let code = CodeCapacityTailoredCode::new(7, 0., 0.01, 1);
+        primal_module_serial_basic_standard_syndrome(
+            code,
+            visualize_filename,
+            defect_vertices,
+            5,
+            vec![],
+            GrowingStrategy::ModeBased,
+        );
+    }
 
     #[test]
-    // #[timeout(1000)]
     // #[should_panic] no more panics, as we are not using the single growing strategy
     fn primal_module_serial_basic_3_single_with_dual_pq_impl_m() {
         // cargo test primal_module_serial_basic_3_single_with_dual_pq_impl_m -- --nocapture
@@ -1020,28 +1013,26 @@ pub mod tests {
         );
     }
 
-    // #[test]
-    // // #[timeout(1000)]
-    // fn primal_module_serial_basic_3_improved_m() {
-    //     // cargo test primal_module_serial_basic_3_improved_m -- --nocapture
-    //     let visualize_filename = "primal_module_serial_basic_3_improved_m.json".to_string();
-    //     let defect_vertices = vec![14, 15, 16, 17, 22, 25, 28, 31, 36, 37, 38, 39];
-    //     let code = CodeCapacityTailoredCode::new(7, 0., 0.01, 1);
-    //     primal_module_serial_basic_standard_syndrome(
-    //         code,
-    //         visualize_filename,
-    //         defect_vertices,
-    //         5,
-    //         vec![
-    //             PluginUnionFind::entry(),
-    //             PluginSingleHair::entry_with_strategy(RepeatStrategy::Once),
-    //         ],
-    //         GrowingStrategy::ModeBased,
-    //     );
-    // }
+    #[test]
+    fn primal_module_serial_basic_3_improved_m() {
+        // cargo test primal_module_serial_basic_3_improved_m -- --nocapture
+        let visualize_filename = "primal_module_serial_basic_3_improved_m.json".to_string();
+        let defect_vertices = vec![14, 15, 16, 17, 22, 25, 28, 31, 36, 37, 38, 39];
+        let code = CodeCapacityTailoredCode::new(7, 0., 0.01, 1);
+        primal_module_serial_basic_standard_syndrome(
+            code,
+            visualize_filename,
+            defect_vertices,
+            5,
+            vec![
+                PluginUnionFind::entry(),
+                PluginSingleHair::entry_with_strategy(RepeatStrategy::Once),
+            ],
+            GrowingStrategy::ModeBased,
+        );
+    }
 
     #[test]
-    // #[timeout(1000)]
     fn primal_module_serial_basic_3_improved_with_dual_pq_impl_m() {
         // cargo test primal_module_serial_basic_3_improved_with_dual_pq_impl_m -- --nocapture
         let visualize_filename = "primal_module_serial_basic_3_improved_with_dual_pq_impl_m.json".to_string();
@@ -1060,25 +1051,23 @@ pub mod tests {
         );
     }
 
-    // #[test]
-    // // #[timeout(1000)]
-    // fn primal_module_serial_basic_3_multi_m() {
-    //     // cargo test primal_module_serial_basic_3_multi_m -- --nocapture
-    //     let visualize_filename = "primal_module_serial_basic_3_multi_m.json".to_string();
-    //     let defect_vertices = vec![14, 15, 16, 17, 22, 25, 28, 31, 36, 37, 38, 39];
-    //     let code = CodeCapacityTailoredCode::new(7, 0., 0.01, 1);
-    //     primal_module_serial_basic_standard_syndrome(
-    //         code,
-    //         visualize_filename,
-    //         defect_vertices,
-    //         5,
-    //         vec![],
-    //         GrowingStrategy::ModeBased,
-    //     );
-    // }
+    #[test]
+    fn primal_module_serial_basic_3_multi_m() {
+        // cargo test primal_module_serial_basic_3_multi_m -- --nocapture
+        let visualize_filename = "primal_module_serial_basic_3_multi_m.json".to_string();
+        let defect_vertices = vec![14, 15, 16, 17, 22, 25, 28, 31, 36, 37, 38, 39];
+        let code = CodeCapacityTailoredCode::new(7, 0., 0.01, 1);
+        primal_module_serial_basic_standard_syndrome(
+            code,
+            visualize_filename,
+            defect_vertices,
+            5,
+            vec![],
+            GrowingStrategy::ModeBased,
+        );
+    }
 
     #[test]
-    // #[timeout(1000)]
     fn primal_module_serial_basic_3_multi_with_dual_pq_impl_m() {
         // cargo test primal_module_serial_basic_3_multi_with_dual_pq_impl_m -- --nocapture
         let visualize_filename = "primal_module_serial_basic_3_multi_with_dual_pq_impl_m.json".to_string();
@@ -1094,26 +1083,24 @@ pub mod tests {
         );
     }
 
-    // #[test]
-    // // #[timeout(1000)]
-    // #[should_panic]
-    // fn primal_module_serial_basic_4_single_m() {
-    //     // cargo test primal_module_serial_basic_4_single_m -- --nocapture
-    //     let visualize_filename = "primal_module_serial_basic_4_single_m.json".to_string();
-    //     let defect_vertices = vec![10, 11, 12, 15, 16, 17, 18];
-    //     let code = CodeCapacityTailoredCode::new(5, 0., 0.01, 1);
-    //     primal_module_serial_basic_standard_syndrome(
-    //         code,
-    //         visualize_filename,
-    //         defect_vertices,
-    //         4,
-    //         vec![],
-    //         GrowingStrategy::ModeBased,
-    //     );
-    // }
+    #[test]
+    #[should_panic]
+    fn primal_module_serial_basic_4_single_m() {
+        // cargo test primal_module_serial_basic_4_single_m -- --nocapture
+        let visualize_filename = "primal_module_serial_basic_4_single_m.json".to_string();
+        let defect_vertices = vec![10, 11, 12, 15, 16, 17, 18];
+        let code = CodeCapacityTailoredCode::new(5, 0., 0.01, 1);
+        primal_module_serial_basic_standard_syndrome(
+            code,
+            visualize_filename,
+            defect_vertices,
+            4,
+            vec![],
+            GrowingStrategy::ModeBased,
+        );
+    }
 
     #[test]
-    // #[timeout(1000)]
     #[should_panic]
     fn primal_module_serial_basic_4_single_with_dual_pq_impl_m() {
         // cargo test primal_module_serial_basic_4_single_with_dual_pq_impl_m -- --nocapture
@@ -1130,28 +1117,26 @@ pub mod tests {
         );
     }
 
-    // #[test]
-    // // #[timeout(1000)]
-    // fn primal_module_serial_basic_4_single_improved_m() {
-    //     // cargo test primal_module_serial_basic_4_single_improved_m -- --nocapture
-    //     let visualize_filename = "primal_module_serial_basic_4_single_improved_m.json".to_string();
-    //     let defect_vertices = vec![10, 11, 12, 15, 16, 17, 18];
-    //     let code = CodeCapacityTailoredCode::new(5, 0., 0.01, 1);
-    //     primal_module_serial_basic_standard_syndrome(
-    //         code,
-    //         visualize_filename,
-    //         defect_vertices,
-    //         4,
-    //         vec![
-    //             PluginUnionFind::entry(),
-    //             PluginSingleHair::entry_with_strategy(RepeatStrategy::Once),
-    //         ],
-    //         GrowingStrategy::ModeBased,
-    //     );
-    // }
+    #[test]
+    fn primal_module_serial_basic_4_single_improved_m() {
+        // cargo test primal_module_serial_basic_4_single_improved_m -- --nocapture
+        let visualize_filename = "primal_module_serial_basic_4_single_improved_m.json".to_string();
+        let defect_vertices = vec![10, 11, 12, 15, 16, 17, 18];
+        let code = CodeCapacityTailoredCode::new(5, 0., 0.01, 1);
+        primal_module_serial_basic_standard_syndrome(
+            code,
+            visualize_filename,
+            defect_vertices,
+            4,
+            vec![
+                PluginUnionFind::entry(),
+                PluginSingleHair::entry_with_strategy(RepeatStrategy::Once),
+            ],
+            GrowingStrategy::ModeBased,
+        );
+    }
 
     #[test]
-    // #[timeout(1000)]
     fn primal_module_serial_basic_4_single_improved_with_dual_pq_impl_m() {
         // cargo test primal_module_serial_basic_4_single_improved_with_dual_pq_impl_m -- --nocapture
         let visualize_filename = "primal_module_serial_basic_4_single_improved_with_dual_pq_impl_m.json".to_string();
@@ -1172,26 +1157,24 @@ pub mod tests {
 
     /// this is a case where the union find version will deterministically fail to decode,
     /// because not all edges are fully grown and those fully grown edges lead to suboptimal result
-    // #[test]
-    // // #[timeout(1000)]
-    // #[should_panic]
-    // fn primal_module_serial_basic_4_multi_m() {
-    //     // cargo test primal_module_serial_basic_4_multi_m -- --nocapture
-    //     let visualize_filename = "primal_module_serial_basic_4_multi_m.json".to_string();
-    //     let defect_vertices = vec![10, 11, 12, 15, 16, 17, 18];
-    //     let code = CodeCapacityTailoredCode::new(5, 0., 0.01, 1);
-    //     primal_module_serial_basic_standard_syndrome(
-    //         code,
-    //         visualize_filename,
-    //         defect_vertices,
-    //         4,
-    //         vec![],
-    //         GrowingStrategy::ModeBased,
-    //     );
-    // }
+    #[test]
+    #[should_panic]
+    fn primal_module_serial_basic_4_multi_m() {
+        // cargo test primal_module_serial_basic_4_multi_m -- --nocapture
+        let visualize_filename = "primal_module_serial_basic_4_multi_m.json".to_string();
+        let defect_vertices = vec![10, 11, 12, 15, 16, 17, 18];
+        let code = CodeCapacityTailoredCode::new(5, 0., 0.01, 1);
+        primal_module_serial_basic_standard_syndrome(
+            code,
+            visualize_filename,
+            defect_vertices,
+            4,
+            vec![],
+            GrowingStrategy::ModeBased,
+        );
+    }
 
     #[test]
-    // #[timeout(1000)]
     #[should_panic]
     fn primal_module_serial_basic_4_multi_with_dual_pq_impl_m() {
         // cargo test primal_module_serial_basic_4_multi_with_dual_pq_impl_m -- --nocapture
@@ -1209,25 +1192,23 @@ pub mod tests {
     }
 
     /// verify that each cluster is indeed growing one by one
-    // #[test]
-    // // #[timeout(1000)]
-    // fn primal_module_serial_basic_4_cluster_single_growth_m() {
-    //     // cargo test primal_module_serial_basic_4_cluster_single_growth_m -- --nocapture
-    //     let visualize_filename = "primal_module_serial_basic_4_cluster_single_growth_m.json".to_string();
-    //     let defect_vertices = vec![32, 33, 37, 47, 86, 87, 72, 82];
-    //     let code = CodeCapacityPlanarCode::new(11, 0.01, 1);
-    //     primal_module_serial_basic_standard_syndrome(
-    //         code,
-    //         visualize_filename,
-    //         defect_vertices,
-    //         4,
-    //         vec![],
-    //         GrowingStrategy::ModeBased,
-    //     );
-    // }
+    #[test]
+    fn primal_module_serial_basic_4_cluster_single_growth_m() {
+        // cargo test primal_module_serial_basic_4_cluster_single_growth_m -- --nocapture
+        let visualize_filename = "primal_module_serial_basic_4_cluster_single_growth_m.json".to_string();
+        let defect_vertices = vec![32, 33, 37, 47, 86, 87, 72, 82];
+        let code = CodeCapacityPlanarCode::new(11, 0.01, 1);
+        primal_module_serial_basic_standard_syndrome(
+            code,
+            visualize_filename,
+            defect_vertices,
+            4,
+            vec![],
+            GrowingStrategy::ModeBased,
+        );
+    }
 
     #[test]
-    // #[timeout(1000)]
     fn primal_module_serial_basic_4_cluster_single_growth_with_dual_pq_impl_m() {
         // cargo test primal_module_serial_basic_4_cluster_single_growth_with_dual_pq_impl_m -- --nocapture
         let visualize_filename = "primal_module_serial_basic_4_cluster_single_growth_with_dual_pq_impl_m.json".to_string();
@@ -1244,28 +1225,26 @@ pub mod tests {
     }
 
     /// verify that the plugins are applied one by one
-    // #[test]
-    // // #[timeout(1000)]
-    // fn primal_module_serial_basic_4_plugin_one_by_one_m() {
-    //     // cargo test primal_module_serial_basic_4_plugin_one_by_one_m -- --nocapture
-    //     let visualize_filename = "primal_module_serial_basic_4_plugin_one_by_one_m.json".to_string();
-    //     let defect_vertices = vec![12, 22, 23, 32, 17, 26, 27, 37, 62, 72, 73, 82, 67, 76, 77, 87];
-    //     let code = CodeCapacityPlanarCode::new(11, 0.01, 1);
-    //     primal_module_serial_basic_standard_syndrome(
-    //         code,
-    //         visualize_filename,
-    //         defect_vertices,
-    //         12,
-    //         vec![
-    //             PluginUnionFind::entry(),
-    //             PluginSingleHair::entry_with_strategy(RepeatStrategy::Once),
-    //         ],
-    //         GrowingStrategy::ModeBased,
-    //     );
-    // }
+    #[test]
+    fn primal_module_serial_basic_4_plugin_one_by_one_m() {
+        // cargo test primal_module_serial_basic_4_plugin_one_by_one_m -- --nocapture
+        let visualize_filename = "primal_module_serial_basic_4_plugin_one_by_one_m.json".to_string();
+        let defect_vertices = vec![12, 22, 23, 32, 17, 26, 27, 37, 62, 72, 73, 82, 67, 76, 77, 87];
+        let code = CodeCapacityPlanarCode::new(11, 0.01, 1);
+        primal_module_serial_basic_standard_syndrome(
+            code,
+            visualize_filename,
+            defect_vertices,
+            12,
+            vec![
+                PluginUnionFind::entry(),
+                PluginSingleHair::entry_with_strategy(RepeatStrategy::Once),
+            ],
+            GrowingStrategy::ModeBased,
+        );
+    }
 
     #[test]
-    // #[timeout(1000)]
     fn primal_module_serial_basic_4_plugin_one_by_one_with_dual_pq_impl_m() {
         // cargo test primal_module_serial_basic_4_plugin_one_by_one_with_dual_pq_impl_m -- --nocapture
         let visualize_filename = "primal_module_serial_basic_4_plugin_one_by_one_with_dual_pq_impl_m.json".to_string();
