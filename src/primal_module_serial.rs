@@ -466,7 +466,7 @@ impl PrimalModuleImpl for PrimalModuleSerial {
         let weight_of = |edge_index: EdgeIndex| initializer.weighted_edges[edge_index].weight;
         cluster.subgraph = Some(cluster.matrix.get_solution_local_minimum(weight_of).expect("satisfiable"));
 
-        // FIXME: Change to use Options
+        // Todo: Perhaps: Change to use Options
         (conflicts, true)
     }
 }
@@ -750,7 +750,7 @@ impl PrimalModuleSerial {
             let (conflicts, solved) = self.resolve_cluster_tune(cluster_index, interface_ptr, dual_module, &mut edge_deltas);
             all_solved &= solved;
             all_conflicts.extend(conflicts);
-            // FIXME: Maybe wrap the btreesets into options
+            // todo: Maybe wrap the btreesets into options
         }
         for (edge_index, grow_rate) in edge_deltas.into_iter() {
             dual_module.grow_edge(edge_index, &grow_rate);
