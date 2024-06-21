@@ -228,6 +228,9 @@ impl SyndromePattern {
     }
 }
 
+/// timestamp type determines how many fast clear before a hard clear is required, see [`FastClear`]
+pub type FastClearTimestamp = usize;
+
 #[allow(dead_code)]
 /// use Xoshiro256StarStar for deterministic random number generator
 pub type DeterministicRng = rand_xoshiro::Xoshiro256StarStar;

@@ -434,7 +434,7 @@ impl<SerialModule: DualModuleImpl + Send + Sync> DualModuleImpl for DualModulePa
         let unit_ptr = self.find_active_ancestor(dual_node_ptr);
         self.thread_pool.scope(|_| {
             lock_write!(unit, unit_ptr);
-            unit.compute_maximum_update_length_dual_node(dual_node_ptr, simultaneous_update);
+            unit.compute_maximum_update_length_dual_node(dual_node_ptr, simultaneous_update)
         })
     }
 
@@ -581,37 +581,6 @@ impl<SerialModule: DualModuleImpl + Send + Sync> DualModuleParallelUnit<SerialMo
         }
     }
 
-    /// iteratively prepare all growing and shrinking and append the sync requests
-    fn iterative_prepare_all(&mut self, sync_requests: &mut Vec<SyncRequest>) {
-        if !self.has_active_node {
-            return; // early return to avoid going through all units
-        }
-        // depth-first search
-        if let Some((left_child_weak, right_child_weak)) = self.children.as_ref() {
-            if self.enable_parallel_execution {
-                let mut sync_requests_2 = vec![];
-                rayon::join(
-                    || {
-                        left_child_weak.upgrade_force().write().iterative_prepare_all(sync_requests);
-                    },
-                    || {
-                        right_child_weak
-                            .upgrade_force()
-                            .write()
-                            .iterative_prepare_all(&mut sync_requests_2);
-                    },
-                );
-                sync_requests.append(&mut sync_requests_2);
-            } else {
-                left_child_weak.upgrade_force().write().iterative_prepare_all(sync_requests);
-                right_child_weak.upgrade_force().write().iterative_prepare_all(sync_requests);
-            }
-        }
-        // my serial module
-        let local_sync_requests = self.serial_module.prepare_all();
-        sync_requests.append(local_sync_requests);
-    }
-
     fn iterative_set_grow_rate(
         &mut self,
         dual_node_ptr: &DualNodePtr,
@@ -641,37 +610,6 @@ impl<SerialModule: DualModuleImpl + Send + Sync> DualModuleParallelUnit<SerialMo
 
     }
 
-    // /// iteratively set grow state
-    // fn iterative_set_grow_state(
-    //     &mut self,
-    //     dual_node_ptr: &DualNodePtr,
-    //     grow_state: DualNodeGrowState,
-    //     representative_vertex: VertexIndex,
-    // ) {
-    //     if !self.whole_range.contains(representative_vertex) && !self.elevated_dual_nodes.contains(dual_node_ptr) {
-    //         return; // no descendant related to this dual node
-    //     }
-    //     if grow_state != DualNodeGrowState::Stay {
-    //         self.has_active_node = true;
-    //     }
-    //     // depth-first search
-    //     if let Some((left_child_weak, right_child_weak)) = self.children.as_ref() {
-    //         left_child_weak.upgrade_force().write().iterative_set_grow_state(
-    //             dual_node_ptr,
-    //             grow_state,
-    //             representative_vertex,
-    //         );
-    //         right_child_weak.upgrade_force().write().iterative_set_grow_state(
-    //             dual_node_ptr,
-    //             grow_state,
-    //             representative_vertex,
-    //         );
-    //     }
-    //     if self.owning_range.contains(representative_vertex) || self.serial_module.contains_dual_node(dual_node_ptr) {
-    //         self.serial_module.set_grow_state(dual_node_ptr, grow_state);
-    //     }
-    // }
-
     /// check if elevated_dual_nodes contains any dual node in the list
     pub fn elevated_dual_nodes_contains_any(&self, nodes: &[DualNodePtr]) -> bool {
         for node_ptr in nodes.iter() {
@@ -681,113 +619,6 @@ impl<SerialModule: DualModuleImpl + Send + Sync> DualModuleParallelUnit<SerialMo
         }
         false
     }
-
-    // /// prepare the initial shrink of a blossom
-    // fn iterative_prepare_nodes_shrink(
-    //     &mut self,
-    //     nodes_circle: &[DualNodePtr],
-    //     nodes_circle_vertices: &[VertexIndex],
-    //     sync_requests: &mut Vec<SyncRequest>,
-    // ) {
-    //     if !self.whole_range.contains_any(nodes_circle_vertices) && !self.elevated_dual_nodes_contains_any(nodes_circle) {
-    //         return; // no descendant related to this dual node
-    //     }
-    //     self.has_active_node = true;
-    //     // depth-first search
-    //     if let Some((left_child_weak, right_child_weak)) = self.children.as_ref() {
-    //         if self.enable_parallel_execution {
-    //             let mut sync_requests_2 = vec![];
-    //             rayon::join(
-    //                 || {
-    //                     left_child_weak.upgrade_force().write().iterative_prepare_nodes_shrink(
-    //                         nodes_circle,
-    //                         nodes_circle_vertices,
-    //                         sync_requests,
-    //                     );
-    //                 },
-    //                 || {
-    //                     right_child_weak.upgrade_force().write().iterative_prepare_nodes_shrink(
-    //                         nodes_circle,
-    //                         nodes_circle_vertices,
-    //                         &mut sync_requests_2,
-    //                     );
-    //                 },
-    //             );
-    //             sync_requests.append(&mut sync_requests_2);
-    //         } else {
-    //             left_child_weak.upgrade_force().write().iterative_prepare_nodes_shrink(
-    //                 nodes_circle,
-    //                 nodes_circle_vertices,
-    //                 sync_requests,
-    //             );
-    //             right_child_weak.upgrade_force().write().iterative_prepare_nodes_shrink(
-    //                 nodes_circle,
-    //                 nodes_circle_vertices,
-    //                 sync_requests,
-    //             );
-    //         }
-    //     }
-    //     let local_sync_requests = self.serial_module.prepare_nodes_shrink(nodes_circle);
-    //     sync_requests.append(local_sync_requests);
-    // }
-
-    // fn iterative_add_blossom(
-    //     &mut self,
-    //     blossom_ptr: &DualNodePtr,
-    //     nodes_circle: &[DualNodePtr],
-    //     representative_vertex: VertexIndex,
-    //     nodes_circle_vertices: &[VertexIndex],
-    // ) {
-    //     if !self.whole_range.contains_any(nodes_circle_vertices) && !self.elevated_dual_nodes_contains_any(nodes_circle) {
-    //         return; // no descendant related to this dual node
-    //     }
-    //     self.has_active_node = true;
-    //     // depth-first search
-    //     if let Some((left_child_weak, right_child_weak)) = self.children.as_ref() {
-    //         if self.enable_parallel_execution {
-    //             rayon::join(
-    //                 || {
-    //                     left_child_weak.upgrade_force().write().iterative_add_blossom(
-    //                         blossom_ptr,
-    //                         nodes_circle,
-    //                         representative_vertex,
-    //                         nodes_circle_vertices,
-    //                     );
-    //                 },
-    //                 || {
-    //                     right_child_weak.upgrade_force().write().iterative_add_blossom(
-    //                         blossom_ptr,
-    //                         nodes_circle,
-    //                         representative_vertex,
-    //                         nodes_circle_vertices,
-    //                     );
-    //                 },
-    //             );
-    //         } else {
-    //             left_child_weak.upgrade_force().write().iterative_add_blossom(
-    //                 blossom_ptr,
-    //                 nodes_circle,
-    //                 representative_vertex,
-    //                 nodes_circle_vertices,
-    //             );
-    //             right_child_weak.upgrade_force().write().iterative_add_blossom(
-    //                 blossom_ptr,
-    //                 nodes_circle,
-    //                 representative_vertex,
-    //                 nodes_circle_vertices,
-    //             );
-    //         }
-    //     }
-    //     if self.owning_range.contains_any(nodes_circle_vertices) || self.serial_module.contains_dual_nodes_any(nodes_circle)
-    //     {
-    //         self.serial_module.add_blossom(blossom_ptr);
-    //     }
-    //     // if I'm not on the representative path of this dual node, I need to register the propagated_dual_node
-    //     // note that I don't need to register propagated_grandson_dual_node because it's never gonna grow inside the blossom
-    //     if !self.whole_range.contains(representative_vertex) {
-    //         self.elevated_dual_nodes.insert(blossom_ptr.clone());
-    //     }
-    // }
 
     fn iterative_add_defect_node(&mut self, dual_node_ptr: &DualNodePtr, vertex_index: VertexIndex) {
         // if the vertex is not hold by any descendant, simply return
@@ -883,7 +714,7 @@ impl<SerialModule: DualModuleImpl + Send + Sync> DualModuleParallelUnit<SerialMo
         self.has_active_node
     }
 
-    fn iterative_grow_dual_node(&mut self, dual_node_ptr: &DualNodePtr, length: Weight, representative_vertex: VertexIndex) {
+    fn iterative_grow_dual_node(&mut self, dual_node_ptr: &DualNodePtr, length: Rational, representative_vertex: VertexIndex) {
         if !self.whole_range.contains(representative_vertex) && !self.elevated_dual_nodes.contains(dual_node_ptr) {
             return; // no descendant related to this dual node
         }
@@ -923,7 +754,7 @@ impl<SerialModule: DualModuleImpl + Send + Sync> DualModuleParallelUnit<SerialMo
         }
     }
 
-    fn iterative_grow(&mut self, length: Weight) {
+    fn iterative_grow(&mut self, length: Rational) {
         // early terminate if no active dual nodes anywhere in the descendant
         if !self.has_active_node {
             return;
@@ -943,43 +774,6 @@ impl<SerialModule: DualModuleImpl + Send + Sync> DualModuleParallelUnit<SerialMo
                 left_child_weak.upgrade_force().write().iterative_grow(length);
                 right_child_weak.upgrade_force().write().iterative_grow(length);
             }
-        }
-    }
-
-    fn iterative_remove_blossom(&mut self, dual_node_ptr: &DualNodePtr, representative_vertex: VertexIndex) {
-        if !self.whole_range.contains(representative_vertex) && !self.elevated_dual_nodes.contains(dual_node_ptr) {
-            return; // no descendant related to this dual node
-        }
-        self.has_active_node = true;
-        if let Some((left_child_weak, right_child_weak)) = self.children.as_ref() {
-            if self.enable_parallel_execution {
-                rayon::join(
-                    || {
-                        left_child_weak
-                            .upgrade_force()
-                            .write()
-                            .iterative_remove_blossom(dual_node_ptr, representative_vertex);
-                    },
-                    || {
-                        right_child_weak
-                            .upgrade_force()
-                            .write()
-                            .iterative_remove_blossom(dual_node_ptr, representative_vertex);
-                    },
-                );
-            } else {
-                left_child_weak
-                    .upgrade_force()
-                    .write()
-                    .iterative_remove_blossom(dual_node_ptr, representative_vertex);
-                right_child_weak
-                    .upgrade_force()
-                    .write()
-                    .iterative_remove_blossom(dual_node_ptr, representative_vertex);
-            }
-        }
-        if self.owning_range.contains(representative_vertex) || self.serial_module.contains_dual_node(dual_node_ptr) {
-            self.serial_module.remove_blossom(dual_node_ptr.clone());
         }
     }
 }

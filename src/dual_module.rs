@@ -411,6 +411,40 @@ impl GroupMaxUpdateLength {
             Self::Conflicts(conflicts) => conflicts.last(),
         }
     }
+
+    ///////////////////////////////////////////////////////////////////////////////////////////////////
+    ///////////////////////////////////////////////////////////////////////////////////////////////////
+    /// Added by yl
+    // pub fn is_empty(&self) -> bool {
+    //     matches!(self, Self::ValidGrow(Rational::MAX)) // if `has_empty_boundary_node`, then it's not considered empty
+    // }
+
+    pub fn extend(&mut self, other: Self) {
+        // if other.is_empty() {
+        //     return; // do nothing
+        // }
+        match self {
+            Self::ValidGrow(current_length) => match other {
+                Self::ValidGrow(length) => {
+                    *current_length = std::cmp::min(*current_length, length);
+                }
+                Self::Conflicts(mut other_list) => {
+                    let mut list = vec![];
+                    std::mem::swap(&mut list, &mut other_list);
+                    *self = Self::Conflicts(list);
+                }
+            },
+            Self::Conflicts((list, pending_stops)) => {
+                if let Self::Conflicts((other_list, other_pending_stops)) = other {
+                    list.extend(other_list);
+                    for (_, max_update_length) in other_pending_stops.into_iter() {
+                        Self::add_pending_stop(list, pending_stops, max_update_length);
+                    }
+                } // only add conflicts, not NonZeroGrow
+            }
+        }
+    }
+
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////

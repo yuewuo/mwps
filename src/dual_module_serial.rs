@@ -26,6 +26,20 @@ pub struct DualModuleSerial {
     pub active_edges: BTreeSet<EdgeIndex>,
     /// active nodes
     pub active_nodes: BTreeSet<DualNodePtr>,
+    /// helps to deduplicate active_edges and active_nodes
+    current_cycle: usize,
+    /// temporary list of synchronize requests, i.e. those propagating into the mirrored vertices; should always be empty when not partitioned, i.e. serial version
+    pub sync_requests: Vec<SyncRequest>,
+    /// current timestamp
+    pub active_timestamp: FastClearTimestamp,
+    /// deduplicate edges in the boundary, helpful when the decoding problem is partitioned
+    pub edge_dedup_timestamp: FastClearTimestamp,
+    /// temporary variable to reduce reallocation
+    updated_boundary: Vec<(bool, EdgeWeak)>,
+    /// temporary variable to reduce reallocation
+    propagating_vertices: Vec<(VertexWeak, Option<DualNodeInternalWeak>)>,
+    /// nodes internal information
+    pub nodes: Vec<Option<DualNodeInternalPtr>>,
 }
 
 pub type DualModuleSerialPtr = ArcRwLock<DualModuleSerial>;
@@ -49,6 +63,8 @@ pub struct Vertex {
     pub propagated_dual_node: Option<DualNodeInternalWeak>,
     /// propagated grandson node: must be a syndrome node
     pub propagated_grandson_dual_node: Option<DualNodeInternalWeak>,
+    /// for fast clear
+    pub timestamp: FastClearTimestamp,
 }
 
 pub type VertexPtr = ArcRwLock<Vertex>;
@@ -84,6 +100,12 @@ pub struct Edge {
     dual_nodes: Vec<DualNodeWeak>,
     /// the speed of growth
     grow_rate: Rational,
+    /// grandson nodes: must be syndrome node
+    grandson_dual_nodes: Vec<DualNodeWeak>,
+    /// deduplicate edge in a boundary
+    dedup_timestamp: (FastClearTimestamp, FastClearTimestamp),
+    /// for fast clear
+    pub timestamp: FastClearTimestamp,
 }
 
 pub type EdgePtr = ArcRwLock<Edge>;
@@ -169,6 +191,7 @@ impl DualModuleImpl for DualModuleSerial {
                     mirror_unit: None,
                     propagated_dual_node: None,
                     propagated_grandson_dual_node: None,
+                    timestamp: 0,
                 })
             })
             .collect();
@@ -186,6 +209,9 @@ impl DualModuleImpl for DualModuleSerial {
                     .map(|i| vertices[*i as usize].downgrade())
                     .collect::<Vec<_>>(),
                 grow_rate: Rational::zero(),
+                grandson_dual_nodes: vec![],
+                dedup_timestamp: (0, 0),
+                timestamp: 0,
             });
             for &vertex_index in hyperedge.vertices.iter() {
                 vertices[vertex_index as usize].write().edges.push(edge_ptr.downgrade());
@@ -197,6 +223,13 @@ impl DualModuleImpl for DualModuleSerial {
             edges,
             active_edges: BTreeSet::new(),
             active_nodes: BTreeSet::new(),
+            sync_requests: vec![],
+            edge_dedup_timestamp: 0,
+            updated_boundary: vec![],
+            propagating_vertices: vec![],
+            active_timestamp: 0,
+            current_cycle: 0,
+            nodes: vec![],
         }
     }
 
@@ -466,6 +499,7 @@ impl DualModuleImpl for DualModuleSerial {
                     edges: Vec::new(),
                     propagated_dual_node: None,
                     propagated_grandson_dual_node: None,
+                    timestamp: 0,
                 })
             })
             .collect();
@@ -481,6 +515,7 @@ impl DualModuleImpl for DualModuleSerial {
                     edges: Vec::new(),
                     propagated_dual_node: None,
                     propagated_grandson_dual_node: None,
+                    timestamp: 0,
                 }))
             }
         }
@@ -518,6 +553,9 @@ impl DualModuleImpl for DualModuleSerial {
                 growth: Rational::zero(),
                 dual_nodes: vec![],
                 grow_rate: Rational::zero(),
+                grandson_dual_nodes: vec![],
+                dedup_timestamp: (0, 0),
+                timestamp: 0,
             });
             for &vertex_index in hyper_edge.vertices.iter() {
                 vertices[vertex_index as usize].write().edges.push(edge_ptr.downgrade());
@@ -529,8 +567,61 @@ impl DualModuleImpl for DualModuleSerial {
             edges,
             active_edges: BTreeSet::new(),
             active_nodes: BTreeSet::new(),
+            current_cycle: 0,
+            sync_requests: vec![],
+            updated_boundary: vec![],
+            active_timestamp: 0,
+            edge_dedup_timestamp: 0,
+            propagating_vertices: vec![],
+            nodes: vec![],
         }
     }
+
+    // // prepare the growing or shrinking state of all nodes and return a list of sync requests in case of mirrored vertices are changed
+    // fn prepare_all(&mut self) -> &mut Vec<SyncRequest> {
+    //     debug_assert!(
+    //         self.sync_requests.is_empty(),
+    //         "make sure to remove all sync requests before prepare to avoid out-dated requests"
+    //     );
+    //     self.renew_active_list();
+    //     for i in 0..self.active_list.len() {
+    //         let dual_node_ptr = {
+    //             if let Some(internal_dual_node_ptr) = self.active_list[i].upgrade() {
+    //                 let dual_node_internal = internal_dual_node_ptr.read_recursive();
+    //                 dual_node_internal.origin.upgrade_force()
+    //             } else {
+    //                 continue; // a blossom could be in the active list even after it's been removed
+    //             }
+    //         };
+    //         let dual_node = dual_node_ptr.read_recursive();
+    //         match dual_node.grow_state {
+    //             DualNodeGrowState::Grow => {}
+    //             DualNodeGrowState::Shrink => {
+    //                 self.prepare_dual_node_growth(&dual_node_ptr, false);
+    //             }
+    //             DualNodeGrowState::Stay => {} // do not touch, Stay nodes might have become a part of a blossom, so it's not safe to change the boundary
+    //         };
+    //     }
+    //     for i in 0..self.active_list.len() {
+    //         let dual_node_ptr = {
+    //             if let Some(internal_dual_node_ptr) = self.active_list[i].upgrade() {
+    //                 let dual_node_internal = internal_dual_node_ptr.read_recursive();
+    //                 dual_node_internal.origin.upgrade_force()
+    //             } else {
+    //                 continue; // a blossom could be in the active list even after it's been removed
+    //             }
+    //         };
+    //         let dual_node = dual_node_ptr.read_recursive();
+    //         match dual_node.grow_state {
+    //             DualNodeGrowState::Grow => {
+    //                 self.prepare_dual_node_growth(&dual_node_ptr, true);
+    //             }
+    //             DualNodeGrowState::Shrink => {}
+    //             DualNodeGrowState::Stay => {} // do not touch, Stay nodes might have become a part of a blossom, so it's not safe to change the boundary
+    //         };
+    //     }
+    //     &mut self.sync_requests
+    // }
 
 }
 
@@ -550,6 +641,111 @@ impl Vertex {
         self.is_defect = false;
     }
 }
+
+//////////////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////////////
+impl DualModuleSerial {
+    /// hard clear all growth (manual call not recommended due to performance drawback)
+    pub fn hard_clear_graph(&mut self) {
+        for edge in self.edges.iter() {
+            let mut edge = edge.ptr().write();
+            edge.clear();
+            edge.timestamp = 0;
+        }
+        for vertex in self.vertices.iter() {
+            let mut vertex = vertex.ptr().write();
+            vertex.clear();
+            vertex.timestamp = 0;
+        }
+        self.active_timestamp = 0;
+    }
+
+    /// soft clear all growth
+    pub fn clear_graph(&mut self) {
+        if self.active_timestamp == FastClearTimestamp::MAX {
+            // rarely happens
+            self.hard_clear_graph();
+        }
+        self.active_timestamp += 1; // implicitly clear all edges growth
+    }
+    
+    /// necessary for boundary deduplicate when the unit is partitioned
+    fn hard_clear_edge_dedup(&mut self) {
+        for edge in self.edges.iter() {
+            let mut edge = edge.ptr().write();
+            edge.dedup_timestamp = (0, 0);
+        }
+        self.edge_dedup_timestamp = 0;
+    }
+
+    fn clear_edge_dedup(&mut self) {
+        if self.edge_dedup_timestamp == FastClearTimestamp::MAX {
+            // rarely happens
+            self.hard_clear_edge_dedup();
+        }
+        self.edge_dedup_timestamp += 1; // implicitly clear all edges growth
+    }
+
+    // /// increment the global cycle so that each node in the active list can be accessed exactly once
+    // #[allow(clippy::unnecessary_cast)]
+    // fn renew_active_list(&mut self) {
+    //     if self.current_cycle == usize::MAX {
+    //         for i in 0..self.nodes.len() {
+    //             let internal_dual_node_ptr = {
+    //                 match self.nodes[i].as_ref() {
+    //                     Some(internal_dual_node_ptr) => internal_dual_node_ptr.clone(),
+    //                     _ => continue,
+    //                 }
+    //             };
+    //             let mut internal_dual_node = internal_dual_node_ptr.write();
+    //             internal_dual_node.last_visit_cycle = 0;
+    //         }
+    //         self.current_cycle = 0;
+    //     }
+    //     self.current_cycle += 1;
+    //     // renew the active_list
+    //     let mut updated_active_list = Vec::with_capacity(self.active_list.len());
+    //     for i in 0..self.active_list.len() {
+    //         let (dual_node_ptr, internal_dual_node_ptr) = {
+    //             match self.active_list[i].upgrade() {
+    //                 Some(internal_dual_node_ptr) => {
+    //                     let mut dual_node_internal = internal_dual_node_ptr.write();
+    //                     if self.nodes[dual_node_internal.index as usize].is_none() {
+    //                         continue;
+    //                     } // removed
+    //                     if dual_node_internal.last_visit_cycle == self.current_cycle {
+    //                         continue;
+    //                     } // visited
+    //                     dual_node_internal.last_visit_cycle = self.current_cycle; // mark as visited
+    //                     (dual_node_internal.origin.upgrade_force(), internal_dual_node_ptr.clone())
+    //                 }
+    //                 _ => continue,
+    //             }
+    //         };
+    //         let dual_node = dual_node_ptr.read_recursive();
+    //         match dual_node.grow_state {
+    //             DualNodeGrowState::Grow | DualNodeGrowState::Shrink => {
+    //                 updated_active_list.push(internal_dual_node_ptr.downgrade());
+    //             }
+    //             DualNodeGrowState::Stay => {} // no longer in the active list
+    //         };
+    //     }
+    //     self.active_list = updated_active_list;
+    // }
+
+
+}
+
+
+
+
+//////////////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////////////
+
+
+
 
 /*
 Implementing visualization functions
