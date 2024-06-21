@@ -220,11 +220,6 @@ pub enum GroupMaxUpdateLength {
 
 /// common trait that must be implemented for each implementation of dual module
 pub trait DualModuleImpl {
-    // dual_module.rs
-    fn debug_print(&self) {
-        println!("this dual_module doesn't support this print");
-    }
-
     /// create a new dual module with empty syndrome
     fn new_empty(initializer: &SolverInitializer) -> Self;
 

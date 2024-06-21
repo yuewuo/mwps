@@ -414,7 +414,7 @@ impl PrimalModuleImpl for PrimalModuleSerial {
                 )
                 .map(|edge_index| (edge_index, dual_module.get_edge_slack(edge_index)))
                 .collect();
-            relaxer = cluster.relaxer_optimizer.optimize_tune(relaxer, edge_slacks, dual_variables);
+            relaxer = cluster.relaxer_optimizer.optimize(relaxer, edge_slacks, dual_variables);
 
             for (invalid_subgraph, grow_rate) in relaxer.get_direction() {
                 let (existing, dual_node_ptr) = interface_ptr.find_or_create_node_tune(invalid_subgraph, dual_module);

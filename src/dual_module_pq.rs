@@ -329,28 +329,6 @@ impl<Queue> DualModuleImpl for DualModulePQ<Queue>
 where
     Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug + Clone,
 {
-    fn debug_print(&self) {
-        println!("\n[current states]");
-        println!("global time: {:?}", self.global_time.read_recursive());
-        println!(
-            "edges: {:?}",
-            self.edges
-                .iter()
-                .filter(|e| !e.read_recursive().grow_rate.is_zero())
-                .collect::<Vec<&EdgePtr>>()
-        );
-        println!("printing obstacle queue");
-        // print each element of the queue on a separate line
-        let mut obstacle_queue = self.obstacle_queue.clone();
-        let mut events = vec![];
-        while let Some((time, event)) = obstacle_queue.pop_event() {
-            events.push((time, event));
-        }
-        for (time, event) in events {
-            println!("\ttime: {:?}, event: {:?}", time, event);
-        }
-    }
-
     /// initialize the dual module, which is supposed to be reused for multiple decoding tasks with the same structure
     #[allow(clippy::unnecessary_cast)]
     fn new_empty(initializer: &SolverInitializer) -> Self {
@@ -621,7 +599,7 @@ where
 
     /* tuning mode related new methods */
 
-    /// tuning mode shared methods
+    // tuning mode shared methods
     add_shared_methods!();
 
     /// is the edge tight, but for tuning mode
