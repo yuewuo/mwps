@@ -329,67 +329,6 @@ impl<Queue> DualModuleImpl for DualModulePQ<Queue>
 where
     Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug,
 {
-    fn sync(&mut self) {
-        for edges in self.edges.iter_mut() {
-            let mut edge = edges.write();
-
-            // update if necessary
-            let global_time = self.global_time.read_recursive();
-            if edge.last_updated_time != global_time.clone() {
-                // the edge is behind
-                debug_assert!(
-                    global_time.clone() >= edge.last_updated_time,
-                    "global time is behind, maybe a wrap-around has happened"
-                );
-
-                let time_diff = global_time.clone() - &edge.last_updated_time;
-                let newly_grown_amount = &time_diff * &edge.grow_rate;
-                edge.growth_at_last_updated_time += newly_grown_amount;
-                edge.last_updated_time = global_time.clone();
-                debug_assert!(
-                    edge.growth_at_last_updated_time <= edge.weight,
-                    "growth larger than weight: check if events are 1) inserted and 2) handled correctly"
-                );
-            }
-
-            for dual_node_ptr in edge.dual_nodes.iter() {
-                let dual_node_ptr_write = dual_node_ptr.upgrade_force();
-                let mut node = dual_node_ptr_write.write();
-
-                // update if necessary
-                let global_time = self.global_time.read_recursive();
-                if node.last_updated_time != global_time.clone() {
-                    // the edge is behind
-                    debug_assert!(
-                        global_time.clone() >= node.last_updated_time,
-                        "global time is behind, maybe a wrap-around has happened"
-                    );
-
-                    let dual_variable = node.get_dual_variable();
-                    node.set_dual_variable(dual_variable);
-                    node.last_updated_time = global_time.clone();
-                    debug_assert!(
-                        !node.get_dual_variable().is_negative(),
-                        "negative dual variable: check if events are 1) inserted and 2) handled correctly"
-                    );
-                }
-            }
-        }
-    }
-
-    fn debug_print(&self) {
-        println!("\n[current states]");
-        println!("global time: {:?}", self.global_time.read_recursive());
-        println!(
-            "edges: {:?}",
-            self.edges
-                .iter()
-                .filter(|e| !e.read_recursive().grow_rate.is_zero())
-                .collect::<Vec<&EdgePtr>>()
-        );
-        println!("pq: {:?}", self.obstacle_queue);
-    }
-
     /// initialize the dual module, which is supposed to be reused for multiple decoding tasks with the same structure
     #[allow(clippy::unnecessary_cast)]
     fn new_empty(initializer: &SolverInitializer) -> Self {
@@ -658,22 +597,91 @@ where
         self.get_edge_slack(edge_index).is_zero()
     }
 
+    /* tuning mode related new methods */
+
+    /// tuning mode shared methods
+    add_shared_methods!();
+
+    /// is the edge tight, but for tuning mode
     fn is_edge_tight_tune(&self, edge_index: EdgeIndex) -> bool {
         let edge = self.edges[edge_index as usize].read_recursive();
         edge.weight == edge.growth_at_last_updated_time
     }
 
-    add_shared_methods!();
-
+    /// change mode, clear queue as queue is no longer needed. also sync to get rid off the need for global time
     fn advance_mode(&mut self) {
         self.mode_mut().advance();
         self.obstacle_queue.clear();
         self.sync();
     }
 
+    /// grow specific amount for a specific edge
     fn grow_edge(&self, edge_index: EdgeIndex, amount: &Rational) {
         let mut edge = self.edges[edge_index as usize].write();
         edge.growth_at_last_updated_time += amount;
+    }
+
+    /// sync all states and global time so the concept of time and pq can retire
+    fn sync(&mut self) {
+        for edges in self.edges.iter_mut() {
+            let mut edge = edges.write();
+
+            // update if necessary
+            let global_time = self.global_time.read_recursive();
+            if edge.last_updated_time != global_time.clone() {
+                // the edge is behind
+                debug_assert!(
+                    global_time.clone() >= edge.last_updated_time,
+                    "global time is behind, maybe a wrap-around has happened"
+                );
+
+                let time_diff = global_time.clone() - &edge.last_updated_time;
+                let newly_grown_amount = &time_diff * &edge.grow_rate;
+                edge.growth_at_last_updated_time += newly_grown_amount;
+                edge.last_updated_time = global_time.clone();
+                debug_assert!(
+                    edge.growth_at_last_updated_time <= edge.weight,
+                    "growth larger than weight: check if events are 1) inserted and 2) handled correctly"
+                );
+            }
+
+            for dual_node_ptr in edge.dual_nodes.iter() {
+                let dual_node_ptr_write = dual_node_ptr.upgrade_force();
+                let mut node = dual_node_ptr_write.write();
+
+                // update if necessary
+                let global_time = self.global_time.read_recursive();
+                if node.last_updated_time != global_time.clone() {
+                    // the edge is behind
+                    debug_assert!(
+                        global_time.clone() >= node.last_updated_time,
+                        "global time is behind, maybe a wrap-around has happened"
+                    );
+
+                    let dual_variable = node.get_dual_variable();
+                    node.set_dual_variable(dual_variable);
+                    node.last_updated_time = global_time.clone();
+                    debug_assert!(
+                        !node.get_dual_variable().is_negative(),
+                        "negative dual variable: check if events are 1) inserted and 2) handled correctly"
+                    );
+                }
+            }
+        }
+    }
+
+    /// misc debug print statement
+    fn debug_print(&self) {
+        println!("\n[current states]");
+        println!("global time: {:?}", self.global_time.read_recursive());
+        println!(
+            "edges: {:?}",
+            self.edges
+                .iter()
+                .filter(|e| !e.read_recursive().grow_rate.is_zero())
+                .collect::<Vec<&EdgePtr>>()
+        );
+        println!("pq: {:?}", self.obstacle_queue);
     }
 }
 
