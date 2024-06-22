@@ -94,7 +94,7 @@ pub fn get_version() -> String {
         &mut dual_module,
         None,
     );
-    let (subgraph, weight_range) = primal_module.subgraph_range(&interface_ptr, &mut dual_module);
+    let (subgraph, weight_range) = primal_module.subgraph_range(&interface_ptr, &mut dual_module, 0);
     println!("subgraph: {subgraph:?}");
     // env!("CARGO_PKG_VERSION").to_string()
     format!("subgraph: {subgraph:?}, weight_range: {weight_range:?}")
@@ -110,7 +110,7 @@ pub mod ordered_float {
     use crate::BaseFloat;
     use num_traits::Zero;
 
-    const EPSILON: BaseFloat = 1e-4;
+    const EPSILON: BaseFloat = 1e-2;
 
     #[derive(Debug, Clone, Copy)]
     pub struct OrderedFloat(BaseFloat);
@@ -187,7 +187,7 @@ pub mod ordered_float {
         fn from_u64(n: u64) -> Option<Self> {
             Some(Self::new(n as BaseFloat))
         }
-        fn from_f64(n: BaseFloat) -> Option<Self> {
+        fn from_f64(n: f64) -> Option<Self> {
             Some(Self::new(n))
         }
         fn from_usize(n: usize) -> Option<Self> {

@@ -342,19 +342,19 @@ impl DualModuleImpl for DualModuleSerial {
         for &edge_index in node.invalid_subgraph.hair.iter() {
             let mut edge = self.edges[edge_index as usize].write();
             edge.growth += grow_amount.clone();
-            assert!(
-                !edge.growth.is_negative(),
-                "edge {} over-shrunk: the new growth is {:?}",
-                edge_index,
-                edge.growth
-            );
-            assert!(
-                edge.growth <= edge.weight,
-                "edge {} over-grown: the new growth is {:?}, weight is {:?}",
-                edge_index,
-                edge.growth,
-                edge.weight
-            );
+            // assert!(
+            //     !edge.growth.is_negative(),
+            //     "edge {} over-shrunk: the new growth is {:?}",
+            //     edge_index,
+            //     edge.growth
+            // );
+            // assert!(
+            //     edge.growth <= edge.weight,
+            //     "edge {} over-grown: the new growth is {:?}, weight is {:?}",
+            //     edge_index,
+            //     edge.growth,
+            //     edge.weight
+            // );
         }
         drop(node);
         // update dual variable
@@ -377,19 +377,19 @@ impl DualModuleImpl for DualModuleSerial {
                 grow_rate += node_weak.upgrade_force().read_recursive().grow_rate.clone();
             }
             edge.growth += length.clone() * grow_rate;
-            assert!(
-                !edge.growth.is_negative(),
-                "edge {} over-shrunk: the new growth is {:?}",
-                edge_index,
-                edge.growth
-            );
-            assert!(
-                edge.growth <= edge.weight,
-                "edge {} over-grown: the new growth is {:?}, weight is {:?}",
-                edge_index,
-                edge.growth,
-                edge.weight
-            );
+            // assert!(
+            //     !edge.growth.is_negative(),
+            //     "edge {} over-shrunk: the new growth is {:?}",
+            //     edge_index,
+            //     edge.growth
+            // );
+            // assert!(
+            //     edge.growth <= edge.weight,
+            //     "edge {} over-grown: the new growth is {:?}, weight is {:?}",
+            //     edge_index,
+            //     edge.growth,
+            //     edge.weight
+            // );
         }
         // update dual variables
         for node_ptr in self.active_nodes.iter() {

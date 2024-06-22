@@ -302,6 +302,12 @@ pub trait DualModuleImpl {
         self.is_edge_tight(edge_index)
     }
 
+    /// `get_edge_slack` but in tuning phase
+    fn get_edge_slack_tune(&self, edge_index: EdgeIndex) -> Rational {
+        eprintln!("this dual_module does not implement tuning");
+        self.get_edge_slack(edge_index)
+    }
+
     /* miscs */
     fn debug_print(&self) {
         println!("this dual_module doesn't support debug print");

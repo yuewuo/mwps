@@ -608,6 +608,11 @@ where
         edge.weight == edge.growth_at_last_updated_time
     }
 
+    fn get_edge_slack_tune(&self, edge_index: EdgeIndex) -> Rational {
+        let edge = self.edges[edge_index as usize].read_recursive();
+        edge.weight.clone() - edge.growth_at_last_updated_time.clone()
+    }
+
     /// change mode, clear queue as queue is no longer needed. also sync to get rid off the need for global time
     fn advance_mode(&mut self) {
         self.mode_mut().advance();

@@ -218,7 +218,12 @@ impl PrimalModuleImpl for PrimalModuleSerial {
         res
     }
 
-    fn subgraph(&mut self, _interface: &DualModuleInterfacePtr, _dual_module: &mut impl DualModuleImpl) -> Subgraph {
+    fn subgraph(
+        &mut self,
+        _interface: &DualModuleInterfacePtr,
+        _dual_module: &mut impl DualModuleImpl,
+        seed: u64,
+    ) -> Subgraph {
         let mut subgraph = vec![];
         for cluster_ptr in self.clusters.iter() {
             let cluster = cluster_ptr.read_recursive();
@@ -229,7 +234,7 @@ impl PrimalModuleImpl for PrimalModuleSerial {
                 cluster
                     .subgraph
                     .clone()
-                    .expect("bug occurs: cluster should be solved, but the subgraph is not yet generated")
+                    .expect(format!("bug occurs: cluster should be solved, but the subgraph is not yet generated || the seed is {seed:?}").as_str())
                     .iter(),
             );
         }
@@ -323,7 +328,8 @@ impl PrimalModuleImpl for PrimalModuleSerial {
                     )
                     .map(|edge_index| (edge_index, dual_module.get_edge_slack(edge_index)))
                     .collect();
-                relaxer = cluster.relaxer_optimizer.optimize(relaxer, edge_slacks, dual_variables);
+                let (new_relaxer, _) = cluster.relaxer_optimizer.optimize(relaxer, edge_slacks, dual_variables);
+                relaxer = new_relaxer;
             }
             for (invalid_subgraph, grow_rate) in relaxer.get_direction() {
                 let (existing, dual_node_ptr) = interface_ptr.find_or_create_node(invalid_subgraph, dual_module);
@@ -362,12 +368,12 @@ impl PrimalModuleImpl for PrimalModuleSerial {
         interface_ptr: &DualModuleInterfacePtr,
         dual_module: &mut impl DualModuleImpl,
         edge_deltas: &mut BTreeMap<EdgeIndex, Rational>,
-    ) -> (BTreeSet<MaxUpdateLength>, bool) {
+    ) -> (BTreeSet<MaxUpdateLength>, bool, bool) {
         let mut conflicts = BTreeSet::default();
         let cluster_ptr = self.clusters[cluster_index as usize].clone();
         let mut cluster = cluster_ptr.write();
         if cluster.nodes.is_empty() {
-            return (conflicts, true); // no longer a cluster, no need to handle
+            return (conflicts, true, false); // no longer a cluster, no need to handle
         }
         // update the matrix with new tight edges
         let cluster = &mut *cluster;
@@ -400,7 +406,10 @@ impl PrimalModuleImpl for PrimalModuleSerial {
                 .map(|primal_node_ptr| {
                     let primal_node = primal_node_ptr.read_recursive();
                     let dual_node = primal_node.dual_node_ptr.read_recursive();
-                    (dual_node.invalid_subgraph.clone(), dual_node.get_dual_variable().clone())
+                    (
+                        dual_node.invalid_subgraph.clone(),
+                        dual_node.dual_variable_at_last_updated_time.clone(),
+                    )
                 })
                 .collect();
             let edge_slacks: BTreeMap<EdgeIndex, Rational> = dual_variables
@@ -412,9 +421,14 @@ impl PrimalModuleImpl for PrimalModuleSerial {
                         .keys()
                         .flat_map(|invalid_subgraph| invalid_subgraph.hair.iter().cloned()),
                 )
-                .map(|edge_index| (edge_index, dual_module.get_edge_slack(edge_index)))
+                .map(|edge_index| (edge_index, dual_module.get_edge_slack_tune(edge_index)))
                 .collect();
-            relaxer = cluster.relaxer_optimizer.optimize(relaxer, edge_slacks, dual_variables);
+            // println!("invoking optimizer");
+            let (new_relaxer, early_returned) = cluster.relaxer_optimizer.optimize(relaxer, edge_slacks, dual_variables);
+            // println!("early_returned: {:?}", early_returned);
+            relaxer = new_relaxer;
+            // println!("done invoking");
+            // println!("relaxer.direction: {:?}", relaxer.get_direction());
 
             for (invalid_subgraph, grow_rate) in relaxer.get_direction() {
                 let (existing, dual_node_ptr) = interface_ptr.find_or_create_node_tune(invalid_subgraph, dual_module);
@@ -430,7 +444,10 @@ impl PrimalModuleImpl for PrimalModuleSerial {
 
                 let mut node_ptr_write: parking_lot::lock_api::RwLockWriteGuard<parking_lot::RawRwLock, DualNode> =
                     dual_node_ptr.write();
-                node_ptr_write.dual_variable_at_last_updated_time += grow_rate.clone();
+                if !early_returned {
+                    node_ptr_write.dual_variable_at_last_updated_time += grow_rate.clone();
+                }
+                // println!("index: {:?}, grow_rate: {:?}", node_ptr_write.index, grow_rate);
                 if grow_rate.is_negative() && node_ptr_write.dual_variable_at_last_updated_time.is_zero() {
                     conflicts.insert(MaxUpdateLength::ShrinkProhibited(OrderedDualNodePtr::new(
                         node_ptr_write.index,
@@ -454,7 +471,7 @@ impl PrimalModuleImpl for PrimalModuleSerial {
             }
 
             cluster.relaxer_optimizer.insert(relaxer);
-            return (conflicts, false);
+            return (conflicts, false, early_returned);
         }
 
         // TODO idea: plugins can suggest subgraph (ideally, a global maximum), if so, then it will adopt th
@@ -467,7 +484,7 @@ impl PrimalModuleImpl for PrimalModuleSerial {
         cluster.subgraph = Some(cluster.matrix.get_solution_local_minimum(weight_of).expect("satisfiable"));
 
         // Todo: Perhaps: Change to use Options
-        (conflicts, true)
+        (conflicts, true, false)
     }
 }
 
@@ -746,14 +763,20 @@ impl PrimalModuleSerial {
         let mut all_solved = true;
         let mut all_conflicts = BTreeSet::default();
         let mut edge_deltas = BTreeMap::new();
+        let mut some_er = false;
         for &cluster_index in active_clusters.iter() {
-            let (conflicts, solved) = self.resolve_cluster_tune(cluster_index, interface_ptr, dual_module, &mut edge_deltas);
+            let (conflicts, solved, early_returned) =
+                self.resolve_cluster_tune(cluster_index, interface_ptr, dual_module, &mut edge_deltas);
+            // println!("is it here...");
             all_solved &= solved;
+            some_er |= early_returned;
             all_conflicts.extend(conflicts);
             // todo: Maybe wrap the btreesets into options
         }
         for (edge_index, grow_rate) in edge_deltas.into_iter() {
-            dual_module.grow_edge(edge_index, &grow_rate);
+            if !some_er {
+                dual_module.grow_edge(edge_index, &grow_rate);
+            }
             if grow_rate.is_positive() && dual_module.is_edge_tight_tune(edge_index) {
                 all_conflicts.insert(MaxUpdateLength::Conflicting(edge_index));
             }
@@ -811,7 +834,7 @@ pub mod tests {
         // Question: should this be called here
         // dual_module.update_dual_nodes(&interface_ptr.read_recursive().nodes);
 
-        let (subgraph, weight_range) = primal_module.subgraph_range(&interface_ptr, &mut dual_module);
+        let (subgraph, weight_range) = primal_module.subgraph_range(&interface_ptr, &mut dual_module, 0);
         if let Some(visualizer) = visualizer.as_mut() {
             visualizer
                 .snapshot_combined(

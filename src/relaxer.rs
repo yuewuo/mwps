@@ -58,6 +58,10 @@ impl Relaxer {
         relaxer
     }
 
+    pub fn clear(&mut self) {
+        self.direction.clear();
+    }
+
     pub fn new_raw(direction: BTreeMap<Arc<InvalidSubgraph>, Rational>) -> Self {
         let mut edges = BTreeMap::new();
         for (invalid_subgraph, speed) in direction.iter() {

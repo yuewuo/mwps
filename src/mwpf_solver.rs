@@ -26,16 +26,16 @@ use std::sync::Arc;
 
 pub trait PrimalDualSolver {
     fn clear(&mut self);
-    fn solve_visualizer(&mut self, syndrome_pattern: &SyndromePattern, visualizer: Option<&mut Visualizer>);
-    fn solve(&mut self, syndrome_pattern: &SyndromePattern) {
-        self.solve_visualizer(syndrome_pattern, None)
+    fn solve_visualizer(&mut self, syndrome_pattern: &SyndromePattern, visualizer: Option<&mut Visualizer>, seed: u64);
+    fn solve(&mut self, syndrome_pattern: &SyndromePattern, seed: u64) {
+        self.solve_visualizer(syndrome_pattern, None, seed)
     }
-    fn subgraph_range_visualizer(&mut self, visualizer: Option<&mut Visualizer>) -> (Subgraph, WeightRange);
-    fn subgraph_range(&mut self) -> (Subgraph, WeightRange) {
-        self.subgraph_range_visualizer(None)
+    fn subgraph_range_visualizer(&mut self, visualizer: Option<&mut Visualizer>, seed: u64) -> (Subgraph, WeightRange);
+    fn subgraph_range(&mut self, seed: u64) -> (Subgraph, WeightRange) {
+        self.subgraph_range_visualizer(None, seed)
     }
-    fn subgraph(&mut self) -> Subgraph {
-        self.subgraph_range().0
+    fn subgraph(&mut self, seed: u64) -> Subgraph {
+        self.subgraph_range(seed).0
     }
     fn sum_dual_variables(&self) -> Rational;
     fn generate_profiler_report(&self) -> serde_json::Value;
@@ -120,6 +120,7 @@ impl SolverSerialPlugins {
         primal_module.config = config.primal.clone();
         Self {
             dual_module: DualModulePQ::new_empty(initializer),
+            // dual_module: DualModuleSerial::new_empty(initializer),
             primal_module,
             interface_ptr: DualModuleInterfacePtr::new(model_graph.clone()),
             model_graph,
@@ -133,7 +134,7 @@ impl PrimalDualSolver for SolverSerialPlugins {
         self.dual_module.clear();
         self.interface_ptr.clear();
     }
-    fn solve_visualizer(&mut self, syndrome_pattern: &SyndromePattern, visualizer: Option<&mut Visualizer>) {
+    fn solve_visualizer(&mut self, syndrome_pattern: &SyndromePattern, visualizer: Option<&mut Visualizer>, seed: u64) {
         let syndrome_pattern = Arc::new(syndrome_pattern.clone());
         if !syndrome_pattern.erasures.is_empty() {
             unimplemented!();
@@ -146,15 +147,17 @@ impl PrimalDualSolver for SolverSerialPlugins {
         );
         debug_assert!(
             {
-                let subgraph = self.subgraph();
+                let subgraph = self.subgraph(seed);
                 self.model_graph
                     .matches_subgraph_syndrome(&subgraph, &syndrome_pattern.defect_vertices)
             },
             "the subgraph does not generate the syndrome"
         );
     }
-    fn subgraph_range_visualizer(&mut self, visualizer: Option<&mut Visualizer>) -> (Subgraph, WeightRange) {
-        let (subgraph, weight_range) = self.primal_module.subgraph_range(&self.interface_ptr, &mut self.dual_module);
+    fn subgraph_range_visualizer(&mut self, visualizer: Option<&mut Visualizer>, seed: u64) -> (Subgraph, WeightRange) {
+        let (subgraph, weight_range) = self
+            .primal_module
+            .subgraph_range(&self.interface_ptr, &mut self.dual_module, seed);
         if let Some(visualizer) = visualizer {
             visualizer
                 .snapshot_combined(
@@ -182,11 +185,20 @@ macro_rules! bind_primal_dual_solver_trait {
             fn clear(&mut self) {
                 self.0.clear()
             }
-            fn solve_visualizer(&mut self, syndrome_pattern: &SyndromePattern, visualizer: Option<&mut Visualizer>) {
-                self.0.solve_visualizer(syndrome_pattern, visualizer)
+            fn solve_visualizer(
+                &mut self,
+                syndrome_pattern: &SyndromePattern,
+                visualizer: Option<&mut Visualizer>,
+                seed: u64,
+            ) {
+                self.0.solve_visualizer(syndrome_pattern, visualizer, seed)
             }
-            fn subgraph_range_visualizer(&mut self, visualizer: Option<&mut Visualizer>) -> (Subgraph, WeightRange) {
-                self.0.subgraph_range_visualizer(visualizer)
+            fn subgraph_range_visualizer(
+                &mut self,
+                visualizer: Option<&mut Visualizer>,
+                seed: u64,
+            ) -> (Subgraph, WeightRange) {
+                self.0.subgraph_range_visualizer(visualizer, seed)
             }
             fn sum_dual_variables(&self) -> Rational {
                 self.0.sum_dual_variables()
@@ -320,7 +332,7 @@ impl SolverErrorPatternLogger {
 
 impl PrimalDualSolver for SolverErrorPatternLogger {
     fn clear(&mut self) {}
-    fn solve_visualizer(&mut self, syndrome_pattern: &SyndromePattern, _visualizer: Option<&mut Visualizer>) {
+    fn solve_visualizer(&mut self, syndrome_pattern: &SyndromePattern, _visualizer: Option<&mut Visualizer>, seed: u64) {
         self.file
             .write_all(
                 serde_json::to_string(&serde_json::json!(syndrome_pattern))
@@ -330,7 +342,7 @@ impl PrimalDualSolver for SolverErrorPatternLogger {
             .unwrap();
         self.file.write_all(b"\n").unwrap();
     }
-    fn subgraph_range_visualizer(&mut self, _visualizer: Option<&mut Visualizer>) -> (Subgraph, WeightRange) {
+    fn subgraph_range_visualizer(&mut self, _visualizer: Option<&mut Visualizer>, seed: u64) -> (Subgraph, WeightRange) {
         panic!("error pattern logger do not actually solve the problem, please use Verifier::None by `--verifier none`")
     }
     fn sum_dual_variables(&self) -> Rational {

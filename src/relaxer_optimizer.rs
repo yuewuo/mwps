@@ -87,7 +87,7 @@ impl RelaxerOptimizer {
         relaxer: Relaxer,
         edge_slacks: BTreeMap<EdgeIndex, Rational>,
         mut dual_variables: BTreeMap<Arc<InvalidSubgraph>, Rational>,
-    ) -> Relaxer {
+    ) -> (Relaxer, bool) {
         for invalid_subgraph in relaxer.get_direction().keys() {
             if !dual_variables.contains_key(invalid_subgraph) {
                 dual_variables.insert(invalid_subgraph.clone(), Rational::zero());
@@ -148,17 +148,25 @@ impl RelaxerOptimizer {
                 .map(|constraint| constraint.to_string())
                 .collect::<Vec<_>>()
                 .join(",\n");
+
+        // println!("\n input:\n {}\n", input);
+
         let mut solver = slp::Solver::<slp::Ratio<slp::BigInt>>::new(&input);
         let solution = solver.solve();
         let mut direction: BTreeMap<Arc<InvalidSubgraph>, Rational> = BTreeMap::new();
         match solution {
             slp::Solution::Optimal(optimal_objective, model) => {
                 if !optimal_objective.is_positive() {
-                    return relaxer;
+                    // println!("optimal_objective: {:?}", optimal_objective);
+
+                    // println!("direction: {:?}", direction);
+                    // println!("early return");
+                    return (relaxer, true);
                 }
                 for (var_index, (invalid_subgraph, _)) in dual_variables.into_iter().enumerate() {
                     let overall_growth = model[var_index].clone() - model[var_index + x_vars.len()].clone();
                     if !overall_growth.is_zero() {
+                        // println!("overall_growth: {:?}", overall_growth);
                         direction.insert(invalid_subgraph, overall_growth);
                     }
                 }
@@ -166,7 +174,7 @@ impl RelaxerOptimizer {
             _ => unreachable!(),
         }
         self.relaxers.insert(relaxer);
-        Relaxer::new(direction)
+        (Relaxer::new(direction), false)
     }
 
     #[cfg(feature = "float_lp")]
@@ -176,7 +184,7 @@ impl RelaxerOptimizer {
         relaxer: Relaxer,
         edge_slacks: BTreeMap<EdgeIndex, Rational>,
         mut dual_variables: BTreeMap<Arc<InvalidSubgraph>, Rational>,
-    ) -> Relaxer {
+    ) -> (Relaxer, bool) {
         use highs::{HighsModelStatus, RowProblem, Sense};
         use num_traits::ToPrimitive;
 
@@ -242,7 +250,9 @@ impl RelaxerOptimizer {
 
             // check positivity of the objective
             if !(res.is_positive()) {
-                return relaxer;
+                // println!("res: {:?}", res);
+                // println!("early return");
+                return (relaxer, true);
             }
 
             for (var_index, invalid_subgraph) in invalid_subgraphs.iter().enumerate() {
@@ -257,7 +267,7 @@ impl RelaxerOptimizer {
         }
 
         self.relaxers.insert(relaxer);
-        Relaxer::new(direction)
+        (Relaxer::new(direction), false)
     }
 }
 
