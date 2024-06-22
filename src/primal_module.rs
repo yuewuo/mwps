@@ -137,12 +137,8 @@ pub trait PrimalModuleImpl {
         while !group_max_update_length.is_unbounded() {
             callback(interface, dual_module, self, &group_max_update_length);
             match group_max_update_length.get_valid_growth() {
-                Some(length) => {
-                    // println!("...grow: {:?}", length);
-                    dual_module.grow(length)
-                }
+                Some(length) => dual_module.grow(length),
                 None => {
-                    // println!("...resolve: {:?}", group_max_update_length);
                     self.resolve(group_max_update_length, interface, dual_module);
                 }
             }
@@ -151,7 +147,6 @@ pub trait PrimalModuleImpl {
 
         // from here, all states should be syncronized
         let mut start = true;
-        // println!("TUNING!!!");
 
         // starting with unbounded state here: All edges and nodes are not growing as of now
         // Tune
@@ -168,23 +163,17 @@ pub trait PrimalModuleImpl {
                 for (edge_index, grow_rate) in edge_deltas.into_iter() {
                     if !early_returned {
                         dual_module.grow_edge(edge_index, &grow_rate);
-                    } else {
-                        // println!("here");
                     }
                     if grow_rate.is_positive() && dual_module.is_edge_tight_tune(edge_index) {
                         conflicts.insert(MaxUpdateLength::Conflicting(edge_index));
                     }
                 }
-                // if early_returned {
-                //     dual_module.debug_print();
-                // }
                 while !resolved {
                     let (_conflicts, _resolved) = self.resolve_tune(conflicts, interface, dual_module);
                     if _resolved {
                         break;
                     }
                     conflicts = _conflicts;
-                    // println!("conflicts: {:?}", conflicts);
                     resolved = _resolved;
                 }
             }

@@ -157,10 +157,6 @@ impl RelaxerOptimizer {
         match solution {
             slp::Solution::Optimal(optimal_objective, model) => {
                 if !optimal_objective.is_positive() {
-                    // println!("optimal_objective: {:?}", optimal_objective);
-
-                    // println!("direction: {:?}", direction);
-                    // println!("early return");
                     return (relaxer, true);
                 }
                 for (var_index, (invalid_subgraph, _)) in dual_variables.into_iter().enumerate() {
@@ -250,8 +246,6 @@ impl RelaxerOptimizer {
 
             // check positivity of the objective
             if !(res.is_positive()) {
-                // println!("res: {:?}", res);
-                // println!("early return");
                 return (relaxer, true);
             }
 

@@ -423,12 +423,9 @@ impl PrimalModuleImpl for PrimalModuleSerial {
                 )
                 .map(|edge_index| (edge_index, dual_module.get_edge_slack_tune(edge_index)))
                 .collect();
-            // println!("invoking optimizer");
+
             let (new_relaxer, early_returned) = cluster.relaxer_optimizer.optimize(relaxer, edge_slacks, dual_variables);
-            // println!("early_returned: {:?}", early_returned);
             relaxer = new_relaxer;
-            // println!("done invoking");
-            // println!("relaxer.direction: {:?}", relaxer.get_direction());
 
             for (invalid_subgraph, grow_rate) in relaxer.get_direction() {
                 let (existing, dual_node_ptr) = interface_ptr.find_or_create_node_tune(invalid_subgraph, dual_module);
@@ -447,7 +444,6 @@ impl PrimalModuleImpl for PrimalModuleSerial {
                 if !early_returned {
                     node_ptr_write.dual_variable_at_last_updated_time += grow_rate.clone();
                 }
-                // println!("index: {:?}, grow_rate: {:?}", node_ptr_write.index, grow_rate);
                 if grow_rate.is_negative() && node_ptr_write.dual_variable_at_last_updated_time.is_zero() {
                     conflicts.insert(MaxUpdateLength::ShrinkProhibited(OrderedDualNodePtr::new(
                         node_ptr_write.index,
@@ -767,7 +763,6 @@ impl PrimalModuleSerial {
         for &cluster_index in active_clusters.iter() {
             let (conflicts, solved, early_returned) =
                 self.resolve_cluster_tune(cluster_index, interface_ptr, dual_module, &mut edge_deltas);
-            // println!("is it here...");
             all_solved &= solved;
             some_er |= early_returned;
             all_conflicts.extend(conflicts);

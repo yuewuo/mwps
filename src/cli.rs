@@ -104,6 +104,9 @@ pub struct BenchmarkParameters {
     /// apply deterministic seed for debugging purpose
     #[clap(long, action)]
     apply_deterministic_seed: Option<u64>,
+    /// singple seed for debugging purposes
+    #[clap(long, action)]
+    single_seed: Option<u64>,
 }
 
 #[derive(Subcommand, Clone, Debug)]
@@ -289,6 +292,7 @@ impl Cli {
                 starting_iteration,
                 print_error_pattern,
                 apply_deterministic_seed,
+                single_seed,
             }) => {
                 // whether to disable progress bar, useful when running jobs in background
                 let disable_progress_bar = env::var("DISABLE_PROGRESS_BAR").is_ok();
@@ -317,21 +321,7 @@ impl Cli {
                     None
                 };
 
-                // let mut rng = thread_rng();
-                thread_rng().gen::<u64>();
-                let mut seed = match apply_deterministic_seed {
-                    Some(seed) => seed,
-                    None => thread_rng().gen::<u64>(),
-                };
-                let mut rng = SmallRng::seed_from_u64(seed);
-                println!("ORIGINAL rng seed: {:?}", seed);
-                for round in (starting_iteration as u64)..(total_rounds as u64) {
-                    pb.as_mut().map(|pb| pb.set(round));
-                    seed = if use_deterministic_seed { round } else { rng.next_u64() };
-                    if round == 559 {
-                        println!("NEW rng seed: {:?}", seed);
-                    }
-                    // println!("NEW::::: {:?}", seed);
+                if let Some(seed) = single_seed {
                     let (syndrome_pattern, error_pattern) = code.generate_random_errors(seed);
                     if print_syndrome_pattern {
                         println!("syndrome_pattern: {:?}", syndrome_pattern);
@@ -351,7 +341,54 @@ impl Cli {
                         visualizer = Some(new_visualizer);
                     }
                     benchmark_profiler.begin(&syndrome_pattern, &error_pattern);
-                    primal_dual_solver.solve_visualizer(&syndrome_pattern, visualizer.as_mut(), seed);
+                    primal_dual_solver.solve_visualizer(&syndrome_pattern, visualizer.as_mut(), seed); // FIXME: for release, remove the seed that is passed in for debugging purposes
+                    benchmark_profiler.event("decoded".to_string());
+                    result_verifier.verify(
+                        &mut primal_dual_solver,
+                        &syndrome_pattern,
+                        &error_pattern,
+                        visualizer.as_mut(),
+                        seed,
+                    );
+                    benchmark_profiler.event("verified".to_string());
+                    primal_dual_solver.clear(); // also count the clear operation
+
+                    benchmark_profiler.end(Some(&*primal_dual_solver));
+                    return;
+                }
+
+                // let mut rng = thread_rng();
+                thread_rng().gen::<u64>();
+                let mut seed = match apply_deterministic_seed {
+                    Some(seed) => seed,
+                    None => thread_rng().gen::<u64>(),
+                };
+                let mut rng = SmallRng::seed_from_u64(seed);
+                println!("OG_s: {:?}", seed);
+                for round in (starting_iteration as u64)..(total_rounds as u64) {
+                    pb.as_mut().map(|pb| pb.set(round));
+                    seed = if use_deterministic_seed { round } else { rng.next_u64() };
+                    // println!("NEW rng seed: {:?}", seed);
+                    let (syndrome_pattern, error_pattern) = code.generate_random_errors(seed);
+                    if print_syndrome_pattern {
+                        println!("syndrome_pattern: {:?}", syndrome_pattern);
+                    }
+                    if print_error_pattern {
+                        println!("error_pattern: {:?}", error_pattern);
+                    }
+                    // create a new visualizer each round
+                    let mut visualizer = None;
+                    if enable_visualizer {
+                        let new_visualizer = Visualizer::new(
+                            Some(visualize_data_folder() + static_visualize_data_filename().as_str()),
+                            code.get_positions(),
+                            true,
+                        )
+                        .unwrap();
+                        visualizer = Some(new_visualizer);
+                    }
+                    benchmark_profiler.begin(&syndrome_pattern, &error_pattern);
+                    primal_dual_solver.solve_visualizer(&syndrome_pattern, visualizer.as_mut(), seed); // FIXME: for release, remove the seed that is passed in for debugging purposes
                     benchmark_profiler.event("decoded".to_string());
                     result_verifier.verify(
                         &mut primal_dual_solver,
@@ -365,14 +402,14 @@ impl Cli {
 
                     benchmark_profiler.end(Some(&*primal_dual_solver));
                     if let Some(pb) = pb.as_mut() {
-                        // if pb_message.is_empty() {
-                        //     pb.message(format!("{} ", benchmark_profiler.brief()).as_str());
-                        // }
+                        if pb_message.is_empty() {
+                            pb.message(format!("{} ", benchmark_profiler.brief()).as_str());
+                        }
                     }
                 }
                 if disable_progress_bar {
                     // always print out brief
-                    // println!("{}", benchmark_profiler.brief());
+                    println!("{}", benchmark_profiler.brief());
                 } else {
                     if let Some(pb) = pb.as_mut() {
                         pb.finish()
