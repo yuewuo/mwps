@@ -604,12 +604,12 @@ where
 
     /// is the edge tight, but for tuning mode
     fn is_edge_tight_tune(&self, edge_index: EdgeIndex) -> bool {
-        let edge = self.edges[edge_index as usize].read_recursive();
+        let edge = self.edges[edge_index].read_recursive();
         edge.weight == edge.growth_at_last_updated_time
     }
 
     fn get_edge_slack_tune(&self, edge_index: EdgeIndex) -> Rational {
-        let edge = self.edges[edge_index as usize].read_recursive();
+        let edge = self.edges[edge_index].read_recursive();
         edge.weight.clone() - edge.growth_at_last_updated_time.clone()
     }
 
@@ -622,7 +622,7 @@ where
 
     /// grow specific amount for a specific edge
     fn grow_edge(&self, edge_index: EdgeIndex, amount: &Rational) {
-        let mut edge = self.edges[edge_index as usize].write();
+        let mut edge = self.edges[edge_index].write();
         edge.growth_at_last_updated_time += amount;
     }
 

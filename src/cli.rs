@@ -639,7 +639,7 @@ impl ResultVerifier for VerifierNone {
         _syndrome_pattern: &SyndromePattern,
         _error_pattern: &Subgraph,
         _visualizer: Option<&mut Visualizer>,
-        seed: u64,
+        _seed: u64,
     ) {
     }
 }
@@ -655,7 +655,7 @@ impl ResultVerifier for VerifierFusionSerial {
         _syndrome_pattern: &SyndromePattern,
         _error_pattern: &Subgraph,
         _visualizer: Option<&mut Visualizer>,
-        seed: u64,
+        _seed: u64,
     ) {
         println!("{}", self.initializer.vertex_num);
         unimplemented!()

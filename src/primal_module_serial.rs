@@ -226,7 +226,7 @@ impl PrimalModuleImpl for PrimalModuleSerial {
                 cluster
                     .subgraph
                     .clone()
-                    .expect(format!("bug occurs: cluster should be solved, but the subgraph is not yet generated || the seed is {seed:?}").as_str())
+                    .unwrap_or_else(|| panic!("bug occurs: cluster should be solved, but the subgraph is not yet generated || the seed is {seed:?}"))
                     .iter(),
             );
         }
@@ -856,7 +856,7 @@ impl PrimalModuleSerial {
                     }
 
                     for edge_index in node_ptr_write.invalid_subgraph.hair.iter() {
-                        match edge_deltas.entry(edge_index.clone()) {
+                        match edge_deltas.entry(*edge_index) {
                             std::collections::btree_map::Entry::Vacant(v) => {
                                 v.insert(grow_rate.clone());
                             }

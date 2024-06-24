@@ -332,7 +332,7 @@ impl SolverErrorPatternLogger {
 
 impl PrimalDualSolver for SolverErrorPatternLogger {
     fn clear(&mut self) {}
-    fn solve_visualizer(&mut self, syndrome_pattern: &SyndromePattern, _visualizer: Option<&mut Visualizer>, seed: u64) {
+    fn solve_visualizer(&mut self, syndrome_pattern: &SyndromePattern, _visualizer: Option<&mut Visualizer>, _seed: u64) {
         self.file
             .write_all(
                 serde_json::to_string(&serde_json::json!(syndrome_pattern))
@@ -342,7 +342,7 @@ impl PrimalDualSolver for SolverErrorPatternLogger {
             .unwrap();
         self.file.write_all(b"\n").unwrap();
     }
-    fn subgraph_range_visualizer(&mut self, _visualizer: Option<&mut Visualizer>, seed: u64) -> (Subgraph, WeightRange) {
+    fn subgraph_range_visualizer(&mut self, _visualizer: Option<&mut Visualizer>, _seed: u64) -> (Subgraph, WeightRange) {
         panic!("error pattern logger do not actually solve the problem, please use Verifier::None by `--verifier none`")
     }
     fn sum_dual_variables(&self) -> Rational {

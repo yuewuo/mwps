@@ -430,7 +430,7 @@ impl DualModuleImpl for DualModuleSerial {
     }
 
     fn grow_edge(&self, edge_index: EdgeIndex, amount: &Rational) {
-        let mut edge = self.edges[edge_index as usize].write();
+        let mut edge = self.edges[edge_index].write();
         edge.growth += amount;
     }
 }
