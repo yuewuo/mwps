@@ -100,12 +100,11 @@ pub fn get_version() -> String {
     format!("subgraph: {subgraph:?}, weight_range: {weight_range:?}")
 }
 
-#[cfg(feature = "f64_weight")]
+#[cfg(not(feature = "f32_weight"))]
 type BaseFloat = f64;
 #[cfg(feature = "f32_weight")]
 type BaseFloat = f32; // there's actually no point in using this, as HIGHs don't support f32
 
-#[cfg(feature = "float_lp")]
 pub mod ordered_float {
     use crate::BaseFloat;
     use num_traits::Zero;

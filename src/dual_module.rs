@@ -8,7 +8,10 @@ use crate::derivative::Derivative;
 use crate::invalid_subgraph::*;
 use crate::model_hypergraph::*;
 use crate::num_traits::{One, ToPrimitive, Zero};
+use crate::ordered_float::OrderedFloat;
 use crate::pointers::*;
+use crate::primal_module::Affinity;
+use crate::primal_module_serial::PrimalClusterPtr;
 use crate::util::*;
 use crate::visualize::*;
 use std::collections::{BTreeSet, HashMap};
@@ -119,13 +122,14 @@ impl std::fmt::Debug for DualNodePtr {
         let global_time = dual_node.global_time.as_ref().unwrap_or(&new).read_recursive();
         write!(
             f,
-            "\n\t\tindex: {}, global_time: {:?}, grow_rate: {:?}, dual_variable: {}\n\t\tdual_variable_at_last_updated_time: {}, last_updated_time: {}\n",
+            "\n\t\tindex: {}, global_time: {:?}, grow_rate: {:?}, dual_variable: {}\n\t\tdual_variable_at_last_updated_time: {}, last_updated_time: {}\n\timpacted_edges: {:?}\n",
             dual_node.index,
             global_time,
             dual_node.grow_rate,
             dual_node.get_dual_variable(),
             dual_node.dual_variable_at_last_updated_time,
-            dual_node.last_updated_time
+            dual_node.last_updated_time,
+            dual_node.invalid_subgraph.hair
         )
     }
 }
@@ -309,8 +313,21 @@ pub trait DualModuleImpl {
     }
 
     /* miscs */
+
+    /// print all the states for the current dual module
     fn debug_print(&self) {
         println!("this dual_module doesn't support debug print");
+    }
+
+    /* affinity */
+
+    /// calculate affinity based on the following metric
+    ///     Clusters with larger primal-dual gaps will receive high affinity because working on those clusters
+    ///     will often reduce the gap faster. However, clusters with a large number of dual variables, vertices,
+    ///     and hyperedges will receive a lower affinity
+    fn calculate_cluster_affinity(&mut self, _cluster: PrimalClusterPtr) -> Option<Affinity> {
+        eprintln!("not implemented, skipping");
+        Some(OrderedFloat::from(100.0))
     }
 }
 

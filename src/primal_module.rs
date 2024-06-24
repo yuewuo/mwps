@@ -8,10 +8,14 @@ use std::sync::Arc;
 
 use crate::dual_module::*;
 use crate::num_traits::{FromPrimitive, Signed, Zero};
+use crate::ordered_float::OrderedFloat;
 use crate::pointers::*;
+use crate::primal_module_serial::ClusterAffinity;
 use crate::relaxer_optimizer::OptimizerResult;
 use crate::util::*;
 use crate::visualize::*;
+
+pub type Affinity = OrderedFloat;
 
 /// common trait that must be implemented for each implementation of primal module
 pub trait PrimalModuleImpl {
@@ -158,7 +162,11 @@ pub trait PrimalModuleImpl {
                 start = false;
                 dual_module.advance_mode();
             }
-            for cluster_index in self.pending_clusters() {
+            self.update_sorted_clusters_aff(dual_module);
+            let cluster_affs = self.get_sorted_clusters_aff();
+
+            for cluster_affinity in cluster_affs.into_iter() {
+                let cluster_index = cluster_affinity.cluster_index;
                 let mut dual_node_deltas = BTreeMap::new();
                 let mut conflicts = BTreeSet::new();
                 let (mut resolved, optimizer_result) =
@@ -324,5 +332,14 @@ pub trait PrimalModuleImpl {
         _dual_node_deltas: &mut BTreeMap<OrderedDualNodePtr, Rational>,
     ) -> (bool, OptimizerResult) {
         panic!("not implemented `resolve_cluster_tune`");
+    }
+
+    /* affinity */
+    fn update_sorted_clusters_aff<D: DualModuleImpl>(&mut self, _dual_module: &mut D) {
+        panic!("not implemented `update_sorted_clusters_aff`");
+    }
+
+    fn get_sorted_clusters_aff(&mut self) -> BTreeSet<ClusterAffinity> {
+        panic!("not implemented `get_sorted_clusters_aff`");
     }
 }

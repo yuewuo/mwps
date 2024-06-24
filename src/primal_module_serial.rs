@@ -42,6 +42,40 @@ pub struct PrimalModuleSerial {
     pub config: PrimalModuleSerialConfig,
     /// the time spent on resolving the obstacles
     pub time_resolve: f64,
+    /// sorted clusters by affinity, only exist when needed
+    pub sorted_clusters_aff: Option<BTreeSet<ClusterAffinity>>,
+}
+
+#[derive(Eq, Debug)]
+pub struct ClusterAffinity {
+    pub cluster_index: NodeIndex,
+    pub affinity: Affinity,
+}
+
+impl PartialEq for ClusterAffinity {
+    fn eq(&self, other: &Self) -> bool {
+        self.affinity == other.affinity && self.cluster_index == other.cluster_index
+    }
+}
+
+// first sort by affinity in descending order, then by cluster_index in ascending order
+impl Ord for ClusterAffinity {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        // First, compare affinity in descending order
+        match other.affinity.cmp(&self.affinity) {
+            std::cmp::Ordering::Equal => {
+                // If affinities are equal, compare cluster_index in ascending order
+                self.cluster_index.cmp(&other.cluster_index)
+            }
+            other => other,
+        }
+    }
+}
+
+impl PartialOrd for ClusterAffinity {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -113,6 +147,7 @@ impl PrimalModuleImpl for PrimalModuleSerial {
             plugin_pending_clusters: vec![],
             config: serde_json::from_value(json!({})).unwrap(),
             time_resolve: 0.,
+            sorted_clusters_aff: None,
         }
     }
 
@@ -495,6 +530,29 @@ impl PrimalModuleImpl for PrimalModuleSerial {
         cluster.subgraph = Some(cluster.matrix.get_solution_local_minimum(weight_of).expect("satisfiable"));
 
         (true, optimizer_result)
+    }
+
+    /// update the sorted clusters_aff, should be None to start with
+    fn update_sorted_clusters_aff<D: DualModuleImpl>(&mut self, dual_module: &mut D) {
+        let pending_clusters = self.pending_clusters();
+        let mut sorted_clusters_aff = BTreeSet::default();
+
+        for cluster_index in pending_clusters.iter() {
+            let cluster_ptr = self.clusters[*cluster_index].clone();
+            let affinity = dual_module.calculate_cluster_affinity(cluster_ptr);
+            if let Some(affinity) = affinity {
+                sorted_clusters_aff.insert(ClusterAffinity {
+                    cluster_index: *cluster_index,
+                    affinity,
+                });
+            }
+        }
+        self.sorted_clusters_aff = Some(sorted_clusters_aff);
+    }
+
+    /// consume the sorted_clusters_aff
+    fn get_sorted_clusters_aff(&mut self) -> BTreeSet<ClusterAffinity> {
+        self.sorted_clusters_aff.take().unwrap()
     }
 }
 
