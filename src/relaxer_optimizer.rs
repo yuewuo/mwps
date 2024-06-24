@@ -6,25 +6,43 @@
 //! is detected, and remains minimum in all other cases to avoid reduce time complexity.
 //!
 
-use crate::dual_module;
-use crate::dual_module::DualModuleImpl;
-use crate::dual_module::DualModuleInterfacePtr;
 use crate::invalid_subgraph::*;
-use crate::pointers::RwLockPtr;
-use crate::primal_module;
-use crate::primal_module::PrimalModuleImpl;
-use crate::primal_module_serial::PrimalCluster;
-use crate::primal_module_serial::PrimalClusterPtr;
-use crate::primal_module_serial::PrimalModuleSerialNode;
-use crate::primal_module_serial::PrimalModuleSerialNodePtr;
 use crate::relaxer::*;
 use crate::util::*;
-use derivative::Derivative;
-use num_traits::Signed;
-use num_traits::{One, Zero};
+
 use std::collections::{BTreeMap, BTreeSet};
-// use std::str::FromStr;
 use std::sync::Arc;
+
+use derivative::Derivative;
+
+use num_traits::{One, Signed, Zero};
+
+#[derive(Default, Debug)]
+pub enum OptimizerResult {
+    #[default]
+    Init,
+    Optimized,     // normal
+    EarlyReturned, // early return when the result is positive
+    Skipped,       // when the `should_optimize` check returns false
+}
+
+impl OptimizerResult {
+    pub fn or(&mut self, other: Self) {
+        match self {
+            OptimizerResult::EarlyReturned => {}
+            _ => match other {
+                OptimizerResult::Init => {}
+                OptimizerResult::EarlyReturned => {
+                    *self = OptimizerResult::EarlyReturned;
+                }
+                OptimizerResult::Skipped => {
+                    *self = OptimizerResult::Skipped;
+                }
+                _ => {}
+            },
+        }
+    }
+}
 
 #[derive(Derivative)]
 #[derivative(Default(new = "true"))]
@@ -256,7 +274,7 @@ impl RelaxerOptimizer {
                 }
             }
         } else {
-            // println!("solved status: {:?}", solved.status());
+            println!("solved status: {:?}", solved.status());
             unreachable!();
         }
 
@@ -266,7 +284,7 @@ impl RelaxerOptimizer {
 }
 
 #[cfg(test)]
-#[cfg(feature = "highs")]
+#[cfg(all(feature = "highs", not(feature = "float_lp")))]
 pub mod tests {
     // use super::*;
     use highs::{ColProblem, HighsModelStatus, Model, Sense};
@@ -279,6 +297,8 @@ pub mod tests {
 
     #[test]
     fn lp_solver_simple() {
+        use crate::util::Rational;
+
         // cargo test lp_solver_simple -- --nocapture
         // https://docs.rs/slp/latest/slp/
         let input = "
@@ -289,13 +309,13 @@ pub mod tests {
             6x1 + 5y2 <= 60,
             2x1 + 5y2 <= 40
         ";
-        let mut solver = slp::Solver::<slp::Rational>::new(input);
+        let mut solver = slp::Solver::<Rational>::new(input);
         let solution = solver.solve();
         assert_eq!(
             solution,
             slp::Solution::Optimal(
-                slp::Rational::from_integer(28),
-                vec![slp::Rational::from_integer(5), slp::Rational::from_integer(6)]
+                Rational::from_integer(28),
+                vec![Rational::from_integer(5), Rational::from_integer(6)]
             )
         );
         match solution {

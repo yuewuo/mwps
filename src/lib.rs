@@ -110,7 +110,7 @@ pub mod ordered_float {
     use crate::BaseFloat;
     use num_traits::Zero;
 
-    const EPSILON: BaseFloat = 1e-2;
+    const EPSILON: BaseFloat = 1e-4; // note: it would be interesting to play around with this.
 
     #[derive(Debug, Clone, Copy)]
     pub struct OrderedFloat(BaseFloat);

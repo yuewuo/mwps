@@ -7,21 +7,22 @@ use crate::decoding_hypergraph::*;
 use crate::dual_module::*;
 use crate::invalid_subgraph::*;
 use crate::matrix::*;
-use crate::num_traits::Signed;
-use crate::num_traits::{One, Zero};
+use crate::num_traits::{FromPrimitive, One, Signed, Zero};
 use crate::plugin::*;
 use crate::pointers::*;
 use crate::primal_module::*;
 use crate::relaxer_optimizer::*;
 use crate::util::*;
 use crate::visualize::*;
-use parking_lot::RwLock;
-use serde::{Deserialize, Serialize};
+
 use std::collections::BTreeMap;
 use std::collections::{BTreeSet, VecDeque};
 use std::fmt::Debug;
 use std::sync::Arc;
 use std::time::Instant;
+
+use parking_lot::RwLock;
+use serde::{Deserialize, Serialize};
 
 pub struct PrimalModuleSerial {
     /// growing strategy, default to single-tree approach for easier debugging and better locality
@@ -101,15 +102,6 @@ pub type PrimalClusterPtr = ArcRwLock<PrimalCluster>;
 pub type PrimalClusterWeak = WeakRwLock<PrimalCluster>;
 
 impl PrimalModuleImpl for PrimalModuleSerial {
-    fn set_zeros<D: DualModuleImpl>(&mut self, dual_module: &mut D) {
-        for cluster in self.clusters.iter() {
-            let cluster_r = cluster.read_recursive();
-            for primal_node_ptr in cluster_r.nodes.iter() {
-                let dual_node_ptr = primal_node_ptr.read_recursive().dual_node_ptr.clone();
-                dual_module.set_grow_rate_tune(&dual_node_ptr, Rational::zero());
-            }
-        }
-    }
     fn new_empty(_initializer: &SolverInitializer) -> Self {
         Self {
             growing_strategy: GrowingStrategy::SingleCluster,
@@ -367,13 +359,14 @@ impl PrimalModuleImpl for PrimalModuleSerial {
         cluster_index: NodeIndex,
         interface_ptr: &DualModuleInterfacePtr,
         dual_module: &mut impl DualModuleImpl,
-        edge_deltas: &mut BTreeMap<EdgeIndex, Rational>,
-    ) -> (BTreeSet<MaxUpdateLength>, bool, bool) {
-        let mut conflicts = BTreeSet::default();
+        // edge_deltas: &mut BTreeMap<EdgeIndex, Rational>,
+        dual_node_deltas: &mut BTreeMap<OrderedDualNodePtr, Rational>,
+    ) -> (bool, OptimizerResult) {
+        let mut optimizer_result = OptimizerResult::default();
         let cluster_ptr = self.clusters[cluster_index as usize].clone();
         let mut cluster = cluster_ptr.write();
         if cluster.nodes.is_empty() {
-            return (conflicts, true, false); // no longer a cluster, no need to handle
+            return (true, optimizer_result); // no longer a cluster, no need to handle
         }
         // update the matrix with new tight edges
         let cluster = &mut *cluster;
@@ -400,32 +393,79 @@ impl PrimalModuleImpl for PrimalModuleSerial {
 
         // if a relaxer is found, execute it and return
         if let Some(mut relaxer) = relaxer {
-            let dual_variables: BTreeMap<Arc<InvalidSubgraph>, Rational> = cluster
-                .nodes
-                .iter()
-                .map(|primal_node_ptr| {
-                    let primal_node = primal_node_ptr.read_recursive();
-                    let dual_node = primal_node.dual_node_ptr.read_recursive();
-                    (
-                        dual_node.invalid_subgraph.clone(),
-                        dual_node.dual_variable_at_last_updated_time.clone(),
+            #[cfg(feature = "float_lp")]
+            // float_lp is enabled, optimizer really plays a role
+            if cluster.relaxer_optimizer.should_optimize(&relaxer) {
+                let dual_variables: BTreeMap<Arc<InvalidSubgraph>, Rational> = cluster
+                    .nodes
+                    .iter()
+                    .map(|primal_node_ptr| {
+                        let primal_node = primal_node_ptr.read_recursive();
+                        let dual_node = primal_node.dual_node_ptr.read_recursive();
+                        (
+                            dual_node.invalid_subgraph.clone(),
+                            dual_node.dual_variable_at_last_updated_time.clone(),
+                        )
+                    })
+                    .collect();
+                let edge_slacks: BTreeMap<EdgeIndex, Rational> = dual_variables
+                    .keys()
+                    .flat_map(|invalid_subgraph: &Arc<InvalidSubgraph>| invalid_subgraph.hair.iter().cloned())
+                    .chain(
+                        relaxer
+                            .get_direction()
+                            .keys()
+                            .flat_map(|invalid_subgraph| invalid_subgraph.hair.iter().cloned()),
                     )
-                })
-                .collect();
-            let edge_slacks: BTreeMap<EdgeIndex, Rational> = dual_variables
-                .keys()
-                .flat_map(|invalid_subgraph: &Arc<InvalidSubgraph>| invalid_subgraph.hair.iter().cloned())
-                .chain(
-                    relaxer
-                        .get_direction()
-                        .keys()
-                        .flat_map(|invalid_subgraph| invalid_subgraph.hair.iter().cloned()),
-                )
-                .map(|edge_index| (edge_index, dual_module.get_edge_slack_tune(edge_index)))
-                .collect();
+                    .map(|edge_index| (edge_index, dual_module.get_edge_slack_tune(edge_index)))
+                    .collect();
 
-            let (new_relaxer, early_returned) = cluster.relaxer_optimizer.optimize(relaxer, edge_slacks, dual_variables);
-            relaxer = new_relaxer;
+                let (new_relaxer, early_returned) = cluster.relaxer_optimizer.optimize(relaxer, edge_slacks, dual_variables);
+                relaxer = new_relaxer;
+                if early_returned {
+                    optimizer_result = OptimizerResult::EarlyReturned;
+                } else {
+                    optimizer_result = OptimizerResult::Optimized;
+                }
+            } else {
+                optimizer_result = OptimizerResult::Skipped;
+            }
+
+            #[cfg(not(feature = "float_lp"))]
+            // with rationals, it is actually usually better when always optimized
+            {
+                let dual_variables: BTreeMap<Arc<InvalidSubgraph>, Rational> = cluster
+                    .nodes
+                    .iter()
+                    .map(|primal_node_ptr| {
+                        let primal_node = primal_node_ptr.read_recursive();
+                        let dual_node = primal_node.dual_node_ptr.read_recursive();
+                        (
+                            dual_node.invalid_subgraph.clone(),
+                            dual_node.dual_variable_at_last_updated_time.clone(),
+                        )
+                    })
+                    .collect();
+                let edge_slacks: BTreeMap<EdgeIndex, Rational> = dual_variables
+                    .keys()
+                    .flat_map(|invalid_subgraph: &Arc<InvalidSubgraph>| invalid_subgraph.hair.iter().cloned())
+                    .chain(
+                        relaxer
+                            .get_direction()
+                            .keys()
+                            .flat_map(|invalid_subgraph| invalid_subgraph.hair.iter().cloned()),
+                    )
+                    .map(|edge_index| (edge_index, dual_module.get_edge_slack_tune(edge_index)))
+                    .collect();
+
+                let (new_relaxer, early_returned) = cluster.relaxer_optimizer.optimize(relaxer, edge_slacks, dual_variables);
+                relaxer = new_relaxer;
+                if early_returned {
+                    optimizer_result = OptimizerResult::EarlyReturned;
+                } else {
+                    optimizer_result = OptimizerResult::Optimized;
+                }
+            }
 
             for (invalid_subgraph, grow_rate) in relaxer.get_direction() {
                 let (existing, dual_node_ptr) = interface_ptr.find_or_create_node_tune(invalid_subgraph, dual_module);
@@ -439,39 +479,14 @@ impl PrimalModuleImpl for PrimalModuleSerial {
                     self.nodes.push(primal_node_ptr);
                 }
 
-                let mut node_ptr_write: parking_lot::lock_api::RwLockWriteGuard<parking_lot::RawRwLock, DualNode> =
-                    dual_node_ptr.write();
-                if !early_returned {
-                    node_ptr_write.dual_variable_at_last_updated_time += grow_rate.clone();
-                }
-                if grow_rate.is_negative() && node_ptr_write.dual_variable_at_last_updated_time.is_zero() {
-                    conflicts.insert(MaxUpdateLength::ShrinkProhibited(OrderedDualNodePtr::new(
-                        node_ptr_write.index,
-                        dual_node_ptr.clone(),
-                    )));
-                }
-                for edge_index in node_ptr_write.invalid_subgraph.hair.iter() {
-                    match edge_deltas.entry(edge_index.clone()) {
-                        std::collections::btree_map::Entry::Vacant(v) => {
-                            v.insert(grow_rate.clone());
-                        }
-                        std::collections::btree_map::Entry::Occupied(mut o) => {
-                            let current = o.get_mut();
-                            *current += grow_rate.clone();
-                            if current.is_zero() {
-                                o.remove();
-                            }
-                        }
-                    }
-                }
+                // Document the desired deltas
+                let index = dual_node_ptr.read_recursive().index;
+                dual_node_deltas.insert(OrderedDualNodePtr::new(index, dual_node_ptr), grow_rate.clone());
             }
 
             cluster.relaxer_optimizer.insert(relaxer);
-            return (conflicts, false, early_returned);
+            return (false, optimizer_result);
         }
-
-        // TODO idea: plugins can suggest subgraph (ideally, a global maximum), if so, then it will adopt th
-        // subgraph with minimum weight from all plugins as the starting point to do local minimum
 
         // find a local minimum (hopefully a global minimum)
         let interface = interface_ptr.read_recursive();
@@ -479,8 +494,7 @@ impl PrimalModuleImpl for PrimalModuleSerial {
         let weight_of = |edge_index: EdgeIndex| initializer.weighted_edges[edge_index].weight;
         cluster.subgraph = Some(cluster.matrix.get_solution_local_minimum(weight_of).expect("satisfiable"));
 
-        // Todo: Perhaps: Change to use Options
-        (conflicts, true, false)
+        (true, optimizer_result)
     }
 }
 
@@ -754,26 +768,114 @@ impl PrimalModuleSerial {
         drop(interface);
         if *self.plugin_count.read_recursive() != 0 && self.time_resolve > self.config.timeout {
             *self.plugin_count.write() = 0; // force only the first plugin
-                                            // return (BTreeSet::default(), true);
         }
         let mut all_solved = true;
         let mut all_conflicts = BTreeSet::default();
-        let mut edge_deltas = BTreeMap::new();
-        let mut some_er = false;
+        let mut dual_node_deltas = BTreeMap::new();
+        let mut optimizer_result = OptimizerResult::default();
         for &cluster_index in active_clusters.iter() {
-            let (conflicts, solved, early_returned) =
-                self.resolve_cluster_tune(cluster_index, interface_ptr, dual_module, &mut edge_deltas);
+            let (solved, other) =
+                self.resolve_cluster_tune(cluster_index, interface_ptr, dual_module, &mut dual_node_deltas);
             all_solved &= solved;
-            some_er |= early_returned;
-            all_conflicts.extend(conflicts);
-            // todo: Maybe wrap the btreesets into options
+            optimizer_result.or(other);
         }
-        for (edge_index, grow_rate) in edge_deltas.into_iter() {
-            if !some_er {
-                dual_module.grow_edge(edge_index, &grow_rate);
+
+        match optimizer_result {
+            OptimizerResult::EarlyReturned => {
+                // early returned, just get the new conlicts
+                for (dual_node_ptr, grow_rate) in dual_node_deltas.into_iter() {
+                    let node_ptr_read = dual_node_ptr.ptr.read_recursive();
+                    if grow_rate.is_negative() && node_ptr_read.dual_variable_at_last_updated_time.is_zero() {
+                        all_conflicts.insert(MaxUpdateLength::ShrinkProhibited(OrderedDualNodePtr::new(
+                            node_ptr_read.index,
+                            dual_node_ptr.ptr.clone(),
+                        )));
+                    }
+                    for edge_index in node_ptr_read.invalid_subgraph.hair.iter() {
+                        if grow_rate.is_positive() && dual_module.is_edge_tight_tune(*edge_index) {
+                            all_conflicts.insert(MaxUpdateLength::Conflicting(*edge_index));
+                        }
+                    }
+                }
             }
-            if grow_rate.is_positive() && dual_module.is_edge_tight_tune(edge_index) {
-                all_conflicts.insert(MaxUpdateLength::Conflicting(edge_index));
+            OptimizerResult::Skipped => {
+                // optimizer is skipped, meaning there is only a single direction to be grown, calculate the actual grow rate and grow
+                for (dual_node_ptr, grow_rate) in dual_node_deltas.into_iter() {
+                    // calculate the actual grow rate
+                    let mut actual_grow_rate = Rational::from_usize(std::usize::MAX).unwrap();
+                    let node_ptr_read = dual_node_ptr.ptr.read_recursive();
+                    for edge_index in node_ptr_read.invalid_subgraph.hair.iter() {
+                        actual_grow_rate = std::cmp::min(actual_grow_rate, dual_module.get_edge_slack_tune(*edge_index));
+                    }
+
+                    // if counldn't grow, return the conflicts
+                    if actual_grow_rate.is_zero() {
+                        for edge_index in node_ptr_read.invalid_subgraph.hair.iter() {
+                            if grow_rate.is_positive() && dual_module.is_edge_tight_tune(*edge_index) {
+                                all_conflicts.insert(MaxUpdateLength::Conflicting(*edge_index));
+                            }
+                        }
+                        if grow_rate.is_negative() && node_ptr_read.dual_variable_at_last_updated_time.is_zero() {
+                            all_conflicts.insert(MaxUpdateLength::ShrinkProhibited(OrderedDualNodePtr::new(
+                                node_ptr_read.index,
+                                dual_node_ptr.ptr.clone(),
+                            )));
+                        }
+                    } else {
+                        drop(node_ptr_read);
+                        let mut node_ptr_write = dual_node_ptr.ptr.write();
+                        // update states with the actual grow rate, for both edges and dual nodes
+                        for edge_index in node_ptr_write.invalid_subgraph.hair.iter() {
+                            dual_module.grow_edge(*edge_index, &actual_grow_rate);
+                            if actual_grow_rate.is_positive() && dual_module.is_edge_tight_tune(*edge_index) {
+                                all_conflicts.insert(MaxUpdateLength::Conflicting(*edge_index));
+                            }
+                        }
+                        node_ptr_write.dual_variable_at_last_updated_time += actual_grow_rate.clone();
+                        if actual_grow_rate.is_negative() && node_ptr_write.dual_variable_at_last_updated_time.is_zero() {
+                            all_conflicts.insert(MaxUpdateLength::ShrinkProhibited(OrderedDualNodePtr::new(
+                                node_ptr_write.index,
+                                dual_node_ptr.ptr.clone(),
+                            )));
+                        }
+                    }
+                }
+            }
+            _ => {
+                // optimizer is optimized, apply the grow rate and check for conflicts
+                let mut edge_deltas = BTreeMap::new();
+                for (dual_node_ptr, grow_rate) in dual_node_deltas.into_iter() {
+                    let mut node_ptr_write = dual_node_ptr.ptr.write();
+
+                    node_ptr_write.dual_variable_at_last_updated_time += grow_rate.clone();
+                    if grow_rate.is_negative() && node_ptr_write.dual_variable_at_last_updated_time.is_zero() {
+                        all_conflicts.insert(MaxUpdateLength::ShrinkProhibited(OrderedDualNodePtr::new(
+                            node_ptr_write.index,
+                            dual_node_ptr.ptr.clone(),
+                        )));
+                    }
+
+                    for edge_index in node_ptr_write.invalid_subgraph.hair.iter() {
+                        match edge_deltas.entry(edge_index.clone()) {
+                            std::collections::btree_map::Entry::Vacant(v) => {
+                                v.insert(grow_rate.clone());
+                            }
+                            std::collections::btree_map::Entry::Occupied(mut o) => {
+                                let current = o.get_mut();
+                                *current += grow_rate.clone();
+                            }
+                        }
+                    }
+                }
+                for (edge_index, grow_rate) in edge_deltas.into_iter() {
+                    if grow_rate.is_zero() {
+                        continue;
+                    }
+                    dual_module.grow_edge(edge_index, &grow_rate);
+                    if grow_rate.is_positive() && dual_module.is_edge_tight_tune(edge_index) {
+                        all_conflicts.insert(MaxUpdateLength::Conflicting(edge_index));
+                    }
+                }
             }
         }
         (all_conflicts, all_solved)
@@ -825,9 +927,6 @@ pub mod tests {
             &mut dual_module,
             visualizer.as_mut(),
         );
-
-        // Question: should this be called here
-        // dual_module.update_dual_nodes(&interface_ptr.read_recursive().nodes);
 
         let (subgraph, weight_range) = primal_module.subgraph_range(&interface_ptr, &mut dual_module, 0);
         if let Some(visualizer) = visualizer.as_mut() {

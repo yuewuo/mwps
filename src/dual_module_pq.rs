@@ -628,6 +628,9 @@ where
 
     /// sync all states and global time so the concept of time and pq can retire
     fn sync(&mut self) {
+
+        let mut nodes_touched = BTreeSet::new();
+        
         for edges in self.edges.iter_mut() {
             let mut edge = edges.write();
 
@@ -651,17 +654,24 @@ where
             }
 
             for dual_node_ptr in edge.dual_nodes.iter() {
-                let dual_node_ptr_write = dual_node_ptr.upgrade_force();
-                let mut node = dual_node_ptr_write.write();
+                let _dual_node_ptr = dual_node_ptr.upgrade_force();
+                let node = _dual_node_ptr.read_recursive();
+                if nodes_touched.contains(&node.index) {
+                    continue;
+                }
+                nodes_touched.insert(node.index);
 
                 // update if necessary
                 let global_time = self.global_time.read_recursive();
                 if node.last_updated_time != global_time.clone() {
-                    // the edge is behind
+                    // the node is behind
                     debug_assert!(
                         global_time.clone() >= node.last_updated_time,
                         "global time is behind, maybe a wrap-around has happened"
                     );
+
+                    drop(node);
+                    let mut node: RwLockWriteGuard<RawRwLock, DualNode> = _dual_node_ptr.write();
 
                     let dual_variable = node.get_dual_variable();
                     node.set_dual_variable(dual_variable);

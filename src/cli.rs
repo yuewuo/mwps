@@ -308,7 +308,6 @@ impl Cli {
                 let initializer = code.get_initializer();
                 let mut primal_dual_solver = primal_dual_type.build(&initializer, &*code, primal_dual_config);
                 let mut result_verifier = verifier.build(&initializer);
-                let mut benchmark_profiler = BenchmarkProfiler::new(noisy_measurements, benchmark_profiler_output);
                 // prepare progress bar display
                 let mut pb = if !disable_progress_bar {
                     let mut pb = ProgressBar::on(std::io::stderr(), total_rounds as u64);
@@ -340,9 +339,7 @@ impl Cli {
                         .unwrap();
                         visualizer = Some(new_visualizer);
                     }
-                    benchmark_profiler.begin(&syndrome_pattern, &error_pattern);
                     primal_dual_solver.solve_visualizer(&syndrome_pattern, visualizer.as_mut(), seed); // FIXME: for release, remove the seed that is passed in for debugging purposes
-                    benchmark_profiler.event("decoded".to_string());
                     result_verifier.verify(
                         &mut primal_dual_solver,
                         &syndrome_pattern,
@@ -350,13 +347,12 @@ impl Cli {
                         visualizer.as_mut(),
                         seed,
                     );
-                    benchmark_profiler.event("verified".to_string());
                     primal_dual_solver.clear(); // also count the clear operation
 
-                    benchmark_profiler.end(Some(&*primal_dual_solver));
                     return;
                 }
 
+                let mut benchmark_profiler = BenchmarkProfiler::new(noisy_measurements, benchmark_profiler_output);
                 // let mut rng = thread_rng();
                 thread_rng().gen::<u64>();
                 let mut seed = match apply_deterministic_seed {
@@ -364,7 +360,7 @@ impl Cli {
                     None => thread_rng().gen::<u64>(),
                 };
                 let mut rng = SmallRng::seed_from_u64(seed);
-                println!("OG_s: {:?}", seed);
+                // println!("OG_s: {:?}", seed);
                 for round in (starting_iteration as u64)..(total_rounds as u64) {
                     pb.as_mut().map(|pb| pb.set(round));
                     seed = if use_deterministic_seed { round } else { rng.next_u64() };
@@ -417,7 +413,7 @@ impl Cli {
                     println!();
                 }
 
-                println!("total resolve time {:?}", benchmark_profiler.sum_round_time);
+                eprintln!("total resolve time {:?}", benchmark_profiler.sum_round_time);
             }
             Commands::MatrixSpeed(parameters) => {
                 let MatrixSpeedParameters {

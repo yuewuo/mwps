@@ -118,7 +118,7 @@ impl SolverInitializer {
         defect_vertices.sort();
         if defect_vertices.len() != subgraph_defect_vertices.len() {
             println!(
-                "defect vertices: {:?}, subgraph_defect_vertices: {:?}",
+                "defect vertices: {:?}\nsubgraph_defect_vertices: {:?}",
                 defect_vertices, subgraph_defect_vertices
             );
             return false;
@@ -126,7 +126,7 @@ impl SolverInitializer {
         for i in 0..defect_vertices.len() {
             if defect_vertices[i] != subgraph_defect_vertices[i] {
                 println!(
-                    "defect vertices: {:?}, subgraph_defect_vertices: {:?}",
+                    "defect vertices: {:?}\nsubgraph_defect_vertices: {:?}",
                     defect_vertices, subgraph_defect_vertices
                 );
                 return false;
