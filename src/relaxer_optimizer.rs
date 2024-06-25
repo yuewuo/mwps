@@ -269,7 +269,7 @@ impl RelaxerOptimizer {
 
             for (var_index, invalid_subgraph) in invalid_subgraphs.iter().enumerate() {
                 let overall_growth = cols[2 * var_index] - cols[2 * var_index + 1];
-                if overall_growth.abs() > 1e-10 {
+                if !overall_growth.is_zero() {
                     direction.insert(invalid_subgraph.clone(), OrderedFloat::from(overall_growth));
                 }
             }
