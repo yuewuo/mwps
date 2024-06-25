@@ -333,31 +333,7 @@ impl PrimalModuleImpl for PrimalModuleSerial {
         };
 
         // if a relaxer is found, execute it and return
-        if let Some(mut relaxer) = relaxer {
-            if !cluster.plugin_manager.is_empty() && cluster.relaxer_optimizer.should_optimize(&relaxer) {
-                let dual_variables: BTreeMap<Arc<InvalidSubgraph>, Rational> = cluster
-                    .nodes
-                    .iter()
-                    .map(|primal_node_ptr| {
-                        let primal_node = primal_node_ptr.read_recursive();
-                        let dual_node = primal_node.dual_node_ptr.read_recursive();
-                        (dual_node.invalid_subgraph.clone(), dual_node.get_dual_variable().clone())
-                    })
-                    .collect();
-                let edge_slacks: BTreeMap<EdgeIndex, Rational> = dual_variables
-                    .keys()
-                    .flat_map(|invalid_subgraph: &Arc<InvalidSubgraph>| invalid_subgraph.hair.iter().cloned())
-                    .chain(
-                        relaxer
-                            .get_direction()
-                            .keys()
-                            .flat_map(|invalid_subgraph| invalid_subgraph.hair.iter().cloned()),
-                    )
-                    .map(|edge_index| (edge_index, dual_module.get_edge_slack(edge_index)))
-                    .collect();
-                let (new_relaxer, _) = cluster.relaxer_optimizer.optimize(relaxer, edge_slacks, dual_variables);
-                relaxer = new_relaxer;
-            }
+        if let Some(relaxer) = relaxer {
             for (invalid_subgraph, grow_rate) in relaxer.get_direction() {
                 let (existing, dual_node_ptr) = interface_ptr.find_or_create_node(invalid_subgraph, dual_module);
                 if !existing {
