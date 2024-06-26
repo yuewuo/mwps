@@ -40,7 +40,7 @@ fn debug_demo() {
             primal_module.growing_strategy = GrowingStrategy::SingleCluster;
             primal_module.plugins = Arc::new(vec![]);
             primal_module.solve_visualizer(&interface_ptr, syndrome_pattern, &mut dual_module, Some(&mut visualizer));
-            let (subgraph, weight_range) = primal_module.subgraph_range(&interface_ptr, &mut dual_module);
+            let (subgraph, weight_range) = primal_module.subgraph_range(&interface_ptr, &mut dual_module, 0);
             visualizer
                 .snapshot_combined(
                     "subgraph".to_string(),
@@ -110,7 +110,7 @@ fn simple_demo() {
             primal_module.growing_strategy = GrowingStrategy::SingleCluster;
             primal_module.plugins = Arc::new(vec![]);
             primal_module.solve_visualizer(&interface_ptr, syndrome_pattern, &mut dual_module, Some(&mut visualizer));
-            let (subgraph, weight_range) = primal_module.subgraph_range(&interface_ptr, &mut dual_module);
+            let (subgraph, weight_range) = primal_module.subgraph_range(&interface_ptr, &mut dual_module, 0);
             visualizer
                 .snapshot_combined(
                     "subgraph".to_string(),
@@ -178,7 +178,7 @@ fn challenge_demo() {
                 }),
             ]);
             primal_module.solve_visualizer(&interface_ptr, syndrome_pattern, &mut dual_module, Some(&mut visualizer));
-            let (subgraph, weight_range) = primal_module.subgraph_range(&interface_ptr, &mut dual_module);
+            let (subgraph, weight_range) = primal_module.subgraph_range(&interface_ptr, &mut dual_module, 0);
             visualizer
                 .snapshot_combined(
                     "subgraph".to_string(),
@@ -321,7 +321,7 @@ fn surface_code_example() {
                 }),
             ]);
             primal_module.solve_visualizer(&interface_ptr, syndrome_pattern, &mut dual_module, Some(&mut visualizer));
-            let (subgraph, weight_range) = primal_module.subgraph_range(&interface_ptr, &mut dual_module);
+            let (subgraph, weight_range) = primal_module.subgraph_range(&interface_ptr, &mut dual_module, seed);
             visualizer
                 .snapshot_combined(
                     "subgraph".to_string(),
@@ -367,7 +367,7 @@ fn triangle_color_code_example() {
                 }),
             ]);
             primal_module.solve_visualizer(&interface_ptr, syndrome_pattern, &mut dual_module, Some(&mut visualizer));
-            let (subgraph, weight_range) = primal_module.subgraph_range(&interface_ptr, &mut dual_module);
+            let (subgraph, weight_range) = primal_module.subgraph_range(&interface_ptr, &mut dual_module, seed);
             visualizer
                 .snapshot_combined(
                     "subgraph".to_string(),
@@ -417,7 +417,7 @@ fn small_color_code_example() {
             }),
         ]);
         primal_module.solve_visualizer(&interface_ptr, syndrome_pattern, &mut dual_module, Some(&mut visualizer));
-        let (subgraph, weight_range) = primal_module.subgraph_range(&interface_ptr, &mut dual_module);
+        let (subgraph, weight_range) = primal_module.subgraph_range(&interface_ptr, &mut dual_module, seed);
         visualizer
             .snapshot_combined(
                 "subgraph".to_string(),

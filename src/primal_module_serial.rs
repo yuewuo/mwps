@@ -7,20 +7,22 @@ use crate::decoding_hypergraph::*;
 use crate::dual_module::*;
 use crate::invalid_subgraph::*;
 use crate::matrix::*;
-use crate::num_traits::{One, Zero};
+use crate::num_traits::{FromPrimitive, One, Signed, Zero};
 use crate::plugin::*;
 use crate::pointers::*;
 use crate::primal_module::*;
 use crate::relaxer_optimizer::*;
 use crate::util::*;
 use crate::visualize::*;
-use parking_lot::RwLock;
-use serde::{Deserialize, Serialize};
+
 use std::collections::BTreeMap;
 use std::collections::{BTreeSet, VecDeque};
 use std::fmt::Debug;
 use std::sync::Arc;
 use std::time::Instant;
+
+use parking_lot::RwLock;
+use serde::{Deserialize, Serialize};
 
 pub struct PrimalModuleSerial {
     /// growing strategy, default to single-tree approach for easier debugging and better locality
@@ -40,6 +42,40 @@ pub struct PrimalModuleSerial {
     pub config: PrimalModuleSerialConfig,
     /// the time spent on resolving the obstacles
     pub time_resolve: f64,
+    /// sorted clusters by affinity, only exist when needed
+    pub sorted_clusters_aff: Option<BTreeSet<ClusterAffinity>>,
+}
+
+#[derive(Eq, Debug)]
+pub struct ClusterAffinity {
+    pub cluster_index: NodeIndex,
+    pub affinity: Affinity,
+}
+
+impl PartialEq for ClusterAffinity {
+    fn eq(&self, other: &Self) -> bool {
+        self.affinity == other.affinity && self.cluster_index == other.cluster_index
+    }
+}
+
+// first sort by affinity in descending order, then by cluster_index in ascending order
+impl Ord for ClusterAffinity {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        // First, compare affinity in descending order
+        match other.affinity.cmp(&self.affinity) {
+            std::cmp::Ordering::Equal => {
+                // If affinities are equal, compare cluster_index in ascending order
+                self.cluster_index.cmp(&other.cluster_index)
+            }
+            other => other,
+        }
+    }
+}
+
+impl PartialOrd for ClusterAffinity {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -60,9 +96,11 @@ pub mod primal_serial_default_configs {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum GrowingStrategy {
     /// focus on a single cluster at a time, for easier debugging and better locality
-    SingleCluster,
+    SingleCluster, // Question: Should this be deprecated?
     /// all clusters grow at the same time at the same speed
     MultipleClusters,
+    /// utilizing the search/tune mode separation
+    ModeBased,
 }
 
 pub struct PrimalModuleSerialNode {
@@ -109,6 +147,7 @@ impl PrimalModuleImpl for PrimalModuleSerial {
             plugin_pending_clusters: vec![],
             config: serde_json::from_value(json!({})).unwrap(),
             time_resolve: 0.,
+            sorted_clusters_aff: None,
         }
     }
 
@@ -175,13 +214,43 @@ impl PrimalModuleImpl for PrimalModuleSerial {
         group_max_update_length: GroupMaxUpdateLength,
         interface_ptr: &DualModuleInterfacePtr,
         dual_module: &mut impl DualModuleImpl,
-    ) {
+    ) -> bool {
         let begin = Instant::now();
-        self.resolve_core(group_max_update_length, interface_ptr, dual_module);
+        let res = self.resolve_core(group_max_update_length, interface_ptr, dual_module);
         self.time_resolve += begin.elapsed().as_secs_f64();
+        res
     }
 
-    fn subgraph(&mut self, _interface: &DualModuleInterfacePtr, _dual_module: &mut impl DualModuleImpl) -> Subgraph {
+    fn old_resolve(
+        &mut self,
+        group_max_update_length: GroupMaxUpdateLength,
+        interface_ptr: &DualModuleInterfacePtr,
+        dual_module: &mut impl DualModuleImpl,
+    ) -> bool {
+        let begin = Instant::now();
+        let res = self.old_resolve_core(group_max_update_length, interface_ptr, dual_module);
+        self.time_resolve += begin.elapsed().as_secs_f64();
+        res
+    }
+
+    fn resolve_tune(
+        &mut self,
+        group_max_update_length: BTreeSet<MaxUpdateLength>,
+        interface_ptr: &DualModuleInterfacePtr,
+        dual_module: &mut impl DualModuleImpl,
+    ) -> (BTreeSet<MaxUpdateLength>, bool) {
+        let begin = Instant::now();
+        let res = self.resolve_core_tune(group_max_update_length, interface_ptr, dual_module);
+        self.time_resolve += begin.elapsed().as_secs_f64();
+        res
+    }
+
+    fn subgraph(
+        &mut self,
+        _interface: &DualModuleInterfacePtr,
+        _dual_module: &mut impl DualModuleImpl,
+        seed: u64,
+    ) -> Subgraph {
         let mut subgraph = vec![];
         for cluster_ptr in self.clusters.iter() {
             let cluster = cluster_ptr.read_recursive();
@@ -192,11 +261,274 @@ impl PrimalModuleImpl for PrimalModuleSerial {
                 cluster
                     .subgraph
                     .clone()
-                    .expect("bug occurs: cluster should be solved, but the subgraph is not yet generated")
+                    .unwrap_or_else(|| panic!("bug occurs: cluster should be solved, but the subgraph is not yet generated || the seed is {seed:?}"))
                     .iter(),
             );
         }
         subgraph
+    }
+
+    /// check if there are more plugins to be applied
+    ///     will return false if timeout has been reached, else consume a plugin
+    fn has_more_plugins(&mut self) -> bool {
+        if self.time_resolve > self.config.timeout {
+            return false;
+        }
+        return if *self.plugin_count.read_recursive() < self.plugins.len() {
+            // increment the plugin count
+            *self.plugin_count.write() += 1;
+            self.plugin_pending_clusters = (0..self.clusters.len()).collect();
+            true
+        } else {
+            false
+        };
+    }
+
+    /// get the pending clusters
+    fn pending_clusters(&mut self) -> Vec<usize> {
+        self.plugin_pending_clusters.clone()
+    }
+
+    // TODO: extract duplicate codes
+
+    /// analyze a cluster and return whether there exists an optimal solution (depending on optimization levels)
+    #[allow(clippy::unnecessary_cast)]
+    fn resolve_cluster(
+        &mut self,
+        cluster_index: NodeIndex,
+        interface_ptr: &DualModuleInterfacePtr,
+        dual_module: &mut impl DualModuleImpl,
+    ) -> bool {
+        let cluster_ptr = self.clusters[cluster_index as usize].clone();
+        let mut cluster = cluster_ptr.write();
+        if cluster.nodes.is_empty() {
+            return true; // no longer a cluster, no need to handle
+        }
+        // set all nodes to stop growing in the cluster
+        for primal_node_ptr in cluster.nodes.iter() {
+            let dual_node_ptr = primal_node_ptr.read_recursive().dual_node_ptr.clone();
+            dual_module.set_grow_rate(&dual_node_ptr, Rational::zero());
+        }
+        // update the matrix with new tight edges
+        let cluster = &mut *cluster;
+        for &edge_index in cluster.edges.iter() {
+            cluster
+                .matrix
+                .update_edge_tightness(edge_index, dual_module.is_edge_tight(edge_index));
+        }
+
+        // find an executable relaxer from the plugin manager
+        let relaxer = {
+            let positive_dual_variables: Vec<DualNodePtr> = cluster
+                .nodes
+                .iter()
+                .map(|p| p.read_recursive().dual_node_ptr.clone())
+                .filter(|dual_node_ptr| !dual_node_ptr.read_recursive().get_dual_variable().is_zero())
+                .collect();
+            let decoding_graph = &interface_ptr.read_recursive().decoding_graph;
+            let cluster_mut = &mut *cluster; // must first get mutable reference
+            let plugin_manager = &mut cluster_mut.plugin_manager;
+            let matrix = &mut cluster_mut.matrix;
+            plugin_manager.find_relaxer(decoding_graph, matrix, &positive_dual_variables)
+        };
+
+        // if a relaxer is found, execute it and return
+        if let Some(relaxer) = relaxer {
+            for (invalid_subgraph, grow_rate) in relaxer.get_direction() {
+                let (existing, dual_node_ptr) = interface_ptr.find_or_create_node(invalid_subgraph, dual_module);
+                if !existing {
+                    // create the corresponding primal node and add it to cluster
+                    let primal_node_ptr = PrimalModuleSerialNodePtr::new_value(PrimalModuleSerialNode {
+                        dual_node_ptr: dual_node_ptr.clone(),
+                        cluster_weak: cluster_ptr.downgrade(),
+                    });
+                    cluster.nodes.push(primal_node_ptr.clone());
+                    self.nodes.push(primal_node_ptr);
+                }
+
+                dual_module.set_grow_rate(&dual_node_ptr, grow_rate.clone());
+            }
+            cluster.relaxer_optimizer.insert(relaxer);
+            return false;
+        }
+
+        // TODO idea: plugins can suggest subgraph (ideally, a global maximum), if so, then it will adopt th
+        // subgraph with minimum weight from all plugins as the starting point to do local minimum
+
+        // find a local minimum (hopefully a global minimum)
+        let interface = interface_ptr.read_recursive();
+        let initializer = interface.decoding_graph.model_graph.initializer.as_ref();
+        let weight_of = |edge_index: EdgeIndex| initializer.weighted_edges[edge_index].weight;
+        cluster.subgraph = Some(cluster.matrix.get_solution_local_minimum(weight_of).expect("satisfiable"));
+        true
+    }
+
+    /// analyze a cluster and return whether there exists an optimal solution (depending on optimization levels)
+    #[allow(clippy::unnecessary_cast)]
+    fn resolve_cluster_tune(
+        &mut self,
+        cluster_index: NodeIndex,
+        interface_ptr: &DualModuleInterfacePtr,
+        dual_module: &mut impl DualModuleImpl,
+        // edge_deltas: &mut BTreeMap<EdgeIndex, Rational>,
+        dual_node_deltas: &mut BTreeMap<OrderedDualNodePtr, Rational>,
+    ) -> (bool, OptimizerResult) {
+        let mut optimizer_result = OptimizerResult::default();
+        let cluster_ptr = self.clusters[cluster_index as usize].clone();
+        let mut cluster = cluster_ptr.write();
+        if cluster.nodes.is_empty() {
+            return (true, optimizer_result); // no longer a cluster, no need to handle
+        }
+        // update the matrix with new tight edges
+        let cluster = &mut *cluster;
+        for &edge_index in cluster.edges.iter() {
+            cluster
+                .matrix
+                .update_edge_tightness(edge_index, dual_module.is_edge_tight_tune(edge_index));
+        }
+
+        // find an executable relaxer from the plugin manager
+        let relaxer = {
+            let positive_dual_variables: Vec<DualNodePtr> = cluster
+                .nodes
+                .iter()
+                .map(|p| p.read_recursive().dual_node_ptr.clone())
+                .filter(|dual_node_ptr| !dual_node_ptr.read_recursive().dual_variable_at_last_updated_time.is_zero())
+                .collect();
+            let decoding_graph = &interface_ptr.read_recursive().decoding_graph;
+            let cluster_mut = &mut *cluster; // must first get mutable reference
+            let plugin_manager = &mut cluster_mut.plugin_manager;
+            let matrix = &mut cluster_mut.matrix;
+            plugin_manager.find_relaxer(decoding_graph, matrix, &positive_dual_variables)
+        };
+
+        // if a relaxer is found, execute it and return
+        if let Some(mut relaxer) = relaxer {
+            #[cfg(feature = "float_lp")]
+            // float_lp is enabled, optimizer really plays a role
+            if cluster.relaxer_optimizer.should_optimize(&relaxer) {
+                let dual_variables: BTreeMap<Arc<InvalidSubgraph>, Rational> = cluster
+                    .nodes
+                    .iter()
+                    .map(|primal_node_ptr| {
+                        let primal_node = primal_node_ptr.read_recursive();
+                        let dual_node = primal_node.dual_node_ptr.read_recursive();
+                        (
+                            dual_node.invalid_subgraph.clone(),
+                            dual_node.dual_variable_at_last_updated_time.clone(),
+                        )
+                    })
+                    .collect();
+                let edge_slacks: BTreeMap<EdgeIndex, Rational> = dual_variables
+                    .keys()
+                    .flat_map(|invalid_subgraph: &Arc<InvalidSubgraph>| invalid_subgraph.hair.iter().cloned())
+                    .chain(
+                        relaxer
+                            .get_direction()
+                            .keys()
+                            .flat_map(|invalid_subgraph| invalid_subgraph.hair.iter().cloned()),
+                    )
+                    .map(|edge_index| (edge_index, dual_module.get_edge_slack_tune(edge_index)))
+                    .collect();
+
+                let (new_relaxer, early_returned) = cluster.relaxer_optimizer.optimize(relaxer, edge_slacks, dual_variables);
+                relaxer = new_relaxer;
+                if early_returned {
+                    optimizer_result = OptimizerResult::EarlyReturned;
+                } else {
+                    optimizer_result = OptimizerResult::Optimized;
+                }
+            } else {
+                optimizer_result = OptimizerResult::Skipped;
+            }
+
+            #[cfg(not(feature = "float_lp"))]
+            // with rationals, it is actually usually better when always optimized
+            {
+                let dual_variables: BTreeMap<Arc<InvalidSubgraph>, Rational> = cluster
+                    .nodes
+                    .iter()
+                    .map(|primal_node_ptr| {
+                        let primal_node = primal_node_ptr.read_recursive();
+                        let dual_node = primal_node.dual_node_ptr.read_recursive();
+                        (
+                            dual_node.invalid_subgraph.clone(),
+                            dual_node.dual_variable_at_last_updated_time.clone(),
+                        )
+                    })
+                    .collect();
+                let edge_slacks: BTreeMap<EdgeIndex, Rational> = dual_variables
+                    .keys()
+                    .flat_map(|invalid_subgraph: &Arc<InvalidSubgraph>| invalid_subgraph.hair.iter().cloned())
+                    .chain(
+                        relaxer
+                            .get_direction()
+                            .keys()
+                            .flat_map(|invalid_subgraph| invalid_subgraph.hair.iter().cloned()),
+                    )
+                    .map(|edge_index| (edge_index, dual_module.get_edge_slack_tune(edge_index)))
+                    .collect();
+
+                let (new_relaxer, early_returned) = cluster.relaxer_optimizer.optimize(relaxer, edge_slacks, dual_variables);
+                relaxer = new_relaxer;
+                if early_returned {
+                    optimizer_result = OptimizerResult::EarlyReturned;
+                } else {
+                    optimizer_result = OptimizerResult::Optimized;
+                }
+            }
+
+            for (invalid_subgraph, grow_rate) in relaxer.get_direction() {
+                let (existing, dual_node_ptr) = interface_ptr.find_or_create_node_tune(invalid_subgraph, dual_module);
+                if !existing {
+                    // create the corresponding primal node and add it to cluster
+                    let primal_node_ptr = PrimalModuleSerialNodePtr::new_value(PrimalModuleSerialNode {
+                        dual_node_ptr: dual_node_ptr.clone(),
+                        cluster_weak: cluster_ptr.downgrade(),
+                    });
+                    cluster.nodes.push(primal_node_ptr.clone());
+                    self.nodes.push(primal_node_ptr);
+                }
+
+                // Document the desired deltas
+                let index = dual_node_ptr.read_recursive().index;
+                dual_node_deltas.insert(OrderedDualNodePtr::new(index, dual_node_ptr), grow_rate.clone());
+            }
+
+            cluster.relaxer_optimizer.insert(relaxer);
+            return (false, optimizer_result);
+        }
+
+        // find a local minimum (hopefully a global minimum)
+        let interface = interface_ptr.read_recursive();
+        let initializer = interface.decoding_graph.model_graph.initializer.as_ref();
+        let weight_of = |edge_index: EdgeIndex| initializer.weighted_edges[edge_index].weight;
+        cluster.subgraph = Some(cluster.matrix.get_solution_local_minimum(weight_of).expect("satisfiable"));
+
+        (true, optimizer_result)
+    }
+
+    /// update the sorted clusters_aff, should be None to start with
+    fn update_sorted_clusters_aff<D: DualModuleImpl>(&mut self, dual_module: &mut D) {
+        let pending_clusters = self.pending_clusters();
+        let mut sorted_clusters_aff = BTreeSet::default();
+
+        for cluster_index in pending_clusters.iter() {
+            let cluster_ptr = self.clusters[*cluster_index].clone();
+            let affinity = dual_module.calculate_cluster_affinity(cluster_ptr);
+            if let Some(affinity) = affinity {
+                sorted_clusters_aff.insert(ClusterAffinity {
+                    cluster_index: *cluster_index,
+                    affinity,
+                });
+            }
+        }
+        self.sorted_clusters_aff = Some(sorted_clusters_aff);
+    }
+
+    /// consume the sorted_clusters_aff
+    fn get_sorted_clusters_aff(&mut self) -> BTreeSet<ClusterAffinity> {
+        self.sorted_clusters_aff.take().unwrap()
     }
 }
 
@@ -241,7 +573,7 @@ impl PrimalModuleSerial {
         mut group_max_update_length: GroupMaxUpdateLength,
         interface_ptr: &DualModuleInterfacePtr,
         dual_module: &mut impl DualModuleImpl,
-    ) {
+    ) -> bool {
         debug_assert!(!group_max_update_length.is_unbounded() && group_max_update_length.get_valid_growth().is_none());
         let mut active_clusters = BTreeSet::<NodeIndex>::new();
         let interface = interface_ptr.read_recursive();
@@ -280,7 +612,7 @@ impl PrimalModuleSerial {
                     active_clusters.insert(cluster.cluster_index);
                 }
                 MaxUpdateLength::ShrinkProhibited(dual_node_ptr) => {
-                    let cluster_ptr = self.nodes[dual_node_ptr.read_recursive().index as usize]
+                    let cluster_ptr = self.nodes[dual_node_ptr.index as usize]
                         .read_recursive()
                         .cluster_weak
                         .upgrade_force();
@@ -302,7 +634,81 @@ impl PrimalModuleSerial {
             all_solved &= solved;
         }
         if !all_solved {
-            return; // already give dual module something to do
+            return false; // already give dual module something to do
+        }
+
+        true
+    }
+
+    #[allow(clippy::unnecessary_cast)]
+    /// for backwards-compatibility
+    fn old_resolve_core(
+        &mut self,
+        mut group_max_update_length: GroupMaxUpdateLength,
+        interface_ptr: &DualModuleInterfacePtr,
+        dual_module: &mut impl DualModuleImpl,
+    ) -> bool {
+        debug_assert!(!group_max_update_length.is_unbounded() && group_max_update_length.get_valid_growth().is_none());
+        let mut active_clusters = BTreeSet::<NodeIndex>::new();
+        let interface = interface_ptr.read_recursive();
+        let decoding_graph = &interface.decoding_graph;
+        while let Some(conflict) = group_max_update_length.pop() {
+            match conflict {
+                MaxUpdateLength::Conflicting(edge_index) => {
+                    // union all the dual nodes in the edge index and create new dual node by adding this edge to `internal_edges`
+                    let dual_nodes = dual_module.get_edge_nodes(edge_index);
+                    debug_assert!(
+                        !dual_nodes.is_empty(),
+                        "should not conflict if no dual nodes are contributing"
+                    );
+                    let dual_node_ptr_0 = &dual_nodes[0];
+                    // first union all the dual nodes
+                    for dual_node_ptr in dual_nodes.iter().skip(1) {
+                        self.union(dual_node_ptr_0, dual_node_ptr, &interface.decoding_graph);
+                    }
+                    let cluster_ptr = self.nodes[dual_node_ptr_0.read_recursive().index as usize]
+                        .read_recursive()
+                        .cluster_weak
+                        .upgrade_force();
+                    let mut cluster = cluster_ptr.write();
+                    // then add new constraints because these edges may touch new vertices
+                    let incident_vertices = decoding_graph.get_edge_neighbors(edge_index);
+                    for &vertex_index in incident_vertices.iter() {
+                        if !cluster.vertices.contains(&vertex_index) {
+                            cluster.vertices.insert(vertex_index);
+                            let incident_edges = decoding_graph.get_vertex_neighbors(vertex_index);
+                            let parity = decoding_graph.is_vertex_defect(vertex_index);
+                            cluster.matrix.add_constraint(vertex_index, incident_edges, parity);
+                        }
+                    }
+                    cluster.edges.insert(edge_index);
+                    // add to active cluster so that it's processed later
+                    active_clusters.insert(cluster.cluster_index);
+                }
+                MaxUpdateLength::ShrinkProhibited(dual_node_ptr) => {
+                    let cluster_ptr = self.nodes[dual_node_ptr.index as usize]
+                        .read_recursive()
+                        .cluster_weak
+                        .upgrade_force();
+                    let cluster_index = cluster_ptr.read_recursive().cluster_index;
+                    active_clusters.insert(cluster_index);
+                }
+                _ => {
+                    unreachable!()
+                }
+            }
+        }
+        drop(interface);
+        if *self.plugin_count.read_recursive() != 0 && self.time_resolve > self.config.timeout {
+            *self.plugin_count.write() = 0; // force only the first plugin
+        }
+        let mut all_solved = true;
+        for &cluster_index in active_clusters.iter() {
+            let solved = self.resolve_cluster(cluster_index, interface_ptr, dual_module);
+            all_solved &= solved;
+        }
+        if !all_solved {
+            return false; // already give dual module something to do
         }
         while !self.pending_nodes.is_empty() {
             let primal_node_weak = self.pending_nodes.pop_front().unwrap();
@@ -311,18 +717,18 @@ impl PrimalModuleSerial {
             let cluster_ptr = primal_node.cluster_weak.upgrade_force();
             if cluster_ptr.read_recursive().subgraph.is_none() {
                 dual_module.set_grow_rate(&primal_node.dual_node_ptr, Rational::one());
-                return; // let the dual module to find more obstacles
+                return false; // let the dual module to find more obstacles
             }
         }
         if *self.plugin_count.read_recursive() == 0 {
-            return;
+            return true;
         }
         // check that all clusters have passed the plugins
         loop {
             while let Some(cluster_index) = self.plugin_pending_clusters.pop() {
                 let solved = self.resolve_cluster(cluster_index, interface_ptr, dual_module);
                 if !solved {
-                    return; // let the dual module to handle one
+                    return false; // let the dual module to handle one
                 }
             }
             if *self.plugin_count.read_recursive() < self.plugins.len() {
@@ -333,100 +739,180 @@ impl PrimalModuleSerial {
                 break; // nothing more to check
             }
         }
+        true
     }
 
-    /// analyze a cluster and return whether there exists an optimal solution (depending on optimization levels)
     #[allow(clippy::unnecessary_cast)]
-    fn resolve_cluster(
+    // returns (conflicts_needing_to_be_resolved, should_grow)
+    fn resolve_core_tune(
         &mut self,
-        cluster_index: NodeIndex,
+        group_max_update_length: BTreeSet<MaxUpdateLength>,
         interface_ptr: &DualModuleInterfacePtr,
         dual_module: &mut impl DualModuleImpl,
-    ) -> bool {
-        let cluster_ptr = self.clusters[cluster_index as usize].clone();
-        let mut cluster = cluster_ptr.write();
-        if cluster.nodes.is_empty() {
-            return true; // no longer a cluster, no need to handle
-        }
-        // set all nodes to stop growing in the cluster
-        for primal_node_ptr in cluster.nodes.iter() {
-            let dual_node_ptr = primal_node_ptr.read_recursive().dual_node_ptr.clone();
-            dual_module.set_grow_rate(&dual_node_ptr, Rational::zero());
-        }
-        // update the matrix with new tight edges
-        let cluster = &mut *cluster;
-        for &edge_index in cluster.edges.iter() {
-            cluster
-                .matrix
-                .update_edge_tightness(edge_index, dual_module.is_edge_tight(edge_index));
-        }
-
-        // find an executable relaxer from the plugin manager
-        let relaxer = {
-            let positive_dual_variables: Vec<DualNodePtr> = cluster
-                .nodes
-                .iter()
-                .map(|p| p.read_recursive().dual_node_ptr.clone())
-                .filter(|dual_node_ptr| !dual_node_ptr.read_recursive().get_dual_variable().is_zero())
-                .collect();
-            let decoding_graph = &interface_ptr.read_recursive().decoding_graph;
-            let cluster_mut = &mut *cluster; // must first get mutable reference
-            let plugin_manager = &mut cluster_mut.plugin_manager;
-            let matrix = &mut cluster_mut.matrix;
-            plugin_manager.find_relaxer(decoding_graph, matrix, &positive_dual_variables)
-        };
-
-        // if a relaxer is found, execute it and return
-        if let Some(mut relaxer) = relaxer {
-            if !cluster.plugin_manager.is_empty() && cluster.relaxer_optimizer.should_optimize(&relaxer) {
-                let dual_variables: BTreeMap<Arc<InvalidSubgraph>, Rational> = cluster
-                    .nodes
-                    .iter()
-                    .map(|primal_node_ptr| {
-                        let primal_node = primal_node_ptr.read_recursive();
-                        let dual_node = primal_node.dual_node_ptr.read_recursive();
-                        (dual_node.invalid_subgraph.clone(), dual_node.get_dual_variable().clone())
-                    })
-                    .collect();
-                let edge_slacks: BTreeMap<EdgeIndex, Rational> = dual_variables
-                    .keys()
-                    .flat_map(|invalid_subgraph: &Arc<InvalidSubgraph>| invalid_subgraph.hair.iter().cloned())
-                    .chain(
-                        relaxer
-                            .get_direction()
-                            .keys()
-                            .flat_map(|invalid_subgraph| invalid_subgraph.hair.iter().cloned()),
-                    )
-                    .map(|edge_index| (edge_index, dual_module.get_edge_slack(edge_index)))
-                    .collect();
-                relaxer = cluster.relaxer_optimizer.optimize(relaxer, edge_slacks, dual_variables);
-            }
-            for (invalid_subgraph, grow_rate) in relaxer.get_direction() {
-                let (existing, dual_node_ptr) = interface_ptr.find_or_create_node(invalid_subgraph, dual_module);
-                if !existing {
-                    // create the corresponding primal node and add it to cluster
-                    let primal_node_ptr = PrimalModuleSerialNodePtr::new_value(PrimalModuleSerialNode {
-                        dual_node_ptr: dual_node_ptr.clone(),
-                        cluster_weak: cluster_ptr.downgrade(),
-                    });
-                    cluster.nodes.push(primal_node_ptr.clone());
-                    self.nodes.push(primal_node_ptr);
-                }
-                dual_module.set_grow_rate(&dual_node_ptr, grow_rate.clone());
-            }
-            cluster.relaxer_optimizer.insert(relaxer);
-            return false;
-        }
-
-        // TODO idea: plugins can suggest subgraph (ideally, a global maximum), if so, then it will adopt th
-        // subgraph with minimum weight from all plugins as the starting point to do local minimum
-
-        // find a local minimum (hopefully a global minimum)
+    ) -> (BTreeSet<MaxUpdateLength>, bool) {
+        let mut active_clusters = BTreeSet::<NodeIndex>::new();
         let interface = interface_ptr.read_recursive();
-        let initializer = interface.decoding_graph.model_graph.initializer.as_ref();
-        let weight_of = |edge_index: EdgeIndex| initializer.weighted_edges[edge_index].weight;
-        cluster.subgraph = Some(cluster.matrix.get_solution_local_minimum(weight_of).expect("satisfiable"));
-        true
+        let decoding_graph = &interface.decoding_graph;
+        for conflict in group_max_update_length.into_iter() {
+            match conflict {
+                MaxUpdateLength::Conflicting(edge_index) => {
+                    // union all the dual nodes in the edge index and create new dual node by adding this edge to `internal_edges`
+                    let dual_nodes = dual_module.get_edge_nodes(edge_index);
+                    debug_assert!(
+                        !dual_nodes.is_empty(),
+                        "should not conflict if no dual nodes are contributing"
+                    );
+                    let dual_node_ptr_0 = &dual_nodes[0];
+                    // first union all the dual nodes
+                    for dual_node_ptr in dual_nodes.iter().skip(1) {
+                        self.union(dual_node_ptr_0, dual_node_ptr, &interface.decoding_graph);
+                    }
+                    let cluster_ptr = self.nodes[dual_node_ptr_0.read_recursive().index as usize]
+                        .read_recursive()
+                        .cluster_weak
+                        .upgrade_force();
+                    let mut cluster = cluster_ptr.write();
+                    // then add new constraints because these edges may touch new vertices
+                    let incident_vertices = decoding_graph.get_edge_neighbors(edge_index);
+                    for &vertex_index in incident_vertices.iter() {
+                        if !cluster.vertices.contains(&vertex_index) {
+                            cluster.vertices.insert(vertex_index);
+                            let incident_edges = decoding_graph.get_vertex_neighbors(vertex_index);
+                            let parity = decoding_graph.is_vertex_defect(vertex_index);
+                            cluster.matrix.add_constraint(vertex_index, incident_edges, parity);
+                        }
+                    }
+                    cluster.edges.insert(edge_index);
+                    // add to active cluster so that it's processed later
+                    active_clusters.insert(cluster.cluster_index);
+                }
+                MaxUpdateLength::ShrinkProhibited(dual_node_ptr) => {
+                    let cluster_ptr = self.nodes[dual_node_ptr.index as usize]
+                        .read_recursive()
+                        .cluster_weak
+                        .upgrade_force();
+                    let cluster_index = cluster_ptr.read_recursive().cluster_index;
+                    active_clusters.insert(cluster_index);
+                }
+                _ => {
+                    unreachable!()
+                }
+            }
+        }
+        drop(interface);
+        if *self.plugin_count.read_recursive() != 0 && self.time_resolve > self.config.timeout {
+            *self.plugin_count.write() = 0; // force only the first plugin
+        }
+        let mut all_solved = true;
+        let mut all_conflicts = BTreeSet::default();
+        let mut dual_node_deltas = BTreeMap::new();
+        let mut optimizer_result = OptimizerResult::default();
+        for &cluster_index in active_clusters.iter() {
+            let (solved, other) =
+                self.resolve_cluster_tune(cluster_index, interface_ptr, dual_module, &mut dual_node_deltas);
+            all_solved &= solved;
+            optimizer_result.or(other);
+        }
+
+        match optimizer_result {
+            OptimizerResult::EarlyReturned => {
+                // early returned, just get the new conlicts
+                for (dual_node_ptr, grow_rate) in dual_node_deltas.into_iter() {
+                    let node_ptr_read = dual_node_ptr.ptr.read_recursive();
+                    if grow_rate.is_negative() && node_ptr_read.dual_variable_at_last_updated_time.is_zero() {
+                        all_conflicts.insert(MaxUpdateLength::ShrinkProhibited(OrderedDualNodePtr::new(
+                            node_ptr_read.index,
+                            dual_node_ptr.ptr.clone(),
+                        )));
+                    }
+                    for edge_index in node_ptr_read.invalid_subgraph.hair.iter() {
+                        if grow_rate.is_positive() && dual_module.is_edge_tight_tune(*edge_index) {
+                            all_conflicts.insert(MaxUpdateLength::Conflicting(*edge_index));
+                        }
+                    }
+                }
+            }
+            OptimizerResult::Skipped => {
+                // optimizer is skipped, meaning there is only a single direction to be grown, calculate the actual grow rate and grow
+                for (dual_node_ptr, grow_rate) in dual_node_deltas.into_iter() {
+                    // calculate the actual grow rate
+                    let mut actual_grow_rate = Rational::from_usize(std::usize::MAX).unwrap();
+                    let node_ptr_read = dual_node_ptr.ptr.read_recursive();
+                    for edge_index in node_ptr_read.invalid_subgraph.hair.iter() {
+                        actual_grow_rate = std::cmp::min(actual_grow_rate, dual_module.get_edge_slack_tune(*edge_index));
+                    }
+
+                    // if counldn't grow, return the conflicts
+                    if actual_grow_rate.is_zero() {
+                        for edge_index in node_ptr_read.invalid_subgraph.hair.iter() {
+                            if grow_rate.is_positive() && dual_module.is_edge_tight_tune(*edge_index) {
+                                all_conflicts.insert(MaxUpdateLength::Conflicting(*edge_index));
+                            }
+                        }
+                        if grow_rate.is_negative() && node_ptr_read.dual_variable_at_last_updated_time.is_zero() {
+                            all_conflicts.insert(MaxUpdateLength::ShrinkProhibited(OrderedDualNodePtr::new(
+                                node_ptr_read.index,
+                                dual_node_ptr.ptr.clone(),
+                            )));
+                        }
+                    } else {
+                        drop(node_ptr_read);
+                        let mut node_ptr_write = dual_node_ptr.ptr.write();
+                        // update states with the actual grow rate, for both edges and dual nodes
+                        for edge_index in node_ptr_write.invalid_subgraph.hair.iter() {
+                            dual_module.grow_edge(*edge_index, &actual_grow_rate);
+                            if actual_grow_rate.is_positive() && dual_module.is_edge_tight_tune(*edge_index) {
+                                all_conflicts.insert(MaxUpdateLength::Conflicting(*edge_index));
+                            }
+                        }
+                        node_ptr_write.dual_variable_at_last_updated_time += actual_grow_rate.clone();
+                        if actual_grow_rate.is_negative() && node_ptr_write.dual_variable_at_last_updated_time.is_zero() {
+                            all_conflicts.insert(MaxUpdateLength::ShrinkProhibited(OrderedDualNodePtr::new(
+                                node_ptr_write.index,
+                                dual_node_ptr.ptr.clone(),
+                            )));
+                        }
+                    }
+                }
+            }
+            _ => {
+                // optimizer is optimized, apply the grow rate and check for conflicts
+                let mut edge_deltas = BTreeMap::new();
+                for (dual_node_ptr, grow_rate) in dual_node_deltas.into_iter() {
+                    let mut node_ptr_write = dual_node_ptr.ptr.write();
+
+                    node_ptr_write.dual_variable_at_last_updated_time += grow_rate.clone();
+                    if grow_rate.is_negative() && node_ptr_write.dual_variable_at_last_updated_time.is_zero() {
+                        all_conflicts.insert(MaxUpdateLength::ShrinkProhibited(OrderedDualNodePtr::new(
+                            node_ptr_write.index,
+                            dual_node_ptr.ptr.clone(),
+                        )));
+                    }
+
+                    for edge_index in node_ptr_write.invalid_subgraph.hair.iter() {
+                        match edge_deltas.entry(*edge_index) {
+                            std::collections::btree_map::Entry::Vacant(v) => {
+                                v.insert(grow_rate.clone());
+                            }
+                            std::collections::btree_map::Entry::Occupied(mut o) => {
+                                let current = o.get_mut();
+                                *current += grow_rate.clone();
+                            }
+                        }
+                    }
+                }
+                for (edge_index, grow_rate) in edge_deltas.into_iter() {
+                    if grow_rate.is_zero() {
+                        continue;
+                    }
+                    dual_module.grow_edge(edge_index, &grow_rate);
+                    if grow_rate.is_positive() && dual_module.is_edge_tight_tune(edge_index) {
+                        all_conflicts.insert(MaxUpdateLength::Conflicting(edge_index));
+                    }
+                }
+            }
+        }
+        (all_conflicts, all_solved)
     }
 }
 
@@ -476,10 +962,7 @@ pub mod tests {
             visualizer.as_mut(),
         );
 
-        // Question: should this be called here
-        // dual_module.update_dual_nodes(&interface_ptr.read_recursive().nodes);
-
-        let (subgraph, weight_range) = primal_module.subgraph_range(&interface_ptr, &mut dual_module);
+        let (subgraph, weight_range) = primal_module.subgraph_range(&interface_ptr, &mut dual_module, 0);
         if let Some(visualizer) = visualizer.as_mut() {
             visualizer
                 .snapshot_combined(
@@ -583,9 +1066,9 @@ pub mod tests {
 
     /// test a simple case
     #[test]
-    fn primal_module_serial_basic_1() {
-        // cargo test primal_module_serial_basic_1 -- --nocapture
-        let visualize_filename = "primal_module_serial_basic_1.json".to_string();
+    fn primal_module_serial_basic_1_m() {
+        // cargo test primal_module_serial_basic_1_m -- --nocapture
+        let visualize_filename = "primal_module_serial_basic_1_m.json".to_string();
         let defect_vertices = vec![23, 24, 29, 30];
         let code = CodeCapacityTailoredCode::new(7, 0., 0.01, 1);
         primal_module_serial_basic_standard_syndrome(
@@ -594,14 +1077,14 @@ pub mod tests {
             defect_vertices,
             1,
             vec![],
-            GrowingStrategy::SingleCluster,
+            GrowingStrategy::ModeBased,
         );
     }
 
     #[test]
-    fn primal_module_serial_basic_1_with_dual_pq_impl() {
-        // cargo test primal_module_serial_basic_1_with_dual_pq_impl -- --nocapture
-        let visualize_filename = "primal_module_serial_basic_1_with_dual_pq_impl.json".to_string();
+    fn primal_module_serial_basic_1_with_dual_pq_impl_m() {
+        // cargo test primal_module_serial_basic_1_with_dual_pq_impl_m -- --nocapture
+        let visualize_filename = "primal_module_serial_basic_1_with_dual_pq_impl_m.json".to_string();
         let defect_vertices = vec![23, 24, 29, 30];
         let code = CodeCapacityTailoredCode::new(7, 0., 0.01, 1);
         primal_module_serial_basic_standard_syndrome_with_dual_pq_impl(
@@ -610,14 +1093,14 @@ pub mod tests {
             defect_vertices,
             1,
             vec![],
-            GrowingStrategy::SingleCluster,
+            GrowingStrategy::ModeBased,
         );
     }
 
     #[test]
-    fn primal_module_serial_basic_2() {
-        // cargo test primal_module_serial_basic_2 -- --nocapture
-        let visualize_filename = "primal_module_serial_basic_2.json".to_string();
+    fn primal_module_serial_basic_2_m() {
+        // cargo test primal_module_serial_basic_2_m -- --nocapture
+        let visualize_filename = "primal_module_serial_basic_2_m.json".to_string();
         let defect_vertices = vec![16, 17, 23, 25, 29, 30];
         let code = CodeCapacityTailoredCode::new(7, 0., 0.01, 1);
         primal_module_serial_basic_standard_syndrome(
@@ -626,14 +1109,14 @@ pub mod tests {
             defect_vertices,
             2,
             vec![],
-            GrowingStrategy::SingleCluster,
+            GrowingStrategy::ModeBased,
         );
     }
 
     #[test]
-    fn primal_module_serial_basic_2_with_dual_pq_impl() {
-        // cargo test primal_module_serial_basic_2_with_dual_pq_impl -- --nocapture
-        let visualize_filename = "primal_module_serial_basic_2_with_dual_pq_impl.json".to_string();
+    fn primal_module_serial_basic_2_with_dual_pq_impl_m() {
+        // cargo test primal_module_serial_basic_2_with_dual_pq_impl_m -- --nocapture
+        let visualize_filename = "primal_module_serial_basic_2_with_dual_pq_impl_m.json".to_string();
         let defect_vertices = vec![16, 17, 23, 25, 29, 30];
         let code = CodeCapacityTailoredCode::new(7, 0., 0.01, 1);
         primal_module_serial_basic_standard_syndrome_with_dual_pq_impl(
@@ -642,17 +1125,16 @@ pub mod tests {
             defect_vertices,
             2,
             vec![],
-            GrowingStrategy::SingleCluster,
+            GrowingStrategy::ModeBased,
         );
     }
 
     // should fail because single growing will have sum y_S = 3 instead of 5
-
     #[test]
-    #[should_panic]
-    fn primal_module_serial_basic_3_single() {
-        // cargo test primal_module_serial_basic_3_single -- --nocapture
-        let visualize_filename = "primal_module_serial_basic_3_single.json".to_string();
+    // #[should_panic] no more panics, as we are not using the single growing strategy
+    fn primal_module_serial_basic_3_single_m() {
+        // cargo test primal_module_serial_basic_3_single_m -- --nocapture
+        let visualize_filename = "primal_module_serial_basic_3_single_m.json".to_string();
         let defect_vertices = vec![14, 15, 16, 17, 22, 25, 28, 31, 36, 37, 38, 39];
         let code = CodeCapacityTailoredCode::new(7, 0., 0.01, 1);
         primal_module_serial_basic_standard_syndrome(
@@ -661,15 +1143,15 @@ pub mod tests {
             defect_vertices,
             5,
             vec![],
-            GrowingStrategy::SingleCluster,
+            GrowingStrategy::ModeBased,
         );
     }
 
     #[test]
-    #[should_panic]
-    fn primal_module_serial_basic_3_single_with_dual_pq_impl() {
-        // cargo test primal_module_serial_basic_3_single_with_dual_pq_impl -- --nocapture
-        let visualize_filename = "primal_module_serial_basic_3_single_with_dual_pq_impl.json".to_string();
+    // #[should_panic] no more panics, as we are not using the single growing strategy
+    fn primal_module_serial_basic_3_single_with_dual_pq_impl_m() {
+        // cargo test primal_module_serial_basic_3_single_with_dual_pq_impl_m -- --nocapture
+        let visualize_filename = "primal_module_serial_basic_3_single_with_dual_pq_impl_m.json".to_string();
         let defect_vertices = vec![14, 15, 16, 17, 22, 25, 28, 31, 36, 37, 38, 39];
         let code = CodeCapacityTailoredCode::new(7, 0., 0.01, 1);
         primal_module_serial_basic_standard_syndrome_with_dual_pq_impl(
@@ -678,14 +1160,14 @@ pub mod tests {
             defect_vertices,
             5,
             vec![],
-            GrowingStrategy::SingleCluster,
+            GrowingStrategy::ModeBased,
         );
     }
 
     #[test]
-    fn primal_module_serial_basic_3_improved() {
-        // cargo test primal_module_serial_basic_3_improved -- --nocapture
-        let visualize_filename = "primal_module_serial_basic_3_improved.json".to_string();
+    fn primal_module_serial_basic_3_improved_m() {
+        // cargo test primal_module_serial_basic_3_improved_m -- --nocapture
+        let visualize_filename = "primal_module_serial_basic_3_improved_m.json".to_string();
         let defect_vertices = vec![14, 15, 16, 17, 22, 25, 28, 31, 36, 37, 38, 39];
         let code = CodeCapacityTailoredCode::new(7, 0., 0.01, 1);
         primal_module_serial_basic_standard_syndrome(
@@ -697,14 +1179,14 @@ pub mod tests {
                 PluginUnionFind::entry(),
                 PluginSingleHair::entry_with_strategy(RepeatStrategy::Once),
             ],
-            GrowingStrategy::SingleCluster,
+            GrowingStrategy::ModeBased,
         );
     }
 
     #[test]
-    fn primal_module_serial_basic_3_improved_with_dual_pq_impl() {
-        // cargo test primal_module_serial_basic_3_improved_with_dual_pq_impl -- --nocapture
-        let visualize_filename = "primal_module_serial_basic_3_improved_with_dual_pq_impl.json".to_string();
+    fn primal_module_serial_basic_3_improved_with_dual_pq_impl_m() {
+        // cargo test primal_module_serial_basic_3_improved_with_dual_pq_impl_m -- --nocapture
+        let visualize_filename = "primal_module_serial_basic_3_improved_with_dual_pq_impl_m.json".to_string();
         let defect_vertices = vec![14, 15, 16, 17, 22, 25, 28, 31, 36, 37, 38, 39];
         let code = CodeCapacityTailoredCode::new(7, 0., 0.01, 1);
         primal_module_serial_basic_standard_syndrome_with_dual_pq_impl(
@@ -716,14 +1198,14 @@ pub mod tests {
                 PluginUnionFind::entry(),
                 PluginSingleHair::entry_with_strategy(RepeatStrategy::Once),
             ],
-            GrowingStrategy::SingleCluster,
+            GrowingStrategy::ModeBased,
         );
     }
 
     #[test]
-    fn primal_module_serial_basic_3_multi() {
-        // cargo test primal_module_serial_basic_3_multi -- --nocapture
-        let visualize_filename = "primal_module_serial_basic_3_multi.json".to_string();
+    fn primal_module_serial_basic_3_multi_m() {
+        // cargo test primal_module_serial_basic_3_multi_m -- --nocapture
+        let visualize_filename = "primal_module_serial_basic_3_multi_m.json".to_string();
         let defect_vertices = vec![14, 15, 16, 17, 22, 25, 28, 31, 36, 37, 38, 39];
         let code = CodeCapacityTailoredCode::new(7, 0., 0.01, 1);
         primal_module_serial_basic_standard_syndrome(
@@ -732,95 +1214,95 @@ pub mod tests {
             defect_vertices,
             5,
             vec![],
+            GrowingStrategy::ModeBased,
+        );
+    }
+
+    #[test]
+    fn primal_module_serial_basic_3_multi_with_dual_pq_impl_m() {
+        // cargo test primal_module_serial_basic_3_multi_with_dual_pq_impl_m -- --nocapture
+        let visualize_filename = "primal_module_serial_basic_3_multi_with_dual_pq_impl_m.json".to_string();
+        let defect_vertices = vec![14, 15, 16, 17, 22, 25, 28, 31, 36, 37, 38, 39];
+        let code = CodeCapacityTailoredCode::new(7, 0., 0.01, 1);
+        primal_module_serial_basic_standard_syndrome_with_dual_pq_impl(
+            code,
+            visualize_filename,
+            defect_vertices,
+            5,
+            vec![],
+            GrowingStrategy::ModeBased,
+        );
+    }
+
+    #[test]
+    #[should_panic]
+    fn primal_module_serial_basic_4_single_m() {
+        // cargo test primal_module_serial_basic_4_single_m -- --nocapture
+        let visualize_filename = "primal_module_serial_basic_4_single_m.json".to_string();
+        let defect_vertices = vec![10, 11, 12, 15, 16, 17, 18];
+        let code = CodeCapacityTailoredCode::new(5, 0., 0.01, 1);
+        primal_module_serial_basic_standard_syndrome(
+            code,
+            visualize_filename,
+            defect_vertices,
+            4,
+            vec![],
+            GrowingStrategy::ModeBased,
+        );
+    }
+
+    #[test]
+    #[should_panic]
+    fn primal_module_serial_basic_4_single_with_dual_pq_impl_m() {
+        // cargo test primal_module_serial_basic_4_single_with_dual_pq_impl_m -- --nocapture
+        let visualize_filename = "primal_module_serial_basic_4_single_with_dual_pq_impl_m.json".to_string();
+        let defect_vertices = vec![10, 11, 12, 15, 16, 17, 18];
+        let code = CodeCapacityTailoredCode::new(5, 0., 0.01, 1);
+        primal_module_serial_basic_standard_syndrome_with_dual_pq_impl(
+            code,
+            visualize_filename,
+            defect_vertices,
+            4,
+            vec![],
+            GrowingStrategy::ModeBased,
+        );
+    }
+
+    #[test]
+    fn primal_module_serial_basic_4_single_improved_m() {
+        // cargo test primal_module_serial_basic_4_single_improved_m -- --nocapture
+        let visualize_filename = "primal_module_serial_basic_4_single_improved_m.json".to_string();
+        let defect_vertices = vec![10, 11, 12, 15, 16, 17, 18];
+        let code = CodeCapacityTailoredCode::new(5, 0., 0.01, 1);
+        primal_module_serial_basic_standard_syndrome(
+            code,
+            visualize_filename,
+            defect_vertices,
+            4,
+            vec![
+                PluginUnionFind::entry(),
+                PluginSingleHair::entry_with_strategy(RepeatStrategy::Once),
+            ],
+            GrowingStrategy::ModeBased,
+        );
+    }
+
+    #[test]
+    fn primal_module_serial_basic_4_single_improved_with_dual_pq_impl_m() {
+        // cargo test primal_module_serial_basic_4_single_improved_with_dual_pq_impl_m -- --nocapture
+        let visualize_filename = "primal_module_serial_basic_4_single_improved_with_dual_pq_impl_m.json".to_string();
+        let defect_vertices = vec![10, 11, 12, 15, 16, 17, 18];
+        let code = CodeCapacityTailoredCode::new(5, 0., 0.01, 1);
+        primal_module_serial_basic_standard_syndrome_with_dual_pq_impl(
+            code,
+            visualize_filename,
+            defect_vertices,
+            4,
+            vec![
+                PluginUnionFind::entry(),
+                PluginSingleHair::entry_with_strategy(RepeatStrategy::Once),
+            ],
             GrowingStrategy::MultipleClusters,
-        );
-    }
-
-    #[test]
-    fn primal_module_serial_basic_3_multi_with_dual_pq_impl() {
-        // cargo test primal_module_serial_basic_3_multi_with_dual_pq_impl -- --nocapture
-        let visualize_filename = "primal_module_serial_basic_3_multi_with_dual_pq_impl.json".to_string();
-        let defect_vertices = vec![14, 15, 16, 17, 22, 25, 28, 31, 36, 37, 38, 39];
-        let code = CodeCapacityTailoredCode::new(7, 0., 0.01, 1);
-        primal_module_serial_basic_standard_syndrome_with_dual_pq_impl(
-            code,
-            visualize_filename,
-            defect_vertices,
-            5,
-            vec![],
-            GrowingStrategy::MultipleClusters,
-        );
-    }
-
-    #[test]
-    #[should_panic]
-    fn primal_module_serial_basic_4_single() {
-        // cargo test primal_module_serial_basic_4_single -- --nocapture
-        let visualize_filename = "primal_module_serial_basic_4_single.json".to_string();
-        let defect_vertices = vec![10, 11, 12, 15, 16, 17, 18];
-        let code = CodeCapacityTailoredCode::new(5, 0., 0.01, 1);
-        primal_module_serial_basic_standard_syndrome(
-            code,
-            visualize_filename,
-            defect_vertices,
-            4,
-            vec![],
-            GrowingStrategy::SingleCluster,
-        );
-    }
-
-    #[test]
-    #[should_panic]
-    fn primal_module_serial_basic_4_single_with_dual_pq_impl() {
-        // cargo test primal_module_serial_basic_4_single_with_dual_pq_impl -- --nocapture
-        let visualize_filename = "primal_module_serial_basic_4_single_with_dual_pq_impl.json".to_string();
-        let defect_vertices = vec![10, 11, 12, 15, 16, 17, 18];
-        let code = CodeCapacityTailoredCode::new(5, 0., 0.01, 1);
-        primal_module_serial_basic_standard_syndrome_with_dual_pq_impl(
-            code,
-            visualize_filename,
-            defect_vertices,
-            4,
-            vec![],
-            GrowingStrategy::SingleCluster,
-        );
-    }
-
-    #[test]
-    fn primal_module_serial_basic_4_single_improved() {
-        // cargo test primal_module_serial_basic_4_single_improved -- --nocapture
-        let visualize_filename = "primal_module_serial_basic_4_single_improved.json".to_string();
-        let defect_vertices = vec![10, 11, 12, 15, 16, 17, 18];
-        let code = CodeCapacityTailoredCode::new(5, 0., 0.01, 1);
-        primal_module_serial_basic_standard_syndrome(
-            code,
-            visualize_filename,
-            defect_vertices,
-            4,
-            vec![
-                PluginUnionFind::entry(),
-                PluginSingleHair::entry_with_strategy(RepeatStrategy::Once),
-            ],
-            GrowingStrategy::SingleCluster,
-        );
-    }
-
-    #[test]
-    fn primal_module_serial_basic_4_single_improved_with_dual_pq_impl() {
-        // cargo test primal_module_serial_basic_4_single_improved_with_dual_pq_impl -- --nocapture
-        let visualize_filename = "primal_module_serial_basic_4_single_improved_with_dual_pq_impl.json".to_string();
-        let defect_vertices = vec![10, 11, 12, 15, 16, 17, 18];
-        let code = CodeCapacityTailoredCode::new(5, 0., 0.01, 1);
-        primal_module_serial_basic_standard_syndrome_with_dual_pq_impl(
-            code,
-            visualize_filename,
-            defect_vertices,
-            4,
-            vec![
-                PluginUnionFind::entry(),
-                PluginSingleHair::entry_with_strategy(RepeatStrategy::Once),
-            ],
-            GrowingStrategy::SingleCluster,
         );
     }
 
@@ -828,9 +1310,9 @@ pub mod tests {
     /// because not all edges are fully grown and those fully grown edges lead to suboptimal result
     #[test]
     #[should_panic]
-    fn primal_module_serial_basic_4_multi() {
-        // cargo test primal_module_serial_basic_4_multi -- --nocapture
-        let visualize_filename = "primal_module_serial_basic_4_multi.json".to_string();
+    fn primal_module_serial_basic_4_multi_m() {
+        // cargo test primal_module_serial_basic_4_multi_m -- --nocapture
+        let visualize_filename = "primal_module_serial_basic_4_multi_m.json".to_string();
         let defect_vertices = vec![10, 11, 12, 15, 16, 17, 18];
         let code = CodeCapacityTailoredCode::new(5, 0., 0.01, 1);
         primal_module_serial_basic_standard_syndrome(
@@ -839,15 +1321,15 @@ pub mod tests {
             defect_vertices,
             4,
             vec![],
-            GrowingStrategy::MultipleClusters,
+            GrowingStrategy::ModeBased,
         );
     }
 
     #[test]
     #[should_panic]
-    fn primal_module_serial_basic_4_multi_with_dual_pq_impl() {
-        // cargo test primal_module_serial_basic_4_multi_with_dual_pq_impl -- --nocapture
-        let visualize_filename = "primal_module_serial_basic_4_multi_with_dual_pq_impl.json".to_string();
+    fn primal_module_serial_basic_4_multi_with_dual_pq_impl_m() {
+        // cargo test primal_module_serial_basic_4_multi_with_dual_pq_impl_m -- --nocapture
+        let visualize_filename = "primal_module_serial_basic_4_multi_with_dual_pq_impl_m.json".to_string();
         let defect_vertices = vec![10, 11, 12, 15, 16, 17, 18];
         let code = CodeCapacityTailoredCode::new(5, 0., 0.01, 1);
         primal_module_serial_basic_standard_syndrome_with_dual_pq_impl(
@@ -856,15 +1338,15 @@ pub mod tests {
             defect_vertices,
             4,
             vec![],
-            GrowingStrategy::MultipleClusters,
+            GrowingStrategy::ModeBased,
         );
     }
 
     /// verify that each cluster is indeed growing one by one
     #[test]
-    fn primal_module_serial_basic_4_cluster_single_growth() {
-        // cargo test primal_module_serial_basic_4_cluster_single_growth -- --nocapture
-        let visualize_filename = "primal_module_serial_basic_4_cluster_single_growth.json".to_string();
+    fn primal_module_serial_basic_4_cluster_single_growth_m() {
+        // cargo test primal_module_serial_basic_4_cluster_single_growth_m -- --nocapture
+        let visualize_filename = "primal_module_serial_basic_4_cluster_single_growth_m.json".to_string();
         let defect_vertices = vec![32, 33, 37, 47, 86, 87, 72, 82];
         let code = CodeCapacityPlanarCode::new(11, 0.01, 1);
         primal_module_serial_basic_standard_syndrome(
@@ -873,14 +1355,14 @@ pub mod tests {
             defect_vertices,
             4,
             vec![],
-            GrowingStrategy::SingleCluster,
+            GrowingStrategy::ModeBased,
         );
     }
 
     #[test]
-    fn primal_module_serial_basic_4_cluster_single_growth_with_dual_pq_impl() {
-        // cargo test primal_module_serial_basic_4_cluster_single_growth_with_dual_pq_impl -- --nocapture
-        let visualize_filename = "primal_module_serial_basic_4_cluster_single_growth_with_dual_pq_impl.json".to_string();
+    fn primal_module_serial_basic_4_cluster_single_growth_with_dual_pq_impl_m() {
+        // cargo test primal_module_serial_basic_4_cluster_single_growth_with_dual_pq_impl_m -- --nocapture
+        let visualize_filename = "primal_module_serial_basic_4_cluster_single_growth_with_dual_pq_impl_m.json".to_string();
         let defect_vertices = vec![32, 33, 37, 47, 86, 87, 72, 82];
         let code = CodeCapacityPlanarCode::new(11, 0.01, 1);
         primal_module_serial_basic_standard_syndrome_with_dual_pq_impl(
@@ -889,15 +1371,15 @@ pub mod tests {
             defect_vertices,
             4,
             vec![],
-            GrowingStrategy::SingleCluster,
+            GrowingStrategy::ModeBased,
         );
     }
 
     /// verify that the plugins are applied one by one
     #[test]
-    fn primal_module_serial_basic_4_plugin_one_by_one() {
-        // cargo test primal_module_serial_basic_4_plugin_one_by_one -- --nocapture
-        let visualize_filename = "primal_module_serial_basic_4_plugin_one_by_one.json".to_string();
+    fn primal_module_serial_basic_4_plugin_one_by_one_m() {
+        // cargo test primal_module_serial_basic_4_plugin_one_by_one_m -- --nocapture
+        let visualize_filename = "primal_module_serial_basic_4_plugin_one_by_one_m.json".to_string();
         let defect_vertices = vec![12, 22, 23, 32, 17, 26, 27, 37, 62, 72, 73, 82, 67, 76, 77, 87];
         let code = CodeCapacityPlanarCode::new(11, 0.01, 1);
         primal_module_serial_basic_standard_syndrome(
@@ -909,14 +1391,14 @@ pub mod tests {
                 PluginUnionFind::entry(),
                 PluginSingleHair::entry_with_strategy(RepeatStrategy::Once),
             ],
-            GrowingStrategy::MultipleClusters,
+            GrowingStrategy::ModeBased,
         );
     }
 
     #[test]
-    fn primal_module_serial_basic_4_plugin_one_by_one_with_dual_pq_impl() {
-        // cargo test primal_module_serial_basic_4_plugin_one_by_one_with_dual_pq_impl -- --nocapture
-        let visualize_filename = "primal_module_serial_basic_4_plugin_one_by_one_with_dual_pq_impl.json".to_string();
+    fn primal_module_serial_basic_4_plugin_one_by_one_with_dual_pq_impl_m() {
+        // cargo test primal_module_serial_basic_4_plugin_one_by_one_with_dual_pq_impl_m -- --nocapture
+        let visualize_filename = "primal_module_serial_basic_4_plugin_one_by_one_with_dual_pq_impl_m.json".to_string();
         let defect_vertices = vec![12, 22, 23, 32, 17, 26, 27, 37, 62, 72, 73, 82, 67, 76, 77, 87];
         let code = CodeCapacityPlanarCode::new(11, 0.01, 1);
         primal_module_serial_basic_standard_syndrome_with_dual_pq_impl(
@@ -928,100 +1410,7 @@ pub mod tests {
                 PluginUnionFind::entry(),
                 PluginSingleHair::entry_with_strategy(RepeatStrategy::Once),
             ],
-            GrowingStrategy::MultipleClusters,
-        );
-    }
-
-    #[allow(dead_code)]
-    /// timeout functionality does not work, panic with
-    /// bug occurs: cluster should be solved, but the subgraph is not yet generated
-    /// {"[0][6][8]":"Z","[0][6][10]":"X","[0][7][1]":"Y","[0][8][6]":"Y","[0][8][8]":"Z","[0][9][5]":"X"}
-    // #[test]
-    fn primal_module_serial_debug_1() {
-        // cargo test primal_module_serial_debug_1 -- --nocapture
-        let visualize_filename = "primal_module_serial_debug_1.json".to_string();
-        let defect_vertices = vec![10, 23, 16, 41, 29, 17, 3, 37, 25, 43];
-        let code = CodeCapacityTailoredCode::new(7, 0.1, 0.1, 1);
-        primal_module_serial_basic_standard_syndrome(
-            code,
-            visualize_filename,
-            defect_vertices,
-            6,
-            vec![
-                PluginUnionFind::entry(),
-                PluginSingleHair::entry_with_strategy(RepeatStrategy::Multiple {
-                    max_repetition: usize::MAX,
-                }),
-            ],
-            GrowingStrategy::MultipleClusters,
-        );
-    }
-
-    #[allow(dead_code)]
-    // #[test]
-    fn primal_module_serial_debug_1_with_dual_pq_impl() {
-        // cargo test primal_module_serial_debug_1_with_dual_pq_impl -- --nocapture
-        let visualize_filename = "primal_module_serial_debug_1_with_dual_pq_impl.json".to_string();
-        let defect_vertices = vec![10, 23, 16, 41, 29, 17, 3, 37, 25, 43];
-        let code = CodeCapacityTailoredCode::new(7, 0.1, 0.1, 1);
-        primal_module_serial_basic_standard_syndrome_with_dual_pq_impl(
-            code,
-            visualize_filename,
-            defect_vertices,
-            6,
-            vec![
-                PluginUnionFind::entry(),
-                PluginSingleHair::entry_with_strategy(RepeatStrategy::Multiple {
-                    max_repetition: usize::MAX,
-                }),
-            ],
-            GrowingStrategy::MultipleClusters,
-        );
-    }
-
-    #[allow(dead_code)]
-    /// runs too slow
-    /// the issue is that the relaxer optimizer runs too slowly...
-    // #[test]
-    fn primal_module_serial_debug_2() {
-        // cargo test primal_module_serial_debug_2 -- --nocapture
-        let visualize_filename = "primal_module_serial_debug_2.json".to_string();
-        let defect_vertices = vec![2, 4, 5, 8, 13, 14, 15, 16, 18, 24, 25, 26, 28, 29];
-        let code = CodeCapacityColorCode::new(9, 0.05, 1);
-        primal_module_serial_basic_standard_syndrome(
-            code,
-            visualize_filename,
-            defect_vertices,
-            6,
-            vec![
-                PluginUnionFind::entry(),
-                PluginSingleHair::entry_with_strategy(RepeatStrategy::Multiple {
-                    max_repetition: usize::MAX,
-                }),
-            ],
-            GrowingStrategy::MultipleClusters,
-        );
-    }
-
-    #[allow(dead_code)]
-    // #[test]
-    fn primal_module_serial_debug_2_with_dual_pq_impl() {
-        // cargo test primal_module_serial_debug_2_with_dual_pq_impl -- --nocapture
-        let visualize_filename = "primal_module_serial_debug_2_with_dual_pq_impl.json".to_string();
-        let defect_vertices = vec![2, 4, 5, 8, 13, 14, 15, 16, 18, 24, 25, 26, 28, 29];
-        let code = CodeCapacityColorCode::new(9, 0.05, 1);
-        primal_module_serial_basic_standard_syndrome_with_dual_pq_impl(
-            code,
-            visualize_filename,
-            defect_vertices,
-            6,
-            vec![
-                PluginUnionFind::entry(),
-                PluginSingleHair::entry_with_strategy(RepeatStrategy::Multiple {
-                    max_repetition: usize::MAX,
-                }),
-            ],
-            GrowingStrategy::MultipleClusters,
+            GrowingStrategy::ModeBased,
         );
     }
 }

@@ -8,11 +8,59 @@ use crate::derivative::Derivative;
 use crate::invalid_subgraph::*;
 use crate::model_hypergraph::*;
 use crate::num_traits::{One, ToPrimitive, Zero};
+use crate::ordered_float::OrderedFloat;
 use crate::pointers::*;
+use crate::primal_module::Affinity;
+use crate::primal_module_serial::PrimalClusterPtr;
 use crate::util::*;
 use crate::visualize::*;
 use std::collections::{BTreeSet, HashMap};
 use std::sync::Arc;
+
+// this is not effecitively doing much right now due to the My (Leo's) desire for ultra performance (inlining function > branches)
+#[derive(Default, Debug)]
+pub enum DualModuleMode {
+    /// Mode 1
+    #[default]
+    Search, // Searching for a solution
+
+    /// Mode 2
+    Tune, // Tuning for the optimal solution
+}
+
+impl DualModuleMode {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn advance(&mut self) {
+        match self {
+            Self::Search => *self = Self::Tune,
+            Self::Tune => panic!("dual module mode is already in tune mode"),
+        }
+    }
+
+    pub fn reset(&mut self) {
+        *self = Self::Search;
+    }
+}
+
+// Each dual_module impl should have mode and affinity_map, hence these methods should be shared
+//      Note: Affinity Map is not implemented in this branch, but a different file/branch (there incurs performance overhead)
+#[macro_export]
+macro_rules! add_shared_methods {
+    () => {
+        /// Returns a reference to the mode field.
+        fn mode(&self) -> &DualModuleMode {
+            &self.mode
+        }
+
+        /// Returns a mutable reference to the mode field.
+        fn mode_mut(&mut self) -> &mut DualModuleMode {
+            &mut self.mode
+        }
+    };
+}
 
 pub struct DualNode {
     /// the index of this dual node, helps to locate internal details of this dual node
@@ -74,12 +122,14 @@ impl std::fmt::Debug for DualNodePtr {
         let global_time = dual_node.global_time.as_ref().unwrap_or(&new).read_recursive();
         write!(
             f,
-            "\n\t\tindex: {}, global_time: {:?}, dual_variable: {}\n\t\tdual_variable_at_last_updated_time: {}, last_updated_time: {}",
+            "\n\t\tindex: {}, global_time: {:?}, grow_rate: {:?}, dual_variable: {}\n\t\tdual_variable_at_last_updated_time: {}, last_updated_time: {}\n\timpacted_edges: {:?}\n",
             dual_node.index,
             global_time,
+            dual_node.grow_rate,
             dual_node.get_dual_variable(),
             dual_node.dual_variable_at_last_updated_time,
-            dual_node.last_updated_time
+            dual_node.last_updated_time,
+            dual_node.invalid_subgraph.hair
         )
     }
 }
@@ -87,18 +137,6 @@ impl std::fmt::Debug for DualNodePtr {
 impl std::fmt::Debug for DualNodeWeak {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         self.upgrade_force().fmt(f)
-    }
-}
-
-impl Ord for DualNodePtr {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.read_recursive().index.cmp(&other.read_recursive().index)
-    }
-}
-
-impl PartialOrd for DualNodePtr {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
     }
 }
 
@@ -144,7 +182,32 @@ pub enum MaxUpdateLength {
     /// conflicting growth, violating the slackness constraint
     Conflicting(EdgeIndex),
     /// hitting 0 dual variable while shrinking, only happens when `grow_rate` < 0
-    ShrinkProhibited(DualNodePtr),
+    ///     note: Using OrderedDualNodePtr since we can compare without acquiring the lock, for enabling btreeset/hashset/pq etc. with lower overhead
+    ShrinkProhibited(OrderedDualNodePtr),
+}
+
+/// a pair of node index and dual node pointer, used for comparison without acquiring the lock
+/// useful for when inserting into sets
+#[derive(Derivative, PartialEq, Eq, Clone, Debug)]
+pub struct OrderedDualNodePtr {
+    pub index: NodeIndex,
+    pub ptr: DualNodePtr,
+}
+
+impl OrderedDualNodePtr {
+    pub fn new(index: NodeIndex, ptr: DualNodePtr) -> Self {
+        Self { index, ptr }
+    }
+}
+impl PartialOrd for OrderedDualNodePtr {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.index.cmp(&other.index))
+    }
+}
+impl Ord for OrderedDualNodePtr {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.index.cmp(&other.index)
+    }
 }
 
 #[derive(Derivative, Clone)]
@@ -203,6 +266,69 @@ pub trait DualModuleImpl {
     fn get_edge_nodes(&self, edge_index: EdgeIndex) -> Vec<DualNodePtr>;
     fn get_edge_slack(&self, edge_index: EdgeIndex) -> Rational;
     fn is_edge_tight(&self, edge_index: EdgeIndex) -> bool;
+
+    /* New tuning-related methods */
+    /// mode mangements
+    fn mode(&self) -> &DualModuleMode;
+    fn mode_mut(&mut self) -> &mut DualModuleMode;
+    fn advance_mode(&mut self) {
+        eprintln!("this dual_module does not implement different modes");
+    }
+    fn reset_mode(&mut self) {
+        *self.mode_mut() = DualModuleMode::default();
+    }
+
+    /// "set_grow_rate", but in tuning phase
+    fn set_grow_rate_tune(&mut self, dual_node_ptr: &DualNodePtr, grow_rate: Rational) {
+        eprintln!("this dual_module does not implement tuning");
+        self.set_grow_rate(dual_node_ptr, grow_rate)
+    }
+
+    /// "add_dual_node", but in tuning phase
+    fn add_dual_node_tune(&mut self, dual_node_ptr: &DualNodePtr) {
+        eprintln!("this dual_module does not implement tuning");
+        self.add_dual_node(dual_node_ptr);
+    }
+
+    /// syncing all possible states (dual_variable and edge_weights) with global time, so global_time can be discarded later
+    fn sync(&mut self) {
+        panic!("this dual_module does not have global time and does not need to sync");
+    }
+
+    /// grow a specific edge on the spot
+    fn grow_edge(&self, _edge_index: EdgeIndex, _amount: &Rational) {
+        panic!("this dual_module doesn't support edge growth");
+    }
+
+    /// `is_edge_tight` but in tuning phase
+    fn is_edge_tight_tune(&self, edge_index: EdgeIndex) -> bool {
+        eprintln!("this dual_module does not implement tuning");
+        self.is_edge_tight(edge_index)
+    }
+
+    /// `get_edge_slack` but in tuning phase
+    fn get_edge_slack_tune(&self, edge_index: EdgeIndex) -> Rational {
+        eprintln!("this dual_module does not implement tuning");
+        self.get_edge_slack(edge_index)
+    }
+
+    /* miscs */
+
+    /// print all the states for the current dual module
+    fn debug_print(&self) {
+        println!("this dual_module doesn't support debug print");
+    }
+
+    /* affinity */
+
+    /// calculate affinity based on the following metric
+    ///     Clusters with larger primal-dual gaps will receive high affinity because working on those clusters
+    ///     will often reduce the gap faster. However, clusters with a large number of dual variables, vertices,
+    ///     and hyperedges will receive a lower affinity
+    fn calculate_cluster_affinity(&mut self, _cluster: PrimalClusterPtr) -> Option<Affinity> {
+        eprintln!("not implemented, skipping");
+        Some(OrderedFloat::from(100.0))
+    }
 }
 
 impl MaxUpdateLength {
@@ -273,6 +399,7 @@ impl GroupMaxUpdateLength {
     pub fn pop(&mut self) -> Option<MaxUpdateLength> {
         match self {
             Self::Unbounded | Self::ValidGrow(_) => {
+                // println!("I am {:?}", self);
                 panic!("please call GroupMaxUpdateLength::get_valid_growth to check if this group is none_zero_growth");
             }
             Self::Conflicts(conflicts) => conflicts.pop(),
@@ -353,6 +480,7 @@ impl DualModuleInterfacePtr {
             global_time: None,
             last_updated_time: Rational::zero(),
         });
+
         let cloned_node_ptr = node_ptr.clone();
         drop(interface);
         let mut interface = self.write();
@@ -392,6 +520,35 @@ impl DualModuleInterfacePtr {
         interface.nodes.push(node_ptr.clone());
         drop(interface);
         dual_module.add_dual_node(&node_ptr);
+
+        node_ptr
+    }
+
+    /// `create_node` for tuning
+    pub fn create_node_tune(
+        &self,
+        invalid_subgraph: Arc<InvalidSubgraph>,
+        dual_module: &mut impl DualModuleImpl,
+    ) -> DualNodePtr {
+        debug_assert!(
+            self.find_node(&invalid_subgraph).is_none(),
+            "do not create the same node twice"
+        );
+        let mut interface = self.write();
+        let node_index = interface.nodes.len() as NodeIndex;
+        interface.hashmap.insert(invalid_subgraph.clone(), node_index);
+        let node_ptr = DualNodePtr::new_value(DualNode {
+            index: node_index,
+            invalid_subgraph,
+            grow_rate: Rational::zero(),
+            dual_variable_at_last_updated_time: Rational::zero(),
+            global_time: None,
+            last_updated_time: Rational::zero(),
+        });
+        interface.nodes.push(node_ptr.clone());
+        drop(interface);
+        dual_module.add_dual_node_tune(&node_ptr);
+
         node_ptr
     }
 
@@ -404,6 +561,18 @@ impl DualModuleInterfacePtr {
         match self.find_node(invalid_subgraph) {
             Some(node_ptr) => (true, node_ptr),
             None => (false, self.create_node(invalid_subgraph.clone(), dual_module)),
+        }
+    }
+
+    /// `find_or_create_node` for tuning
+    pub fn find_or_create_node_tune(
+        &self,
+        invalid_subgraph: &Arc<InvalidSubgraph>,
+        dual_module: &mut impl DualModuleImpl,
+    ) -> (bool, DualNodePtr) {
+        match self.find_node(invalid_subgraph) {
+            Some(node_ptr) => (true, node_ptr),
+            None => (false, self.create_node_tune(invalid_subgraph.clone(), dual_module)),
         }
     }
 }

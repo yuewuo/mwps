@@ -5,11 +5,14 @@
 //! Only debug tests are failing, which aligns with the dual_module_serial behavior
 //!
 
-use crate::dual_module::*;
 use crate::num_traits::{ToPrimitive, Zero};
+use crate::ordered_float::OrderedFloat;
 use crate::pointers::*;
+use crate::primal_module::Affinity;
+use crate::primal_module_serial::PrimalClusterPtr;
 use crate::util::*;
 use crate::visualize::*;
+use crate::{add_shared_methods, dual_module::*};
 
 use std::{
     cmp::{Ordering, Reverse},
@@ -22,7 +25,7 @@ use num_traits::{FromPrimitive, Signed};
 use parking_lot::{lock_api::RwLockWriteGuard, RawRwLock};
 
 /* Helper structs for events/obstacles during growing */
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct FutureEvent<T: Ord + PartialEq + Eq, E> {
     /// when the event will happen
     pub time: T,
@@ -50,7 +53,7 @@ impl<T: Ord + PartialEq + Eq, E> PartialOrd for FutureEvent<T, E> {
     }
 }
 
-#[derive(PartialEq, Eq, Debug)]
+#[derive(PartialEq, Eq, Debug, Clone)]
 pub enum Obstacle {
     Conflict { edge_index: EdgeIndex },
     ShrinkToZero { dual_node_ptr: DualNodePtr },
@@ -58,7 +61,7 @@ pub enum Obstacle {
 
 impl Obstacle {
     /// return if the current obstacle is valid, only needed for pq that allows for invalid (duplicates that are different) events
-    fn is_valid<Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug>(
+    fn is_valid<Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug + Clone>(
         &self,
         dual_module_pq: &DualModulePQ<Queue>,
         event_time: &Rational, // time associated with the obstacle
@@ -101,7 +104,7 @@ pub type FutureObstacle<T> = FutureEvent<T, Obstacle>;
 pub type MinBinaryHeap<F> = BinaryHeap<Reverse<F>>;
 pub type FutureObstacleQueue<T> = MinBinaryHeap<FutureObstacle<T>>;
 
-pub trait FutureQueueMethods<T: Ord + PartialEq + Eq, E> {
+pub trait FutureQueueMethods<T: Ord + PartialEq + Eq + std::fmt::Debug, E: std::fmt::Debug> {
     /// defines the behavior of `will_happen`, if the queue can contain invalid/duplicate events
     const MAY_BE_INVALID: bool = true;
 
@@ -119,7 +122,9 @@ pub trait FutureQueueMethods<T: Ord + PartialEq + Eq, E> {
     fn clear(&mut self);
 }
 
-impl<T: Ord + PartialEq + Eq, E> FutureQueueMethods<T, E> for MinBinaryHeap<FutureEvent<T, E>> {
+impl<T: Ord + PartialEq + Eq + std::fmt::Debug, E: std::fmt::Debug> FutureQueueMethods<T, E>
+    for MinBinaryHeap<FutureEvent<T, E>>
+{
     fn will_happen(&mut self, time: T, event: E) {
         self.push(Reverse(FutureEvent { time, event }))
     }
@@ -132,6 +137,8 @@ impl<T: Ord + PartialEq + Eq, E> FutureQueueMethods<T, E> for MinBinaryHeap<Futu
     fn clear(&mut self) {
         self.clear();
     }
+
+    const MAY_BE_INVALID: bool = true;
 }
 
 /* Vertices and Edges */
@@ -209,8 +216,13 @@ impl std::fmt::Debug for EdgePtr {
         let edge = self.read_recursive();
         write!(
             f,
-            "[edge: {}]: weight: {}, grow_rate: {}, growth_at_last_updated_time: {}, last_updated_time: {}\n\tdual_nodes: {:?}",
-            edge.edge_index, edge.weight, edge.grow_rate, edge.growth_at_last_updated_time, edge.last_updated_time, edge.dual_nodes
+            "[edge: {}]: weight: {}, grow_rate: {}, growth_at_last_updated_time: {}, last_updated_time: {}\n\tdual_nodes: {:?}\n",
+            edge.edge_index, 
+            edge.weight, 
+            edge.grow_rate, 
+            edge.growth_at_last_updated_time, 
+            edge.last_updated_time, 
+            edge.dual_nodes.iter().filter(|node| !node.upgrade_force().read_recursive().grow_rate.is_zero()).collect::<Vec<_>>()
         )
     }
 }
@@ -221,8 +233,8 @@ impl std::fmt::Debug for EdgeWeak {
         let edge = edge_ptr.read_recursive();
         write!(
             f,
-            "[edge: {}]: weight: {}, grow_rate: {}, growth_at_last_updated_time: {}, last_updated_time: {}\n\tdual_nodes: {:?}",
-            edge.edge_index, edge.weight, edge.grow_rate, edge.growth_at_last_updated_time, edge.last_updated_time, edge.dual_nodes
+            "[edge: {}]: weight: {}, grow_rate: {}, growth_at_last_updated_time: {}, last_updated_time: {}\n\tdual_nodes: {:?}\n",
+            edge.edge_index, edge.weight, edge.grow_rate, edge.growth_at_last_updated_time, edge.last_updated_time, edge.dual_nodes.iter().filter(|node| !node.upgrade_force().read_recursive().grow_rate.is_zero()).collect::<Vec<_>>()
         )
     }
 }
@@ -230,7 +242,7 @@ impl std::fmt::Debug for EdgeWeak {
 /* the actual dual module */
 pub struct DualModulePQ<Queue>
 where
-    Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug,
+    Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug + Clone,
 {
     /// all vertices including virtual ones
     pub vertices: Vec<VertexPtr>,
@@ -242,11 +254,15 @@ where
     /// the global time of this dual module
     ///     Note: Wrap-around edge case is not currently considered
     global_time: ArcRwLock<Rational>,
+
+    /// the current mode of the dual module
+    ///     note: currently does not have too much functionality
+    mode: DualModuleMode,
 }
 
 impl<Queue> DualModulePQ<Queue>
 where
-    Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug,
+    Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug + Clone,
 {
     /// helper function to bring an edge update to speed with current time if needed
     fn update_edge_if_necessary(&self, edge: &mut RwLockWriteGuard<RawRwLock, Edge>) {
@@ -314,7 +330,7 @@ pub type DualModulePQWeak<Queue> = WeakRwLock<DualModulePQ<Queue>>;
 
 impl<Queue> DualModuleImpl for DualModulePQ<Queue>
 where
-    Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug,
+    Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug + Clone,
 {
     /// initialize the dual module, which is supposed to be reused for multiple decoding tasks with the same structure
     #[allow(clippy::unnecessary_cast)]
@@ -356,6 +372,7 @@ where
             edges,
             obstacle_queue: Queue::default(),
             global_time: ArcRwLock::new_value(Rational::zero()),
+            mode: DualModuleMode::default(),
         }
     }
 
@@ -366,6 +383,7 @@ where
 
         self.obstacle_queue.clear();
         self.global_time.write().set_zero();
+        self.mode_mut().reset();
     }
 
     #[allow(clippy::unnecessary_cast)]
@@ -425,8 +443,22 @@ where
     }
 
     #[allow(clippy::unnecessary_cast)]
+    fn add_dual_node_tune(&mut self, dual_node_ptr: &DualNodePtr) {
+        let dual_node_weak = dual_node_ptr.downgrade();
+        let dual_node = dual_node_ptr.read_recursive();
+
+        for &edge_index in dual_node.invalid_subgraph.hair.iter() {
+            let mut edge = self.edges[edge_index as usize].write();
+
+            edge.grow_rate += &dual_node.grow_rate;
+            edge.dual_nodes.push(dual_node_weak.clone());
+        }
+    }
+
+    #[allow(clippy::unnecessary_cast)]
     fn set_grow_rate(&mut self, dual_node_ptr: &DualNodePtr, grow_rate: Rational) {
         let mut dual_node = dual_node_ptr.write();
+        // println!("set_grow_rate invoked on {:?}, to be {:?}", dual_node.index, grow_rate);
         self.update_dual_node_if_necessary(&mut dual_node);
 
         let global_time = self.global_time.read_recursive();
@@ -461,6 +493,19 @@ where
         }
     }
 
+    #[allow(clippy::unnecessary_cast)]
+    fn set_grow_rate_tune(&mut self, dual_node_ptr: &DualNodePtr, grow_rate: Rational) {
+        let mut dual_node = dual_node_ptr.write();
+
+        let grow_rate_diff = &grow_rate - &dual_node.grow_rate;
+        dual_node.grow_rate = grow_rate;
+
+        for &edge_index in dual_node.invalid_subgraph.hair.iter() {
+            let mut edge = self.edges[edge_index as usize].write();
+            edge.grow_rate += &grow_rate_diff;
+        }
+    }
+
     fn compute_maximum_update_length(&mut self) -> GroupMaxUpdateLength {
         let global_time = self.global_time.read_recursive();
         // finding a valid event to process, only when invalids exist
@@ -487,7 +532,10 @@ where
             let mut group_max_update_length_set = BTreeSet::default();
             group_max_update_length_set.insert(match event {
                 Obstacle::Conflict { edge_index } => MaxUpdateLength::Conflicting(edge_index),
-                Obstacle::ShrinkToZero { dual_node_ptr } => MaxUpdateLength::ShrinkProhibited(dual_node_ptr),
+                Obstacle::ShrinkToZero { dual_node_ptr } => {
+                    let index = dual_node_ptr.read_recursive().index;
+                    MaxUpdateLength::ShrinkProhibited(OrderedDualNodePtr::new(index, dual_node_ptr))
+                }
             });
 
             // append all conflicts that happen at the same time as now
@@ -500,7 +548,10 @@ where
                     // add
                     group_max_update_length_set.insert(match event {
                         Obstacle::Conflict { edge_index } => MaxUpdateLength::Conflicting(edge_index),
-                        Obstacle::ShrinkToZero { dual_node_ptr } => MaxUpdateLength::ShrinkProhibited(dual_node_ptr),
+                        Obstacle::ShrinkToZero { dual_node_ptr } => {
+                            let index = dual_node_ptr.read_recursive().index;
+                            MaxUpdateLength::ShrinkProhibited(OrderedDualNodePtr::new(index, dual_node_ptr))
+                        }
                     });
                 } else {
                     break;
@@ -548,11 +599,150 @@ where
     fn is_edge_tight(&self, edge_index: EdgeIndex) -> bool {
         self.get_edge_slack(edge_index).is_zero()
     }
+
+    /* tuning mode related new methods */
+
+    // tuning mode shared methods
+    add_shared_methods!();
+
+    /// is the edge tight, but for tuning mode
+    fn is_edge_tight_tune(&self, edge_index: EdgeIndex) -> bool {
+        let edge = self.edges[edge_index].read_recursive();
+        edge.weight == edge.growth_at_last_updated_time
+    }
+
+    fn get_edge_slack_tune(&self, edge_index: EdgeIndex) -> Rational {
+        let edge = self.edges[edge_index].read_recursive();
+        edge.weight.clone() - edge.growth_at_last_updated_time.clone()
+    }
+
+    /// change mode, clear queue as queue is no longer needed. also sync to get rid off the need for global time
+    fn advance_mode(&mut self) {
+        self.mode_mut().advance();
+        self.obstacle_queue.clear();
+        self.sync();
+    }
+
+    /// grow specific amount for a specific edge
+    fn grow_edge(&self, edge_index: EdgeIndex, amount: &Rational) {
+        let mut edge = self.edges[edge_index].write();
+        edge.growth_at_last_updated_time += amount;
+    }
+
+    /// sync all states and global time so the concept of time and pq can retire
+    fn sync(&mut self) {
+
+        let mut nodes_touched = BTreeSet::new();
+        
+        for edges in self.edges.iter_mut() {
+            let mut edge = edges.write();
+
+            // update if necessary
+            let global_time = self.global_time.read_recursive();
+            if edge.last_updated_time != global_time.clone() {
+                // the edge is behind
+                debug_assert!(
+                    global_time.clone() >= edge.last_updated_time,
+                    "global time is behind, maybe a wrap-around has happened"
+                );
+
+                let time_diff = global_time.clone() - &edge.last_updated_time;
+                let newly_grown_amount = &time_diff * &edge.grow_rate;
+                edge.growth_at_last_updated_time += newly_grown_amount;
+                edge.last_updated_time = global_time.clone();
+                debug_assert!(
+                    edge.growth_at_last_updated_time <= edge.weight,
+                    "growth larger than weight: check if events are 1) inserted and 2) handled correctly"
+                );
+            }
+
+            for dual_node_ptr in edge.dual_nodes.iter() {
+                let _dual_node_ptr = dual_node_ptr.upgrade_force();
+                let node = _dual_node_ptr.read_recursive();
+                if nodes_touched.contains(&node.index) {
+                    continue;
+                }
+                nodes_touched.insert(node.index);
+
+                // update if necessary
+                let global_time = self.global_time.read_recursive();
+                if node.last_updated_time != global_time.clone() {
+                    // the node is behind
+                    debug_assert!(
+                        global_time.clone() >= node.last_updated_time,
+                        "global time is behind, maybe a wrap-around has happened"
+                    );
+
+                    drop(node);
+                    let mut node: RwLockWriteGuard<RawRwLock, DualNode> = _dual_node_ptr.write();
+
+                    let dual_variable = node.get_dual_variable();
+                    node.set_dual_variable(dual_variable);
+                    node.last_updated_time = global_time.clone();
+                    debug_assert!(
+                        !node.get_dual_variable().is_negative(),
+                        "negative dual variable: check if events are 1) inserted and 2) handled correctly"
+                    );
+                }
+            }
+        }
+    }
+
+    /// misc debug print statement
+    fn debug_print(&self) {
+        println!("\n[current states]");
+        println!("global time: {:?}", self.global_time.read_recursive());
+        println!(
+            "edges: {:?}",
+            self.edges
+                .iter()
+                .filter(|e| !e.read_recursive().grow_rate.is_zero())
+                .collect::<Vec<&EdgePtr>>()
+        );
+        println!("pq: {:?}", self.obstacle_queue);
+
+        // println!("\n[current states]");
+        // println!("global time: {:?}", self.global_time.read_recursive());
+        // let mut all_nodes = BTreeSet::default();
+        // for edge in self.edges.iter() {
+        //     let edge = edge.read_recursive();
+        //     for node in edge.dual_nodes.iter() {
+        //         let node = node.upgrade_force();
+        //         if node.read_recursive().grow_rate.is_zero() {
+        //             continue;
+        //         }
+        //         all_nodes.insert(node);
+        //     }
+        // }
+        // println!("nodes: {:?}", all_nodes);
+    }
+
+    /* affinity */
+    fn calculate_cluster_affinity(&mut self, cluster: PrimalClusterPtr) -> Option<Affinity> {
+        let mut start = 0.0;
+        let cluster = cluster.read_recursive();
+        start -= cluster.edges.len() as f64 + cluster.nodes.len() as f64;
+
+        let mut weight = Rational::zero();
+        for &edge_index in cluster.edges.iter() {
+            let edge_ptr = self.edges[edge_index].read_recursive();
+            weight += &edge_ptr.weight - &edge_ptr.growth_at_last_updated_time;
+        }
+        for node in cluster.nodes.iter() {
+            let dual_node = node.read_recursive().dual_node_ptr.clone();
+            weight -= &dual_node.read_recursive().dual_variable_at_last_updated_time;
+        }
+        if weight.is_zero() {
+            return None;
+        }
+        start += weight.to_f64().unwrap();
+        Some(OrderedFloat::from(start))
+    }
 }
 
 impl<Queue> MWPSVisualizer for DualModulePQ<Queue>
 where
-    Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug,
+    Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug + Clone,
 {
     fn snapshot(&self, abbrev: bool) -> serde_json::Value {
         let mut vertices: Vec<serde_json::Value> = vec![];

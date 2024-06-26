@@ -106,7 +106,7 @@ impl PrimalModuleImpl for PrimalModuleUnionFind {
         mut group_max_update_length: GroupMaxUpdateLength,
         interface_ptr: &DualModuleInterfacePtr,
         dual_module: &mut impl DualModuleImpl,
-    ) {
+    ) -> bool {
         debug_assert!(!group_max_update_length.is_unbounded() && group_max_update_length.get_valid_growth().is_none());
         let mut active_clusters = BTreeSet::<NodeIndex>::new();
         while let Some(conflict) = group_max_update_length.pop() {
@@ -158,9 +158,15 @@ impl PrimalModuleImpl for PrimalModuleUnionFind {
                 interface_ptr.create_node(invalid_subgraph, dual_module);
             }
         }
+        false
     }
 
-    fn subgraph(&mut self, interface_ptr: &DualModuleInterfacePtr, _dual_module: &mut impl DualModuleImpl) -> Subgraph {
+    fn subgraph(
+        &mut self,
+        interface_ptr: &DualModuleInterfacePtr,
+        _dual_module: &mut impl DualModuleImpl,
+        _seed: u64,
+    ) -> Subgraph {
         let mut valid_clusters = BTreeSet::new();
         let mut subgraph = vec![];
         for i in 0..self.union_find.size() {
@@ -223,7 +229,7 @@ pub mod tests {
             &mut dual_module,
             visualizer.as_mut(),
         );
-        let (subgraph, weight_range) = primal_module.subgraph_range(&interface_ptr, &mut dual_module);
+        let (subgraph, weight_range) = primal_module.subgraph_range(&interface_ptr, &mut dual_module, 0);
         if let Some(visualizer) = visualizer.as_mut() {
             visualizer
                 .snapshot_combined(

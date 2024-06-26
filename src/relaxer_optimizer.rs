@@ -9,12 +9,40 @@
 use crate::invalid_subgraph::*;
 use crate::relaxer::*;
 use crate::util::*;
-use derivative::Derivative;
-use num_traits::Signed;
-use num_traits::{One, Zero};
+
 use std::collections::{BTreeMap, BTreeSet};
-use std::str::FromStr;
 use std::sync::Arc;
+
+use derivative::Derivative;
+
+use num_traits::{One, Signed, Zero};
+
+#[derive(Default, Debug)]
+pub enum OptimizerResult {
+    #[default]
+    Init,
+    Optimized,     // normal
+    EarlyReturned, // early return when the result is positive
+    Skipped,       // when the `should_optimize` check returns false
+}
+
+impl OptimizerResult {
+    pub fn or(&mut self, other: Self) {
+        match self {
+            OptimizerResult::EarlyReturned => {}
+            _ => match other {
+                OptimizerResult::Init => {}
+                OptimizerResult::EarlyReturned => {
+                    *self = OptimizerResult::EarlyReturned;
+                }
+                OptimizerResult::Skipped => {
+                    *self = OptimizerResult::Skipped;
+                }
+                _ => {}
+            },
+        }
+    }
+}
 
 #[derive(Derivative)]
 #[derivative(Default(new = "true"))]
@@ -71,12 +99,13 @@ impl RelaxerOptimizer {
         true
     }
 
+    #[cfg(not(feature = "float_lp"))]
     pub fn optimize(
         &mut self,
         relaxer: Relaxer,
         edge_slacks: BTreeMap<EdgeIndex, Rational>,
         mut dual_variables: BTreeMap<Arc<InvalidSubgraph>, Rational>,
-    ) -> Relaxer {
+    ) -> (Relaxer, bool) {
         for invalid_subgraph in relaxer.get_direction().keys() {
             if !dual_variables.contains_key(invalid_subgraph) {
                 dual_variables.insert(invalid_subgraph.clone(), Rational::zero());
@@ -137,34 +166,125 @@ impl RelaxerOptimizer {
                 .map(|constraint| constraint.to_string())
                 .collect::<Vec<_>>()
                 .join(",\n");
+
+        // println!("\n input:\n {}\n", input);
+
         let mut solver = slp::Solver::<slp::Ratio<slp::BigInt>>::new(&input);
         let solution = solver.solve();
         let mut direction: BTreeMap<Arc<InvalidSubgraph>, Rational> = BTreeMap::new();
         match solution {
             slp::Solution::Optimal(optimal_objective, model) => {
                 if !optimal_objective.is_positive() {
-                    return relaxer;
+                    return (relaxer, true);
                 }
-                for (var_index, (invalid_subgraph, _)) in dual_variables.iter().enumerate() {
+                for (var_index, (invalid_subgraph, _)) in dual_variables.into_iter().enumerate() {
                     let overall_growth = model[var_index].clone() - model[var_index + x_vars.len()].clone();
                     if !overall_growth.is_zero() {
-                        direction.insert(
-                            invalid_subgraph.clone(),
-                            Rational::from_str(&overall_growth.numer().to_string()).unwrap()
-                                / Rational::from_str(&overall_growth.denom().to_string()).unwrap(),
-                        );
+                        // println!("overall_growth: {:?}", overall_growth);
+                        direction.insert(invalid_subgraph, overall_growth);
                     }
                 }
             }
             _ => unreachable!(),
         }
         self.relaxers.insert(relaxer);
-        Relaxer::new(direction)
+        (Relaxer::new(direction), false)
+    }
+
+    #[cfg(feature = "float_lp")]
+    // the same method, but with f64 weight
+    pub fn optimize(
+        &mut self,
+        relaxer: Relaxer,
+        edge_slacks: BTreeMap<EdgeIndex, Rational>,
+        mut dual_variables: BTreeMap<Arc<InvalidSubgraph>, Rational>,
+    ) -> (Relaxer, bool) {
+        use highs::{HighsModelStatus, RowProblem, Sense};
+        use num_traits::ToPrimitive;
+
+        use crate::ordered_float::OrderedFloat;
+
+        for invalid_subgraph in relaxer.get_direction().keys() {
+            if !dual_variables.contains_key(invalid_subgraph) {
+                dual_variables.insert(invalid_subgraph.clone(), OrderedFloat::zero());
+            }
+        }
+
+        let mut model = RowProblem::default().optimise(Sense::Maximise);
+        model.set_option("time_limit", 5.0); // stop after 30 seconds
+
+        let mut x_vars = vec![];
+        let mut y_vars = vec![];
+        let mut invalid_subgraphs = Vec::with_capacity(dual_variables.len());
+        let mut edge_contributor: BTreeMap<EdgeIndex, Vec<usize>> =
+            edge_slacks.keys().map(|&edge_index| (edge_index, vec![])).collect();
+
+        for (var_index, (invalid_subgraph, dual_variable)) in dual_variables.iter().enumerate() {
+            // constraint of the dual variable >= 0
+            let x = model.add_col(1.0, 0.0.., []);
+            let y = model.add_col(-1.0, 0.0.., []);
+            x_vars.push(x);
+            y_vars.push(y);
+
+            // constraint for xs ys <= dual_variable
+            model.add_row(
+                ..dual_variable.to_f64().unwrap(),
+                [(x_vars[var_index], -1.0), (y_vars[var_index], 1.0)],
+            );
+            invalid_subgraphs.push(invalid_subgraph.clone());
+
+            for &edge_index in invalid_subgraph.hair.iter() {
+                edge_contributor.get_mut(&edge_index).unwrap().push(var_index);
+            }
+        }
+
+        for (&edge_index, &slack) in edge_slacks.iter() {
+            let mut row_entries = vec![];
+            for &var_index in edge_contributor[&edge_index].iter() {
+                row_entries.push((x_vars[var_index], 1.0));
+                row_entries.push((y_vars[var_index], -1.0));
+            }
+
+            // constraint of edge: sum(y_S) <= weight
+            model.add_row(..=slack.to_f64().unwrap(), row_entries);
+        }
+
+        let solved = model.solve();
+
+        let mut direction: BTreeMap<Arc<InvalidSubgraph>, OrderedFloat> = BTreeMap::new();
+        if solved.status() == HighsModelStatus::Optimal {
+            let solution = solved.get_solution();
+
+            // calculate the objective function
+            let mut res = OrderedFloat::new(0.0);
+            let cols = solution.columns();
+            for i in 0..x_vars.len() {
+                res += OrderedFloat::new(cols[2 * i] - cols[2 * i + 1]);
+            }
+
+            // check positivity of the objective
+            if !(res.is_positive()) {
+                return (relaxer, true);
+            }
+
+            for (var_index, invalid_subgraph) in invalid_subgraphs.iter().enumerate() {
+                let overall_growth = cols[2 * var_index] - cols[2 * var_index + 1];
+                if !overall_growth.is_zero() {
+                    direction.insert(invalid_subgraph.clone(), OrderedFloat::from(overall_growth));
+                }
+            }
+        } else {
+            println!("solved status: {:?}", solved.status());
+            unreachable!();
+        }
+
+        self.relaxers.insert(relaxer);
+        (Relaxer::new(direction), false)
     }
 }
 
 #[cfg(test)]
-#[cfg(feature = "highs")]
+#[cfg(all(feature = "highs", not(feature = "float_lp")))]
 pub mod tests {
     // use super::*;
     use highs::{ColProblem, HighsModelStatus, Model, Sense};
@@ -177,6 +297,8 @@ pub mod tests {
 
     #[test]
     fn lp_solver_simple() {
+        use crate::util::Rational;
+
         // cargo test lp_solver_simple -- --nocapture
         // https://docs.rs/slp/latest/slp/
         let input = "
@@ -187,13 +309,13 @@ pub mod tests {
             6x1 + 5y2 <= 60,
             2x1 + 5y2 <= 40
         ";
-        let mut solver = slp::Solver::<slp::Rational>::new(input);
+        let mut solver = slp::Solver::<Rational>::new(input);
         let solution = solver.solve();
         assert_eq!(
             solution,
             slp::Solution::Optimal(
-                slp::Rational::from_integer(28),
-                vec![slp::Rational::from_integer(5), slp::Rational::from_integer(6)]
+                Rational::from_integer(28),
+                vec![Rational::from_integer(5), Rational::from_integer(6)]
             )
         );
         match solution {

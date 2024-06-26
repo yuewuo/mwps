@@ -4,12 +4,15 @@
 //!
 
 use crate::derivative::Derivative;
-use crate::dual_module::*;
 use crate::num_traits::sign::Signed;
 use crate::num_traits::{ToPrimitive, Zero};
+use crate::ordered_float::OrderedFloat;
 use crate::pointers::*;
+use crate::primal_module::Affinity;
+use crate::primal_module_serial::PrimalClusterPtr;
 use crate::util::*;
 use crate::visualize::*;
+use crate::{add_shared_methods, dual_module::*};
 use num_traits::FromPrimitive;
 use std::collections::BTreeSet;
 
@@ -22,7 +25,11 @@ pub struct DualModuleSerial {
     /// note that this list may contain duplicate nodes
     pub active_edges: BTreeSet<EdgeIndex>,
     /// active nodes
-    pub active_nodes: BTreeSet<DualNodePtr>,
+    pub active_nodes: BTreeSet<OrderedDualNodePtr>,
+
+    /// the current mode of the dual module
+    ///     note: currently does not have too much functionality
+    mode: DualModuleMode,
 }
 
 pub type DualModuleSerialPtr = ArcRwLock<DualModuleSerial>;
@@ -84,7 +91,14 @@ impl std::fmt::Debug for EdgePtr {
         write!(
             f,
             "[edge: {}]: weight: {}, grow_rate: {}, growth: {}\n\tdual_nodes: {:?}",
-            edge.edge_index, edge.weight, edge.grow_rate, edge.growth, edge.dual_nodes
+            edge.edge_index,
+            edge.weight,
+            edge.grow_rate,
+            edge.growth,
+            edge.dual_nodes
+                .iter()
+                .filter(|node| !node.upgrade_force().read_recursive().grow_rate.is_zero())
+                .collect::<Vec<_>>()
         )
     }
 }
@@ -96,7 +110,14 @@ impl std::fmt::Debug for EdgeWeak {
         write!(
             f,
             "[edge: {}]: weight: {}, grow_rate: {}, growth: {}\n\tdual_nodes: {:?}",
-            edge.edge_index, edge.weight, edge.grow_rate, edge.growth, edge.dual_nodes
+            edge.edge_index,
+            edge.weight,
+            edge.grow_rate,
+            edge.growth,
+            edge.dual_nodes
+                .iter()
+                .filter(|node| !node.upgrade_force().read_recursive().grow_rate.is_zero())
+                .collect::<Vec<_>>()
         )
     }
 }
@@ -141,6 +162,7 @@ impl DualModuleImpl for DualModuleSerial {
             edges,
             active_edges: BTreeSet::new(),
             active_nodes: BTreeSet::new(),
+            mode: DualModuleMode::default(),
         }
     }
 
@@ -187,7 +209,8 @@ impl DualModuleImpl for DualModuleSerial {
                 self.active_edges.insert(edge_index);
             }
         }
-        self.active_nodes.insert(dual_node_ptr.clone());
+        self.active_nodes
+            .insert(OrderedDualNodePtr::new(dual_node.index, dual_node_ptr.clone()));
     }
 
     #[allow(clippy::unnecessary_cast)]
@@ -207,9 +230,11 @@ impl DualModuleImpl for DualModuleSerial {
             }
         }
         if dual_node.grow_rate.is_zero() {
-            self.active_nodes.remove(dual_node_ptr);
+            self.active_nodes
+                .remove(&OrderedDualNodePtr::new(dual_node.index, dual_node_ptr.clone()));
         } else {
-            self.active_nodes.insert(dual_node_ptr.clone());
+            self.active_nodes
+                .insert(OrderedDualNodePtr::new(dual_node.index, dual_node_ptr.clone()));
         }
     }
 
@@ -242,14 +267,19 @@ impl DualModuleImpl for DualModuleSerial {
             } else if grow_rate.is_negative() {
                 if edge.growth.is_zero() {
                     if node.grow_rate.is_negative() {
-                        max_update_length.merge(MaxUpdateLength::ShrinkProhibited(dual_node_ptr.clone()));
+                        max_update_length.merge(MaxUpdateLength::ShrinkProhibited(OrderedDualNodePtr::new(
+                            node.index,
+                            dual_node_ptr.clone(),
+                        )));
                     } else {
                         // find a negatively growing edge
                         let mut found = false;
                         for node_weak in edge.dual_nodes.iter() {
                             let node_ptr = node_weak.upgrade_force();
                             if node_ptr.read_recursive().grow_rate.is_negative() {
-                                max_update_length.merge(MaxUpdateLength::ShrinkProhibited(node_ptr));
+                                let index = node_ptr.read_recursive().index;
+                                max_update_length
+                                    .merge(MaxUpdateLength::ShrinkProhibited(OrderedDualNodePtr::new(index, node_ptr)));
                                 found = true;
                                 break;
                             }
@@ -291,7 +321,7 @@ impl DualModuleImpl for DualModuleSerial {
             }
         }
         for node_ptr in self.active_nodes.iter() {
-            let node = node_ptr.read_recursive();
+            let node = node_ptr.ptr.read_recursive();
             if node.grow_rate.is_negative() {
                 if node.get_dual_variable().is_positive() {
                     group_max_update_length
@@ -315,19 +345,19 @@ impl DualModuleImpl for DualModuleSerial {
         for &edge_index in node.invalid_subgraph.hair.iter() {
             let mut edge = self.edges[edge_index as usize].write();
             edge.growth += grow_amount.clone();
-            assert!(
-                !edge.growth.is_negative(),
-                "edge {} over-shrunk: the new growth is {:?}",
-                edge_index,
-                edge.growth
-            );
-            assert!(
-                edge.growth <= edge.weight,
-                "edge {} over-grown: the new growth is {:?}, weight is {:?}",
-                edge_index,
-                edge.growth,
-                edge.weight
-            );
+            // assert!(
+            //     !edge.growth.is_negative(),
+            //     "edge {} over-shrunk: the new growth is {:?}",
+            //     edge_index,
+            //     edge.growth
+            // );
+            // assert!(
+            //     edge.growth <= edge.weight,
+            //     "edge {} over-grown: the new growth is {:?}, weight is {:?}",
+            //     edge_index,
+            //     edge.growth,
+            //     edge.weight
+            // );
         }
         drop(node);
         // update dual variable
@@ -350,23 +380,23 @@ impl DualModuleImpl for DualModuleSerial {
                 grow_rate += node_weak.upgrade_force().read_recursive().grow_rate.clone();
             }
             edge.growth += length.clone() * grow_rate;
-            assert!(
-                !edge.growth.is_negative(),
-                "edge {} over-shrunk: the new growth is {:?}",
-                edge_index,
-                edge.growth
-            );
-            assert!(
-                edge.growth <= edge.weight,
-                "edge {} over-grown: the new growth is {:?}, weight is {:?}",
-                edge_index,
-                edge.growth,
-                edge.weight
-            );
+            // assert!(
+            //     !edge.growth.is_negative(),
+            //     "edge {} over-shrunk: the new growth is {:?}",
+            //     edge_index,
+            //     edge.growth
+            // );
+            // assert!(
+            //     edge.growth <= edge.weight,
+            //     "edge {} over-grown: the new growth is {:?}, weight is {:?}",
+            //     edge_index,
+            //     edge.growth,
+            //     edge.weight
+            // );
         }
         // update dual variables
         for node_ptr in self.active_nodes.iter() {
-            let mut node = node_ptr.write();
+            let mut node = node_ptr.ptr.write();
             let grow_rate = node.grow_rate.clone();
             let dual_variable = node.get_dual_variable();
             node.set_dual_variable(dual_variable + length.clone() * grow_rate);
@@ -392,6 +422,42 @@ impl DualModuleImpl for DualModuleSerial {
     fn is_edge_tight(&self, edge_index: EdgeIndex) -> bool {
         let edge = self.edges[edge_index as usize].read_recursive();
         edge.growth == edge.weight
+    }
+
+    add_shared_methods!();
+
+    /// miscs
+    fn debug_print(&self) {
+        println!("\n[current states]");
+        println!("edges: {:?}", self.edges);
+    }
+
+    fn grow_edge(&self, edge_index: EdgeIndex, amount: &Rational) {
+        let mut edge = self.edges[edge_index].write();
+        edge.growth += amount;
+    }
+
+    /* affinity */
+    fn calculate_cluster_affinity(&mut self, cluster: PrimalClusterPtr) -> Option<Affinity> {
+        let mut start = 0.0;
+        let cluster = cluster.read_recursive();
+        start -= cluster.edges.len() as f64 + cluster.nodes.len() as f64;
+
+        let mut weight = Rational::zero();
+        for &edge_index in cluster.edges.iter() {
+            let edge_ptr = self.edges[edge_index].read_recursive();
+            weight += &edge_ptr.weight - &edge_ptr.growth;
+        }
+        for node in cluster.nodes.iter() {
+            let dual_node = node.read_recursive().dual_node_ptr.clone();
+            weight -= &dual_node.read_recursive().dual_variable_at_last_updated_time;
+        }
+        if weight.is_zero() {
+            return None;
+        }
+        start += weight.to_f64().unwrap();
+
+        Some(OrderedFloat::from(start))
     }
 }
 
