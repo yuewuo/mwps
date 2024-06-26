@@ -7,13 +7,16 @@ use crate::decoding_hypergraph::*;
 use crate::derivative::Derivative;
 use crate::invalid_subgraph::*;
 use crate::model_hypergraph::*;
-use crate::num_traits::{One, ToPrimitive, Zero};
+use crate::num_traits::{FromPrimitive, One, Signed, ToPrimitive, Zero};
 use crate::ordered_float::OrderedFloat;
 use crate::pointers::*;
 use crate::primal_module::Affinity;
 use crate::primal_module_serial::PrimalClusterPtr;
+use crate::relaxer_optimizer::OptimizerResult;
 use crate::util::*;
 use crate::visualize::*;
+
+use std::collections::BTreeMap;
 use std::collections::{BTreeSet, HashMap};
 use std::sync::Arc;
 
@@ -328,6 +331,115 @@ pub trait DualModuleImpl {
     fn calculate_cluster_affinity(&mut self, _cluster: PrimalClusterPtr) -> Option<Affinity> {
         eprintln!("not implemented, skipping");
         Some(OrderedFloat::from(100.0))
+    }
+
+    fn get_conflicts_tune(
+        &self,
+        optimizer_result: OptimizerResult,
+        dual_node_deltas: BTreeMap<OrderedDualNodePtr, Rational>,
+    ) -> BTreeSet<MaxUpdateLength> {
+        let mut conflicts = BTreeSet::new();
+        match optimizer_result {
+            OptimizerResult::EarlyReturned => {
+                // if early returned, meaning optimizer didn't optimize, but simply should find current conflicts and return
+                for (dual_node_ptr, grow_rate) in dual_node_deltas.into_iter() {
+                    let node_ptr_read = dual_node_ptr.ptr.read_recursive();
+                    if grow_rate.is_negative() && node_ptr_read.dual_variable_at_last_updated_time.is_zero() {
+                        conflicts.insert(MaxUpdateLength::ShrinkProhibited(OrderedDualNodePtr::new(
+                            node_ptr_read.index,
+                            dual_node_ptr.ptr.clone(),
+                        )));
+                    }
+                    for edge_index in node_ptr_read.invalid_subgraph.hair.iter() {
+                        if grow_rate.is_positive() && self.is_edge_tight_tune(*edge_index) {
+                            conflicts.insert(MaxUpdateLength::Conflicting(*edge_index));
+                        }
+                    }
+                }
+            }
+            OptimizerResult::Skipped => {
+                // if skipped, should check if is growable, if not return the conflicts that leads to that conclusion
+                for (dual_node_ptr, grow_rate) in dual_node_deltas.into_iter() {
+                    // check if the single direction is growable
+                    let mut actual_grow_rate = Rational::from_usize(std::usize::MAX).unwrap();
+                    let node_ptr_read = dual_node_ptr.ptr.read_recursive();
+                    for edge_index in node_ptr_read.invalid_subgraph.hair.iter() {
+                        actual_grow_rate = std::cmp::min(actual_grow_rate, self.get_edge_slack_tune(*edge_index));
+                    }
+                    if actual_grow_rate.is_zero() {
+                        // if not, return the current conflicts
+                        for edge_index in node_ptr_read.invalid_subgraph.hair.iter() {
+                            if grow_rate.is_positive() && self.is_edge_tight_tune(*edge_index) {
+                                conflicts.insert(MaxUpdateLength::Conflicting(*edge_index));
+                            }
+                        }
+                        if grow_rate.is_negative() && node_ptr_read.dual_variable_at_last_updated_time.is_zero() {
+                            conflicts.insert(MaxUpdateLength::ShrinkProhibited(OrderedDualNodePtr::new(
+                                node_ptr_read.index,
+                                dual_node_ptr.ptr.clone(),
+                            )));
+                        }
+                    } else {
+                        // if yes, grow and return new conflicts
+                        drop(node_ptr_read);
+                        let mut node_ptr_write = dual_node_ptr.ptr.write();
+                        for edge_index in node_ptr_write.invalid_subgraph.hair.iter() {
+                            self.grow_edge(*edge_index, &actual_grow_rate);
+                            if actual_grow_rate.is_positive() && self.is_edge_tight_tune(*edge_index) {
+                                conflicts.insert(MaxUpdateLength::Conflicting(*edge_index));
+                            }
+                        }
+                        node_ptr_write.dual_variable_at_last_updated_time += actual_grow_rate.clone();
+                        if actual_grow_rate.is_negative() && node_ptr_write.dual_variable_at_last_updated_time.is_zero() {
+                            conflicts.insert(MaxUpdateLength::ShrinkProhibited(OrderedDualNodePtr::new(
+                                node_ptr_write.index,
+                                dual_node_ptr.ptr.clone(),
+                            )));
+                        }
+                    }
+                }
+            }
+            _ => {
+                // in other cases, optimizer should have optimized, so we should apply the deltas and return the nwe conflicts
+                let mut edge_deltas = BTreeMap::new();
+                for (dual_node_ptr, grow_rate) in dual_node_deltas.into_iter() {
+                    // update the dual node and check for conflicts
+                    let mut node_ptr_write = dual_node_ptr.ptr.write();
+                    node_ptr_write.dual_variable_at_last_updated_time += grow_rate.clone();
+                    if grow_rate.is_negative() && node_ptr_write.dual_variable_at_last_updated_time.is_zero() {
+                        conflicts.insert(MaxUpdateLength::ShrinkProhibited(OrderedDualNodePtr::new(
+                            node_ptr_write.index,
+                            dual_node_ptr.ptr.clone(),
+                        )));
+                    }
+
+                    // calculate the total edge deltas
+                    for edge_index in node_ptr_write.invalid_subgraph.hair.iter() {
+                        match edge_deltas.entry(*edge_index) {
+                            std::collections::btree_map::Entry::Vacant(v) => {
+                                v.insert(grow_rate.clone());
+                            }
+                            std::collections::btree_map::Entry::Occupied(mut o) => {
+                                let current = o.get_mut();
+                                *current += grow_rate.clone();
+                            }
+                        }
+                    }
+                }
+
+                // apply the edge deltas and check for conflicts
+                for (edge_index, grow_rate) in edge_deltas.into_iter() {
+                    if grow_rate.is_zero() {
+                        continue;
+                    }
+                    self.grow_edge(edge_index, &grow_rate);
+                    if grow_rate.is_positive() && self.is_edge_tight_tune(edge_index) {
+                        conflicts.insert(MaxUpdateLength::Conflicting(edge_index));
+                    }
+                }
+            }
+        }
+        conflicts
     }
 }
 
