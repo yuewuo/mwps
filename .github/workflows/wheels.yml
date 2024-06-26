@@ -40,6 +40,11 @@ jobs: # Workflow credit to https://github.com/samuelcolvin/rtoml/blob/main/.gith
       - uses: actions/setup-python@v3
         if: matrix.os != 'macos' || matrix['python-version'] != '7' # no python37 for macos
 
+      - name: Install LLVM and Clang
+        uses: KyleMayes/install-llvm-action@v2
+        with:
+          version: "10.0"
+
       - name: Install Rust
         # unnecessary for ubuntu because it's installed inside cibuildwheel
         # no python37 for macos
@@ -52,7 +57,7 @@ jobs: # Workflow credit to https://github.com/samuelcolvin/rtoml/blob/main/.gith
 
       - name: Install Python dependencies
         if: matrix.os != 'macos' || matrix['python-version'] != '7' # no python37 for macos
-        run: python -m pip install -U setuptools wheel twine cibuildwheel libclang
+        run: python -m pip install -U setuptools wheel twine cibuildwheel
 
       # - name: Set up QEMU for building with emulator
       #   if: matrix.os == 'ubuntu'
