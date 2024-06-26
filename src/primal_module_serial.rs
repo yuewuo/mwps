@@ -370,7 +370,6 @@ impl PrimalModuleImpl for PrimalModuleSerial {
         cluster_index: NodeIndex,
         interface_ptr: &DualModuleInterfacePtr,
         dual_module: &mut impl DualModuleImpl,
-        // edge_deltas: &mut BTreeMap<EdgeIndex, Rational>,
         dual_node_deltas: &mut BTreeMap<OrderedDualNodePtr, Rational>,
     ) -> (bool, OptimizerResult) {
         let mut optimizer_result = OptimizerResult::default();
