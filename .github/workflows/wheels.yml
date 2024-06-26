@@ -95,7 +95,7 @@ jobs: # Workflow credit to https://github.com/samuelcolvin/rtoml/blob/main/.gith
             rustup show
           CIBW_BEFORE_BUILD_LINUX: >
             curl https://sh.rustup.rs -sSf | sh -s -- --default-toolchain=nightly-2023-11-16 --profile=minimal -y &&
-            sudo apt install -y clang
+            sudo apt install -y clang &&
             rustup show
 
       # - name: Build windows 32bit wheels
