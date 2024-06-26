@@ -52,7 +52,7 @@ jobs: # Workflow credit to https://github.com/samuelcolvin/rtoml/blob/main/.gith
 
       - name: Install Python dependencies
         if: matrix.os != 'macos' || matrix['python-version'] != '7' # no python37 for macos
-        run: python -m pip install -U setuptools wheel twine cibuildwheel
+        run: python -m pip install -U setuptools wheel twine cibuildwheel libclang
 
       # - name: Set up QEMU for building with emulator
       #   if: matrix.os == 'ubuntu'
