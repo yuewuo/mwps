@@ -1,6 +1,8 @@
 # MWPF
 ### Hypergraph <span style="color: red; font-size: 120%;">M</span>inimum-<span style="color: red; font-size: 120%;">W</span>eight <span style="color: red; font-size: 120%;">P</span>arity <span style="color: red; font-size: 120%;">F</span>actor Decoder for QEC
 
+[![Unitary Fund](https://img.shields.io/badge/Supported%20By-UNITARY%20FUND-brightgreen.svg?style=for-the-badge)](https://unitary.fund)
+
 *Preview claim: We publish the Python package that may subject to breaking changes. The source code and the full version will be made publicly available with our coming paper.*
 
 Hypergraph MWPF is proven to be **NP-hard** [1]. Our design is taking advantage of clustering technique to lower
