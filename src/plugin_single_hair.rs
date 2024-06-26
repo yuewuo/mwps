@@ -150,8 +150,8 @@ pub mod tests {
             defect_vertices,
             4,
             vec![PluginSingleHair::entry_with_strategy(RepeatStrategy::Once)],
-            // GrowingStrategy::ModeBased,
-            GrowingStrategy::SingleCluster,
+            GrowingStrategy::ModeBased,
+            // GrowingStrategy::SingleCluster,
         );
     }
 
@@ -169,7 +169,8 @@ pub mod tests {
             defect_vertices,
             4,
             vec![PluginSingleHair::entry_with_strategy(RepeatStrategy::Once)],
-            GrowingStrategy::SingleCluster,
+            // GrowingStrategy::SingleCluster,
+            GrowingStrategy::ModeBased,
         );
     }
 
@@ -247,8 +248,8 @@ pub mod tests {
             vec![PluginSingleHair::entry_with_strategy(RepeatStrategy::Multiple {
                 max_repetition: usize::MAX,
             })],
-            GrowingStrategy::SingleCluster,
-            // GrowingStrategy::ModeBased,
+            // GrowingStrategy::SingleCluster,
+            GrowingStrategy::ModeBased,
         );
     }
 
