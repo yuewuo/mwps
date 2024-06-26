@@ -104,7 +104,7 @@ pub struct BenchmarkParameters {
     /// apply deterministic seed for debugging purpose
     #[clap(long, action)]
     apply_deterministic_seed: Option<u64>,
-    /// singple seed for debugging purposes
+    /// single seed for debugging purposes
     #[clap(long, action)]
     single_seed: Option<u64>,
 }
