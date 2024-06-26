@@ -47,14 +47,14 @@ jobs: # Workflow credit to https://github.com/samuelcolvin/rtoml/blob/main/.gith
         with:
           version: "10.0"
 
-      - name: Symlink libclang.so (Linux)
-        if: matrix.os == 'ubuntu'
-        run: sudo ln -s libclang-10.so.1 /lib/x86_64-linux-gnu/libclang.so
-        working-directory: ${{ env.LLVM_PATH }}/lib
+      # - name: Symlink libclang.so (Linux)
+      #   if: matrix.os == 'ubuntu'
+      #   run: sudo ln -s libclang-10.so.1 /lib/x86_64-linux-gnu/libclang.so
+      #   working-directory: ${{ env.LLVM_PATH }}/lib
 
-      - name: Set LIBCLANG_PATH (Windows)
-        if: matrix.os == 'windows'
-        run: echo "LIBCLANG_PATH=$((gcm clang).source -replace "clang.exe")" >> $env:GITHUB_ENV
+      - name: Set LIBCLANG_PATH
+        if: matrix.os != 'macos'
+        run: export LIBCLANG_PATH=${{ env.LLVM_PATH }}/lib
 
       - name: Install Rust
         # unnecessary for ubuntu because it's installed inside cibuildwheel
