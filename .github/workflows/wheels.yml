@@ -41,15 +41,14 @@ jobs: # Workflow credit to https://github.com/samuelcolvin/rtoml/blob/main/.gith
       - uses: actions/setup-python@v3
         if: matrix.os != 'macos' || matrix['python-version'] != '7' # no python37 for macos
 
-      - name: Install LLVM and Clang
-        # do not run this for macOS
-        if: matrix.os != 'macos'
+      - name: Install LLVM and Clang (Windows)
+        if: matrix.os == 'windows'
         uses: KyleMayes/install-llvm-action@v1
         with:
           version: "11.0"
 
-      - name: Set LIBCLANG_PATH
-        if: matrix.os != 'macos'
+      - name: Set LIBCLANG_PATH (Windows)
+        if: matrix.os == 'windows'
         run: echo "LIBCLANG_PATH=${{ env.LLVM_PATH }}/lib" >> "$GITHUB_ENV"
 
       - name: Install Rust
@@ -81,7 +80,7 @@ jobs: # Workflow credit to https://github.com/samuelcolvin/rtoml/blob/main/.gith
           CIBW_PLATFORM: ${{ matrix.platform || matrix.os }} # only build for specific platform
           CIBW_ENVIRONMENT: 'PATH="$HOME/.cargo/bin:$PATH"'
           CIBW_ENVIRONMENT_WINDOWS: 'PATH="$UserProfile\.cargo\bin;$PATH"'
-          CIBW_MANYLINUX_X86_64_IMAGE: 'manylinux_2_28'
+          CIBW_MANYLINUX_X86_64_IMAGE: 'manylinux2014'
           # Yue 2022.10.17: build on aarch64 failed due to strange `cargo metadata` exited with an error:     Updating crates.io index
           CIBW_ARCHS_LINUX: x86_64 # aarch64 requires QEMU, ~ 40min for each manylinux and musllinux...
           CIBW_ARCHS_MACOS: universal2
