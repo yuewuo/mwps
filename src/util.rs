@@ -7,6 +7,8 @@ use crate::rand_xoshiro::rand_core::RngCore;
 use crate::visualize::*;
 #[cfg(feature = "python_binding")]
 use pyo3::prelude::*;
+#[cfg(feature = "python_binding")]
+use pyo3::types::PyFloat;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use std::fs::File;
@@ -268,10 +270,14 @@ impl MWPSVisualizer for Subgraph {
 #[cfg(feature = "python_binding")]
 pub fn rational_to_pyobject(value: &Rational) -> PyResult<Py<PyAny>> {
     Python::with_gil(|py| {
-        let frac = py.import("fractions")?;
-        let numer = value.numer().clone();
-        let denom = value.denom().clone();
-        frac.call_method("Fraction", (numer, denom), None).map(Into::into)
+        if cfg!(feature = "float_lp") {
+            PyResult::Ok(PyFloat::new(py, value.to_f64().unwrap()).into())
+        } else {
+            let frac = py.import("fractions")?;
+            let numer = value.numer().clone();
+            let denom = value.denom().clone();
+            frac.call_method("Fraction", (numer, denom), None).map(Into::into)
+        }
     })
 }
 
@@ -304,7 +310,7 @@ impl WeightRange {
 
     #[getter]
     fn upper(&self) -> PyResult<Py<PyAny>> {
-        rational_to_pyobject(&self.lower)
+        rational_to_pyobject(&self.upper)
     }
 
     fn __repr__(&self) -> String {
