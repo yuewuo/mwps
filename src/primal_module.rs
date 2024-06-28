@@ -165,18 +165,28 @@ pub trait PrimalModuleImpl {
             self.update_sorted_clusters_aff(dual_module);
             let cluster_affs = self.get_sorted_clusters_aff();
 
+            // let mut iter = 0;
             for cluster_affinity in cluster_affs.into_iter() {
+                // iter += 1;
                 let cluster_index = cluster_affinity.cluster_index;
                 let mut dual_node_deltas = BTreeMap::new();
                 let (mut resolved, optimizer_result) =
                     self.resolve_cluster_tune(cluster_index, interface, dual_module, &mut dual_node_deltas);
-                let mut conflicts = dual_module.get_conflicts_tune(optimizer_result, dual_node_deltas);
 
+                // println!("optimizer_result1213: {:?}", optimizer_result);
+                let mut conflicts = dual_module.get_conflicts_tune(optimizer_result, dual_node_deltas);
+                // println!("_RESOLVE: {:?}", conflicts);
+
+                // if iter == 2 {
+                //     panic!()
+                // };
                 while !resolved {
                     let (_conflicts, _resolved) = self.resolve_tune(conflicts, interface, dual_module);
                     if _resolved {
                         break;
                     }
+
+                    // println!("RESOLVE: {:?}", _conflicts);
                     conflicts = _conflicts;
                     resolved = _resolved;
                 }

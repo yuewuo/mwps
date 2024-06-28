@@ -418,6 +418,10 @@ impl DualModuleImpl for DualModuleSerial {
         edge.weight.clone() - edge.growth.clone()
     }
 
+    fn get_edge_weight(&self, edge_index: EdgeIndex) -> Rational {
+        self.edges[edge_index as usize].read_recursive().weight.clone()
+    }
+
     #[allow(clippy::unnecessary_cast)]
     fn is_edge_tight(&self, edge_index: EdgeIndex) -> bool {
         let edge = self.edges[edge_index as usize].read_recursive();
@@ -458,6 +462,10 @@ impl DualModuleImpl for DualModuleSerial {
         start += weight.to_f64().unwrap();
 
         Some(OrderedFloat::from(start))
+    }
+
+    fn get_edge_growth(&self, _edge_index: EdgeIndex) -> Rational {
+        self.edges[_edge_index as usize].read_recursive().growth.clone()
     }
 }
 

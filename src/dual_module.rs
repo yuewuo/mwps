@@ -315,6 +315,9 @@ pub trait DualModuleImpl {
         self.get_edge_slack(edge_index)
     }
 
+    fn get_edge_weight(&self, _edge_index: EdgeIndex) -> Rational;
+    fn get_edge_growth(&self, _edge_index: EdgeIndex) -> Rational;
+
     /* miscs */
 
     /// print all the states for the current dual module
@@ -366,6 +369,7 @@ pub trait DualModuleImpl {
                     for edge_index in node_ptr_read.invalid_subgraph.hair.iter() {
                         actual_grow_rate = std::cmp::min(actual_grow_rate, self.get_edge_slack_tune(*edge_index));
                     }
+                    // println!("Actual grow rate: {:?}", actual_grow_rate);
                     if actual_grow_rate.is_zero() {
                         // if not, return the current conflicts
                         for edge_index in node_ptr_read.invalid_subgraph.hair.iter() {
@@ -400,6 +404,7 @@ pub trait DualModuleImpl {
                 }
             }
             _ => {
+                // println!("Optimizer result: {:?}", optimizer_result);
                 // in other cases, optimizer should have optimized, so we should apply the deltas and return the nwe conflicts
                 let mut edge_deltas = BTreeMap::new();
                 for (dual_node_ptr, grow_rate) in dual_node_deltas.into_iter() {

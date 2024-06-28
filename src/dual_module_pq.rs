@@ -222,7 +222,9 @@ impl std::fmt::Debug for EdgePtr {
             edge.grow_rate, 
             edge.growth_at_last_updated_time, 
             edge.last_updated_time, 
-            edge.dual_nodes.iter().filter(|node| !node.upgrade_force().read_recursive().grow_rate.is_zero()).collect::<Vec<_>>()
+            edge.dual_nodes.iter()
+                // .filter(|node| !node.upgrade_force().read_recursive().grow_rate.is_zero())
+                .collect::<Vec<_>>()
         )
     }
 }
@@ -234,7 +236,10 @@ impl std::fmt::Debug for EdgeWeak {
         write!(
             f,
             "[edge: {}]: weight: {}, grow_rate: {}, growth_at_last_updated_time: {}, last_updated_time: {}\n\tdual_nodes: {:?}\n",
-            edge.edge_index, edge.weight, edge.grow_rate, edge.growth_at_last_updated_time, edge.last_updated_time, edge.dual_nodes.iter().filter(|node| !node.upgrade_force().read_recursive().grow_rate.is_zero()).collect::<Vec<_>>()
+            edge.edge_index, edge.weight, edge.grow_rate, edge.growth_at_last_updated_time, edge.last_updated_time, 
+                edge.dual_nodes.iter()
+                // .filter(|node| !node.upgrade_force().read_recursive().grow_rate.is_zero())
+                .collect::<Vec<_>>()
         )
     }
 }
@@ -595,6 +600,10 @@ where
             - edge.growth_at_last_updated_time.clone()
     }
 
+    fn get_edge_weight(&self, edge_index: EdgeIndex) -> Rational {
+        self.edges[edge_index as usize].read_recursive().weight.clone()
+    }
+
     /// is the edge saturated
     fn is_edge_tight(&self, edge_index: EdgeIndex) -> bool {
         self.get_edge_slack(edge_index).is_zero()
@@ -627,6 +636,12 @@ where
     fn grow_edge(&self, edge_index: EdgeIndex, amount: &Rational) {
         let mut edge = self.edges[edge_index].write();
         edge.growth_at_last_updated_time += amount;
+        drop(edge);
+        let edge = self.edges[edge_index].read_recursive();
+        if edge.growth_at_last_updated_time > edge.weight {
+            println!("edge: {:?}", edge);
+            panic!()
+        }
     }
 
     /// sync all states and global time so the concept of time and pq can retire
@@ -642,7 +657,7 @@ where
             if edge.last_updated_time != global_time.clone() {
                 // the edge is behind
                 debug_assert!(
-                    global_time.clone() >= edge.last_updated_time,
+                    global_time.clone() > edge.last_updated_time,
                     "global time is behind, maybe a wrap-around has happened"
                 );
 
@@ -696,7 +711,7 @@ where
             "edges: {:?}",
             self.edges
                 .iter()
-                .filter(|e| !e.read_recursive().grow_rate.is_zero())
+                // .filter(|e| !e.read_recursive().grow_rate.is_zero())
                 .collect::<Vec<&EdgePtr>>()
         );
         println!("pq: {:?}", self.obstacle_queue);
@@ -738,6 +753,10 @@ where
         start += weight.to_f64().unwrap();
         Some(OrderedFloat::from(start))
     }
+
+    fn get_edge_growth(&self, _edge_index: EdgeIndex) -> Rational {
+        self.edges[_edge_index as usize].read_recursive().growth_at_last_updated_time.clone()
+    }
 }
 
 impl<Queue> MWPSVisualizer for DualModulePQ<Queue>
@@ -774,6 +793,7 @@ where
             "edges": edges,
         })
     }
+
 }
 
 #[cfg(test)]
