@@ -298,20 +298,11 @@ impl RelaxerOptimizer {
         relaxer: Relaxer,
         edge_slacks: BTreeMap<EdgeIndex, Rational>,
         mut dual_variables: BTreeMap<Arc<InvalidSubgraph>, Rational>,
-        dual_module: &mut impl DualModuleImpl,
-        interface_ptr: &DualModuleInterfacePtr,
     ) -> (Relaxer, bool) {
-        // dual_module.debug_print();
-        // for (index, slack) in edge_slacks.iter() {
-        //     println!("edge: {:?}, slack: {:?}", index, slack);
-        // }
-
         use highs::{HighsModelStatus, RowProblem, Sense};
         use num_traits::ToPrimitive;
 
         use crate::ordered_float::OrderedFloat;
-
-        // let mut col_map = BTreeMap::new();
 
         for invalid_subgraph in relaxer.get_direction().keys() {
             if !dual_variables.contains_key(invalid_subgraph) {
@@ -332,14 +323,6 @@ impl RelaxerOptimizer {
             // constraint of the dual variable >= 0
             let x = model.add_col(1.0, 0.0.., []);
             let y = model.add_col(-1.0, 0.0.., []);
-            // col_map.insert(
-            //     var_index,
-            //     interface_ptr
-            //         .find_or_create_node_tune(invalid_subgraph, dual_module)
-            //         .1
-            //         .read_recursive()
-            //         .index,
-            // );
             x_vars.push(x);
             y_vars.push(y);
 
@@ -355,30 +338,12 @@ impl RelaxerOptimizer {
             }
         }
 
-        // println!("participating dual variables: {:?}", col_map.values());
-
         for (&edge_index, &slack) in edge_slacks.iter() {
             let mut row_entries = vec![];
             for &var_index in edge_contributor[&edge_index].iter() {
                 row_entries.push((x_vars[var_index], 1.0));
                 row_entries.push((y_vars[var_index], -1.0));
             }
-
-            // println!("row_entries: {:?}", row_entries.len());
-            // println!(
-            //     "edge actual contributer len: {:?}",
-            //     dual_module.get_edge_nodes(edge_index).len()
-            // );
-
-            // println!("\n [one equation]:");
-            // print!("\t");
-            // for (var_index, (var, val)) in row_entries.iter().enumerate() {
-            //     if var_index % 2 == 0 {
-            //         print!("x{:?} + ", col_map.get(&(var_index / 2)).unwrap());
-            //     }
-            // }
-            // println!(" <= {:?}", slack.to_f64().unwrap());
-            // println!("\t this is for edge: {:?}", edge_index);
 
             // constraint of edge: sum(y_S) <= weight
             model.add_row(..=slack.to_f64().unwrap(), row_entries);
@@ -397,11 +362,8 @@ impl RelaxerOptimizer {
                 res += OrderedFloat::new(cols[2 * i] - cols[2 * i + 1]);
             }
 
-            // println!("objective: {:?}", res);
-
             // check positivity of the objective
             if !(res.is_positive()) {
-                // println!("early return");
                 return (relaxer, true);
             }
 
@@ -425,24 +387,17 @@ impl RelaxerOptimizer {
     pub fn optimize_incr(
         &mut self,
         relaxer: Relaxer,
-        edge_weights: BTreeMap<EdgeIndex, Rational>,
+        edge_free_weights: BTreeMap<EdgeIndex, Rational>,
         mut dual_variables: BTreeMap<Arc<InvalidSubgraph>, Rational>,
-        dual_module: &mut impl DualModuleImpl,
-        interface_ptr: &DualModuleInterfacePtr,
+        original_dual_variables_sum: Rational,
     ) -> (Relaxer, bool) {
-        // dual_module.debug_print();
-        // for (index, weight) in edge_weights.iter() {
-        //     println!("edge: {:?}, weight: {:?}", index, weight);
-        // }
-
         use highs::{HighsModelStatus, RowProblem, Sense};
         use num_traits::ToPrimitive;
 
         use crate::ordered_float::OrderedFloat;
 
-        // let mut col_map = BTreeMap::new();
-
-        // println!("here");
+        let mut model = RowProblem::default().optimise(Sense::Maximise);
+        model.set_option("time_limit", 5.0); // stop after 30 seconds
 
         for invalid_subgraph in relaxer.get_direction().keys() {
             if !dual_variables.contains_key(invalid_subgraph) {
@@ -450,148 +405,32 @@ impl RelaxerOptimizer {
             }
         }
 
-        let mut model = RowProblem::default().optimise(Sense::Maximise);
-        model.set_option("time_limit", 5.0); // stop after 30 seconds
-
         let mut x_vars = vec![];
         let mut og_dv = vec![];
         // let mut y_vars = vec![];
         let mut invalid_subgraphs = Vec::with_capacity(dual_variables.len());
         let mut edge_contributor: BTreeMap<EdgeIndex, Vec<usize>> =
-            edge_weights.keys().map(|&edge_index| (edge_index, vec![])).collect();
-
-        let mut unincreaseable_edges = BTreeSet::new();
-
-        // let mut responsible_nodes = BTreeSet::new();
-        for edge_index in edge_weights.keys() {
-            for node in dual_module.get_edge_nodes(*edge_index).into_iter() {
-                // println!("edge: {:?}, node: {:?}", edge_index, node.read_recursive().index);
-                if !dual_variables.contains_key(&node.read_recursive().invalid_subgraph) {
-                    // println!("here");
-                    unincreaseable_edges.insert(*edge_index);
-                }
-            }
-        }
-
-        // let missed_dual_variables = responsible_nodes
-        //     .difference(&dual_variables.keys().cloned().collect::<BTreeSet<_>>())
-        //     .collect::<BTreeSet<_>>();
-
-        // let mut missed_dual_variables = BTreeMap::new();
-
+            edge_free_weights.keys().map(|&edge_index| (edge_index, vec![])).collect();
         for (var_index, (invalid_subgraph, dual_variable)) in dual_variables.iter().enumerate() {
             og_dv.push(dual_variable.clone());
             // constraint of the dual variable >= 0
             let x = model.add_col(1.0, 0.0.., []);
-            // let y = model.add_col(-1.0, 0.0.., []);
-            // col_map.insert(
-            //     var_index,
-            //     interface_ptr
-            //         .find_or_create_node_tune(invalid_subgraph, dual_module)
-            //         .1
-            //         .read_recursive()
-            //         .index,
-            // );
             x_vars.push(x);
-            // y_vars.push(y);
 
             // constraint for xs ys <= dual_variable
-            // model.add_row(
-            //     ..dual_variable.to_f64().unwrap(),
-            //     [(x_vars[var_index], -1.0), (y_vars[var_index], 1.0)],
-            // );
             invalid_subgraphs.push(invalid_subgraph.clone());
 
             for &edge_index in invalid_subgraph.hair.iter() {
                 edge_contributor.get_mut(&edge_index).unwrap().push(var_index);
-                // for node in dual_module.get_edge_nodes(edge_index).iter() {
-                //     let node = node.read_recursive();
-                //     if !dual_variables.contains_key(&node.invalid_subgraph) {
-                //         missed_dual_variables.insert(node.invalid_subgraph.clone(), node.dual_variable_at_last_updated_time);
-                //     }
-                // }
             }
         }
 
-        // let offset = dual_variables.len();
-
-        // for (mut var_index, (invalid_subgraph, dual_variable)) in missed_dual_variables.iter().enumerate() {
-        //     var_index += offset;
-
-        //     og_dv.push(dual_variable.clone());
-        //     // constraint of the dual variable >= 0
-        //     let x = model.add_col(1.0, 0.0.., []);
-        //     // let y = model.add_col(-1.0, 0.0.., []);
-        //     col_map.insert(
-        //         var_index,
-        //         interface_ptr
-        //             .find_or_create_node_tune(invalid_subgraph, dual_module)
-        //             .1
-        //             .read_recursive()
-        //             .index,
-        //     );
-        //     x_vars.push(x);
-        //     // y_vars.push(y);
-
-        //     // constraint for xs ys <= dual_variable
-        //     // model.add_row(
-        //     //     ..dual_variable.to_f64().unwrap(),
-        //     //     [(x_vars[var_index], -1.0), (y_vars[var_index], 1.0)],
-        //     // );
-        //     invalid_subgraphs.push(invalid_subgraph.clone());
-
-        //     for &edge_index in invalid_subgraph.hair.iter() {
-        //         edge_contributor.get_mut(&edge_index).unwrap().push(var_index);
-        //     }
-        // }
-
-        // println!("participating dual variables: {:?}", col_map.values());
-
-        for (&edge_index, &weight) in edge_weights.iter() {
+        for (&edge_index, &weight) in edge_free_weights.iter() {
             let mut row_entries = vec![];
-            let mut exausted_weights = BTreeMap::new();
             for &var_index in edge_contributor[&edge_index].iter() {
                 row_entries.push((x_vars[var_index], 1.0));
-                for node in dual_module.get_edge_nodes(edge_index).into_iter() {
-                    let node = node.read_recursive();
-                    if !dual_variables.contains_key(&node.invalid_subgraph) {
-                        // println!(
-                        //     "counting node exahustion with node index {:?} by amount {:?}",
-                        //     node.index, node.dual_variable_at_last_updated_time
-                        // );
-                        exausted_weights.insert(node.index, node.dual_variable_at_last_updated_time);
-                    }
-                }
             }
-
-            // constraint of edge: sum(y_S) <= weight
-            // println!("weight: {:?}", weight.to_f64().unwrap());
-            // println!("row_entries: {:?}", row_entries.len() * 2);
-            // println!(
-            //     "edge actual contributer len: {:?}",
-            //     dual_module.get_edge_nodes(edge_index).len()
-            // );
-
-            // println!("\n [one equation]:");
-            // print!("\t");
-            // for (var_index, (var, val)) in row_entries.iter().enumerate() {
-            //     print!("x{:?} + ", col_map.get(&(var_index)).unwrap());
-            // }
-
-            if unincreaseable_edges.contains(&edge_index) {
-                let mut exausted_weight_sum = Rational::from(0.0);
-                for (node_index, weight) in exausted_weights.into_iter() {
-                    exausted_weight_sum += weight;
-                }
-                // println!(" <= {:?}", (weight - exausted_weight_sum).to_f64().unwrap());
-                // println!("\t this is for edge: {:?}", edge_index);
-                // println!("this edge is unincreaseable: {:?}", edge_index);
-                model.add_row(..=(weight - exausted_weight_sum).to_f64().unwrap(), row_entries);
-            } else {
-                // println!(" <= {:?}", weight.to_f64().unwrap());
-                // println!("\t this is for edge: {:?}", edge_index);
-                model.add_row(..=weight.to_f64().unwrap(), row_entries);
-            }
+            model.add_row(..=weight.to_f64().unwrap(), row_entries);
         }
 
         let solved = model.solve();
@@ -600,11 +439,6 @@ impl RelaxerOptimizer {
         if solved.status() == HighsModelStatus::Optimal {
             let solution = solved.get_solution();
 
-            let mut og_objective = OrderedFloat::new(0.0);
-            for i in 0..x_vars.len() {
-                og_objective += og_dv[i];
-            }
-
             // calculate the objective function
             let mut optimal_objective = OrderedFloat::new(0.0);
             let cols = solution.columns();
@@ -612,8 +446,7 @@ impl RelaxerOptimizer {
                 optimal_objective += OrderedFloat::new(cols[i]);
             }
 
-            let delta = &optimal_objective - &og_objective;
-
+            let delta = &optimal_objective - &original_dual_variables_sum;
             // println!("optimal_objective: {:?}", delta);
 
             // check positivity of the objective
@@ -630,13 +463,6 @@ impl RelaxerOptimizer {
                     direction.insert(invalid_subgraph, OrderedFloat::from(overall_growth));
                 }
             }
-
-            // for (var_index, invalid_subgraph) in invalid_subgraphs.iter().enumerate() {
-            //     let overall_growth = cols[2 * var_index] - cols[2 * var_index + 1];
-            //     if !overall_growth.is_zero() {
-            //         direction.insert(invalid_subgraph.clone(), OrderedFloat::from(overall_growth));
-            //     }
-            // }
         } else {
             println!("solved status: {:?}", solved.status());
             unreachable!();
