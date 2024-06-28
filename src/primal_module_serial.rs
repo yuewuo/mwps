@@ -7,10 +7,11 @@ use crate::decoding_hypergraph::*;
 use crate::dual_module::*;
 use crate::invalid_subgraph::*;
 use crate::matrix::*;
-use crate::num_traits::{One, Zero};
+use crate::num_traits::{One, Signed, ToPrimitive, Zero};
 use crate::plugin::*;
 use crate::pointers::*;
 use crate::primal_module::*;
+use crate::relaxer::Relaxer;
 use crate::relaxer_optimizer::*;
 use crate::util::*;
 use crate::visualize::*;
@@ -21,6 +22,9 @@ use std::fmt::Debug;
 use std::sync::Arc;
 use std::time::Instant;
 
+use highs::HighsModelStatus;
+use highs::Model;
+use highs::SolvedModel;
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 
@@ -130,6 +134,9 @@ pub struct PrimalCluster {
     pub plugin_manager: PluginManager,
     /// optimizing the direction of relaxers
     pub relaxer_optimizer: RelaxerOptimizer,
+
+    /* for incrmental LP */
+    pub incr_solution: Option<IncrLPSolution>,
 }
 
 pub type PrimalClusterPtr = ArcRwLock<PrimalCluster>;
@@ -189,6 +196,7 @@ impl PrimalModuleImpl for PrimalModuleSerial {
                 subgraph: None,
                 plugin_manager: PluginManager::new(self.plugins.clone(), self.plugin_count.clone()),
                 relaxer_optimizer: RelaxerOptimizer::new(),
+                incr_solution: None,
             });
             // create the primal node of this defect node and insert into cluster
             let primal_node_ptr = PrimalModuleSerialNodePtr::new_value(PrimalModuleSerialNode {
@@ -406,35 +414,180 @@ impl PrimalModuleImpl for PrimalModuleSerial {
             #[cfg(feature = "float_lp")]
             // float_lp is enabled, optimizer really plays a role
             if cluster.relaxer_optimizer.should_optimize(&relaxer) {
-                let mut dual_variables = BTreeMap::default();
-                let mut original_dual_variables_sum = Rational::zero();
-                for node in cluster.nodes.iter() {
-                    let primal_node = node.read_recursive();
-                    let dual_node = primal_node.dual_node_ptr.read_recursive();
-                    original_dual_variables_sum += &dual_node.dual_variable_at_last_updated_time;
-                    dual_variables.insert(
-                        dual_node.invalid_subgraph.clone(),
-                        dual_node.dual_variable_at_last_updated_time.clone(),
-                    );
-                }
+                match &mut cluster.incr_solution {
+                    Some(incr_solution) => {
+                        println!("HERE");
+                        let mut done = false;
+                        let old_dvs: BTreeMap<Arc<InvalidSubgraph>, Rational> = cluster
+                            .nodes
+                            .iter()
+                            .map(|primal_node_ptr| {
+                                let primal_node = primal_node_ptr.read_recursive();
+                                let dual_node = primal_node.dual_node_ptr.read_recursive();
+                                (
+                                    dual_node.invalid_subgraph.clone(),
+                                    dual_node.dual_variable_at_last_updated_time.clone(),
+                                )
+                            })
+                            .collect();
 
-                let edge_free_weights: BTreeMap<EdgeIndex, Rational> = dual_variables
-                    .keys()
-                    .flat_map(|invalid_subgraph: &Arc<InvalidSubgraph>| invalid_subgraph.hair.iter().cloned())
-                    .chain(
-                        relaxer
-                            .get_direction()
+                        let mut original_dual_variables_sum = incr_solution.current_dual_variables_sum;
+
+                        let mut dual_variables = BTreeMap::default();
+                        for (invalid_subgraph, dual_variable) in old_dvs.iter() {
+                            if !incr_solution.partcipating_dual_variables.contains_key(invalid_subgraph) {
+                                dual_variables.insert(invalid_subgraph.clone(), dual_variable.clone());
+                                original_dual_variables_sum += dual_variable;
+                            }
+                        }
+                        for invalid_subgraph in relaxer.get_direction().keys() {
+                            if !dual_variables.contains_key(invalid_subgraph) {
+                                dual_variables.insert(invalid_subgraph.clone(), Rational::zero());
+                            }
+                        }
+
+                        let mut participating_dual_variables = dual_variables.clone();
+                        participating_dual_variables.append(&mut old_dvs.clone());
+
+                        let edge_free_weights: BTreeMap<EdgeIndex, Rational> = dual_variables
                             .keys()
-                            .flat_map(|invalid_subgraph| invalid_subgraph.hair.iter().cloned()),
-                    )
-                    .map(|edge_index| (edge_index, dual_module.get_edge_free_weight(edge_index, &dual_variables)))
-                    .collect();
-                let (new_relaxer, early_returned) = cluster.relaxer_optimizer.optimize_incr(
-                    relaxer,
-                    edge_free_weights,
-                    dual_variables,
-                    original_dual_variables_sum,
-                );
+                            .flat_map(|invalid_subgraph: &Arc<InvalidSubgraph>| invalid_subgraph.hair.iter().cloned())
+                            .chain(
+                                relaxer
+                                    .get_direction()
+                                    .keys()
+                                    .flat_map(|invalid_subgraph| invalid_subgraph.hair.iter().cloned()),
+                            )
+                            .map(|edge_index| {
+                                (
+                                    edge_index,
+                                    dual_module.get_edge_free_weight(edge_index, &participating_dual_variables),
+                                )
+                            })
+                            .collect();
+
+                        let mut model: Model = Arc::<Option<SolvedModel>>::get_mut(&mut incr_solution.solution)
+                            .unwrap()
+                            .take()
+                            .unwrap()
+                            .into();
+
+                        let mut x_vars = vec![];
+                        let mut og_dv = vec![];
+                        let mut invalid_subgraphs = Vec::with_capacity(dual_variables.len());
+                        let mut edge_contributor: BTreeMap<EdgeIndex, Vec<usize>> =
+                            edge_free_weights.keys().map(|&edge_index| (edge_index, vec![])).collect();
+
+                        for (var_index, (invalid_subgraph, dual_variable)) in dual_variables.iter().enumerate() {
+                            og_dv.push(dual_variable.clone());
+                            // constraint of the dual variable >= 0
+                            let x = model.add_col(1.0, 0.0.., []);
+                            x_vars.push(x);
+
+                            // constraint for xs ys <= dual_variable
+                            invalid_subgraphs.push(invalid_subgraph.clone());
+
+                            for &edge_index in invalid_subgraph.hair.iter() {
+                                edge_contributor.get_mut(&edge_index).unwrap().push(var_index);
+                            }
+                        }
+
+                        for (&edge_index, &weight) in edge_free_weights.iter() {
+                            let mut row_entries = vec![];
+                            for &var_index in edge_contributor[&edge_index].iter() {
+                                row_entries.push((x_vars[var_index], 1.0));
+                            }
+                            model.add_row(..=weight.to_f64().unwrap(), row_entries);
+                        }
+
+                        let solved = model.solve();
+                        let mut direction: BTreeMap<Arc<InvalidSubgraph>, Rational> = BTreeMap::new();
+                        if solved.status() == HighsModelStatus::Optimal {
+                            let solution = solved.get_solution();
+
+                            // calculate the objective function
+                            let mut optimal_objective = Rational::zero();
+                            let cols = solution.columns();
+                            for i in 0..x_vars.len() {
+                                optimal_objective += Rational::new(cols[i]);
+                            }
+
+                            let delta = &optimal_objective - &original_dual_variables_sum;
+                            // println!("optimal_objective: {:?}", delta);
+
+                            // check positivity of the objective
+                            if !(delta.is_positive()) {
+                                // println!("delta: {:?}", delta);
+                                done = true;
+                                optimizer_result = OptimizerResult::EarlyReturned;
+                                cluster.incr_solution = None;
+
+                                // return (relaxer, true);
+                            } else {
+                                for (var_index, (invalid_subgraph, _)) in dual_variables.into_iter().enumerate() {
+                                    let desired_amount = Rational::from(cols[var_index]);
+                                    // println!("desired_amount: {:?}", desired_amount);
+                                    let overall_growth = desired_amount - og_dv[var_index].clone();
+                                    if !overall_growth.is_zero() {
+                                        direction.insert(invalid_subgraph, Rational::from(overall_growth));
+                                    }
+                                }
+                                cluster.incr_solution = Some(IncrLPSolution {
+                                    current_dual_variables_sum: optimal_objective,
+                                    partcipating_dual_variables: participating_dual_variables,
+                                    solution: Arc::new(Some(solved)),
+                                });
+                            }
+                        } else {
+                            println!("solved status: {:?}", solved.status());
+                            unreachable!();
+                        }
+                        if !done {
+                            cluster.relaxer_optimizer.relaxers.insert(relaxer);
+                            optimizer_result = OptimizerResult::Optimized;
+                            relaxer = Relaxer::new(direction)
+                        }
+                    }
+                    None => {
+                        let mut dual_variables = BTreeMap::default();
+                        let mut original_dual_variables_sum = Rational::zero();
+                        for node in cluster.nodes.iter() {
+                            let primal_node = node.read_recursive();
+                            let dual_node = primal_node.dual_node_ptr.read_recursive();
+                            original_dual_variables_sum += &dual_node.dual_variable_at_last_updated_time;
+                            dual_variables.insert(
+                                dual_node.invalid_subgraph.clone(),
+                                dual_node.dual_variable_at_last_updated_time.clone(),
+                            );
+                        }
+
+                        let edge_free_weights: BTreeMap<EdgeIndex, Rational> = dual_variables
+                            .keys()
+                            .flat_map(|invalid_subgraph: &Arc<InvalidSubgraph>| invalid_subgraph.hair.iter().cloned())
+                            .chain(
+                                relaxer
+                                    .get_direction()
+                                    .keys()
+                                    .flat_map(|invalid_subgraph| invalid_subgraph.hair.iter().cloned()),
+                            )
+                            .map(|edge_index| (edge_index, dual_module.get_edge_free_weight(edge_index, &dual_variables)))
+                            .collect();
+
+                        let (new_relaxer, early_returned) = cluster.relaxer_optimizer.optimize_incr(
+                            relaxer,
+                            edge_free_weights,
+                            dual_variables,
+                            original_dual_variables_sum,
+                            &mut cluster.incr_solution,
+                        );
+                        relaxer = new_relaxer;
+                        if early_returned {
+                            optimizer_result = OptimizerResult::EarlyReturned;
+                        } else {
+                            optimizer_result = OptimizerResult::Optimized;
+                        }
+                    }
+                }
 
                 // let edge_slacks: BTreeMap<EdgeIndex, Rational> = dual_variables
                 //     .keys()
@@ -448,13 +601,6 @@ impl PrimalModuleImpl for PrimalModuleSerial {
                 //     .map(|edge_index| (edge_index, dual_module.get_edge_slack_tune(edge_index)))
                 //     .collect();
                 // let (new_relaxer, early_returned) = cluster.relaxer_optimizer.optimize(relaxer, edge_slacks, dual_variables);
-
-                relaxer = new_relaxer;
-                if early_returned {
-                    optimizer_result = OptimizerResult::EarlyReturned;
-                } else {
-                    optimizer_result = OptimizerResult::Optimized;
-                }
             } else {
                 optimizer_result = OptimizerResult::Skipped;
             }

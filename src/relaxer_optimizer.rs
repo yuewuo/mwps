@@ -16,6 +16,7 @@ use std::sync::Arc;
 
 use derivative::Derivative;
 
+use highs::SolvedModel;
 use num_traits::{One, Signed, Zero};
 
 #[derive(Default, Debug)]
@@ -45,11 +46,22 @@ impl OptimizerResult {
     }
 }
 
+#[cfg(feature = "float_lp")]
+#[derive(Clone)]
+pub struct IncrLPSolution {
+    pub partcipating_dual_variables: BTreeMap<Arc<InvalidSubgraph>, Rational>,
+    pub solution: Arc<Option<SolvedModel>>,
+    pub current_dual_variables_sum: Rational,
+}
+
+unsafe impl Send for IncrLPSolution {}
+unsafe impl Sync for IncrLPSolution {}
+
 #[derive(Derivative)]
 #[derivative(Default(new = "true"))]
 pub struct RelaxerOptimizer {
     /// the set of existing relaxers
-    relaxers: BTreeSet<Relaxer>,
+    pub relaxers: BTreeSet<Relaxer>,
 }
 
 #[derive(Derivative)]
@@ -390,6 +402,7 @@ impl RelaxerOptimizer {
         edge_free_weights: BTreeMap<EdgeIndex, Rational>,
         mut dual_variables: BTreeMap<Arc<InvalidSubgraph>, Rational>,
         original_dual_variables_sum: Rational,
+        solution_to_store: &mut Option<IncrLPSolution>,
     ) -> (Relaxer, bool) {
         use highs::{HighsModelStatus, RowProblem, Sense};
         use num_traits::ToPrimitive;
@@ -455,14 +468,19 @@ impl RelaxerOptimizer {
                 return (relaxer, true);
             }
 
-            for (var_index, (invalid_subgraph, _)) in dual_variables.into_iter().enumerate() {
+            for (var_index, (invalid_subgraph, _)) in dual_variables.iter().enumerate() {
                 let desired_amount = OrderedFloat::from(cols[var_index]);
                 // println!("desired_amount: {:?}", desired_amount);
                 let overall_growth = desired_amount - og_dv[var_index].clone();
                 if !overall_growth.is_zero() {
-                    direction.insert(invalid_subgraph, OrderedFloat::from(overall_growth));
+                    direction.insert(invalid_subgraph.clone(), OrderedFloat::from(overall_growth));
                 }
             }
+            *solution_to_store = Some(IncrLPSolution {
+                partcipating_dual_variables: dual_variables,
+                solution: Arc::new(Some(solved)),
+                current_dual_variables_sum: optimal_objective,
+            });
         } else {
             println!("solved status: {:?}", solved.status());
             unreachable!();
