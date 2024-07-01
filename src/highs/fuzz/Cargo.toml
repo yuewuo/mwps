@@ -1,0 +1,25 @@
+[package]
+name = "highs-fuzz"
+version = "0.0.0"
+authors = ["Ophir Lojkine"]
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = {version="0.4", features=["arbitrary-derive"]}
+
+[dependencies.highs]
+path = ".."
+
+# Prevent this from interfering with workspaces
+[workspace]
+members = ["."]
+
+[[bin]]
+name = "fuzz_target_1"
+path = "fuzz_targets/fuzz_target_1.rs"
+test = false
+doc = false

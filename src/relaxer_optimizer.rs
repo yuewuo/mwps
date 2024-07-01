@@ -15,7 +15,10 @@ use std::sync::Arc;
 
 use derivative::Derivative;
 
-use num_traits::{One, Signed, Zero};
+use num_traits::{Signed, Zero};
+
+#[cfg(feature = "slp")]
+use num_traits::One;
 
 #[derive(Default, Debug)]
 pub enum OptimizerResult {

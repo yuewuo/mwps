@@ -36,7 +36,8 @@ debug = true
 
 [features]
 # to enable a feature, use `--features xxx`
-default = ["cli"]
+default = ["f64_weight", "cli"]
+old_default = ["cli", "slp"]
 cli = ["pbr"]
 r64_weight = []                 # use Rational64 instead of BigRational as weight type
 f64_weight = ["float_lp"]       # use f64 instead of BigRational as weight type
@@ -75,8 +76,8 @@ cfg-if = "1.0.0"
 getrandom = { version = "0.2", features = ["js"] }
 wasm-bindgen = { version = "0.2.86", optional = true }
 lazy_static = "1.4.0"
-slp = { path = "src/slp" }
-highs = { version = "1.6.1", optional = true }
+slp = { path = "src/slp", optional = true }
+highs = { path = "src/highs", optional = true }
 sugar = "0.2.0"
 maplit = "1.0.2"
 qecp = { version = "0.2.4", optional = true, default-features = false, features = [

@@ -21,6 +21,7 @@ extern crate prettytable;
 extern crate pyo3;
 extern crate rand;
 extern crate rand_xoshiro;
+#[cfg(feature = "slp")]
 extern crate slp;
 extern crate urlencoding;
 #[cfg(feature = "wasm_binding")]
