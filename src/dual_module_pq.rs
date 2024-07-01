@@ -340,6 +340,26 @@ impl<Queue> DualModuleImpl for DualModulePQ<Queue>
 where
     Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug + Clone,
 {
+    fn get_all_conflicts(&self) -> BTreeSet<MaxUpdateLength> {
+        let mut conflicts = BTreeSet::new();
+        for edge in self.edges.iter() {
+            let edge = edge.read_recursive();
+            if edge.growth_at_last_updated_time == edge.weight {
+                conflicts.insert(MaxUpdateLength::Conflicting(edge.edge_index));
+            }
+            for node in edge.dual_nodes.iter() {
+                let node = node.upgrade_force();
+                let node_read = node.read_recursive();
+                if node_read.dual_variable_at_last_updated_time.is_zero() {
+                    conflicts.insert(MaxUpdateLength::ShrinkProhibited(OrderedDualNodePtr::new(
+                        node_read.index,
+                        node.clone(),
+                    )));
+                }
+            }
+        }
+        conflicts
+    }
     /// initialize the dual module, which is supposed to be reused for multiple decoding tasks with the same structure
     #[allow(clippy::unnecessary_cast)]
     fn new_empty(initializer: &SolverInitializer) -> Self {
@@ -452,6 +472,8 @@ where
 
     #[allow(clippy::unnecessary_cast)]
     fn add_dual_node_tune(&mut self, dual_node_ptr: &DualNodePtr) {
+
+        // println!("add_dual_node_tune invoked on {:?}", dual_node_ptr.read_recursive().index);
         let dual_node_weak = dual_node_ptr.downgrade();
         let dual_node = dual_node_ptr.read_recursive();
 
@@ -656,6 +678,7 @@ where
         drop(edge);
         let edge = self.edges[edge_index].read_recursive();
         if edge.growth_at_last_updated_time > edge.weight {
+            println!("dual_nodes: {:?}", self.get_edge_nodes(edge_index));
             println!("edge: {:?}", edge);
             panic!()
         }
@@ -681,7 +704,7 @@ where
                 let time_diff = global_time.clone() - &edge.last_updated_time;
                 let newly_grown_amount = &time_diff * &edge.grow_rate;
                 edge.growth_at_last_updated_time += newly_grown_amount;
-                edge.last_updated_time = global_time.clone();
+                edge.last_updated_time = Rational::zero();
                 debug_assert!(
                     edge.growth_at_last_updated_time <= edge.weight,
                     "growth larger than weight: check if events are 1) inserted and 2) handled correctly"
@@ -710,7 +733,7 @@ where
 
                     let dual_variable = node.get_dual_variable();
                     node.set_dual_variable(dual_variable);
-                    node.last_updated_time = global_time.clone();
+                    node.last_updated_time = Rational::zero();
                     debug_assert!(
                         !node.get_dual_variable().is_negative(),
                         "negative dual variable: check if events are 1) inserted and 2) handled correctly"
@@ -718,6 +741,8 @@ where
                 }
             }
         }
+
+        self.global_time.write().set_zero();
     }
 
     /// misc debug print statement

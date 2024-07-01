@@ -402,6 +402,8 @@ impl RelaxerOptimizer {
         edge_free_weights: BTreeMap<EdgeIndex, Rational>,
         mut dual_variables: BTreeMap<Arc<InvalidSubgraph>, Rational>,
         original_dual_variables_sum: Rational,
+        dual_module: &mut impl DualModuleImpl,
+        interface_ptr: &DualModuleInterfacePtr,
         solution_to_store: &mut Option<IncrLPSolution>,
     ) -> (Relaxer, bool) {
         use highs::{HighsModelStatus, RowProblem, Sense};
@@ -412,6 +414,8 @@ impl RelaxerOptimizer {
         let mut model = RowProblem::default().optimise(Sense::Maximise);
         model.set_option("time_limit", 5.0); // stop after 30 seconds
 
+        // let mut col_map = BTreeMap::new();
+
         for invalid_subgraph in relaxer.get_direction().keys() {
             if !dual_variables.contains_key(invalid_subgraph) {
                 dual_variables.insert(invalid_subgraph.clone(), OrderedFloat::zero());
@@ -419,13 +423,11 @@ impl RelaxerOptimizer {
         }
 
         let mut x_vars = vec![];
-        let mut og_dv = vec![];
         // let mut y_vars = vec![];
         let mut invalid_subgraphs = Vec::with_capacity(dual_variables.len());
         let mut edge_contributor: BTreeMap<EdgeIndex, Vec<usize>> =
             edge_free_weights.keys().map(|&edge_index| (edge_index, vec![])).collect();
         for (var_index, (invalid_subgraph, dual_variable)) in dual_variables.iter().enumerate() {
-            og_dv.push(dual_variable.clone());
             // constraint of the dual variable >= 0
             let x = model.add_col(1.0, 0.0.., []);
             x_vars.push(x);
@@ -433,16 +435,44 @@ impl RelaxerOptimizer {
             // constraint for xs ys <= dual_variable
             invalid_subgraphs.push(invalid_subgraph.clone());
 
+            // col_map.insert(
+            //     var_index,
+            //     interface_ptr.find_node(invalid_subgraph).unwrap().read_recursive().index,
+            // );
+
+            // print!("[dual_node index {:?}]: ", col_map.get(&var_index));
             for &edge_index in invalid_subgraph.hair.iter() {
+                // print!("{:?} ", edge_index);
                 edge_contributor.get_mut(&edge_index).unwrap().push(var_index);
             }
+            // println!();
         }
+
+        // println!("participating dual variables: {:?}", col_map.values());
+        // println!("participating edges: {:?}", edge_contributor.keys());
+        // print out the edge edge_index and its contributors, from edge_contributor map
+        // for (edge_index, contributors) in edge_contributor.iter() {
+        //     print!("[edge {:?}]: ", edge_index);
+        //     for &var_index in contributors.iter() {
+        //         print!("{:?} ", col_map.get(&var_index).unwrap());
+        //     }
+        //     println!();
+        // }
 
         for (&edge_index, &weight) in edge_free_weights.iter() {
             let mut row_entries = vec![];
             for &var_index in edge_contributor[&edge_index].iter() {
                 row_entries.push((x_vars[var_index], 1.0));
             }
+
+            // println!("\n [one equation]:");
+            // print!("\t");
+            // for (var_index, (var, val)) in row_entries.iter().enumerate() {
+            //     print!("x{:?} + ", col_map.get(&var_index).unwrap());
+            // }
+            // println!(" <= {:?}", weight.to_f64().unwrap());
+            // println!("\t this is for edge: {:?}", edge_index);
+
             model.add_row(..=weight.to_f64().unwrap(), row_entries);
         }
 
@@ -468,19 +498,31 @@ impl RelaxerOptimizer {
                 return (relaxer, true);
             }
 
-            for (var_index, (invalid_subgraph, _)) in dual_variables.iter().enumerate() {
-                let desired_amount = OrderedFloat::from(cols[var_index]);
+            for (var_index, (invalid_subgraph, og_dv)) in dual_variables.iter().enumerate() {
+                // let desired_amount = OrderedFloat::from(cols[var_index]);
+
+                let overall_growth = OrderedFloat::from(cols[var_index]) - og_dv;
+                // print each end of the operand and the result from the above operation, "overall_growth = OrderedFloat::from(cols[var_index]) - og_dv"
+                // println!(
+                //     "for dual_node index: {:?}",
+                //     interface_ptr.find_node(invalid_subgraph).unwrap().read_recursive().index
+                // );
+                // println!("Result: {:?}", OrderedFloat::from(cols[var_index]));
+                // println!("Minus Og_dv: {:?}", og_dv);
+                // println!("Equals overall_growth: {:?}", overall_growth);
+                // println!();
+
                 // println!("desired_amount: {:?}", desired_amount);
-                let overall_growth = desired_amount - og_dv[var_index].clone();
-                if !overall_growth.is_zero() {
-                    direction.insert(invalid_subgraph.clone(), OrderedFloat::from(overall_growth));
-                }
+                // let overall_growth = desired_amount - og_dv[var_index].clone();
+                // if !overall_growth.is_zero() {
+                direction.insert(invalid_subgraph.clone(), OrderedFloat::from(overall_growth));
+                // }
             }
-            *solution_to_store = Some(IncrLPSolution {
-                partcipating_dual_variables: dual_variables,
-                solution: Arc::new(Some(solved)),
-                current_dual_variables_sum: optimal_objective,
-            });
+            // *solution_to_store = Some(IncrLPSolution {
+            //     partcipating_dual_variables: dual_variables,
+            //     solution: Arc::new(Some(solved)),
+            //     current_dual_variables_sum: optimal_objective,
+            // });
         } else {
             println!("solved status: {:?}", solved.status());
             unreachable!();

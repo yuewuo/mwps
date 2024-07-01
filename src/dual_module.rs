@@ -81,6 +81,9 @@ pub struct DualNode {
     pub last_updated_time: Rational,
     /// dual variable's value at the last updated time
     pub dual_variable_at_last_updated_time: Rational,
+
+    /// primal clusters that have this dualnode as part of it
+    pub parent_clusters: BTreeMap<NodeIndex, PrimalClusterPtr>,
 }
 
 impl DualNode {
@@ -336,6 +339,10 @@ pub trait DualModuleImpl {
         Some(OrderedFloat::from(100.0))
     }
 
+    fn get_all_conflicts(&self) -> BTreeSet<MaxUpdateLength> {
+        panic!()
+    }
+
     fn get_conflicts_tune(
         &self,
         optimizer_result: OptimizerResult,
@@ -344,6 +351,8 @@ pub trait DualModuleImpl {
         let mut conflicts = BTreeSet::new();
         match optimizer_result {
             OptimizerResult::EarlyReturned => {
+                let mut edge_deltas = BTreeMap::new();
+                // println!("dual_node_deltas: {:?}", dual_node_deltas);
                 // if early returned, meaning optimizer didn't optimize, but simply should find current conflicts and return
                 for (dual_node_ptr, grow_rate) in dual_node_deltas.into_iter() {
                     let node_ptr_read = dual_node_ptr.ptr.read_recursive();
@@ -354,11 +363,31 @@ pub trait DualModuleImpl {
                         )));
                     }
                     for edge_index in node_ptr_read.invalid_subgraph.hair.iter() {
-                        if grow_rate.is_positive() && self.is_edge_tight_tune(*edge_index) {
-                            conflicts.insert(MaxUpdateLength::Conflicting(*edge_index));
+                        // calculate the total edge deltas
+                        match edge_deltas.entry(*edge_index) {
+                            std::collections::btree_map::Entry::Vacant(v) => {
+                                v.insert(grow_rate.clone());
+                            }
+                            std::collections::btree_map::Entry::Occupied(mut o) => {
+                                let current = o.get_mut();
+                                *current += grow_rate.clone();
+                            }
                         }
                     }
                 }
+
+                // apply the edge deltas and check for conflicts
+                for (edge_index, grow_rate) in edge_deltas.into_iter() {
+                    if grow_rate.is_positive() && self.is_edge_tight_tune(edge_index) {
+                        conflicts.insert(MaxUpdateLength::Conflicting(edge_index));
+                    }
+                }
+
+                // println!("here");
+
+                // let conflicts = self.get_all_conflicts();
+
+                // println!("conflicts: {:?}", conflicts);
             }
             OptimizerResult::Skipped => {
                 // if skipped, should check if is growable, if not return the conflicts that leads to that conclusion
@@ -407,9 +436,17 @@ pub trait DualModuleImpl {
                 // println!("Optimizer result: {:?}", optimizer_result);
                 // in other cases, optimizer should have optimized, so we should apply the deltas and return the nwe conflicts
                 let mut edge_deltas = BTreeMap::new();
+                // if !(dual_node_deltas.is_empty()) {
+                // println!("dual_node_deltas: {:?}", dual_node_deltas);
+                // self.debug_print()
+                // panic!();
+                // }
+
+                let mut participating_duals = BTreeSet::new();
                 for (dual_node_ptr, grow_rate) in dual_node_deltas.into_iter() {
                     // update the dual node and check for conflicts
                     let mut node_ptr_write = dual_node_ptr.ptr.write();
+                    participating_duals.insert(node_ptr_write.index);
                     node_ptr_write.dual_variable_at_last_updated_time += grow_rate.clone();
                     if grow_rate.is_negative() && node_ptr_write.dual_variable_at_last_updated_time.is_zero() {
                         conflicts.insert(MaxUpdateLength::ShrinkProhibited(OrderedDualNodePtr::new(
@@ -431,6 +468,7 @@ pub trait DualModuleImpl {
                         }
                     }
                 }
+                // println!("participating_duals: {:?}", participating_duals);
 
                 // apply the edge deltas and check for conflicts
                 for (edge_index, grow_rate) in edge_deltas.into_iter() {
@@ -602,6 +640,7 @@ impl DualModuleInterfacePtr {
             dual_variable_at_last_updated_time: Rational::zero(),
             global_time: None,
             last_updated_time: Rational::zero(),
+            parent_clusters: BTreeMap::default(),
         });
 
         let cloned_node_ptr = node_ptr.clone();
@@ -639,6 +678,7 @@ impl DualModuleInterfacePtr {
             dual_variable_at_last_updated_time: Rational::zero(),
             global_time: None,
             last_updated_time: Rational::zero(),
+            parent_clusters: BTreeMap::default(),
         });
         interface.nodes.push(node_ptr.clone());
         drop(interface);
@@ -667,6 +707,7 @@ impl DualModuleInterfacePtr {
             dual_variable_at_last_updated_time: Rational::zero(),
             global_time: None,
             last_updated_time: Rational::zero(),
+            parent_clusters: BTreeMap::default(),
         });
         interface.nodes.push(node_ptr.clone());
         drop(interface);

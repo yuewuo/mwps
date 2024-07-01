@@ -361,4 +361,18 @@ pub mod ordered_float {
             Self::new(0.0)
         }
     }
+
+    // Implement Sum for OrderedFloat
+    impl std::iter::Sum for OrderedFloat {
+        fn sum<I: Iterator<Item = Self>>(iter: I) -> Self {
+            iter.fold(Self::zero(), std::ops::Add::add)
+        }
+    }
+
+    // Implement Sum for references to OrderedFloat
+    impl<'a> std::iter::Sum<&'a OrderedFloat> for OrderedFloat {
+        fn sum<I: Iterator<Item = &'a Self>>(iter: I) -> Self {
+            iter.fold(Self::zero(), |acc, &item| acc + item)
+        }
+    }
 }

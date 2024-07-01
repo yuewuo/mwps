@@ -360,7 +360,7 @@ impl Cli {
                     None => thread_rng().gen::<u64>(),
                 };
                 let mut rng = SmallRng::seed_from_u64(seed);
-                // println!("OG_s: {:?}", seed);
+                println!("OG_s: {:?}", seed);
                 for round in (starting_iteration as u64)..(total_rounds as u64) {
                     pb.as_mut().map(|pb| pb.set(round));
                     seed = if use_deterministic_seed { round } else { rng.next_u64() };
