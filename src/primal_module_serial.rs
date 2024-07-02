@@ -424,6 +424,18 @@ impl PrimalModuleImpl for PrimalModuleSerial {
                     })
                     .collect();
 
+                let mut dual_variables: BTreeMap<Arc<InvalidSubgraph>, Rational> = BTreeMap::new();
+                let mut participating_dual_variable_indices = BTreeSet::new();
+                for primal_node_ptr in cluster.nodes.iter() {
+                    let primal_node = primal_node_ptr.read_recursive();
+                    let dual_node = primal_node.dual_node_ptr.read_recursive();
+                    dual_variables.insert(
+                        dual_node.invalid_subgraph.clone(),
+                        dual_node.dual_variable_at_last_updated_time.clone(),
+                    );
+                    participating_dual_variable_indices.insert(dual_node.index);
+                }
+
                 // let edge_slacks: BTreeMap<EdgeIndex, Rational> = dual_variables
                 //     .keys()
                 //     .flat_map(|invalid_subgraph: &Arc<InvalidSubgraph>| invalid_subgraph.hair.iter().cloned())
@@ -446,7 +458,12 @@ impl PrimalModuleImpl for PrimalModuleSerial {
                             .keys()
                             .flat_map(|invalid_subgraph| invalid_subgraph.hair.iter().cloned()),
                     )
-                    .map(|edge_index| (edge_index, dual_module.get_edge_free_weight(edge_index, &dual_variables)))
+                    .map(|edge_index| {
+                        (
+                            edge_index,
+                            dual_module.get_edge_free_weight(edge_index, &participating_dual_variable_indices),
+                        )
+                    })
                     .collect();
 
                 let (new_relaxer, early_returned) = cluster.relaxer_optimizer.optimize_incr(

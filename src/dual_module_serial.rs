@@ -462,16 +462,12 @@ impl DualModuleImpl for DualModuleSerial {
         Some(OrderedFloat::from(start))
     }
 
-    fn get_edge_free_weight(
-        &self,
-        edge_index: EdgeIndex,
-        participating_dual_variables: &BTreeMap<Arc<InvalidSubgraph>, Rational>,
-    ) -> Rational {
+    fn get_edge_free_weight(&self, edge_index: EdgeIndex, participating_dual_variables: &BTreeSet<usize>) -> Rational {
         let edge = self.edges[edge_index as usize].read_recursive();
         let mut free_weight = edge.weight.clone();
         for dual_node in edge.dual_nodes.iter() {
             let dual_node = dual_node.upgrade_force();
-            if participating_dual_variables.contains_key(&dual_node.read_recursive().invalid_subgraph) {
+            if participating_dual_variables.contains(&dual_node.read_recursive().index) {
                 continue;
             }
             free_weight -= &dual_node.read_recursive().dual_variable_at_last_updated_time;

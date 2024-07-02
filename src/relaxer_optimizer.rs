@@ -473,7 +473,7 @@ impl RelaxerOptimizer {
 
                 let mut model = RowProblem::default().optimise(Sense::Maximise);
                 model.set_option("time_limit", 30.0); // stop after 30 seconds
-                model.set_option("parallel", "off"); // do not use multiple cores
+                                                      // model.set_option("parallel", "off"); // do not use multiple cores
 
                 let mut x_vars = vec![];
                 let mut invalid_subgraphs = Vec::with_capacity(dual_variables.len());
