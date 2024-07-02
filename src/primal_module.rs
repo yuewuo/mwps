@@ -170,13 +170,16 @@ pub trait PrimalModuleImpl {
                 let mut dual_node_deltas = BTreeMap::new();
                 let (mut resolved, optimizer_result) =
                     self.resolve_cluster_tune(cluster_index, interface, dual_module, &mut dual_node_deltas);
-                let mut conflicts = dual_module.get_conflicts_tune(optimizer_result, dual_node_deltas);
 
+                // println!("optimizer_result1213: {:?}", optimizer_result);
+                let mut conflicts = dual_module.get_conflicts_tune(optimizer_result, dual_node_deltas);
+                // println!("_RESOLVE: {:?}", conflicts);
                 while !resolved {
                     let (_conflicts, _resolved) = self.resolve_tune(conflicts, interface, dual_module);
                     if _resolved {
                         break;
                     }
+                    // println!("RESOLVE: {:?}", _conflicts);
                     conflicts = _conflicts;
                     resolved = _resolved;
                 }

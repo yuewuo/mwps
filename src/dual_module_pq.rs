@@ -5,6 +5,7 @@
 //! Only debug tests are failing, which aligns with the dual_module_serial behavior
 //!
 
+use crate::invalid_subgraph::InvalidSubgraph;
 use crate::num_traits::{ToPrimitive, Zero};
 use crate::ordered_float::OrderedFloat;
 use crate::pointers::*;
@@ -14,6 +15,8 @@ use crate::util::*;
 use crate::visualize::*;
 use crate::{add_shared_methods, dual_module::*};
 
+use std::collections::BTreeMap;
+use std::sync::Arc;
 use std::{
     cmp::{Ordering, Reverse},
     collections::{BTreeSet, BinaryHeap},
@@ -632,6 +635,8 @@ where
     /// sync all states and global time so the concept of time and pq can retire
     fn sync(&mut self) {
 
+        // note: we can either set the global time to be zero, or just not change it anymore
+
         let mut nodes_touched = BTreeSet::new();
         
         for edges in self.edges.iter_mut() {
@@ -737,6 +742,20 @@ where
         }
         start += weight.to_f64().unwrap();
         Some(OrderedFloat::from(start))
+    }
+    
+    fn get_edge_free_weight(&self, edge_index: EdgeIndex, participating_dual_variables: &BTreeMap<Arc<InvalidSubgraph>, Rational>) -> Rational {
+        let edge = self.edges[edge_index as usize].read_recursive();
+        let mut free_weight = edge.weight.clone();
+        for dual_node in edge.dual_nodes.iter() {
+            let dual_node = dual_node.upgrade_force();
+            if participating_dual_variables.contains_key(&dual_node.read_recursive().invalid_subgraph) {
+                continue;
+            }
+            free_weight -= &dual_node.read_recursive().dual_variable_at_last_updated_time;
+        }
+
+        free_weight
     }
 }
 

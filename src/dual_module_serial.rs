@@ -4,6 +4,7 @@
 //!
 
 use crate::derivative::Derivative;
+use crate::invalid_subgraph::InvalidSubgraph;
 use crate::num_traits::sign::Signed;
 use crate::num_traits::{ToPrimitive, Zero};
 use crate::ordered_float::OrderedFloat;
@@ -14,7 +15,8 @@ use crate::util::*;
 use crate::visualize::*;
 use crate::{add_shared_methods, dual_module::*};
 use num_traits::FromPrimitive;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
 
 pub struct DualModuleSerial {
     /// all vertices including virtual ones
@@ -458,6 +460,24 @@ impl DualModuleImpl for DualModuleSerial {
         start += weight.to_f64().unwrap();
 
         Some(OrderedFloat::from(start))
+    }
+
+    fn get_edge_free_weight(
+        &self,
+        edge_index: EdgeIndex,
+        participating_dual_variables: &BTreeMap<Arc<InvalidSubgraph>, Rational>,
+    ) -> Rational {
+        let edge = self.edges[edge_index as usize].read_recursive();
+        let mut free_weight = edge.weight.clone();
+        for dual_node in edge.dual_nodes.iter() {
+            let dual_node = dual_node.upgrade_force();
+            if participating_dual_variables.contains_key(&dual_node.read_recursive().invalid_subgraph) {
+                continue;
+            }
+            free_weight -= &dual_node.read_recursive().dual_variable_at_last_updated_time;
+        }
+
+        free_weight
     }
 }
 

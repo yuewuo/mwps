@@ -362,4 +362,73 @@ pub mod ordered_float {
             Self::new(0.0)
         }
     }
+
+    // Implement Sum for OrderedFloat
+    impl std::iter::Sum for OrderedFloat {
+        fn sum<I: Iterator<Item = Self>>(iter: I) -> Self {
+            iter.fold(Self::zero(), std::ops::Add::add)
+        }
+    }
+
+    // Implement Sum for references to OrderedFloat
+    impl<'a> std::iter::Sum<&'a OrderedFloat> for OrderedFloat {
+        fn sum<I: Iterator<Item = &'a Self>>(iter: I) -> Self {
+            iter.fold(Self::zero(), |acc, &item| acc + item)
+        }
+    }
+
+    // comparisons using references
+    impl PartialEq<&OrderedFloat> for OrderedFloat {
+        fn eq(&self, other: &&Self) -> bool {
+            (self.0 - other.0).abs() < EPSILON
+        }
+    }
+
+    impl PartialEq<OrderedFloat> for &OrderedFloat {
+        fn eq(&self, other: &OrderedFloat) -> bool {
+            (self.0 - other.0).abs() < EPSILON
+        }
+    }
+
+    // impl PartialEq<&OrderedFloat> for &OrderedFloat {
+    //     fn eq(&self, other: &&OrderedFloat) -> bool {
+    //         (self.0 - other.0).abs() < EPSILON
+    //     }
+    // }
+
+    impl PartialOrd<&OrderedFloat> for OrderedFloat {
+        fn partial_cmp(&self, other: &&Self) -> Option<std::cmp::Ordering> {
+            if (self.0 - other.0).abs() < EPSILON {
+                Some(std::cmp::Ordering::Equal)
+            } else {
+                self.0.partial_cmp(&other.0)
+            }
+        }
+    }
+
+    impl PartialOrd<OrderedFloat> for &OrderedFloat {
+        fn partial_cmp(&self, other: &OrderedFloat) -> Option<std::cmp::Ordering> {
+            if (self.0 - other.0).abs() < EPSILON {
+                Some(std::cmp::Ordering::Equal)
+            } else {
+                self.0.partial_cmp(&other.0)
+            }
+        }
+    }
+
+    // impl PartialOrd<&OrderedFloat> for &OrderedFloat {
+    //     fn partial_cmp(&self, other: &&OrderedFloat) -> Option<std::cmp::Ordering> {
+    //         if (self.0 - other.0).abs() < EPSILON {
+    //             Some(std::cmp::Ordering::Equal)
+    //         } else {
+    //             self.0.partial_cmp(&other.0)
+    //         }
+    //     }
+    // }
+
+    // impl Ord for &OrderedFloat {
+    //     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+    //         self.partial_cmp(other).unwrap()
+    //     }
+    // }
 }

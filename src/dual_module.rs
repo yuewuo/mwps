@@ -441,6 +441,13 @@ pub trait DualModuleImpl {
         }
         conflicts
     }
+
+    /// get the edge free weight, for each edge what is the weight that are free to use by the given participating dual variables
+    fn get_edge_free_weight(
+        &self,
+        edge_index: EdgeIndex,
+        participating_dual_variables: &BTreeMap<Arc<InvalidSubgraph>, Rational>,
+    ) -> Rational;
 }
 
 impl MaxUpdateLength {
