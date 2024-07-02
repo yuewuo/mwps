@@ -383,6 +383,31 @@ impl Model {
         Ok(())
     }
 
+    /// Change a coefficient in the constraint matrix.
+    ///
+    /// # Panics
+    ///
+    /// If HIGHS returns an error status value.
+    pub fn change_matrix_coefficient(&mut self, row: Row, col: Col, value: f64) {
+        self.try_change_matrix_coefficient(row, col, value)
+            .unwrap_or_else(|e| panic!("HiGHS error: {:?}", e))
+    }
+
+    /// Tries to change a coefficient in the constraint matrix.
+    ///
+    /// Returns Ok(()), or the error status value if HIGHS returned an error status.
+    pub fn try_change_matrix_coefficient(&mut self, row: Row, col: Col, value: f64) -> Result<(), HighsStatus> {
+        unsafe {
+            highs_call!(Highs_changeCoeff(
+                self.highs.mut_ptr(),
+                row.0.try_into().unwrap(),
+                col.0.try_into().unwrap(),
+                value
+            ))?;
+        }
+        Ok(())
+    }
+
     /// Adds a new constraint to the highs model.
     ///
     /// Returns the added row index.

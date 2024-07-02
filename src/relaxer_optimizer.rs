@@ -326,59 +326,126 @@ impl RelaxerOptimizer {
 
         return match incr_lp_solution {
             Some(incr_lp_solution) => {
-                panic!();
-                // let mut incr_lp_solution_ptr = incr_lp_solution.lock();
-                // let model: highs::Model = incr_lp_solution_ptr.solution.take().unwrap().into();
+                println!("incrementals!");
+                println!("dual_variables: {:?}", dual_variables);
+                let mut incr_lp_solution_ptr = incr_lp_solution.lock();
+                let mut model: highs::Model = incr_lp_solution_ptr.solution.take().unwrap().into();
 
-                // let mut new_dual_variables = BTreeMap::new();
-                // let mut update_dual_variables = BTreeMap::new();
-                // let mut edge_contributors: BTreeMap<EdgeIndex, BTreeSet<Arc<InvalidSubgraph>>> = BTreeMap::new();
+                let mut edge_contributor: BTreeMap<EdgeIndex, (Rational, BTreeSet<Arc<InvalidSubgraph>>)> =
+                    edge_free_weights
+                        .iter()
+                        .map(|(&edge_index, &edge_free_weight)| (edge_index, (edge_free_weight, BTreeSet::new())))
+                        .collect();
 
-                // for (invalid_subgraph, dual_variable) in dual_variables.iter() {
-                //     match incr_lp_solution_ptr.dual_variables.get(invalid_subgraph) {
-                //         Some(_dual_variable) => {
-                //             if _dual_variable != dual_variable {
-                //                 update_dual_variables.insert(invalid_subgraph.clone(), dual_variable.clone());
-                //             }
-                //         }
-                //         None => {
-                //             new_dual_variables.insert(invalid_subgraph.clone(), dual_variable.clone());
-                //         }
-                //     }
-                //     for &edge_index in invalid_subgraph.hair.iter() {
-                //         edge_contributors
-                //             .get_mut(&edge_index)
-                //             .unwrap()
-                //             .insert(invalid_subgraph.clone());
-                //     }
+                for invalid_subgraph in dual_variables.keys() {
+                    for edge_index in invalid_subgraph.hair.iter() {
+                        edge_contributor
+                            .get_mut(&edge_index)
+                            .unwrap()
+                            .1
+                            .insert(invalid_subgraph.clone());
+                    }
+                    if incr_lp_solution_ptr.dv_col_map.contains_key(invalid_subgraph) {
+                        continue;
+                    }
+                    let col = model.add_col(1.0, 0.0.., []);
+
+                    incr_lp_solution_ptr.dv_col_map.insert(invalid_subgraph.clone(), col);
+                }
+
+                // println!("edge_contributor:");
+                // // print out each element on a separate line
+                // for (key, value) in edge_contributor.iter() {
+                //     println!("\t [{:?}]: {:?}", key, value);
                 // }
 
-                // let mut new_edges = BTreeSet::new();
-                // let mut update_edges_slack = BTreeSet::new();
-                // let mut update_edges_contributors = BTreeSet::new();
+                let mut new_edges = BTreeSet::new();
+                let mut update_deges_weight = BTreeSet::new();
+                let mut update_edges_contributors = BTreeSet::new();
 
-                // // fixme:
-                // for edge_index in edge_free_weights.keys() {
-                //     match incr_lp_solution_ptr.edge_slacks.get(edge_index) {
-                //         Some(_slack) => {
-                //             if _slack != edge_free_weights[edge_index] {
-                //                 update_edges_slack.insert(edge_index.clone());
-                //             }
-                //             if let Some(_edge_contributors) = incr_lp_solution_ptr.edge_contributors.get(edge_index) {
-                //                 if _edge_contributors != &edge_contributors[edge_index] {
-                //                     update_edges_contributors.insert(edge_index.clone());
-                //                     println!("Actually Here ....");
-                //                 }
-                //             }
-                //         }
-                //         None => {
-                //             new_edges.insert(edge_index.clone());
-                //         }
-                //     }
-                // }
+                // get difference between edges
+                for (&edge_index, &free_weight) in edge_free_weights.iter() {
+                    match incr_lp_solution_ptr.edge_constraints.get(&edge_index) {
+                        Some((_free_weight, _edge_contributors)) => {
+                            if _free_weight != free_weight {
+                                update_deges_weight.insert(edge_index.clone());
+                            }
+                            if _edge_contributors != &edge_contributor[&edge_index].1 {
+                                println!(
+                                    "_edge_contributors len: {:?}, edge_contributors len: {:?}",
+                                    _edge_contributors.len(),
+                                    edge_contributor[&edge_index].1.len()
+                                );
+                                println!("here...");
+                                update_edges_contributors.insert(edge_index.clone());
+                            }
+                        }
+                        None => {
+                            new_edges.insert(edge_index.clone());
+                        }
+                    }
+                }
 
-                // get the difference between the constraints and update them accordingly
-                todo!()
+                for edge_index in new_edges.into_iter() {
+                    let mut row_entries = vec![];
+                    for var_index in edge_contributor[&edge_index].1.iter() {
+                        row_entries.push((incr_lp_solution_ptr.dv_col_map[var_index], 1.0));
+                    }
+
+                    // constraint of edge: sum(y_S) <= weight
+                    let row = model.add_row(..=edge_free_weights[&edge_index].to_f64().unwrap(), row_entries);
+                    incr_lp_solution_ptr.edge_row_map.insert(edge_index, row);
+                }
+
+                for edge_index in update_deges_weight.into_iter() {
+                    let row = incr_lp_solution_ptr.edge_row_map.get(&edge_index).unwrap();
+                    model.change_row_bounds(*row, ..=edge_free_weights[&edge_index].to_f64().unwrap());
+                }
+
+                for edge_index in update_edges_contributors.into_iter() {
+                    let row = incr_lp_solution_ptr.edge_row_map.get(&edge_index).unwrap();
+                    let diff = incr_lp_solution_ptr.edge_constraints[&edge_index]
+                        .1
+                        .difference(&edge_contributor[&edge_index].1);
+                    for invalid_subgraph in diff {
+                        model.change_matrix_coefficient(*row, incr_lp_solution_ptr.dv_col_map[invalid_subgraph], 1.0)
+                    }
+                }
+
+                let solved = model.solve();
+
+                let mut direction: BTreeMap<Arc<InvalidSubgraph>, OrderedFloat> = BTreeMap::new();
+                if solved.status() == HighsModelStatus::Optimal {
+                    let solution = solved.get_solution();
+
+                    // calculate the objective function
+                    let new_dual_variable_sum = OrderedFloat::from(solution.columns().iter().sum::<f64>());
+
+                    let delta: OrderedFloat = new_dual_variable_sum - dual_variables.values().sum::<OrderedFloat>();
+
+                    // check positivity of the objective
+                    if !(delta.is_positive()) {
+                        return (relaxer, true);
+                    }
+
+                    for (invalid_subgraph, dv) in dual_variables.iter() {
+                        let overall_growth =
+                            OrderedFloat::from(*solution.index(incr_lp_solution_ptr.dv_col_map[invalid_subgraph])) - dv;
+                        if !overall_growth.is_zero() {
+                            // println!("inserting: {:?}, {:?}", invalid_subgraph, OrderedFloat::from(overall_growth));
+                            direction.insert(invalid_subgraph.clone(), overall_growth);
+                        }
+                    }
+                } else {
+                    println!("solved status: {:?}", solved.status());
+                    unreachable!();
+                }
+
+                incr_lp_solution_ptr.solution = Some(solved);
+                incr_lp_solution_ptr.edge_constraints = edge_contributor;
+
+                self.relaxers.insert(relaxer);
+                (Relaxer::new(direction), false)
             }
             None => {
                 /*
@@ -470,14 +537,14 @@ impl RelaxerOptimizer {
 
                 */
 
+                println!("OG dual_variables: {:?}", dual_variables);
+
                 let mut model = RowProblem::default().optimise(Sense::Maximise);
                 model.set_option("time_limit", 30.0); // stop after 30 seconds
 
                 let mut edge_row_map: BTreeMap<EdgeIndex, highs::Row> = BTreeMap::new();
                 let mut dv_col_map: BTreeMap<Arc<InvalidSubgraph>, highs::Col> = BTreeMap::new();
 
-                // let mut x_vars = vec![];
-                // let mut invalid_subgraphs = Vec::with_capacity(dual_variables.len());
                 let mut edge_contributor: BTreeMap<EdgeIndex, (Rational, BTreeSet<Arc<InvalidSubgraph>>)> =
                     edge_free_weights
                         .iter()
@@ -498,6 +565,12 @@ impl RelaxerOptimizer {
                             .insert(invalid_subgraph.clone());
                     }
                 }
+
+                // println!("OG edge_contributor:");
+                // // print out each element on a separate line
+                // for (key, value) in edge_contributor.iter() {
+                //     println!("\t [{:?}]: {:?}", key, value);
+                // }
 
                 for (&edge_index, &free_weight) in edge_free_weights.iter() {
                     let mut row_entries = vec![];
