@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - ci-test
     tags:
       - '**'
   # pull_request: {}
@@ -96,8 +97,8 @@ jobs: # Workflow credit to https://github.com/samuelcolvin/rtoml/blob/main/.gith
           # manylinux2014 uses centOS 7 (yum install)
           # musllinux_1_2 uses Alpine Linux 3.19 (apk add)
           CIBW_ENVIRONMENT_LINUX: LIBCLANG_PATH=/opt/rh/llvm-toolset-7.0/root/usr/lib64/ LIBCLANG_STATIC_PATH=/opt/rh/llvm-toolset-7.0/root/usr/lib64/ CLANG_PATH=/opt/rh/llvm-toolset-7.0/root/usr/bin/clang
+          # if command -v apt > /dev/null; then apt install -y clang; elif command -v yum > /dev/null; then yum install -y llvm-toolset-7.0; elif command -v apk > /dev/null; then apk add clang17-libclang; fi &&
           CIBW_BEFORE_BUILD_LINUX: >
-            if command -v apt > /dev/null; then apt install -y clang; elif command -v yum > /dev/null; then yum install -y llvm-toolset-7.0; elif command -v apk > /dev/null; then apk add clang17-libclang; fi &&
             curl https://sh.rustup.rs -sSf | sh -s -- --default-toolchain=nightly-2023-11-16 --profile=minimal -y &&
             . "$HOME/.cargo/env" &&
             rustup show
