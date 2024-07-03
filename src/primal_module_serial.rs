@@ -411,29 +411,60 @@ impl PrimalModuleImpl for PrimalModuleSerial {
             #[cfg(feature = "float_lp")]
             // float_lp is enabled, optimizer really plays a role
             if cluster.relaxer_optimizer.should_optimize(&relaxer) {
-                let dual_variables: BTreeMap<Arc<InvalidSubgraph>, Rational> = cluster
-                    .nodes
-                    .iter()
-                    .map(|primal_node_ptr| {
-                        let primal_node = primal_node_ptr.read_recursive();
-                        let dual_node = primal_node.dual_node_ptr.read_recursive();
-                        (
-                            dual_node.invalid_subgraph.clone(),
-                            dual_node.dual_variable_at_last_updated_time.clone(),
-                        )
-                    })
-                    .collect();
+                // let dual_variables: BTreeMap<Arc<InvalidSubgraph>, Rational> = cluster
+                //     .nodes
+                //     .iter()
+                //     .map(|primal_node_ptr| {
+                //         let primal_node = primal_node_ptr.read_recursive();
+                //         let dual_node = primal_node.dual_node_ptr.read_recursive();
+                //         (
+                //             dual_node.invalid_subgraph.clone(),
+                //             dual_node.dual_variable_at_last_updated_time.clone(),
+                //         )
+                //     })
+                //     .collect();
 
-                let mut dual_variables: BTreeMap<Arc<InvalidSubgraph>, Rational> = BTreeMap::new();
+                let mut dual_variables: BTreeMap<NodeIndex, (Arc<InvalidSubgraph>, Rational)> = BTreeMap::new();
                 let mut participating_dual_variable_indices = BTreeSet::new();
                 for primal_node_ptr in cluster.nodes.iter() {
                     let primal_node = primal_node_ptr.read_recursive();
                     let dual_node = primal_node.dual_node_ptr.read_recursive();
                     dual_variables.insert(
-                        dual_node.invalid_subgraph.clone(),
-                        dual_node.dual_variable_at_last_updated_time.clone(),
+                        dual_node.index,
+                        (
+                            dual_node.invalid_subgraph.clone(),
+                            dual_node.dual_variable_at_last_updated_time,
+                        ),
                     );
                     participating_dual_variable_indices.insert(dual_node.index);
+                }
+
+                for (invalid_subgraph, _) in relaxer.get_direction().iter() {
+                    let (existing, dual_node_ptr) = interface_ptr.find_or_create_node_tune(invalid_subgraph, dual_module);
+                    if !existing {
+                        // create the corresponding primal node and add it to cluster
+                        let primal_node_ptr = PrimalModuleSerialNodePtr::new_value(PrimalModuleSerialNode {
+                            dual_node_ptr: dual_node_ptr.clone(),
+                            cluster_weak: cluster_ptr.downgrade(),
+                        });
+                        cluster.nodes.push(primal_node_ptr.clone());
+                        self.nodes.push(primal_node_ptr);
+                        participating_dual_variable_indices.insert(dual_node_ptr.read_recursive().index);
+
+                        // maybe optimize here
+                    }
+                    match dual_variables.get_mut(&dual_node_ptr.read_recursive().index) {
+                        Some(_) => {}
+                        None => {
+                            dual_variables.insert(
+                                dual_node_ptr.read_recursive().index,
+                                (
+                                    dual_node_ptr.read_recursive().invalid_subgraph.clone(),
+                                    dual_node_ptr.read_recursive().dual_variable_at_last_updated_time,
+                                ),
+                            );
+                        }
+                    };
                 }
 
                 // let edge_slacks: BTreeMap<EdgeIndex, Rational> = dual_variables
@@ -450,8 +481,8 @@ impl PrimalModuleImpl for PrimalModuleSerial {
                 // let (new_relaxer, early_returned) = cluster.relaxer_optimizer.optimize(relaxer, edge_slacks, dual_variables);
 
                 let edge_free_weights: BTreeMap<EdgeIndex, Rational> = dual_variables
-                    .keys()
-                    .flat_map(|invalid_subgraph: &Arc<InvalidSubgraph>| invalid_subgraph.hair.iter().cloned())
+                    .values()
+                    .flat_map(|(invalid_subgraph, _)| invalid_subgraph.hair.iter().cloned())
                     .chain(
                         relaxer
                             .get_direction()

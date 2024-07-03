@@ -24,9 +24,9 @@ use std::ops::Index;
 
 // FIXME: Add correct cfg flags
 pub struct IncrLPSolution {
-    pub edge_constraints: BTreeMap<EdgeIndex, (Rational, BTreeSet<Arc<InvalidSubgraph>>)>,
+    pub edge_constraints: BTreeMap<EdgeIndex, (Rational, BTreeSet<NodeIndex>)>,
     pub edge_row_map: BTreeMap<EdgeIndex, highs::Row>,
-    pub dv_col_map: BTreeMap<Arc<InvalidSubgraph>, highs::Col>,
+    pub dv_col_map: BTreeMap<NodeIndex, highs::Col>,
     pub solution: Option<highs::SolvedModel>,
 }
 
@@ -309,7 +309,7 @@ impl RelaxerOptimizer {
         &mut self,
         relaxer: Relaxer,
         edge_free_weights: BTreeMap<EdgeIndex, Rational>,
-        mut dual_variables: BTreeMap<Arc<InvalidSubgraph>, Rational>, //fixme: Why do we need the raional here?
+        dual_nodes: BTreeMap<NodeIndex, (Arc<InvalidSubgraph>, Rational)>, //fixme: Why do we need the raional here?
         incr_lp_solution: &mut Option<Arc<Mutex<IncrLPSolution>>>,
     ) -> (Relaxer, bool) {
         use highs::{HighsModelStatus, RowProblem, Sense};
@@ -318,39 +318,39 @@ impl RelaxerOptimizer {
         use crate::{dual_module_pq::Edge, invalid_subgraph, ordered_float::OrderedFloat};
 
         // Maybe should be here, or before the calculation of edge_free_weights
-        for invalid_subgraph in relaxer.get_direction().keys() {
-            if !dual_variables.contains_key(invalid_subgraph) {
-                dual_variables.insert(invalid_subgraph.clone(), OrderedFloat::zero());
-            }
-        }
+        // for invalid_subgraph in relaxer.get_direction().keys() {
+        //     if !dual_variables.contains_key(invalid_subgraph) {
+        //         dual_variables.insert(invalid_subgraph.clone(), OrderedFloat::zero());
+        //     }
+        // }
 
         return match incr_lp_solution {
             Some(incr_lp_solution) => {
-                println!("incrementals!");
-                println!("dual_variables: {:?}", dual_variables);
+                // println!("incrementals!");
+                // panic!()
+                // println!("dual_variables: {:?}", dual_variables);
                 let mut incr_lp_solution_ptr = incr_lp_solution.lock();
                 let mut model: highs::Model = incr_lp_solution_ptr.solution.take().unwrap().into();
 
-                let mut edge_contributor: BTreeMap<EdgeIndex, (Rational, BTreeSet<Arc<InvalidSubgraph>>)> =
-                    edge_free_weights
-                        .iter()
-                        .map(|(&edge_index, &edge_free_weight)| (edge_index, (edge_free_weight, BTreeSet::new())))
-                        .collect();
+                let mut edge_contributor: BTreeMap<EdgeIndex, (Rational, BTreeSet<NodeIndex>)> = edge_free_weights
+                    .iter()
+                    .map(|(&edge_index, &edge_free_weight)| (edge_index, (edge_free_weight, BTreeSet::new())))
+                    .collect();
 
-                for invalid_subgraph in dual_variables.keys() {
+                for (dual_node_index, (invalid_subgraph, _)) in dual_nodes.iter() {
                     for edge_index in invalid_subgraph.hair.iter() {
                         edge_contributor
                             .get_mut(&edge_index)
                             .unwrap()
                             .1
-                            .insert(invalid_subgraph.clone());
+                            .insert(dual_node_index.clone());
                     }
-                    if incr_lp_solution_ptr.dv_col_map.contains_key(invalid_subgraph) {
+                    if incr_lp_solution_ptr.dv_col_map.contains_key(dual_node_index) {
                         continue;
                     }
                     let col = model.add_col(1.0, 0.0.., []);
 
-                    incr_lp_solution_ptr.dv_col_map.insert(invalid_subgraph.clone(), col);
+                    incr_lp_solution_ptr.dv_col_map.insert(dual_node_index.clone(), col);
                 }
 
                 // println!("edge_contributor:");
@@ -371,12 +371,11 @@ impl RelaxerOptimizer {
                                 update_deges_weight.insert(edge_index.clone());
                             }
                             if _edge_contributors != &edge_contributor[&edge_index].1 {
-                                println!(
-                                    "_edge_contributors len: {:?}, edge_contributors len: {:?}",
-                                    _edge_contributors.len(),
-                                    edge_contributor[&edge_index].1.len()
-                                );
-                                println!("here...");
+                                // println!(
+                                //     "_edge_contributors len: {:?}\nedge_contributors len: {:?}",
+                                //     _edge_contributors, edge_contributor[&edge_index].1
+                                // );
+                                // println!("here...");
                                 update_edges_contributors.insert(edge_index.clone());
                             }
                         }
@@ -404,9 +403,9 @@ impl RelaxerOptimizer {
 
                 for edge_index in update_edges_contributors.into_iter() {
                     let row = incr_lp_solution_ptr.edge_row_map.get(&edge_index).unwrap();
-                    let diff = incr_lp_solution_ptr.edge_constraints[&edge_index]
+                    let diff = edge_contributor[&edge_index]
                         .1
-                        .difference(&edge_contributor[&edge_index].1);
+                        .difference(&incr_lp_solution_ptr.edge_constraints[&edge_index].1);
                     for invalid_subgraph in diff {
                         model.change_matrix_coefficient(*row, incr_lp_solution_ptr.dv_col_map[invalid_subgraph], 1.0)
                     }
@@ -421,16 +420,20 @@ impl RelaxerOptimizer {
                     // calculate the objective function
                     let new_dual_variable_sum = OrderedFloat::from(solution.columns().iter().sum::<f64>());
 
-                    let delta: OrderedFloat = new_dual_variable_sum - dual_variables.values().sum::<OrderedFloat>();
+                    let delta: OrderedFloat = new_dual_variable_sum
+                        - dual_nodes
+                            .values()
+                            .map(|(invalid_subgraph, grow_rate)| grow_rate)
+                            .sum::<OrderedFloat>();
 
                     // check positivity of the objective
                     if !(delta.is_positive()) {
                         return (relaxer, true);
                     }
 
-                    for (invalid_subgraph, dv) in dual_variables.iter() {
+                    for (node_index, (invalid_subgraph, dv)) in dual_nodes.iter() {
                         let overall_growth =
-                            OrderedFloat::from(*solution.index(incr_lp_solution_ptr.dv_col_map[invalid_subgraph])) - dv;
+                            OrderedFloat::from(*solution.index(incr_lp_solution_ptr.dv_col_map[node_index])) - dv;
                         if !overall_growth.is_zero() {
                             // println!("inserting: {:?}, {:?}", invalid_subgraph, OrderedFloat::from(overall_growth));
                             direction.insert(invalid_subgraph.clone(), overall_growth);
@@ -537,32 +540,31 @@ impl RelaxerOptimizer {
 
                 */
 
-                println!("OG dual_variables: {:?}", dual_variables);
+                // println!("OG dual_variables: {:?}", dual_variables);
 
                 let mut model = RowProblem::default().optimise(Sense::Maximise);
                 model.set_option("time_limit", 30.0); // stop after 30 seconds
 
                 let mut edge_row_map: BTreeMap<EdgeIndex, highs::Row> = BTreeMap::new();
-                let mut dv_col_map: BTreeMap<Arc<InvalidSubgraph>, highs::Col> = BTreeMap::new();
+                let mut dv_col_map: BTreeMap<NodeIndex, highs::Col> = BTreeMap::new();
 
-                let mut edge_contributor: BTreeMap<EdgeIndex, (Rational, BTreeSet<Arc<InvalidSubgraph>>)> =
-                    edge_free_weights
-                        .iter()
-                        .map(|(&edge_index, &edge_free_weight)| (edge_index, (edge_free_weight, BTreeSet::new())))
-                        .collect();
+                let mut edge_contributor: BTreeMap<EdgeIndex, (Rational, BTreeSet<NodeIndex>)> = edge_free_weights
+                    .iter()
+                    .map(|(&edge_index, &edge_free_weight)| (edge_index, (edge_free_weight, BTreeSet::new())))
+                    .collect();
 
-                for invalid_subgraph in dual_variables.keys() {
+                for (dual_node_index, (invalid_subgraph, _)) in dual_nodes.iter() {
                     // constraint of the dual variable >= 0
                     let col = model.add_col(1.0, 0.0.., []);
 
-                    dv_col_map.insert(invalid_subgraph.clone(), col);
+                    dv_col_map.insert(dual_node_index.clone(), col);
 
                     for &edge_index in invalid_subgraph.hair.iter() {
                         edge_contributor
                             .get_mut(&edge_index)
                             .unwrap()
                             .1
-                            .insert(invalid_subgraph.clone());
+                            .insert(dual_node_index.clone());
                     }
                 }
 
@@ -592,15 +594,19 @@ impl RelaxerOptimizer {
                     // calculate the objective function
                     let new_dual_variable_sum = OrderedFloat::from(solution.columns().iter().sum::<f64>());
 
-                    let delta: OrderedFloat = new_dual_variable_sum - dual_variables.values().sum::<OrderedFloat>();
+                    let delta: OrderedFloat = new_dual_variable_sum
+                        - dual_nodes
+                            .values()
+                            .map(|(invalid_subgraph, grow_rate)| grow_rate)
+                            .sum::<OrderedFloat>();
 
                     // check positivity of the objective
                     if !(delta.is_positive()) {
                         return (relaxer, true);
                     }
 
-                    for (invalid_subgraph, dv) in dual_variables.iter() {
-                        let overall_growth = OrderedFloat::from(*solution.index(dv_col_map[invalid_subgraph])) - dv;
+                    for (node_index, (invalid_subgraph, dv)) in dual_nodes.iter() {
+                        let overall_growth = OrderedFloat::from(*solution.index(dv_col_map[node_index])) - dv;
                         if !overall_growth.is_zero() {
                             // println!("inserting: {:?}, {:?}", invalid_subgraph, OrderedFloat::from(overall_growth));
                             direction.insert(invalid_subgraph.clone(), overall_growth);
@@ -611,12 +617,12 @@ impl RelaxerOptimizer {
                     unreachable!();
                 }
 
-                // *incr_lp_solution = Some(Arc::new(Mutex::new(IncrLPSolution {
-                //     edge_constraints: edge_contributor,
-                //     edge_row_map,
-                //     dv_col_map,
-                //     solution: Some(solved),
-                // })));
+                *incr_lp_solution = Some(Arc::new(Mutex::new(IncrLPSolution {
+                    edge_constraints: edge_contributor,
+                    edge_row_map,
+                    dv_col_map,
+                    solution: Some(solved),
+                })));
 
                 self.relaxers.insert(relaxer);
                 (Relaxer::new(direction), false)
@@ -765,5 +771,135 @@ pub mod tests {
         assert_eq!(solution.columns(), vec![0., 6., 2.]);
         // All the constraints are at their maximum
         assert_eq!(solution.rows(), vec![6., 10.]);
+    }
+
+    #[cfg(feature = "highs")]
+    #[test]
+    fn highs_change_incr_coeff() {
+        use highs::{HighsModelStatus, Model, RowProblem, Sense};
+        // max: x + 2y + z
+        // under constraints:
+        // c1: 3x +  y      <= 6
+        // c2:       y + 2z <= 7
+
+        let mut model = RowProblem::default().optimise(Sense::Maximise);
+        // x
+        let x = model.add_col(1., (0.).., []);
+        // y
+        let y = model.add_col(2., (0.).., []);
+        // z
+        let z = model.add_col(1., (0.).., []);
+
+        let c1 = model.add_row(..6., [(x, 3.), (y, 1.)]);
+        let c2 = model.add_row(..7., [(y, 1.), (z, 2.)]);
+
+        let solved = model.solve();
+
+        assert_eq!(solved.status(), HighsModelStatus::Optimal);
+
+        let solution = solved.get_solution();
+        // The expected solution is x=0  y=6  z=0.5
+        assert_eq!(solution.columns(), vec![0., 6., 0.5]);
+        // All the constraints are at their maximum
+        assert_eq!(solution.rows(), vec![6., 7.]);
+
+        // Now we want to change the problem and solve it on top of it
+        let mut model: Model = solved.into();
+
+        // modify row c2 to be y + 2z <= 10
+        // Now:
+        //      max: x + 2y + z + a
+        //      under constraints:
+        //      c1: 3x +  y      <= 6
+        //      c2:       y + 3z + a <= 10
+        model.change_row_bounds(c2, ..10.);
+
+        let a = model.add_col(1., (0.).., []);
+        model.change_matrix_coefficient(c2, a, 1.);
+
+        let solved = model.solve();
+
+        assert_eq!(solved.status(), HighsModelStatus::Optimal);
+
+        let solution = solved.get_solution();
+        // The expected solution is x=0  y=6  z=2
+        assert_eq!(solution.columns(), vec![0., 6., 0., 4.]);
+        // All the constraints are at their maximum
+        assert_eq!(solution.rows(), vec![6., 10.]);
+    }
+
+    #[cfg(feature = "highs")]
+    #[test]
+    fn highs_change_matrix_coefficient() {
+        use highs::{ColProblem, HighsModelStatus, Model, Sense};
+
+        // Create initial problem
+        let mut model = ColProblem::default().optimise(Sense::Maximise);
+        let c1 = model.add_row(..=6., []);
+        let c2 = model.add_row(..=7., []);
+        let x = model.add_col(1., (0.).., [(c1, 3.)]);
+        let y = model.add_col(2., (0.).., [(c1, 1.), (c2, 1.)]);
+        let z = model.add_col(1., (0.).., [(c2, 2.)]);
+
+        let solved = model.solve();
+        assert_eq!(solved.status(), HighsModelStatus::Optimal);
+
+        let solution = solved.get_solution();
+        assert_eq!(solution.columns(), vec![0., 6., 0.5]);
+        assert_eq!(solution.rows(), vec![6., 7.]);
+
+        // Change a coefficient in the constraint matrix
+        let mut model: Model = solved.into();
+        model.change_matrix_coefficient(c1, x, 1.0);
+
+        let solved = model.solve();
+        assert_eq!(solved.status(), HighsModelStatus::Optimal);
+
+        let solution = solved.get_solution();
+        assert_eq!(solution.columns(), vec![0., 6., 0.5]);
+        assert_eq!(solution.rows(), vec![6., 7.]);
+
+        let mut model: Model = solved.into();
+
+        // Change another coefficient in the constraint matrix
+        model.change_matrix_coefficient(c2, z, 1.0);
+
+        let solved = model.solve();
+        assert_eq!(solved.status(), HighsModelStatus::Optimal);
+
+        let solution = solved.get_solution();
+        // The expected solution should change due to the modification
+        // Let's assume the new expected solution is x=0, y=6, z=1
+        assert_eq!(solution.columns(), vec![0., 6., 1.]);
+        assert_eq!(solution.rows(), vec![6., 7.]);
+    }
+
+    #[cfg(feature = "highs")]
+    #[test]
+    fn highs_change_matrix_coefficient_with_infeasibility() {
+        use highs::{ColProblem, HighsModelStatus, Model, Sense};
+
+        // Create initial problem
+        let mut model = ColProblem::default().optimise(Sense::Maximise);
+        let c1 = model.add_row(..=6., []);
+        let c2 = model.add_row(..=7., []);
+        let x = model.add_col(1., (0.).., [(c1, 3.)]);
+        let y = model.add_col(2., (0.).., [(c1, 1.), (c2, 1.)]);
+        let z = model.add_col(1., (0.).., [(c2, 2.)]);
+
+        let solved = model.solve();
+        assert_eq!(solved.status(), HighsModelStatus::Optimal);
+
+        let solution = solved.get_solution();
+        assert_eq!(solution.columns(), vec![0., 6., 0.5]);
+        assert_eq!(solution.rows(), vec![6., 7.]);
+
+        // Change a coefficient to create an infeasible problem
+        let mut model: Model = solved.into();
+        model.change_matrix_coefficient(c1, x, 10.0);
+        model.change_col_bounds(x, 1.7..);
+
+        let solved = model.solve();
+        assert_eq!(solved.status(), HighsModelStatus::Infeasible);
     }
 }

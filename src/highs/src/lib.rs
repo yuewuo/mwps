@@ -383,6 +383,31 @@ impl Model {
         Ok(())
     }
 
+    /// Changes the bounds of a row.
+    ///
+    /// # Panics
+    ///
+    /// If HIGHS returns an error status value.
+    pub fn change_col_bounds(&mut self, col: Col, bounds: impl RangeBounds<f64>) {
+        self.try_change_col_bounds(col, bounds)
+            .unwrap_or_else(|e| panic!("HiGHS error: {:?}", e))
+    }
+
+    /// Tries to change the bounds of a row in the highs model.
+    ///
+    /// Returns Ok(()), or the error status value if HIGHS returned an error status.
+    pub fn try_change_col_bounds(&mut self, col: Col, bounds: impl RangeBounds<f64>) -> Result<(), HighsStatus> {
+        unsafe {
+            highs_call!(Highs_changeColBounds(
+                self.highs.mut_ptr(),
+                col.0.try_into().unwrap(),
+                bound_value(bounds.start_bound()).unwrap_or(f64::NEG_INFINITY),
+                bound_value(bounds.end_bound()).unwrap_or(f64::INFINITY)
+            ))?;
+        }
+        Ok(())
+    }
+
     /// Change a coefficient in the constraint matrix.
     ///
     /// # Panics
