@@ -133,6 +133,7 @@ pub struct PrimalCluster {
     pub relaxer_optimizer: RelaxerOptimizer,
     /// HIHGS solution stored for incrmental lp
     /// FIXME: Maybe add a flag for only including this when using incremental lp
+    #[cfg(feature = "highs")]
     pub incr_solution: Option<Arc<Mutex<IncrLPSolution>>>,
 }
 
@@ -193,6 +194,7 @@ impl PrimalModuleImpl for PrimalModuleSerial {
                 subgraph: None,
                 plugin_manager: PluginManager::new(self.plugins.clone(), self.plugin_count.clone()),
                 relaxer_optimizer: RelaxerOptimizer::new(),
+                #[cfg(feature = "highs")]
                 incr_solution: None,
             });
             // create the primal node of this defect node and insert into cluster

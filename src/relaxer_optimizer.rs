@@ -23,6 +23,7 @@ use parking_lot::Mutex;
 use std::ops::Index;
 
 // FIXME: Add correct cfg flags
+#[cfg(feature = "highs")]
 pub struct IncrLPSolution {
     pub edge_constraints: BTreeMap<EdgeIndex, (Rational, BTreeSet<Arc<InvalidSubgraph>>)>,
     pub edge_row_map: BTreeMap<EdgeIndex, highs::Row>,
@@ -30,12 +31,14 @@ pub struct IncrLPSolution {
     pub solution: Option<highs::SolvedModel>,
 }
 
+#[cfg(feature = "highs")]
 impl IncrLPSolution {
     pub fn constraints_len(&self) -> usize {
         self.edge_row_map.len() + self.dv_col_map.len()
     }
 }
 
+#[cfg(feature = "highs")]
 unsafe impl Send for IncrLPSolution {}
 
 #[derive(Default, Debug)]
@@ -120,13 +123,15 @@ impl RelaxerOptimizer {
         true
     }
 
-    #[cfg(not(feature = "float_lp"))]
+    #[cfg(all(not(feature = "float_lp"), feature = "slp"))]
     pub fn optimize(
         &mut self,
         relaxer: Relaxer,
         edge_slacks: BTreeMap<EdgeIndex, Rational>,
         mut dual_variables: BTreeMap<Arc<InvalidSubgraph>, Rational>,
     ) -> (Relaxer, bool) {
+        use crate::slp;
+
         for invalid_subgraph in relaxer.get_direction().keys() {
             if !dual_variables.contains_key(invalid_subgraph) {
                 dual_variables.insert(invalid_subgraph.clone(), Rational::zero());
@@ -465,7 +470,7 @@ impl RelaxerOptimizer {
             None => {
                 let mut model = RowProblem::default().optimise(Sense::Maximise);
                 model.set_option("time_limit", 30.0); // stop after 30 seconds
-                                                      // model.set_option("parallel", "off"); // do not use multiple cores
+                model.set_option("parallel", "off"); // do not use multiple cores
 
                 let mut edge_row_map: BTreeMap<EdgeIndex, highs::Row> = BTreeMap::new();
                 let mut dv_col_map: BTreeMap<Arc<InvalidSubgraph>, highs::Col> = BTreeMap::new();
@@ -566,6 +571,7 @@ pub mod tests {
     #[test]
     fn lp_solver_simple() {
         use crate::util::Rational;
+        use slp::BigInt;
 
         // cargo test lp_solver_simple -- --nocapture
         // https://docs.rs/slp/latest/slp/
@@ -582,8 +588,11 @@ pub mod tests {
         assert_eq!(
             solution,
             slp::Solution::Optimal(
-                Rational::from_integer(28),
-                vec![Rational::from_integer(5), Rational::from_integer(6)]
+                Rational::from_integer(BigInt::from(28)),
+                vec![
+                    Rational::from_integer(BigInt::from(5)),
+                    Rational::from_integer(BigInt::from(6))
+                ]
             )
         );
         match solution {
