@@ -24,9 +24,9 @@ use std::ops::Index;
 
 // FIXME: Add correct cfg flags
 pub struct IncrLPSolution {
-    pub edge_constraints: BTreeMap<EdgeIndex, (Rational, BTreeSet<NodeIndex>)>,
+    pub edge_constraints: BTreeMap<EdgeIndex, (Rational, BTreeSet<Arc<InvalidSubgraph>>)>,
     pub edge_row_map: BTreeMap<EdgeIndex, highs::Row>,
-    pub dv_col_map: BTreeMap<NodeIndex, highs::Col>,
+    pub dv_col_map: BTreeMap<Arc<InvalidSubgraph>, highs::Col>,
     pub solution: Option<highs::SolvedModel>,
 }
 
@@ -309,7 +309,7 @@ impl RelaxerOptimizer {
         &mut self,
         relaxer: Relaxer,
         edge_free_weights: BTreeMap<EdgeIndex, Rational>,
-        dual_nodes: BTreeMap<NodeIndex, (Arc<InvalidSubgraph>, Rational)>, //fixme: Why do we need the raional here?
+        mut dual_nodes: BTreeMap<Arc<InvalidSubgraph>, Rational>, //fixme: Why do we need the raional here?
         incr_lp_solution: &mut Option<Arc<Mutex<IncrLPSolution>>>,
     ) -> (Relaxer, bool) {
         use highs::{HighsModelStatus, RowProblem, Sense};
@@ -324,33 +324,40 @@ impl RelaxerOptimizer {
         //     }
         // }
 
+        for invalid_subgraph in relaxer.get_direction().keys() {
+            if !dual_nodes.contains_key(invalid_subgraph) {
+                dual_nodes.insert(invalid_subgraph.clone(), Rational::zero());
+            }
+        }
+
         return match incr_lp_solution {
             Some(incr_lp_solution) => {
-                // println!("incrementals!");
+                println!("incrementals!");
                 // panic!()
                 // println!("dual_variables: {:?}", dual_variables);
                 let mut incr_lp_solution_ptr = incr_lp_solution.lock();
                 let mut model: highs::Model = incr_lp_solution_ptr.solution.take().unwrap().into();
 
-                let mut edge_contributor: BTreeMap<EdgeIndex, (Rational, BTreeSet<NodeIndex>)> = edge_free_weights
-                    .iter()
-                    .map(|(&edge_index, &edge_free_weight)| (edge_index, (edge_free_weight, BTreeSet::new())))
-                    .collect();
+                let mut edge_contributor: BTreeMap<EdgeIndex, (Rational, BTreeSet<Arc<InvalidSubgraph>>)> =
+                    edge_free_weights
+                        .iter()
+                        .map(|(&edge_index, &edge_free_weight)| (edge_index, (edge_free_weight, BTreeSet::new())))
+                        .collect();
 
-                for (dual_node_index, (invalid_subgraph, _)) in dual_nodes.iter() {
+                for invalid_subgraph in dual_nodes.keys() {
                     for edge_index in invalid_subgraph.hair.iter() {
                         edge_contributor
                             .get_mut(&edge_index)
                             .unwrap()
                             .1
-                            .insert(dual_node_index.clone());
+                            .insert(invalid_subgraph.clone());
                     }
-                    if incr_lp_solution_ptr.dv_col_map.contains_key(dual_node_index) {
+                    if incr_lp_solution_ptr.dv_col_map.contains_key(invalid_subgraph) {
                         continue;
                     }
                     let col = model.add_col(1.0, 0.0.., []);
 
-                    incr_lp_solution_ptr.dv_col_map.insert(dual_node_index.clone(), col);
+                    incr_lp_solution_ptr.dv_col_map.insert(invalid_subgraph.clone(), col);
                 }
 
                 // println!("edge_contributor:");
@@ -406,9 +413,16 @@ impl RelaxerOptimizer {
                     let diff = edge_contributor[&edge_index]
                         .1
                         .difference(&incr_lp_solution_ptr.edge_constraints[&edge_index].1);
+                    let reverse_diff = incr_lp_solution_ptr.edge_constraints[&edge_index]
+                        .1
+                        .difference(&edge_contributor[&edge_index].1);
+                    assert!(reverse_diff.count() == 0);
                     for invalid_subgraph in diff {
                         model.change_matrix_coefficient(*row, incr_lp_solution_ptr.dv_col_map[invalid_subgraph], 1.0)
                     }
+                    // for invalid_subgraph in reverse_diff {
+                    //     model.change_matrix_coefficient(*row, incr_lp_solution_ptr.dv_col_map[invalid_subgraph], 0.0)
+                    // }
                 }
 
                 let solved = model.solve();
@@ -420,20 +434,18 @@ impl RelaxerOptimizer {
                     // calculate the objective function
                     let new_dual_variable_sum = OrderedFloat::from(solution.columns().iter().sum::<f64>());
 
-                    let delta: OrderedFloat = new_dual_variable_sum
-                        - dual_nodes
-                            .values()
-                            .map(|(invalid_subgraph, grow_rate)| grow_rate)
-                            .sum::<OrderedFloat>();
+                    let delta: OrderedFloat = new_dual_variable_sum - dual_nodes.values().sum::<OrderedFloat>();
+
+                    // println!("delta: {:?}", delta);
 
                     // check positivity of the objective
                     if !(delta.is_positive()) {
                         return (relaxer, true);
                     }
 
-                    for (node_index, (invalid_subgraph, dv)) in dual_nodes.iter() {
+                    for (invalid_subgraph, dv) in dual_nodes.iter() {
                         let overall_growth =
-                            OrderedFloat::from(*solution.index(incr_lp_solution_ptr.dv_col_map[node_index])) - dv;
+                            OrderedFloat::from(*solution.index(incr_lp_solution_ptr.dv_col_map[invalid_subgraph])) - dv;
                         if !overall_growth.is_zero() {
                             // println!("inserting: {:?}, {:?}", invalid_subgraph, OrderedFloat::from(overall_growth));
                             direction.insert(invalid_subgraph.clone(), overall_growth);
@@ -451,120 +463,31 @@ impl RelaxerOptimizer {
                 (Relaxer::new(direction), false)
             }
             None => {
-                /*
-                    let mut model = RowProblem::default().optimise(Sense::Maximise);
-                    model.set_option("time_limit", 30.0); // stop after 30 seconds
-
-                    let mut x_vars = vec![];
-                    let mut y_vars = vec![];
-                    let mut invalid_subgraphs = Vec::with_capacity(dual_variables.len());
-                    let mut edge_contributor: BTreeMap<EdgeIndex, Vec<usize>> =
-                        edge_slacks.keys().map(|&edge_index| (edge_index, vec![])).collect();
-
-                    let mut edge_contributors: BTreeMap<EdgeIndex, BTreeSet<Arc<InvalidSubgraph>>> =
-                        edge_slacks.keys().map(|&edge_index| (edge_index, BTreeSet::new())).collect();
-
-                    for (var_index, (invalid_subgraph, dual_variable)) in dual_variables.iter().enumerate() {
-                        // constraint of the dual variable >= 0
-                        let x = model.add_col(1.0, 0.0.., []);
-                        let y = model.add_col(-1.0, 0.0.., []);
-                        x_vars.push(x);
-                        y_vars.push(y);
-
-                        // constraint for xs ys <= dual_variable
-                        model.add_row(
-                            ..dual_variable.to_f64().unwrap(),
-                            [(x_vars[var_index], -1.0), (y_vars[var_index], 1.0)],
-                        );
-                        invalid_subgraphs.push(invalid_subgraph.clone());
-
-                        for &edge_index in invalid_subgraph.hair.iter() {
-                            edge_contributor.get_mut(&edge_index).unwrap().push(var_index);
-                            edge_contributors
-                                .get_mut(&edge_index)
-                                .unwrap()
-                                .insert(invalid_subgraph.clone());
-                        }
-                    }
-
-                    for (&edge_index, &slack) in edge_slacks.iter() {
-                        let mut row_entries = vec![];
-                        for &var_index in edge_contributor[&edge_index].iter() {
-                            row_entries.push((x_vars[var_index], 1.0));
-                            row_entries.push((y_vars[var_index], -1.0));
-                        }
-
-                        // constraint of edge: sum(y_S) <= weight
-                        model.add_row(..=slack.to_f64().unwrap(), row_entries);
-                    }
-
-                    let solved = model.solve();
-
-                    let mut direction: BTreeMap<Arc<InvalidSubgraph>, OrderedFloat> = BTreeMap::new();
-                    if solved.status() == HighsModelStatus::Optimal {
-                        let solution = solved.get_solution();
-
-                        // calculate the objective function
-                        let mut res = OrderedFloat::new(0.0);
-                        let cols = solution.columns();
-                        for i in 0..x_vars.len() {
-                            res += OrderedFloat::new(cols[2 * i] - cols[2 * i + 1]);
-                        }
-
-                        // check positivity of the objective
-                        if !(res.is_positive()) {
-                            return (relaxer, true);
-                        }
-
-                        for (var_index, invalid_subgraph) in invalid_subgraphs.iter().enumerate() {
-                            let overall_growth = cols[2 * var_index] - cols[2 * var_index + 1];
-                            if !overall_growth.is_zero() {
-                                direction.insert(invalid_subgraph.clone(), OrderedFloat::from(overall_growth));
-                            }
-                        }
-                    } else {
-                        println!("solved status: {:?}", solved.status());
-                        unreachable!();
-                    }
-
-                    // *incr_lp_solution = Some(Arc::new(Mutex::new(IncrLPSolution {
-                    //     dual_variables: dual_variables.clone(),
-                    //     edge_contributors,
-                    //     edge_slacks: edge_slacks.clone(),
-                    //     solution: Some(solved),
-                    //     current_dual_variables_sum: dual_variables.values().sum(),
-                    // })));
-
-                    self.relaxers.insert(relaxer);
-                    (Relaxer::new(direction), false)
-
-                */
-
-                // println!("OG dual_variables: {:?}", dual_variables);
-
                 let mut model = RowProblem::default().optimise(Sense::Maximise);
                 model.set_option("time_limit", 30.0); // stop after 30 seconds
+                                                      // model.set_option("parallel", "off"); // do not use multiple cores
 
                 let mut edge_row_map: BTreeMap<EdgeIndex, highs::Row> = BTreeMap::new();
-                let mut dv_col_map: BTreeMap<NodeIndex, highs::Col> = BTreeMap::new();
+                let mut dv_col_map: BTreeMap<Arc<InvalidSubgraph>, highs::Col> = BTreeMap::new();
 
-                let mut edge_contributor: BTreeMap<EdgeIndex, (Rational, BTreeSet<NodeIndex>)> = edge_free_weights
-                    .iter()
-                    .map(|(&edge_index, &edge_free_weight)| (edge_index, (edge_free_weight, BTreeSet::new())))
-                    .collect();
+                let mut edge_contributor: BTreeMap<EdgeIndex, (Rational, BTreeSet<Arc<InvalidSubgraph>>)> =
+                    edge_free_weights
+                        .iter()
+                        .map(|(&edge_index, &edge_free_weight)| (edge_index, (edge_free_weight, BTreeSet::new())))
+                        .collect();
 
-                for (dual_node_index, (invalid_subgraph, _)) in dual_nodes.iter() {
+                for invalid_subgraph in dual_nodes.keys() {
                     // constraint of the dual variable >= 0
                     let col = model.add_col(1.0, 0.0.., []);
 
-                    dv_col_map.insert(dual_node_index.clone(), col);
+                    dv_col_map.insert(invalid_subgraph.clone(), col);
 
                     for &edge_index in invalid_subgraph.hair.iter() {
                         edge_contributor
                             .get_mut(&edge_index)
                             .unwrap()
                             .1
-                            .insert(dual_node_index.clone());
+                            .insert(invalid_subgraph.clone());
                     }
                 }
 
@@ -594,19 +517,17 @@ impl RelaxerOptimizer {
                     // calculate the objective function
                     let new_dual_variable_sum = OrderedFloat::from(solution.columns().iter().sum::<f64>());
 
-                    let delta: OrderedFloat = new_dual_variable_sum
-                        - dual_nodes
-                            .values()
-                            .map(|(invalid_subgraph, grow_rate)| grow_rate)
-                            .sum::<OrderedFloat>();
+                    let delta: OrderedFloat = new_dual_variable_sum - dual_nodes.values().sum::<OrderedFloat>();
+
+                    // println!("delta: {:?}", delta);
 
                     // check positivity of the objective
                     if !(delta.is_positive()) {
                         return (relaxer, true);
                     }
 
-                    for (node_index, (invalid_subgraph, dv)) in dual_nodes.iter() {
-                        let overall_growth = OrderedFloat::from(*solution.index(dv_col_map[node_index])) - dv;
+                    for (invalid_subgraph, dv) in dual_nodes.iter() {
+                        let overall_growth = OrderedFloat::from(*solution.index(dv_col_map[invalid_subgraph])) - dv;
                         if !overall_growth.is_zero() {
                             // println!("inserting: {:?}, {:?}", invalid_subgraph, OrderedFloat::from(overall_growth));
                             direction.insert(invalid_subgraph.clone(), overall_growth);

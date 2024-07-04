@@ -406,6 +406,11 @@ pub trait DualModuleImpl {
                     // update the dual node and check for conflicts
                     let mut node_ptr_write = dual_node_ptr.ptr.write();
                     node_ptr_write.dual_variable_at_last_updated_time += grow_rate.clone();
+                    // println!("growing dual_node index: [{:?}], by [{:?}]", node_ptr_write.index, grow_rate);
+                    // println!(
+                    //     "\tdual_variable_at_last_updated_time: [{:?}]",
+                    //     node_ptr_write.dual_variable_at_last_updated_time
+                    // );
                     if grow_rate.is_negative() && node_ptr_write.dual_variable_at_last_updated_time.is_zero() {
                         conflicts.insert(MaxUpdateLength::ShrinkProhibited(OrderedDualNodePtr::new(
                             node_ptr_write.index,
@@ -433,6 +438,8 @@ pub trait DualModuleImpl {
                         continue;
                     }
                     self.grow_edge(edge_index, &grow_rate);
+                    // println!("growing edge index: [{:?}], by [{:?}]", edge_index, grow_rate);
+                    // println!("\tnew edge slack: [{:?}]", self.get_edge_slack(edge_index));
                     if grow_rate.is_positive() && self.is_edge_tight_tune(edge_index) {
                         conflicts.insert(MaxUpdateLength::Conflicting(edge_index));
                     }

@@ -628,8 +628,17 @@ where
 
     /// grow specific amount for a specific edge
     fn grow_edge(&self, edge_index: EdgeIndex, amount: &Rational) {
+        // println!("here");
         let mut edge = self.edges[edge_index].write();
+        // println!("\told amount: {:?}", edge.growth_at_last_updated_time);
         edge.growth_at_last_updated_time += amount;
+        // println!("\tnew amount: {:?}", edge.growth_at_last_updated_time);
+
+
+        assert!(
+            edge.growth_at_last_updated_time <= edge.weight,
+            "growth larger than weight: check if events are 1) inserted and 2) handled correctly"
+        );
     }
 
     /// sync all states and global time so the concept of time and pq can retire
