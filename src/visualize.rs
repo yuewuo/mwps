@@ -192,7 +192,6 @@ pub fn snapshot_combine_values(value: &mut serde_json::Value, mut value_2: serde
                     *vertex = vertex_2.clone();
                     continue;
                 }
-                // println!("vertex_idx: {vertex_idx}");
                 let vertex = vertex.as_object_mut().expect("each vertex must be an object");
                 let vertex_2 = vertex_2.as_object_mut().expect("each vertex must be an object");
                 // list known keys

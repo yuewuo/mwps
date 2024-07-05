@@ -516,7 +516,6 @@ impl GroupMaxUpdateLength {
     pub fn pop(&mut self) -> Option<MaxUpdateLength> {
         match self {
             Self::Unbounded | Self::ValidGrow(_) => {
-                // println!("I am {:?}", self);
                 panic!("please call GroupMaxUpdateLength::get_valid_growth to check if this group is none_zero_growth");
             }
             Self::Conflicts(conflicts) => conflicts.pop(),

@@ -110,7 +110,6 @@ impl PrimalModuleImpl for PrimalModuleUnionFind {
         debug_assert!(!group_max_update_length.is_unbounded() && group_max_update_length.get_valid_growth().is_none());
         let mut active_clusters = BTreeSet::<NodeIndex>::new();
         while let Some(conflict) = group_max_update_length.pop() {
-            // println!("conflict: {conflict:?}");
             match conflict {
                 MaxUpdateLength::Conflicting(edge_index) => {
                     // union all the dual nodes in the edge index and create new dual node by adding this edge to `internal_edges`
