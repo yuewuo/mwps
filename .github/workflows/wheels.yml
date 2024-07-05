@@ -20,8 +20,8 @@ jobs: # Workflow credit to https://github.com/samuelcolvin/rtoml/blob/main/.gith
       matrix:
         os:
           - ubuntu
-          # - macos
-          # - windows
+          - macos
+          - windows
         python-version: # Yue 2022.10.9: I enabled abi3-py37 in pyo3, so everything built will be py37-abi3 which is compatible with py37+
           # - '7'
           - '8' # use python 3.8 to build because macos universal2 requires at least python 3.8; however the result will be py37-abi3
@@ -31,8 +31,8 @@ jobs: # Workflow credit to https://github.com/samuelcolvin/rtoml/blob/main/.gith
         include:
           - os: ubuntu
             platform: linux
-          # - os: windows
-          #   ls: dir
+          - os: windows
+            ls: dir
     runs-on: ${{ format('{0}-latest', matrix.os) }}
 
     steps:
@@ -78,7 +78,6 @@ jobs: # Workflow credit to https://github.com/samuelcolvin/rtoml/blob/main/.gith
           CIBW_ENVIRONMENT: 'PATH="$HOME/.cargo/bin:$PATH"'
           CIBW_ENVIRONMENT_WINDOWS: 'PATH="$UserProfile\.cargo\bin;$PATH"'
           CIBW_ENVIRONMENT_LINUX: PATH="$HOME/.cargo/bin:$PATH" LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/opt/rh/llvm-toolset-7.0/root/usr/lib64/
-          # LIBCLANG_PATH=/opt/rh/llvm-toolset-7.0/root/usr/lib64/ LIBCLANG_STATIC_PATH=/opt/rh/llvm-toolset-7.0/root/usr/lib64/ CLANG_PATH=/opt/rh/llvm-toolset-7.0/root/usr/bin/clang
           CIBW_MANYLINUX_X86_64_IMAGE: 'manylinux2014'
           CIBW_MUSLLINUX_X86_64_IMAGE: 'musllinux_1_2'
           # Yue 2022.10.17: build on aarch64 failed due to strange `cargo metadata` exited with an error:     Updating crates.io index
@@ -95,7 +94,7 @@ jobs: # Workflow credit to https://github.com/samuelcolvin/rtoml/blob/main/.gith
           # manylinux2014 uses centOS 7 (yum install)
           # musllinux_1_2 uses Alpine Linux 3.19 (apk add)
           CIBW_BEFORE_BUILD_LINUX: >
-            if command -v apt > /dev/null; then apt install -y clang; elif command -v yum > /dev/null; then yum install -y llvm-toolset-7.0 && ls $LIBCLANG_PATH; elif command -v apk > /dev/null; then apk add clang17-libclang; fi &&
+            if command -v apt > /dev/null; then apt install -y clang; elif command -v yum > /dev/null; then yum install -y llvm-toolset-7.0; elif command -v apk > /dev/null; then apk add clang17-libclang; fi &&
             curl https://sh.rustup.rs -sSf | sh -s -- --default-toolchain=nightly-2023-11-16 --profile=minimal -y &&
             . "$HOME/.cargo/env" &&
             rustup show
