@@ -631,21 +631,20 @@ impl PrimalModuleSerial {
         cluster_1.edges.append(&mut cluster_2.edges);
         cluster_1.subgraph = None; // mark as no subgraph
 
-        // FIXME: Uncomment this
-        // match (&cluster_1.incr_solution, &cluster_2.incr_solution) {
-        //     (None, Some(_)) => {
-        //         cluster_1.incr_solution = cluster_2.incr_solution.take();
-        //     }
-        //     (Some(c1), Some(c2)) => {
-        //         if c2.constraints_len() > c1.constraints_len() {
-        //             cluster_1.incr_solution = cluster_2.incr_solution.take();
-        //         }
-        //     }
+        match (&cluster_1.incr_solution, &cluster_2.incr_solution) {
+            (None, Some(_)) => {
+                cluster_1.incr_solution = cluster_2.incr_solution.take();
+            }
+            (Some(c1), Some(c2)) => {
+                if c2.lock().constraints_len() > c1.lock().constraints_len() {
+                    cluster_1.incr_solution = cluster_2.incr_solution.take();
+                }
+            }
 
-        //     // no need to changes
-        //     (None, None) => {}
-        //     (Some(_), None) => {}
-        // }
+            // no need to changes
+            (None, None) => {}
+            (Some(_), None) => {}
+        }
 
         for &vertex_index in cluster_2.vertices.iter() {
             if !cluster_1.vertices.contains(&vertex_index) {

@@ -312,14 +312,14 @@ impl RelaxerOptimizer {
         relaxer: Relaxer,
         edge_free_weights: BTreeMap<EdgeIndex, Rational>,
         dual_nodes: BTreeMap<NodeIndex, (Arc<InvalidSubgraph>, Rational)>, //fixme: Why do we need the raional here?
-        incr_lp_solution: &mut Option<Arc<Mutex<IncrLPSolution>>>,
+        option_incr_lp_solution: &mut Option<Arc<Mutex<IncrLPSolution>>>,
     ) -> (Relaxer, bool) {
         use highs::{HighsModelStatus, RowProblem, Sense};
         use num_traits::ToPrimitive;
 
         use crate::ordered_float::OrderedFloat;
 
-        return match incr_lp_solution {
+        return match option_incr_lp_solution {
             Some(incr_lp_solution) => {
                 let mut incr_lp_solution_ptr = incr_lp_solution.lock();
                 let mut model: highs::Model = incr_lp_solution_ptr.solution.take().unwrap().into();
@@ -406,6 +406,7 @@ impl RelaxerOptimizer {
 
                     // check positivity of the objective
                     if !(delta.is_positive()) {
+                        incr_lp_solution_ptr.solution = Some(solved);
                         return (relaxer, true);
                     }
 
@@ -494,7 +495,7 @@ impl RelaxerOptimizer {
                     unreachable!();
                 }
 
-                *incr_lp_solution = Some(Arc::new(Mutex::new(IncrLPSolution {
+                *option_incr_lp_solution = Some(Arc::new(Mutex::new(IncrLPSolution {
                     edge_constraints: edge_contributor,
                     edge_row_map,
                     dv_col_map,
