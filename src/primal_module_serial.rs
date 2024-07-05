@@ -414,20 +414,45 @@ impl PrimalModuleImpl for PrimalModuleSerial {
             #[cfg(feature = "float_lp")]
             // float_lp is enabled, optimizer really plays a role
             if cluster.relaxer_optimizer.should_optimize(&relaxer) {
-                let mut participating_dual_variable_indices = BTreeSet::new();
-                let dual_variables: BTreeMap<Arc<InvalidSubgraph>, Rational> = cluster
+                let mut participating_dual_variables = BTreeSet::new();
+                let mut dual_variables: BTreeMap<Arc<InvalidSubgraph>, Rational> = cluster
                     .nodes
                     .iter()
                     .map(|primal_node_ptr| {
                         let primal_node = primal_node_ptr.read_recursive();
                         let dual_node = primal_node.dual_node_ptr.read_recursive();
-                        participating_dual_variable_indices.insert(dual_node.index);
+                        participating_dual_variables.insert(dual_node.index);
                         (
                             dual_node.invalid_subgraph.clone(),
                             dual_node.dual_variable_at_last_updated_time.clone(),
                         )
                     })
                     .collect();
+
+                for invalid_subgraph in relaxer.get_direction().keys() {
+                    let (existing, dual_node_ptr) = interface_ptr.find_or_create_node_tune(invalid_subgraph, dual_module);
+                    if !existing {
+                        // create the corresponding primal node and add it to cluster
+                        let primal_node_ptr = PrimalModuleSerialNodePtr::new_value(PrimalModuleSerialNode {
+                            dual_node_ptr: dual_node_ptr.clone(),
+                            cluster_weak: cluster_ptr.downgrade(),
+                        });
+                        cluster.nodes.push(primal_node_ptr.clone());
+                        self.nodes.push(primal_node_ptr);
+                    }
+
+                    if !dual_variables.contains_key(invalid_subgraph) {
+                        dual_variables.insert(invalid_subgraph.clone(), Rational::zero());
+                        participating_dual_variables.insert(dual_node_ptr.read_recursive().index);
+                    }
+                }
+
+                // for invalid_subgraph in relaxer.get_direction().keys() {
+                //     if !dual_variables.contains_key(invalid_subgraph) {
+                //         dual_variables.insert(invalid_subgraph.clone(), Rational::zero());
+                //         interface_ptr.find_node(invalid_subgraph).unwrap();
+                //     }
+                // }
 
                 // let mut dual_variables: BTreeMap<NodeIndex, (Arc<InvalidSubgraph>, Rational)> = BTreeMap::new();
                 // let mut participating_dual_variable_indices = BTreeSet::new();
@@ -497,7 +522,7 @@ impl PrimalModuleImpl for PrimalModuleSerial {
                     .map(|edge_index| {
                         (
                             edge_index,
-                            dual_module.get_edge_free_weight(edge_index, &participating_dual_variable_indices),
+                            dual_module.get_edge_free_weight(edge_index, &participating_dual_variables),
                         )
                     })
                     .collect();

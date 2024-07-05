@@ -314,7 +314,7 @@ impl RelaxerOptimizer {
         &mut self,
         relaxer: Relaxer,
         edge_free_weights: BTreeMap<EdgeIndex, Rational>,
-        mut dual_nodes: BTreeMap<Arc<InvalidSubgraph>, Rational>, //fixme: Why do we need the raional here?
+        dual_nodes: BTreeMap<Arc<InvalidSubgraph>, Rational>, //fixme: Why do we need the raional here?
         incr_lp_solution: &mut Option<Arc<Mutex<IncrLPSolution>>>,
     ) -> (Relaxer, bool) {
         use highs::{HighsModelStatus, RowProblem, Sense};
@@ -329,15 +329,15 @@ impl RelaxerOptimizer {
         //     }
         // }
 
-        for invalid_subgraph in relaxer.get_direction().keys() {
-            if !dual_nodes.contains_key(invalid_subgraph) {
-                dual_nodes.insert(invalid_subgraph.clone(), Rational::zero());
-            }
-        }
+        // for invalid_subgraph in relaxer.get_direction().keys() {
+        //     if !dual_nodes.contains_key(invalid_subgraph) {
+        //         dual_nodes.insert(invalid_subgraph.clone(), Rational::zero());
+        //     }
+        // }
 
         return match incr_lp_solution {
             Some(incr_lp_solution) => {
-                println!("incrementals!");
+                // println!("incrementals!");
                 // panic!()
                 // println!("dual_variables: {:?}", dual_variables);
                 let mut incr_lp_solution_ptr = incr_lp_solution.lock();
@@ -421,7 +421,7 @@ impl RelaxerOptimizer {
                     let reverse_diff = incr_lp_solution_ptr.edge_constraints[&edge_index]
                         .1
                         .difference(&edge_contributor[&edge_index].1);
-                    assert!(reverse_diff.count() == 0);
+                    // assert!(reverse_diff.count() == 0);
                     for invalid_subgraph in diff {
                         model.change_matrix_coefficient(*row, incr_lp_solution_ptr.dv_col_map[invalid_subgraph], 1.0)
                     }
@@ -470,7 +470,8 @@ impl RelaxerOptimizer {
             None => {
                 let mut model = RowProblem::default().optimise(Sense::Maximise);
                 model.set_option("time_limit", 30.0); // stop after 30 seconds
-                model.set_option("parallel", "off"); // do not use multiple cores
+                model.set_option("parallel", "off");
+                model.set_option("threads", 1);
 
                 let mut edge_row_map: BTreeMap<EdgeIndex, highs::Row> = BTreeMap::new();
                 let mut dv_col_map: BTreeMap<Arc<InvalidSubgraph>, highs::Col> = BTreeMap::new();

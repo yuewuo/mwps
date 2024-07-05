@@ -450,7 +450,13 @@ pub trait DualModuleImpl {
     }
 
     /// get the edge free weight, for each edge what is the weight that are free to use by the given participating dual variables
-    fn get_edge_free_weight(&self, edge_index: EdgeIndex, participating_dual_variables: &BTreeSet<usize>) -> Rational;
+    fn get_edge_free_weight(
+        &self,
+        edge_index: EdgeIndex,
+        participating_dual_variables: &BTreeSet<NodeIndex>,
+        // participating_dual_variables: &BTreeSet<Arc<InvalidSubgraph>>,
+        // participating_dual_variables: &BTreeMap<Arc<InvalidSubgraph>, Rational>,
+    ) -> Rational;
     // note: comparison between Invalid Subgraphs is VERY SUPER NOT performant
     //      fixme: maybe consider investigating this?
 }
