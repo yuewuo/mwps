@@ -900,6 +900,9 @@ impl PrimalModuleSerial {
         for &cluster_index in active_clusters.iter() {
             let (solved, other) =
                 self.resolve_cluster_tune(cluster_index, interface_ptr, dual_module, &mut dual_node_deltas);
+            if !solved {
+                return (dual_module.get_conflicts_tune(other, dual_node_deltas), false);
+            }
             all_solved &= solved;
             optimizer_result.or(other);
         }
@@ -1052,7 +1055,7 @@ pub mod tests {
             final_dual,
             plugins,
             growing_strategy,
-            DualModulePQ::<FutureObstacleQueue<Rational>>::new_empty(&model_graph.initializer),
+            DualModulePQ::<FutureObstacleQueue2<Rational>>::new_empty(&model_graph.initializer),
             model_graph,
             Some(visualizer),
         )

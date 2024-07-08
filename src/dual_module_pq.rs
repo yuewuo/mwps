@@ -5,7 +5,6 @@
 //! Only debug tests are failing, which aligns with the dual_module_serial behavior
 //!
 
-use crate::invalid_subgraph::InvalidSubgraph;
 use crate::num_traits::{ToPrimitive, Zero};
 use crate::ordered_float::OrderedFloat;
 use crate::pointers::*;
@@ -15,8 +14,6 @@ use crate::util::*;
 use crate::visualize::*;
 use crate::{add_shared_methods, dual_module::*};
 
-use std::collections::BTreeMap;
-use std::sync::Arc;
 use std::{
     cmp::{Ordering, Reverse},
     collections::{BTreeSet, BinaryHeap},
@@ -26,6 +23,7 @@ use derivative::Derivative;
 use itertools::Itertools;
 use num_traits::{FromPrimitive, Signed};
 use parking_lot::{lock_api::RwLockWriteGuard, RawRwLock};
+use priority_queue::PriorityQueue;
 
 /* Helper structs for events/obstacles during growing */
 #[derive(Debug, Clone)]
@@ -60,6 +58,20 @@ impl<T: Ord + PartialEq + Eq, E> PartialOrd for FutureEvent<T, E> {
 pub enum Obstacle {
     Conflict { edge_index: EdgeIndex },
     ShrinkToZero { dual_node_ptr: DualNodePtr },
+}
+
+// implement hash for Obstacle
+impl std::hash::Hash for Obstacle {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        match self {
+            Obstacle::Conflict { edge_index } => {
+                (0, *edge_index as u64).hash(state);
+            }
+            Obstacle::ShrinkToZero { dual_node_ptr } => {
+                (1, dual_node_ptr.read_recursive().index as u64).hash(state); // todo: perhaps swap to using OrderedDualNodePtr
+            }
+        }
+    }
 }
 
 impl Obstacle {
@@ -107,10 +119,25 @@ pub type FutureObstacle<T> = FutureEvent<T, Obstacle>;
 pub type MinBinaryHeap<F> = BinaryHeap<Reverse<F>>;
 pub type FutureObstacleQueue<T> = MinBinaryHeap<FutureObstacle<T>>;
 
-pub trait FutureQueueMethods<T: Ord + PartialEq + Eq + std::fmt::Debug, E: std::fmt::Debug> {
-    /// defines the behavior of `will_happen`, if the queue can contain invalid/duplicate events
-    const MAY_BE_INVALID: bool = true;
+pub type MinPriorityQueue<O, T> = PriorityQueue<O, Reverse<T>>;
+pub type FutureObstacleQueue2<T> = MinPriorityQueue<Obstacle, T>;
 
+impl<T: Ord + PartialEq + Eq + std::fmt::Debug> FutureQueueMethods<T, Obstacle> for FutureObstacleQueue2<T> {
+    fn will_happen(&mut self, time: T, event: Obstacle) {
+        self.push(event, Reverse(time));
+    }
+    fn peek_event(&self) -> Option<(&T, &Obstacle)> {
+        self.peek().map(|future| (&future.1 .0, future.0))
+    }
+    fn pop_event(&mut self) -> Option<(T, Obstacle)> {
+        self.pop().map(|future| (future.1 .0, future.0))
+    }
+    fn clear(&mut self) {
+        self.clear();
+    }
+}
+
+pub trait FutureQueueMethods<T: Ord + PartialEq + Eq + std::fmt::Debug, E: std::fmt::Debug> {
     /// Append an event at time T
     ///     Note: this may have multiple distinct yet valid behaviors, e,g, weather there are duplicates allowed in the data strcture, default to allow
     fn will_happen(&mut self, time: T, event: E);
@@ -140,8 +167,6 @@ impl<T: Ord + PartialEq + Eq + std::fmt::Debug, E: std::fmt::Debug> FutureQueueM
     fn clear(&mut self) {
         self.clear();
     }
-
-    const MAY_BE_INVALID: bool = true;
 }
 
 /* Vertices and Edges */
@@ -220,11 +245,11 @@ impl std::fmt::Debug for EdgePtr {
         write!(
             f,
             "[edge: {}]: weight: {}, grow_rate: {}, growth_at_last_updated_time: {}, last_updated_time: {}\n\tdual_nodes: {:?}\n",
-            edge.edge_index, 
-            edge.weight, 
-            edge.grow_rate, 
-            edge.growth_at_last_updated_time, 
-            edge.last_updated_time, 
+            edge.edge_index,
+            edge.weight,
+            edge.grow_rate,
+            edge.growth_at_last_updated_time,
+            edge.last_updated_time,
             edge.dual_nodes.iter().filter(|node| !node.upgrade_force().read_recursive().grow_rate.is_zero()).collect::<Vec<_>>()
         )
     }
@@ -471,7 +496,7 @@ where
         if dual_node.grow_rate.is_negative() {
             self.obstacle_queue.will_happen(
                 // it is okay to use global_time now, as this must be up-to-speed
-                dual_node.get_dual_variable().clone() / (-dual_node.grow_rate.clone()) + global_time.clone(),
+                dual_node.get_dual_variable().clone() / (-grow_rate.clone()) + global_time.clone(),
                 Obstacle::ShrinkToZero {
                     dual_node_ptr: dual_node_ptr.clone(),
                 },
@@ -511,29 +536,29 @@ where
 
     fn compute_maximum_update_length(&mut self) -> GroupMaxUpdateLength {
         let global_time = self.global_time.read_recursive();
-        // finding a valid event to process, only when invalids exist
-        if Queue::MAY_BE_INVALID {
-            // getting rid of all the invalid events
-            while let Some((time, event)) = self.obstacle_queue.peek_event() {
-                // found a valid event
-                if event.is_valid(self, time) {
-                    // valid grow
-                    if time != &global_time.clone() {
-                        return GroupMaxUpdateLength::ValidGrow(time - global_time.clone());
-                    }
-                    // goto else
-                    break;
+        // getting rid of all the invalid events
+        while let Some((time, event)) = self.obstacle_queue.peek_event() {
+            // found a valid event
+            if event.is_valid(self, time) {
+                // valid grow
+                if time != &global_time.clone() {
+                    return GroupMaxUpdateLength::ValidGrow(time - global_time.clone());
                 }
-                self.obstacle_queue.pop_event();
+                // goto else
+                break;
             }
+            self.obstacle_queue.pop_event();
         }
 
         // else , it is a valid conflict to resolve
         if let Some((_, event)) = self.obstacle_queue.pop_event() {
             // this is used, since queues are not sets, and can contain duplicate events
-            // Note: chekc that this is the assumption, though not much more overhead anyway
-            let mut group_max_update_length_set = BTreeSet::default();
-            group_max_update_length_set.insert(match event {
+            // Note: check that this is the assumption, though not much more overhead anyway
+            // let mut group_max_update_length_set = BTreeSet::default();
+
+            // Note: With de-dup queue implementation, we could use vectors here
+            let mut group_max_update_length = GroupMaxUpdateLength::new();
+            group_max_update_length.add(match event {
                 Obstacle::Conflict { edge_index } => MaxUpdateLength::Conflicting(edge_index),
                 Obstacle::ShrinkToZero { dual_node_ptr } => {
                     let index = dual_node_ptr.read_recursive().index;
@@ -549,7 +574,7 @@ where
                         continue;
                     }
                     // add
-                    group_max_update_length_set.insert(match event {
+                    group_max_update_length.add(match event {
                         Obstacle::Conflict { edge_index } => MaxUpdateLength::Conflicting(edge_index),
                         Obstacle::ShrinkToZero { dual_node_ptr } => {
                             let index = dual_node_ptr.read_recursive().index;
@@ -561,7 +586,7 @@ where
                 }
             }
 
-            return GroupMaxUpdateLength::Conflicts(group_max_update_length_set.into_iter().collect_vec());
+            return group_max_update_length;
         }
 
         // nothing useful could be done, return unbounded
@@ -634,11 +659,10 @@ where
 
     /// sync all states and global time so the concept of time and pq can retire
     fn sync(&mut self) {
-
         // note: we can either set the global time to be zero, or just not change it anymore
 
         let mut nodes_touched = BTreeSet::new();
-        
+
         for edges in self.edges.iter_mut() {
             let mut edge = edges.write();
 
@@ -743,7 +767,7 @@ where
         start += weight.to_f64().unwrap();
         Some(OrderedFloat::from(start))
     }
-    
+
     fn get_edge_free_weight(&self, edge_index: EdgeIndex, participating_dual_variables: &BTreeSet<usize>) -> Rational {
         let edge = self.edges[edge_index as usize].read_recursive();
         let mut free_weight = edge.weight.clone();
@@ -863,7 +887,8 @@ mod tests {
         print_visualize_link(visualize_filename);
         // create dual module
         let model_graph = code.get_model_graph();
-        let mut dual_module: DualModulePQ<FutureObstacleQueue<Rational>> = DualModulePQ::new_empty(&model_graph.initializer);
+        let mut dual_module: DualModulePQ<FutureObstacleQueue2<Rational>> =
+            DualModulePQ::new_empty(&model_graph.initializer);
         // try to work on a simple syndrome
         let decoding_graph = DecodingHyperGraph::new_defects(model_graph, vec![3, 12]);
         let interface_ptr = DualModuleInterfacePtr::new_load(decoding_graph, &mut dual_module);
@@ -912,7 +937,8 @@ mod tests {
         print_visualize_link(visualize_filename);
         // create dual module
         let model_graph = code.get_model_graph();
-        let mut dual_module: DualModulePQ<FutureObstacleQueue<Rational>> = DualModulePQ::new_empty(&model_graph.initializer);
+        let mut dual_module: DualModulePQ<FutureObstacleQueue2<Rational>> =
+            DualModulePQ::new_empty(&model_graph.initializer);
         // try to work on a simple syndrome
         let decoding_graph = DecodingHyperGraph::new_defects(model_graph, vec![23, 24, 29, 30]);
         let interface_ptr = DualModuleInterfacePtr::new_load(decoding_graph, &mut dual_module);
@@ -956,7 +982,8 @@ mod tests {
         print_visualize_link(visualize_filename);
         // create dual module
         let model_graph = code.get_model_graph();
-        let mut dual_module: DualModulePQ<FutureObstacleQueue<Rational>> = DualModulePQ::new_empty(&model_graph.initializer);
+        let mut dual_module: DualModulePQ<FutureObstacleQueue2<Rational>> =
+            DualModulePQ::new_empty(&model_graph.initializer);
         // try to work on a simple syndrome
         let decoding_graph = DecodingHyperGraph::new_defects(model_graph, vec![17, 23, 29, 30]);
         let interface_ptr = DualModuleInterfacePtr::new_load(decoding_graph, &mut dual_module);

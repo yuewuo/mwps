@@ -4,7 +4,6 @@
 //!
 
 use crate::derivative::Derivative;
-use crate::invalid_subgraph::InvalidSubgraph;
 use crate::num_traits::sign::Signed;
 use crate::num_traits::{ToPrimitive, Zero};
 use crate::ordered_float::OrderedFloat;
@@ -15,8 +14,7 @@ use crate::util::*;
 use crate::visualize::*;
 use crate::{add_shared_methods, dual_module::*};
 use num_traits::FromPrimitive;
-use std::collections::{BTreeMap, BTreeSet};
-use std::sync::Arc;
+use std::collections::BTreeSet;
 
 pub struct DualModuleSerial {
     /// all vertices including virtual ones
