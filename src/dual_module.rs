@@ -213,6 +213,32 @@ impl Ord for OrderedDualNodePtr {
     }
 }
 
+#[derive(Derivative, PartialEq, Eq, Clone, Debug)]
+pub struct OrderedDualNodeWeak {
+    pub index: NodeIndex,
+    pub weak_ptr: DualNodeWeak,
+}
+
+impl OrderedDualNodeWeak {
+    pub fn new(index: NodeIndex, weak_ptr: DualNodeWeak) -> Self {
+        Self { index, weak_ptr }
+    }
+
+    pub fn upgrade_force(&self) -> OrderedDualNodePtr {
+        OrderedDualNodePtr::new(self.index, self.weak_ptr.upgrade_force())
+    }
+}
+impl PartialOrd for OrderedDualNodeWeak {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.index.cmp(&other.index))
+    }
+}
+impl Ord for OrderedDualNodeWeak {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.index.cmp(&other.index)
+    }
+}
+
 #[derive(Derivative, Clone)]
 #[derivative(Debug, Default(new = "true"))]
 pub enum GroupMaxUpdateLength {
@@ -443,7 +469,11 @@ pub trait DualModuleImpl {
     }
 
     /// get the edge free weight, for each edge what is the weight that are free to use by the given participating dual variables
-    fn get_edge_free_weight(&self, edge_index: EdgeIndex, participating_dual_variables: &BTreeSet<usize>) -> Rational;
+    fn get_edge_free_weight(
+        &self,
+        edge_index: EdgeIndex,
+        participating_dual_variables: &hashbrown::HashSet<usize>,
+    ) -> Rational;
 }
 
 impl MaxUpdateLength {

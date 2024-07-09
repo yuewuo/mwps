@@ -21,6 +21,7 @@ use std::fmt::Debug;
 use std::sync::Arc;
 use std::time::Instant;
 
+#[cfg(feature = "incr_lp")]
 use parking_lot::Mutex;
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
@@ -450,7 +451,7 @@ impl PrimalModuleImpl for PrimalModuleSerial {
                 #[cfg(feature = "incr_lp")]
                 {
                     let mut dual_variables: BTreeMap<NodeIndex, (Arc<InvalidSubgraph>, Rational)> = BTreeMap::new();
-                    let mut participating_dual_variable_indices = BTreeSet::new();
+                    let mut participating_dual_variable_indices = hashbrown::HashSet::new();
                     for primal_node_ptr in cluster.nodes.iter() {
                         let primal_node = primal_node_ptr.read_recursive();
                         let dual_node = primal_node.dual_node_ptr.read_recursive();

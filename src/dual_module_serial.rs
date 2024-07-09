@@ -460,7 +460,11 @@ impl DualModuleImpl for DualModuleSerial {
         Some(OrderedFloat::from(start))
     }
 
-    fn get_edge_free_weight(&self, edge_index: EdgeIndex, participating_dual_variables: &BTreeSet<usize>) -> Rational {
+    fn get_edge_free_weight(
+        &self,
+        edge_index: EdgeIndex,
+        participating_dual_variables: &hashbrown::HashSet<usize>,
+    ) -> Rational {
         let edge = self.edges[edge_index as usize].read_recursive();
         let mut free_weight = edge.weight.clone();
         for dual_node in edge.dual_nodes.iter() {

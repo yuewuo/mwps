@@ -335,7 +335,7 @@ pub struct Edge {
     #[derivative(Debug = "ignore")]
     vertices: Vec<VertexWeak>,
     /// the dual nodes that contributes to this edge
-    dual_nodes: Vec<DualNodeWeak>,
+    dual_nodes: Vec<OrderedDualNodeWeak>,
 
     /* fields that are different from that of dual_module_serial, or slightly differently interpreted */
     /// the speed of growth, at the current time
@@ -369,7 +369,7 @@ impl std::fmt::Debug for EdgePtr {
             edge.grow_rate,
             edge.growth_at_last_updated_time,
             edge.last_updated_time,
-            edge.dual_nodes.iter().filter(|node| !node.upgrade_force().read_recursive().grow_rate.is_zero()).collect::<Vec<_>>()
+            edge.dual_nodes.iter().filter(|node| !node.weak_ptr.upgrade_force().read_recursive().grow_rate.is_zero()).collect::<Vec<_>>()
         )
     }
 }
@@ -381,7 +381,7 @@ impl std::fmt::Debug for EdgeWeak {
         write!(
             f,
             "[edge: {}]: weight: {}, grow_rate: {}, growth_at_last_updated_time: {}, last_updated_time: {}\n\tdual_nodes: {:?}\n",
-            edge.edge_index, edge.weight, edge.grow_rate, edge.growth_at_last_updated_time, edge.last_updated_time, edge.dual_nodes.iter().filter(|node| !node.upgrade_force().read_recursive().grow_rate.is_zero()).collect::<Vec<_>>()
+            edge.edge_index, edge.weight, edge.grow_rate, edge.growth_at_last_updated_time, edge.last_updated_time, edge.dual_nodes.iter().filter(|node| !node.weak_ptr.upgrade_force().read_recursive().grow_rate.is_zero()).collect::<Vec<_>>()
         )
     }
 }
@@ -576,7 +576,8 @@ where
             self.update_edge_if_necessary(&mut edge);
 
             edge.grow_rate += &dual_node.grow_rate;
-            edge.dual_nodes.push(dual_node_weak.clone());
+            edge.dual_nodes
+                .push(OrderedDualNodeWeak::new(dual_node.index, dual_node_weak.clone()));
 
             if edge.grow_rate.is_positive() {
                 self.obstacle_queue.will_happen(
@@ -598,7 +599,8 @@ where
             let mut edge = self.edges[edge_index as usize].write();
 
             edge.grow_rate += &dual_node.grow_rate;
-            edge.dual_nodes.push(dual_node_weak.clone());
+            edge.dual_nodes
+                .push(OrderedDualNodeWeak::new(dual_node.index, dual_node_weak.clone()));
         }
     }
 
@@ -731,7 +733,7 @@ where
             .read_recursive()
             .dual_nodes
             .iter()
-            .map(|x| x.upgrade_force())
+            .map(|x| x.upgrade_force().ptr)
             .collect()
     }
 
@@ -807,11 +809,11 @@ where
             }
 
             for dual_node_ptr in edge.dual_nodes.iter() {
-                let _dual_node_ptr = dual_node_ptr.upgrade_force();
-                let node = _dual_node_ptr.read_recursive();
-                if nodes_touched.contains(&node.index) {
+                if nodes_touched.contains(&dual_node_ptr.index) {
                     continue;
                 }
+                let _dual_node_ptr = dual_node_ptr.upgrade_force();
+                let node = _dual_node_ptr.ptr.read_recursive();
                 nodes_touched.insert(node.index);
 
                 // update if necessary
@@ -824,7 +826,7 @@ where
                     );
 
                     drop(node);
-                    let mut node: RwLockWriteGuard<RawRwLock, DualNode> = _dual_node_ptr.write();
+                    let mut node: RwLockWriteGuard<RawRwLock, DualNode> = _dual_node_ptr.ptr.write();
 
                     let dual_variable = node.get_dual_variable();
                     node.set_dual_variable(dual_variable);
@@ -891,15 +893,19 @@ where
         Some(OrderedFloat::from(start))
     }
 
-    fn get_edge_free_weight(&self, edge_index: EdgeIndex, participating_dual_variables: &BTreeSet<usize>) -> Rational {
+    fn get_edge_free_weight(
+        &self,
+        edge_index: EdgeIndex,
+        participating_dual_variables: &hashbrown::HashSet<usize>,
+    ) -> Rational {
         let edge = self.edges[edge_index as usize].read_recursive();
         let mut free_weight = edge.weight.clone();
         for dual_node in edge.dual_nodes.iter() {
-            let dual_node = dual_node.upgrade_force();
-            if participating_dual_variables.contains(&dual_node.read_recursive().index) {
+            if participating_dual_variables.contains(&dual_node.index) {
                 continue;
             }
-            free_weight -= &dual_node.read_recursive().dual_variable_at_last_updated_time;
+            let dual_node = dual_node.upgrade_force();
+            free_weight -= &dual_node.ptr.read_recursive().dual_variable_at_last_updated_time;
         }
 
         free_weight
