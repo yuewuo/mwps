@@ -87,6 +87,7 @@ pub trait PrimalModuleImpl {
                 |interface, dual_module, primal_module, group_max_update_length| {
                     if cfg!(debug_assertions) {
                         println!("group_max_update_length: {:?}", group_max_update_length);
+                        // dual_module.debug_print();
                     }
                     if group_max_update_length.is_unbounded() {
                         visualizer

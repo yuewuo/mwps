@@ -201,7 +201,9 @@ pub mod tests {
     use super::*;
     use crate::dual_module_pq::DualModulePQ;
     use crate::dual_module_pq::FutureObstacleQueue;
-    use crate::dual_module_pq::FutureObstacleQueue2;
+    // use crate::dual_module_pq::_FutureObstacleQueue;
+    // use crate::dual_module_pq::PairingPQ;
+    // use crate::dual_module_pq::RankPairingPQ;
     use crate::more_asserts::*;
     use crate::num_traits::{FromPrimitive, ToPrimitive};
     use std::sync::Arc;
@@ -324,7 +326,7 @@ pub mod tests {
             code,
             defect_vertices,
             final_dual,
-            DualModulePQ::<FutureObstacleQueue2<Rational>>::new_empty(&model_graph.initializer),
+            DualModulePQ::<FutureObstacleQueue<Rational>>::new_empty(&model_graph.initializer),
             model_graph,
             Some(visualizer),
         )

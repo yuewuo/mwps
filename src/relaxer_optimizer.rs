@@ -19,10 +19,12 @@ use num_traits::{Signed, Zero};
 
 #[cfg(feature = "slp")]
 use num_traits::One;
+#[cfg(feature = "incr_lp")]
 use parking_lot::Mutex;
+#[cfg(feature = "incr_lp")]
 use std::ops::Index;
 
-#[cfg(feature = "highs")]
+#[cfg(all(feature = "incr_lp", feature = "highs"))]
 pub struct IncrLPSolution {
     pub edge_constraints: BTreeMap<EdgeIndex, (Rational, BTreeSet<NodeIndex>)>,
     pub edge_row_map: BTreeMap<EdgeIndex, highs::Row>,
@@ -30,14 +32,14 @@ pub struct IncrLPSolution {
     pub solution: Option<highs::SolvedModel>,
 }
 
-#[cfg(feature = "highs")]
+#[cfg(all(feature = "incr_lp", feature = "highs"))]
 impl IncrLPSolution {
     pub fn constraints_len(&self) -> usize {
         self.edge_row_map.len() + self.dv_col_map.len()
     }
 }
 
-#[cfg(feature = "highs")]
+#[cfg(all(feature = "incr_lp", feature = "highs"))]
 unsafe impl Send for IncrLPSolution {}
 
 #[derive(Default, Debug)]
@@ -234,6 +236,7 @@ impl RelaxerOptimizer {
         }
 
         let mut model = RowProblem::default().optimise(Sense::Maximise);
+        model.set_option("parallel", "off");
         model.set_option("threads", 1);
 
         let mut x_vars = vec![];
@@ -305,7 +308,7 @@ impl RelaxerOptimizer {
         (Relaxer::new(direction), false)
     }
 
-    #[cfg(feature = "float_lp")]
+    #[cfg(all(feature = "float_lp", feature = "incr_lp"))]
     // the same method, but with f64 weight
     pub fn optimize_incr(
         &mut self,

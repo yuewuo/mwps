@@ -20,9 +20,13 @@ use std::{
 };
 
 use derivative::Derivative;
-use itertools::Itertools;
+use hashbrown::hash_map::Entry;
+use hashbrown::HashMap;
+use heapz::RankPairingHeap;
+use heapz::{DecreaseKey, Heap};
 use num_traits::{FromPrimitive, Signed};
 use parking_lot::{lock_api::RwLockWriteGuard, RawRwLock};
+use pheap::PairingHeap;
 use priority_queue::PriorityQueue;
 
 /* Helper structs for events/obstacles during growing */
@@ -117,12 +121,113 @@ impl Obstacle {
 
 pub type FutureObstacle<T> = FutureEvent<T, Obstacle>;
 pub type MinBinaryHeap<F> = BinaryHeap<Reverse<F>>;
-pub type FutureObstacleQueue<T> = MinBinaryHeap<FutureObstacle<T>>;
+pub type _FutureObstacleQueue<T> = MinBinaryHeap<FutureObstacle<T>>;
 
 pub type MinPriorityQueue<O, T> = PriorityQueue<O, Reverse<T>>;
-pub type FutureObstacleQueue2<T> = MinPriorityQueue<Obstacle, T>;
+pub type FutureObstacleQueue<T> = MinPriorityQueue<Obstacle, T>;
 
-impl<T: Ord + PartialEq + Eq + std::fmt::Debug> FutureQueueMethods<T, Obstacle> for FutureObstacleQueue2<T> {
+#[derive(Debug, Clone)]
+pub struct PairingPQ<T: Ord + PartialEq + Eq + std::fmt::Debug + Clone> {
+    pub container: HashMap<Obstacle, T>,
+    pub heap: PairingHeap<Obstacle, T>,
+}
+
+// implement default for PairingPQ
+impl<T: Ord + PartialEq + Eq + std::fmt::Debug + Clone> Default for PairingPQ<T> {
+    fn default() -> Self {
+        Self {
+            container: HashMap::default(),
+            heap: PairingHeap::new(),
+        }
+    }
+}
+
+impl<T: Ord + PartialEq + Eq + std::fmt::Debug + Clone + std::ops::Sub<Output = T> + std::ops::SubAssign>
+    FutureQueueMethods<T, Obstacle> for PairingPQ<T>
+{
+    fn will_happen(&mut self, time: T, event: Obstacle) {
+        match self.container.entry(event.clone()) {
+            Entry::Vacant(entry) => {
+                entry.insert(time.clone());
+                self.heap.insert(event, time);
+            }
+            Entry::Occupied(mut entry) => {
+                let old_time = entry.get().clone();
+                *entry.get_mut() = time.clone();
+                self.heap.decrease_prio(&event, time.clone() - old_time);
+            }
+        }
+    }
+    fn peek_event(&self) -> Option<(&T, &Obstacle)> {
+        self.heap.find_min().map(|future| (future.1, future.0))
+    }
+    fn pop_event(&mut self) -> Option<(T, Obstacle)> {
+        let res = self.heap.delete_min().map(|future| (future.1, future.0));
+        match &res {
+            Some((_, event)) => {
+                self.container.remove(event);
+            }
+            None => {}
+        }
+        res
+    }
+    fn clear(&mut self) {
+        self.container.clear();
+        while !self.heap.is_empty() {
+            self.heap.delete_min();
+        }
+    }
+    fn len(&self) -> usize {
+        self.heap.len()
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct RankPairingPQ<T: Ord + PartialEq + Eq + std::fmt::Debug + Clone> {
+    pub container: HashMap<Obstacle, T>,
+    pub heap: RankPairingHeap<Obstacle, T>,
+}
+
+impl<T: Ord + PartialEq + Eq + std::fmt::Debug + Clone> Default for RankPairingPQ<T> {
+    fn default() -> Self {
+        Self {
+            container: HashMap::default(),
+            heap: RankPairingHeap::multi_pass_min2(),
+        }
+    }
+}
+
+impl<T: Ord + PartialEq + Eq + std::fmt::Debug + Clone> FutureQueueMethods<T, Obstacle> for RankPairingPQ<T> {
+    fn will_happen(&mut self, time: T, event: Obstacle) {
+        if self.container.contains_key(&event) {
+            self.heap.update(&event, time.clone());
+            self.container.insert(event, time);
+        } else {
+            self.heap.push(event.clone(), time.clone());
+            self.container.insert(event, time);
+        }
+    }
+    fn peek_event(&self) -> Option<(&T, &Obstacle)> {
+        self.heap.top().map(|key| (self.container.get(key).unwrap(), key))
+    }
+    fn pop_event(&mut self) -> Option<(T, Obstacle)> {
+        match self.heap.pop() {
+            None => None,
+            Some(key) => Some((self.container.remove(&key).unwrap(), key)),
+        }
+    }
+    fn clear(&mut self) {
+        self.container.clear();
+        while !self.heap.is_empty() {
+            self.heap.pop();
+        }
+    }
+    fn len(&self) -> usize {
+        self.heap.size()
+    }
+}
+
+impl<T: Ord + PartialEq + Eq + std::fmt::Debug> FutureQueueMethods<T, Obstacle> for FutureObstacleQueue<T> {
     fn will_happen(&mut self, time: T, event: Obstacle) {
         self.push(event, Reverse(time));
     }
@@ -134,6 +239,9 @@ impl<T: Ord + PartialEq + Eq + std::fmt::Debug> FutureQueueMethods<T, Obstacle> 
     }
     fn clear(&mut self) {
         self.clear();
+    }
+    fn len(&self) -> usize {
+        self.len()
     }
 }
 
@@ -150,6 +258,14 @@ pub trait FutureQueueMethods<T: Ord + PartialEq + Eq + std::fmt::Debug, E: std::
 
     /// clear for a queue
     fn clear(&mut self);
+
+    /// length of the queue
+    fn len(&self) -> usize;
+
+    /// is empty
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
 }
 
 impl<T: Ord + PartialEq + Eq + std::fmt::Debug, E: std::fmt::Debug> FutureQueueMethods<T, E>
@@ -166,6 +282,9 @@ impl<T: Ord + PartialEq + Eq + std::fmt::Debug, E: std::fmt::Debug> FutureQueueM
     }
     fn clear(&mut self) {
         self.clear();
+    }
+    fn len(&self) -> usize {
+        self.len()
     }
 }
 
@@ -270,7 +389,7 @@ impl std::fmt::Debug for EdgeWeak {
 /* the actual dual module */
 pub struct DualModulePQ<Queue>
 where
-    Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug + Clone,
+    Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug,
 {
     /// all vertices including virtual ones
     pub vertices: Vec<VertexPtr>,
@@ -492,11 +611,11 @@ where
         let global_time = self.global_time.read_recursive();
         let grow_rate_diff = &grow_rate - &dual_node.grow_rate;
 
-        dual_node.grow_rate = grow_rate;
+        dual_node.grow_rate = grow_rate.clone();
         if dual_node.grow_rate.is_negative() {
             self.obstacle_queue.will_happen(
                 // it is okay to use global_time now, as this must be up-to-speed
-                dual_node.get_dual_variable().clone() / (-grow_rate.clone()) + global_time.clone(),
+                dual_node.get_dual_variable().clone() / (-grow_rate) + global_time.clone(),
                 Obstacle::ShrinkToZero {
                     dual_node_ptr: dual_node_ptr.clone(),
                 },
@@ -535,6 +654,8 @@ where
     }
 
     fn compute_maximum_update_length(&mut self) -> GroupMaxUpdateLength {
+        // self.debug_print();
+
         let global_time = self.global_time.read_recursive();
         // getting rid of all the invalid events
         while let Some((time, event)) = self.obstacle_queue.peek_event() {
@@ -719,16 +840,18 @@ where
 
     /// misc debug print statement
     fn debug_print(&self) {
-        println!("\n[current states]");
-        println!("global time: {:?}", self.global_time.read_recursive());
-        println!(
-            "edges: {:?}",
-            self.edges
-                .iter()
-                .filter(|e| !e.read_recursive().grow_rate.is_zero())
-                .collect::<Vec<&EdgePtr>>()
-        );
-        println!("pq: {:?}", self.obstacle_queue);
+        // println!("\n[current states]");
+        // println!("global time: {:?}", self.global_time.read_recursive());
+        // println!(
+        //     "edges: {:?}",
+        //     self.edges
+        //         .iter()
+        //         .filter(|e| !e.read_recursive().grow_rate.is_zero())
+        //         .collect::<Vec<&EdgePtr>>()
+        // );
+        if self.obstacle_queue.len() > 0 {
+            println!("pq: {:?}", self.obstacle_queue.len());
+        }
 
         // println!("\n[current states]");
         // println!("global time: {:?}", self.global_time.read_recursive());
@@ -887,8 +1010,7 @@ mod tests {
         print_visualize_link(visualize_filename);
         // create dual module
         let model_graph = code.get_model_graph();
-        let mut dual_module: DualModulePQ<FutureObstacleQueue2<Rational>> =
-            DualModulePQ::new_empty(&model_graph.initializer);
+        let mut dual_module: DualModulePQ<FutureObstacleQueue<Rational>> = DualModulePQ::new_empty(&model_graph.initializer);
         // try to work on a simple syndrome
         let decoding_graph = DecodingHyperGraph::new_defects(model_graph, vec![3, 12]);
         let interface_ptr = DualModuleInterfacePtr::new_load(decoding_graph, &mut dual_module);
@@ -937,8 +1059,7 @@ mod tests {
         print_visualize_link(visualize_filename);
         // create dual module
         let model_graph = code.get_model_graph();
-        let mut dual_module: DualModulePQ<FutureObstacleQueue2<Rational>> =
-            DualModulePQ::new_empty(&model_graph.initializer);
+        let mut dual_module: DualModulePQ<FutureObstacleQueue<Rational>> = DualModulePQ::new_empty(&model_graph.initializer);
         // try to work on a simple syndrome
         let decoding_graph = DecodingHyperGraph::new_defects(model_graph, vec![23, 24, 29, 30]);
         let interface_ptr = DualModuleInterfacePtr::new_load(decoding_graph, &mut dual_module);
@@ -982,8 +1103,7 @@ mod tests {
         print_visualize_link(visualize_filename);
         // create dual module
         let model_graph = code.get_model_graph();
-        let mut dual_module: DualModulePQ<FutureObstacleQueue2<Rational>> =
-            DualModulePQ::new_empty(&model_graph.initializer);
+        let mut dual_module: DualModulePQ<FutureObstacleQueue<Rational>> = DualModulePQ::new_empty(&model_graph.initializer);
         // try to work on a simple syndrome
         let decoding_graph = DecodingHyperGraph::new_defects(model_graph, vec![17, 23, 29, 30]);
         let interface_ptr = DualModuleInterfacePtr::new_load(decoding_graph, &mut dual_module);
