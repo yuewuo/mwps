@@ -951,7 +951,7 @@ mod tests {
     #[test]
     fn dual_module_pq_learn_priority_queue_1() {
         // cargo test dual_module_pq_learn_priority_queue_1 -- --nocapture
-        let mut future_obstacle_queue = FutureObstacleQueue::<usize>::new();
+        let mut future_obstacle_queue = _FutureObstacleQueue::<usize>::new();
         assert_eq!(0, future_obstacle_queue.len());
         macro_rules! ref_event {
             ($index:expr) => {

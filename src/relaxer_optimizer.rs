@@ -314,7 +314,7 @@ impl RelaxerOptimizer {
         &mut self,
         relaxer: Relaxer,
         edge_free_weights: BTreeMap<EdgeIndex, Rational>,
-        dual_nodes: BTreeMap<NodeIndex, (Arc<InvalidSubgraph>, Rational)>, //fixme: Why do we need the raional here?
+        dual_nodes: BTreeMap<NodeIndex, (Arc<InvalidSubgraph>, Rational)>,
         option_incr_lp_solution: &mut Option<Arc<Mutex<IncrLPSolution>>>,
     ) -> (Relaxer, bool) {
         use highs::{HighsModelStatus, RowProblem, Sense};
