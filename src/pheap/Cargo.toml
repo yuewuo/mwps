@@ -1,0 +1,34 @@
+[package]
+name = "pheap"
+version = "0.3.0"
+edition = "2018"
+authors = ["1crcbl <1crcbl@protonmail.com>"]
+license = "MIT OR Apache-2.0"
+exclude = [
+    "img/*",
+    "scripts/*",
+]
+
+readme = "README.md"
+description = "A (fast) implementation of pairing heap data structure for priority queue and some graph algorithms"
+
+keywords = ["pairing", "heap", "priority", "queue", "graph"]
+categories = ["algorithms", "data-structures"]
+
+repository = "https://github.com/1crcbl/pheap-rs"
+
+[dependencies]
+num-traits = "0.2.14"
+
+[dev-dependencies]
+criterion = { version = "0.3", features = ["html_reports"] }
+priority-queue = "1.1.1"
+keyed_priority_queue = "0.3.2"
+addressable-pairing-heap = "0.2.0"
+pairing-heap = "0.1.0"
+clap = "2.33.3"
+pathfinding = "2.1.5"
+
+[[bench]]
+name = "heap"
+harness = false
