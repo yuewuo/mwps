@@ -21,6 +21,7 @@ use std::fmt::Debug;
 use std::sync::Arc;
 use std::time::Instant;
 
+use crate::itertools::Itertools;
 #[cfg(feature = "incr_lp")]
 use parking_lot::Mutex;
 use parking_lot::RwLock;
@@ -377,7 +378,8 @@ impl PrimalModuleImpl for PrimalModuleSerial {
         cluster_index: NodeIndex,
         interface_ptr: &DualModuleInterfacePtr,
         dual_module: &mut impl DualModuleImpl,
-        dual_node_deltas: &mut BTreeMap<OrderedDualNodePtr, Rational>,
+        // dual_node_deltas: &mut BTreeMap<OrderedDualNodePtr, Rational>,
+        dual_node_deltas: &mut BTreeMap<OrderedDualNodePtr, (Rational, NodeIndex)>,
     ) -> (bool, OptimizerResult) {
         let mut optimizer_result = OptimizerResult::default();
         let cluster_ptr = self.clusters[cluster_index as usize].clone();
@@ -436,6 +438,7 @@ impl PrimalModuleImpl for PrimalModuleSerial {
                                 .keys()
                                 .flat_map(|invalid_subgraph| invalid_subgraph.hair.iter().cloned()),
                         )
+                        .unique()
                         .map(|edge_index| (edge_index, dual_module.get_edge_slack_tune(edge_index)))
                         .collect();
                     let (new_relaxer, early_returned) =
@@ -476,7 +479,7 @@ impl PrimalModuleImpl for PrimalModuleSerial {
                             });
                             cluster.nodes.push(primal_node_ptr.clone());
                             self.nodes.push(primal_node_ptr);
-                            participating_dual_variable_indices.insert(dual_node_ptr.read_recursive().index);
+                            // participating_dual_variable_indices.insert(dual_node_ptr.read_recursive().index);
 
                             // maybe optimize here
                         }
@@ -502,13 +505,16 @@ impl PrimalModuleImpl for PrimalModuleSerial {
                                 .keys()
                                 .flat_map(|invalid_subgraph| invalid_subgraph.hair.iter().cloned()),
                         )
+                        .unique()
                         .map(|edge_index| {
                             (
                                 edge_index,
-                                dual_module.get_edge_free_weight(edge_index, &participating_dual_variable_indices),
+                                // dual_module.get_edge_free_weight(edge_index, &participating_dual_variable_indices),
+                                dual_module.get_edge_free_weight_cluster(edge_index, cluster_index),
                             )
                         })
                         .collect();
+
                     let (new_relaxer, early_returned) = cluster.relaxer_optimizer.optimize_incr(
                         relaxer,
                         edge_free_weights,
@@ -550,6 +556,7 @@ impl PrimalModuleImpl for PrimalModuleSerial {
                             .keys()
                             .flat_map(|invalid_subgraph| invalid_subgraph.hair.iter().cloned()),
                     )
+                    .unique()
                     .map(|edge_index| (edge_index, dual_module.get_edge_slack_tune(edge_index)))
                     .collect();
 
@@ -576,7 +583,10 @@ impl PrimalModuleImpl for PrimalModuleSerial {
 
                 // Document the desired deltas
                 let index = dual_node_ptr.read_recursive().index;
-                dual_node_deltas.insert(OrderedDualNodePtr::new(index, dual_node_ptr), grow_rate.clone());
+                dual_node_deltas.insert(
+                    OrderedDualNodePtr::new(index, dual_node_ptr),
+                    (grow_rate.clone(), cluster_index),
+                );
             }
 
             cluster.relaxer_optimizer.insert(relaxer);
@@ -614,12 +624,36 @@ impl PrimalModuleImpl for PrimalModuleSerial {
     fn get_sorted_clusters_aff(&mut self) -> BTreeSet<ClusterAffinity> {
         self.sorted_clusters_aff.take().unwrap()
     }
+
+    #[cfg(feature = "incr_lp")]
+    fn calculate_edges_free_weight_clusters(&mut self, dual_module: &mut impl DualModuleImpl) {
+        for cluster in self.clusters.iter() {
+            let cluster = cluster.read_recursive();
+            for node in cluster.nodes.iter() {
+                let dual_node = node.read_recursive();
+                let dual_node_read = dual_node.dual_node_ptr.read_recursive();
+                for edge_index in dual_node_read.invalid_subgraph.hair.iter() {
+                    dual_module.update_edge_cluster_weights(
+                        *edge_index,
+                        cluster.cluster_index,
+                        dual_node_read.dual_variable_at_last_updated_time,
+                    );
+                }
+            }
+        }
+    }
 }
 
 impl PrimalModuleSerial {
     // union the cluster of two dual nodes
     #[allow(clippy::unnecessary_cast)]
-    pub fn union(&self, dual_node_ptr_1: &DualNodePtr, dual_node_ptr_2: &DualNodePtr, decoding_graph: &DecodingHyperGraph) {
+    pub fn union(
+        &self,
+        dual_node_ptr_1: &DualNodePtr,
+        dual_node_ptr_2: &DualNodePtr,
+        decoding_graph: &DecodingHyperGraph,
+        dual_module: &mut impl DualModuleImpl, // note: remove if not for cluster-based
+    ) {
         // cluster_1 will become the union of cluster_1 and cluster_2
         // and cluster_2 will be outdated
         let node_index_1 = dual_node_ptr_1.read_recursive().index;
@@ -635,7 +669,18 @@ impl PrimalModuleSerial {
         drop(primal_node_2);
         let mut cluster_1 = cluster_ptr_1.write();
         let mut cluster_2 = cluster_ptr_2.write();
+        let cluster_2_index = cluster_2.cluster_index;
         for primal_node_ptr in cluster_2.nodes.drain(..) {
+            #[cfg(feature = "incr_lp")]
+            {
+                let primal_node = primal_node_ptr.read_recursive();
+                dual_module.update_edge_cluster_weights_union(
+                    &primal_node.dual_node_ptr,
+                    cluster_2_index,
+                    cluster_1.cluster_index,
+                );
+            }
+
             primal_node_ptr.write().cluster_weak = cluster_ptr_1.downgrade();
             cluster_1.nodes.push(primal_node_ptr);
         }
@@ -693,7 +738,8 @@ impl PrimalModuleSerial {
                     let dual_node_ptr_0 = &dual_nodes[0];
                     // first union all the dual nodes
                     for dual_node_ptr in dual_nodes.iter().skip(1) {
-                        self.union(dual_node_ptr_0, dual_node_ptr, &interface.decoding_graph);
+                        // self.union(dual_node_ptr_0, dual_node_ptr, &interface.decoding_graph);
+                        self.union(dual_node_ptr_0, dual_node_ptr, &interface.decoding_graph, dual_module);
                     }
                     let cluster_ptr = self.nodes[dual_node_ptr_0.read_recursive().index as usize]
                         .read_recursive()
@@ -767,7 +813,8 @@ impl PrimalModuleSerial {
                     let dual_node_ptr_0 = &dual_nodes[0];
                     // first union all the dual nodes
                     for dual_node_ptr in dual_nodes.iter().skip(1) {
-                        self.union(dual_node_ptr_0, dual_node_ptr, &interface.decoding_graph);
+                        // self.union(dual_node_ptr_0, dual_node_ptr, &interface.decoding_graph);
+                        self.union(dual_node_ptr_0, dual_node_ptr, &interface.decoding_graph, dual_module);
                     }
                     let cluster_ptr = self.nodes[dual_node_ptr_0.read_recursive().index as usize]
                         .read_recursive()
@@ -868,7 +915,8 @@ impl PrimalModuleSerial {
                     let dual_node_ptr_0 = &dual_nodes[0];
                     // first union all the dual nodes
                     for dual_node_ptr in dual_nodes.iter().skip(1) {
-                        self.union(dual_node_ptr_0, dual_node_ptr, &interface.decoding_graph);
+                        // self.union(dual_node_ptr_0, dual_node_ptr, &interface.decoding_graph);
+                        self.union(dual_node_ptr_0, dual_node_ptr, &interface.decoding_graph, dual_module);
                     }
                     let cluster_ptr = self.nodes[dual_node_ptr_0.read_recursive().index as usize]
                         .read_recursive()
