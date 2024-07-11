@@ -80,6 +80,10 @@ pub struct Edge {
     dual_nodes: Vec<DualNodeWeak>,
     /// the speed of growth
     grow_rate: Rational,
+
+    #[cfg(feature = "incr_lp")]
+    /// storing the weights of the clusters that are currently contributing to this edge
+    cluster_weights: hashbrown::HashMap<usize, Rational>,
 }
 
 pub type EdgePtr = ArcRwLock<Edge>;
@@ -151,6 +155,8 @@ impl DualModuleImpl for DualModuleSerial {
                     .map(|i| vertices[*i as usize].downgrade())
                     .collect::<Vec<_>>(),
                 grow_rate: Rational::zero(),
+                #[cfg(feature = "incr_lp")]
+                cluster_weights: hashbrown::HashMap::new(),
             });
             for &vertex_index in hyperedge.vertices.iter() {
                 vertices[vertex_index as usize].write().edges.push(edge_ptr.downgrade());
@@ -459,6 +465,66 @@ impl DualModuleImpl for DualModuleSerial {
 
         Some(OrderedFloat::from(start))
     }
+
+    fn get_edge_free_weight(
+        &self,
+        edge_index: EdgeIndex,
+        participating_dual_variables: &hashbrown::HashSet<usize>,
+    ) -> Rational {
+        let edge = self.edges[edge_index as usize].read_recursive();
+        let mut free_weight = edge.weight.clone();
+        for dual_node in edge.dual_nodes.iter() {
+            let dual_node = dual_node.upgrade_force();
+            if participating_dual_variables.contains(&dual_node.read_recursive().index) {
+                continue;
+            }
+            free_weight -= &dual_node.read_recursive().dual_variable_at_last_updated_time;
+        }
+
+        free_weight
+    }
+
+    #[cfg(feature = "incr_lp")]
+    fn get_edge_free_weight_cluster(&self, edge_index: EdgeIndex, cluster_index: NodeIndex) -> Rational {
+        let edge = self.edges[edge_index as usize].read_recursive();
+        edge.weight.clone()
+            - edge
+                .cluster_weights
+                .iter()
+                .filter_map(|(c_idx, y)| if cluster_index.ne(c_idx) { Some(y) } else { None })
+                .sum::<Rational>()
+    }
+
+    #[cfg(feature = "incr_lp")]
+    fn update_edge_cluster_weights_union(
+        &self,
+        dual_node_ptr: &DualNodePtr,
+        drained_cluster_index: NodeIndex,
+        absorbing_cluster_index: NodeIndex,
+    ) {
+        let dual_node = dual_node_ptr.read_recursive();
+        for edge_index in dual_node.invalid_subgraph.hair.iter() {
+            let mut edge = self.edges[*edge_index as usize].write();
+            if let Some(removed) = edge.cluster_weights.remove(&drained_cluster_index) {
+                *edge
+                    .cluster_weights
+                    .entry(absorbing_cluster_index)
+                    .or_insert(Rational::zero()) += removed;
+            }
+        }
+    }
+
+    #[cfg(feature = "incr_lp")]
+    fn update_edge_cluster_weights(&self, edge_index: usize, cluster_index: usize, weight: Rational) {
+        match self.edges[edge_index].write().cluster_weights.entry(cluster_index) {
+            hashbrown::hash_map::Entry::Occupied(mut o) => {
+                *o.get_mut() += weight;
+            }
+            hashbrown::hash_map::Entry::Vacant(v) => {
+                v.insert(weight);
+            }
+        }
+    }
 }
 
 /*
@@ -469,6 +535,8 @@ impl Edge {
     fn clear(&mut self) {
         self.growth = Rational::zero();
         self.dual_nodes.clear();
+        #[cfg(feature = "incr_lp")]
+        self.cluster_weights.clear();
     }
 }
 

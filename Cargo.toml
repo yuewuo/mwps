@@ -36,17 +36,19 @@ debug = true
 
 [features]
 # to enable a feature, use `--features xxx`
-default = ["cli"]
+default = ["f64_weight", "cli", "qecp_integrate"]
+old_default = ["cli", "slp"]
 cli = ["pbr"]
-r64_weight = []                 # use Rational64 instead of BigRational as weight type
-f64_weight = ["float_lp"]       # use f64 instead of BigRational as weight type
-f32_weight = ["float_lp"]       # use f64 instead of BigRational as weight type
-u32_index = []                  # use u32 instead of usize as index type, to save memory
-python_binding = ["pyo3"]       # bind to Python
-wasm_binding = ["wasm-bindgen"] # bind to wasm
-colorful = []                   # enable colorful output in case terminal exists
+r64_weight = []                                   # use Rational64 instead of BigRational as weight type
+f64_weight = ["float_lp"]                         # use f64 instead of BigRational as weight type
+f32_weight = ["float_lp"]                         # use f64 instead of BigRational as weight type
+u32_index = []                                    # use u32 instead of usize as index type, to save memory
+python_binding = ["pyo3"]                         # bind to Python
+wasm_binding = ["wasm-bindgen"]                   # bind to wasm
+colorful = []                                     # enable colorful output in case terminal exists
 qecp_integrate = ["qecp"]
 float_lp = ["highs"]
+incr_lp = []
 
 [dependencies]
 pyo3 = { version = "0.19.2", features = [
@@ -75,14 +77,18 @@ cfg-if = "1.0.0"
 getrandom = { version = "0.2", features = ["js"] }
 wasm-bindgen = { version = "0.2.86", optional = true }
 lazy_static = "1.4.0"
-slp = { path = "src/slp" }
-highs = { version = "1.6.1", optional = true }
+slp = { path = "src/slp", optional = true }
+highs = { path = "src/highs", optional = true }
 sugar = "0.2.0"
 maplit = "1.0.2"
-qecp = { version = "0.2.4", optional = true, default-features = false, features = [
+qecp = { version = "0.2.5", optional = true, default-features = false, features = [
     "fusion_blossom",
 ] }
 serde_variant = "0.1.3"
+priority-queue = "2.0.3"
+heapz = { path = "src/heapz" }
+hashbrown = "0.14.5"
+pheap = { path = "src/pheap" }
 
 [dev-dependencies]
 test-case = "3.1.0"

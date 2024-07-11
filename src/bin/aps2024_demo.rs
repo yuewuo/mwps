@@ -472,7 +472,7 @@ fn circuit_level_example() {
             ]);
             primal_module.config.timeout = timeout;
             primal_module.solve_visualizer(&interface_ptr, syndrome_pattern, &mut dual_module, Some(&mut visualizer));
-            let (subgraph, weight_range) = primal_module.subgraph_range(&interface_ptr, &mut dual_module);
+            let (subgraph, weight_range) = primal_module.subgraph_range(&interface_ptr, &mut dual_module, 0);
             visualizer
                 .snapshot_combined(
                     "subgraph".to_string(),

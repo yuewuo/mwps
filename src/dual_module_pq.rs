@@ -20,9 +20,14 @@ use std::{
 };
 
 use derivative::Derivative;
-use itertools::Itertools;
+use hashbrown::hash_map::Entry;
+use hashbrown::HashMap;
+use heapz::RankPairingHeap;
+use heapz::{DecreaseKey, Heap};
 use num_traits::{FromPrimitive, Signed};
 use parking_lot::{lock_api::RwLockWriteGuard, RawRwLock};
+use pheap::PairingHeap;
+use priority_queue::PriorityQueue;
 
 /* Helper structs for events/obstacles during growing */
 #[derive(Debug, Clone)]
@@ -57,6 +62,20 @@ impl<T: Ord + PartialEq + Eq, E> PartialOrd for FutureEvent<T, E> {
 pub enum Obstacle {
     Conflict { edge_index: EdgeIndex },
     ShrinkToZero { dual_node_ptr: DualNodePtr },
+}
+
+// implement hash for Obstacle
+impl std::hash::Hash for Obstacle {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        match self {
+            Obstacle::Conflict { edge_index } => {
+                (0, *edge_index as u64).hash(state);
+            }
+            Obstacle::ShrinkToZero { dual_node_ptr } => {
+                (1, dual_node_ptr.read_recursive().index as u64).hash(state); // todo: perhaps swap to using OrderedDualNodePtr
+            }
+        }
+    }
 }
 
 impl Obstacle {
@@ -102,12 +121,131 @@ impl Obstacle {
 
 pub type FutureObstacle<T> = FutureEvent<T, Obstacle>;
 pub type MinBinaryHeap<F> = BinaryHeap<Reverse<F>>;
-pub type FutureObstacleQueue<T> = MinBinaryHeap<FutureObstacle<T>>;
+pub type _FutureObstacleQueue<T> = MinBinaryHeap<FutureObstacle<T>>;
+
+pub type MinPriorityQueue<O, T> = PriorityQueue<O, Reverse<T>>;
+pub type FutureObstacleQueue<T> = MinPriorityQueue<Obstacle, T>;
+
+#[derive(Debug, Clone)]
+pub struct PairingPQ<T: Ord + PartialEq + Eq + std::fmt::Debug + Clone> {
+    pub container: HashMap<Obstacle, T>,
+    pub heap: PairingHeap<Obstacle, T>,
+}
+
+// implement default for PairingPQ
+impl<T: Ord + PartialEq + Eq + std::fmt::Debug + Clone> Default for PairingPQ<T> {
+    fn default() -> Self {
+        Self {
+            container: HashMap::default(),
+            heap: PairingHeap::new(),
+        }
+    }
+}
+
+impl<T: Ord + PartialEq + Eq + std::fmt::Debug + Clone + std::ops::Sub<Output = T> + std::ops::SubAssign>
+    FutureQueueMethods<T, Obstacle> for PairingPQ<T>
+{
+    fn will_happen(&mut self, time: T, event: Obstacle) {
+        match self.container.entry(event.clone()) {
+            Entry::Vacant(entry) => {
+                entry.insert(time.clone());
+                self.heap.insert(event, time);
+            }
+            Entry::Occupied(mut entry) => {
+                let old_time = entry.get().clone();
+                *entry.get_mut() = time.clone();
+                self.heap.decrease_prio(&event, time.clone() - old_time);
+            }
+        }
+    }
+    fn peek_event(&self) -> Option<(&T, &Obstacle)> {
+        self.heap.find_min().map(|future| (future.1, future.0))
+    }
+    fn pop_event(&mut self) -> Option<(T, Obstacle)> {
+        let res = self.heap.delete_min().map(|future| (future.1, future.0));
+        match &res {
+            Some((_, event)) => {
+                self.container.remove(event);
+            }
+            None => {}
+        }
+        res
+    }
+    fn clear(&mut self) {
+        self.container.clear();
+        while !self.heap.is_empty() {
+            self.heap.delete_min();
+        }
+    }
+    fn len(&self) -> usize {
+        self.heap.len()
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct RankPairingPQ<T: Ord + PartialEq + Eq + std::fmt::Debug + Clone> {
+    pub container: HashMap<Obstacle, T>,
+    pub heap: RankPairingHeap<Obstacle, T>,
+}
+
+impl<T: Ord + PartialEq + Eq + std::fmt::Debug + Clone> Default for RankPairingPQ<T> {
+    fn default() -> Self {
+        Self {
+            container: HashMap::default(),
+            heap: RankPairingHeap::multi_pass_min2(),
+        }
+    }
+}
+
+impl<T: Ord + PartialEq + Eq + std::fmt::Debug + Clone> FutureQueueMethods<T, Obstacle> for RankPairingPQ<T> {
+    fn will_happen(&mut self, time: T, event: Obstacle) {
+        if self.container.contains_key(&event) {
+            self.heap.update(&event, time.clone());
+            self.container.insert(event, time);
+        } else {
+            self.heap.push(event.clone(), time.clone());
+            self.container.insert(event, time);
+        }
+    }
+    fn peek_event(&self) -> Option<(&T, &Obstacle)> {
+        self.heap.top().map(|key| (self.container.get(key).unwrap(), key))
+    }
+    fn pop_event(&mut self) -> Option<(T, Obstacle)> {
+        match self.heap.pop() {
+            None => None,
+            Some(key) => Some((self.container.remove(&key).unwrap(), key)),
+        }
+    }
+    fn clear(&mut self) {
+        self.container.clear();
+        while !self.heap.is_empty() {
+            self.heap.pop();
+        }
+    }
+    fn len(&self) -> usize {
+        self.heap.size()
+    }
+}
+
+impl<T: Ord + PartialEq + Eq + std::fmt::Debug> FutureQueueMethods<T, Obstacle> for FutureObstacleQueue<T> {
+    fn will_happen(&mut self, time: T, event: Obstacle) {
+        self.push(event, Reverse(time));
+    }
+    fn peek_event(&self) -> Option<(&T, &Obstacle)> {
+        self.peek().map(|future| (&future.1 .0, future.0))
+    }
+    fn pop_event(&mut self) -> Option<(T, Obstacle)> {
+        self.pop().map(|future| (future.1 .0, future.0))
+    }
+    fn clear(&mut self) {
+        self.clear();
+    }
+    fn len(&self) -> usize {
+        self.len()
+    }
+}
 
 pub trait FutureQueueMethods<T: Ord + PartialEq + Eq + std::fmt::Debug, E: std::fmt::Debug> {
-    /// defines the behavior of `will_happen`, if the queue can contain invalid/duplicate events
-    const MAY_BE_INVALID: bool = true;
-
     /// Append an event at time T
     ///     Note: this may have multiple distinct yet valid behaviors, e,g, weather there are duplicates allowed in the data strcture, default to allow
     fn will_happen(&mut self, time: T, event: E);
@@ -120,6 +258,14 @@ pub trait FutureQueueMethods<T: Ord + PartialEq + Eq + std::fmt::Debug, E: std::
 
     /// clear for a queue
     fn clear(&mut self);
+
+    /// length of the queue
+    fn len(&self) -> usize;
+
+    /// is empty
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
 }
 
 impl<T: Ord + PartialEq + Eq + std::fmt::Debug, E: std::fmt::Debug> FutureQueueMethods<T, E>
@@ -137,8 +283,9 @@ impl<T: Ord + PartialEq + Eq + std::fmt::Debug, E: std::fmt::Debug> FutureQueueM
     fn clear(&mut self) {
         self.clear();
     }
-
-    const MAY_BE_INVALID: bool = true;
+    fn len(&self) -> usize {
+        self.len()
+    }
 }
 
 /* Vertices and Edges */
@@ -188,7 +335,7 @@ pub struct Edge {
     #[derivative(Debug = "ignore")]
     vertices: Vec<VertexWeak>,
     /// the dual nodes that contributes to this edge
-    dual_nodes: Vec<DualNodeWeak>,
+    dual_nodes: Vec<OrderedDualNodeWeak>,
 
     /* fields that are different from that of dual_module_serial, or slightly differently interpreted */
     /// the speed of growth, at the current time
@@ -198,6 +345,10 @@ pub struct Edge {
     last_updated_time: Rational,
     /// growth value at the last updated time, also, growth_at_last_updated_time <= weight
     growth_at_last_updated_time: Rational,
+
+    #[cfg(feature = "incr_lp")]
+    /// storing the weights of the clusters that are currently contributing to this edge
+    cluster_weights: hashbrown::HashMap<usize, Rational>,
 }
 
 impl Edge {
@@ -205,6 +356,8 @@ impl Edge {
         self.growth_at_last_updated_time = Rational::zero();
         self.last_updated_time = Rational::zero();
         self.dual_nodes.clear();
+        #[cfg(feature = "incr_lp")]
+        self.cluster_weights.clear();
     }
 }
 
@@ -217,12 +370,12 @@ impl std::fmt::Debug for EdgePtr {
         write!(
             f,
             "[edge: {}]: weight: {}, grow_rate: {}, growth_at_last_updated_time: {}, last_updated_time: {}\n\tdual_nodes: {:?}\n",
-            edge.edge_index, 
-            edge.weight, 
-            edge.grow_rate, 
-            edge.growth_at_last_updated_time, 
-            edge.last_updated_time, 
-            edge.dual_nodes.iter().filter(|node| !node.upgrade_force().read_recursive().grow_rate.is_zero()).collect::<Vec<_>>()
+            edge.edge_index,
+            edge.weight,
+            edge.grow_rate,
+            edge.growth_at_last_updated_time,
+            edge.last_updated_time,
+            edge.dual_nodes.iter().filter(|node| !node.weak_ptr.upgrade_force().read_recursive().grow_rate.is_zero()).collect::<Vec<_>>()
         )
     }
 }
@@ -234,7 +387,7 @@ impl std::fmt::Debug for EdgeWeak {
         write!(
             f,
             "[edge: {}]: weight: {}, grow_rate: {}, growth_at_last_updated_time: {}, last_updated_time: {}\n\tdual_nodes: {:?}\n",
-            edge.edge_index, edge.weight, edge.grow_rate, edge.growth_at_last_updated_time, edge.last_updated_time, edge.dual_nodes.iter().filter(|node| !node.upgrade_force().read_recursive().grow_rate.is_zero()).collect::<Vec<_>>()
+            edge.edge_index, edge.weight, edge.grow_rate, edge.growth_at_last_updated_time, edge.last_updated_time, edge.dual_nodes.iter().filter(|node| !node.weak_ptr.upgrade_force().read_recursive().grow_rate.is_zero()).collect::<Vec<_>>()
         )
     }
 }
@@ -242,7 +395,7 @@ impl std::fmt::Debug for EdgeWeak {
 /* the actual dual module */
 pub struct DualModulePQ<Queue>
 where
-    Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug + Clone,
+    Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug,
 {
     /// all vertices including virtual ones
     pub vertices: Vec<VertexPtr>,
@@ -361,6 +514,8 @@ where
                 last_updated_time: Rational::zero(),
                 growth_at_last_updated_time: Rational::zero(),
                 grow_rate: Rational::zero(),
+                #[cfg(feature = "incr_lp")]
+                cluster_weights: hashbrown::HashMap::new(),
             });
             for &vertex_index in hyperedge.vertices.iter() {
                 vertices[vertex_index as usize].write().edges.push(edge_ptr.downgrade());
@@ -429,7 +584,8 @@ where
             self.update_edge_if_necessary(&mut edge);
 
             edge.grow_rate += &dual_node.grow_rate;
-            edge.dual_nodes.push(dual_node_weak.clone());
+            edge.dual_nodes
+                .push(OrderedDualNodeWeak::new(dual_node.index, dual_node_weak.clone()));
 
             if edge.grow_rate.is_positive() {
                 self.obstacle_queue.will_happen(
@@ -451,7 +607,8 @@ where
             let mut edge = self.edges[edge_index as usize].write();
 
             edge.grow_rate += &dual_node.grow_rate;
-            edge.dual_nodes.push(dual_node_weak.clone());
+            edge.dual_nodes
+                .push(OrderedDualNodeWeak::new(dual_node.index, dual_node_weak.clone()));
         }
     }
 
@@ -464,11 +621,11 @@ where
         let global_time = self.global_time.read_recursive();
         let grow_rate_diff = &grow_rate - &dual_node.grow_rate;
 
-        dual_node.grow_rate = grow_rate;
+        dual_node.grow_rate = grow_rate.clone();
         if dual_node.grow_rate.is_negative() {
             self.obstacle_queue.will_happen(
                 // it is okay to use global_time now, as this must be up-to-speed
-                dual_node.get_dual_variable().clone() / (-dual_node.grow_rate.clone()) + global_time.clone(),
+                dual_node.get_dual_variable().clone() / (-grow_rate) + global_time.clone(),
                 Obstacle::ShrinkToZero {
                     dual_node_ptr: dual_node_ptr.clone(),
                 },
@@ -507,30 +664,32 @@ where
     }
 
     fn compute_maximum_update_length(&mut self) -> GroupMaxUpdateLength {
+        // self.debug_print();
+
         let global_time = self.global_time.read_recursive();
-        // finding a valid event to process, only when invalids exist
-        if Queue::MAY_BE_INVALID {
-            // getting rid of all the invalid events
-            while let Some((time, event)) = self.obstacle_queue.peek_event() {
-                // found a valid event
-                if event.is_valid(self, time) {
-                    // valid grow
-                    if time != &global_time.clone() {
-                        return GroupMaxUpdateLength::ValidGrow(time - global_time.clone());
-                    }
-                    // goto else
-                    break;
+        // getting rid of all the invalid events
+        while let Some((time, event)) = self.obstacle_queue.peek_event() {
+            // found a valid event
+            if event.is_valid(self, time) {
+                // valid grow
+                if time != &global_time.clone() {
+                    return GroupMaxUpdateLength::ValidGrow(time - global_time.clone());
                 }
-                self.obstacle_queue.pop_event();
+                // goto else
+                break;
             }
+            self.obstacle_queue.pop_event();
         }
 
         // else , it is a valid conflict to resolve
         if let Some((_, event)) = self.obstacle_queue.pop_event() {
             // this is used, since queues are not sets, and can contain duplicate events
-            // Note: chekc that this is the assumption, though not much more overhead anyway
-            let mut group_max_update_length_set = BTreeSet::default();
-            group_max_update_length_set.insert(match event {
+            // Note: check that this is the assumption, though not much more overhead anyway
+            // let mut group_max_update_length_set = BTreeSet::default();
+
+            // Note: With de-dup queue implementation, we could use vectors here
+            let mut group_max_update_length = GroupMaxUpdateLength::new();
+            group_max_update_length.add(match event {
                 Obstacle::Conflict { edge_index } => MaxUpdateLength::Conflicting(edge_index),
                 Obstacle::ShrinkToZero { dual_node_ptr } => {
                     let index = dual_node_ptr.read_recursive().index;
@@ -546,7 +705,7 @@ where
                         continue;
                     }
                     // add
-                    group_max_update_length_set.insert(match event {
+                    group_max_update_length.add(match event {
                         Obstacle::Conflict { edge_index } => MaxUpdateLength::Conflicting(edge_index),
                         Obstacle::ShrinkToZero { dual_node_ptr } => {
                             let index = dual_node_ptr.read_recursive().index;
@@ -558,7 +717,7 @@ where
                 }
             }
 
-            return GroupMaxUpdateLength::Conflicts(group_max_update_length_set.into_iter().collect_vec());
+            return group_max_update_length;
         }
 
         // nothing useful could be done, return unbounded
@@ -582,7 +741,7 @@ where
             .read_recursive()
             .dual_nodes
             .iter()
-            .map(|x| x.upgrade_force())
+            .map(|x| x.upgrade_force().ptr)
             .collect()
     }
 
@@ -631,9 +790,10 @@ where
 
     /// sync all states and global time so the concept of time and pq can retire
     fn sync(&mut self) {
+        // note: we can either set the global time to be zero, or just not change it anymore
 
         let mut nodes_touched = BTreeSet::new();
-        
+
         for edges in self.edges.iter_mut() {
             let mut edge = edges.write();
 
@@ -657,11 +817,11 @@ where
             }
 
             for dual_node_ptr in edge.dual_nodes.iter() {
-                let _dual_node_ptr = dual_node_ptr.upgrade_force();
-                let node = _dual_node_ptr.read_recursive();
-                if nodes_touched.contains(&node.index) {
+                if nodes_touched.contains(&dual_node_ptr.index) {
                     continue;
                 }
+                let _dual_node_ptr = dual_node_ptr.upgrade_force();
+                let node = _dual_node_ptr.ptr.read_recursive();
                 nodes_touched.insert(node.index);
 
                 // update if necessary
@@ -674,7 +834,7 @@ where
                     );
 
                     drop(node);
-                    let mut node: RwLockWriteGuard<RawRwLock, DualNode> = _dual_node_ptr.write();
+                    let mut node: RwLockWriteGuard<RawRwLock, DualNode> = _dual_node_ptr.ptr.write();
 
                     let dual_variable = node.get_dual_variable();
                     node.set_dual_variable(dual_variable);
@@ -690,16 +850,18 @@ where
 
     /// misc debug print statement
     fn debug_print(&self) {
-        println!("\n[current states]");
-        println!("global time: {:?}", self.global_time.read_recursive());
-        println!(
-            "edges: {:?}",
-            self.edges
-                .iter()
-                .filter(|e| !e.read_recursive().grow_rate.is_zero())
-                .collect::<Vec<&EdgePtr>>()
-        );
-        println!("pq: {:?}", self.obstacle_queue);
+        // println!("\n[current states]");
+        // println!("global time: {:?}", self.global_time.read_recursive());
+        // println!(
+        //     "edges: {:?}",
+        //     self.edges
+        //         .iter()
+        //         .filter(|e| !e.read_recursive().grow_rate.is_zero())
+        //         .collect::<Vec<&EdgePtr>>()
+        // );
+        if self.obstacle_queue.len() > 0 {
+            println!("pq: {:?}", self.obstacle_queue.len());
+        }
 
         // println!("\n[current states]");
         // println!("global time: {:?}", self.global_time.read_recursive());
@@ -737,6 +899,66 @@ where
         }
         start += weight.to_f64().unwrap();
         Some(OrderedFloat::from(start))
+    }
+
+    fn get_edge_free_weight(
+        &self,
+        edge_index: EdgeIndex,
+        participating_dual_variables: &hashbrown::HashSet<usize>,
+    ) -> Rational {
+        let edge = self.edges[edge_index as usize].read_recursive();
+        let mut free_weight = edge.weight.clone();
+        for dual_node in edge.dual_nodes.iter() {
+            if participating_dual_variables.contains(&dual_node.index) {
+                continue;
+            }
+            let dual_node = dual_node.upgrade_force();
+            free_weight -= &dual_node.ptr.read_recursive().dual_variable_at_last_updated_time;
+        }
+
+        free_weight
+    }
+
+    #[cfg(feature = "incr_lp")]
+    fn get_edge_free_weight_cluster(&self, edge_index: EdgeIndex, cluster_index: NodeIndex) -> Rational {
+        let edge = self.edges[edge_index as usize].read_recursive();
+        edge.weight.clone()
+            - edge
+                .cluster_weights
+                .iter()
+                .filter_map(|(c_idx, y)| if cluster_index.ne(c_idx) { Some(y) } else { None })
+                .sum::<Rational>()
+    }
+
+    #[cfg(feature = "incr_lp")]
+    fn update_edge_cluster_weights_union(
+        &self,
+        dual_node_ptr: &DualNodePtr,
+        drained_cluster_index: NodeIndex,
+        absorbing_cluster_index: NodeIndex,
+    ) {
+        let dual_node = dual_node_ptr.read_recursive();
+        for edge_index in dual_node.invalid_subgraph.hair.iter() {
+            let mut edge = self.edges[*edge_index as usize].write();
+            if let Some(removed) = edge.cluster_weights.remove(&drained_cluster_index) {
+                *edge
+                    .cluster_weights
+                    .entry(absorbing_cluster_index)
+                    .or_insert(Rational::zero()) += removed;
+            }
+        }
+    }
+
+    #[cfg(feature = "incr_lp")]
+    fn update_edge_cluster_weights(&self, edge_index: usize, cluster_index: usize, weight: Rational) {
+        match self.edges[edge_index].write().cluster_weights.entry(cluster_index) {
+            hashbrown::hash_map::Entry::Occupied(mut o) => {
+                *o.get_mut() += weight;
+            }
+            hashbrown::hash_map::Entry::Vacant(v) => {
+                v.insert(weight);
+            }
+        }
     }
 }
 
@@ -785,7 +1007,7 @@ mod tests {
     #[test]
     fn dual_module_pq_learn_priority_queue_1() {
         // cargo test dual_module_pq_learn_priority_queue_1 -- --nocapture
-        let mut future_obstacle_queue = FutureObstacleQueue::<usize>::new();
+        let mut future_obstacle_queue = _FutureObstacleQueue::<usize>::new();
         assert_eq!(0, future_obstacle_queue.len());
         macro_rules! ref_event {
             ($index:expr) => {

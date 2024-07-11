@@ -15,7 +15,32 @@ use std::sync::Arc;
 
 use derivative::Derivative;
 
-use num_traits::{One, Signed, Zero};
+use num_traits::{Signed, Zero};
+
+#[cfg(feature = "slp")]
+use num_traits::One;
+#[cfg(feature = "incr_lp")]
+use parking_lot::Mutex;
+#[cfg(feature = "incr_lp")]
+use std::ops::Index;
+
+#[cfg(all(feature = "incr_lp", feature = "highs"))]
+pub struct IncrLPSolution {
+    pub edge_constraints: BTreeMap<EdgeIndex, (Rational, BTreeSet<NodeIndex>)>,
+    pub edge_row_map: BTreeMap<EdgeIndex, highs::Row>,
+    pub dv_col_map: BTreeMap<NodeIndex, highs::Col>,
+    pub solution: Option<highs::SolvedModel>,
+}
+
+#[cfg(all(feature = "incr_lp", feature = "highs"))]
+impl IncrLPSolution {
+    pub fn constraints_len(&self) -> usize {
+        self.edge_row_map.len() + self.dv_col_map.len()
+    }
+}
+
+#[cfg(all(feature = "incr_lp", feature = "highs"))]
+unsafe impl Send for IncrLPSolution {}
 
 #[derive(Default, Debug)]
 pub enum OptimizerResult {
@@ -211,6 +236,7 @@ impl RelaxerOptimizer {
         }
 
         let mut model = RowProblem::default().optimise(Sense::Maximise);
+        model.set_option("parallel", "off");
         model.set_option("threads", 1);
 
         let mut x_vars = vec![];
@@ -281,13 +307,214 @@ impl RelaxerOptimizer {
         self.relaxers.insert(relaxer);
         (Relaxer::new(direction), false)
     }
+
+    #[cfg(all(feature = "float_lp", feature = "incr_lp"))]
+    // the same method, but with f64 weight
+    pub fn optimize_incr(
+        &mut self,
+        relaxer: Relaxer,
+        edge_free_weights: BTreeMap<EdgeIndex, Rational>,
+        dual_nodes: BTreeMap<NodeIndex, (Arc<InvalidSubgraph>, Rational)>,
+        option_incr_lp_solution: &mut Option<Arc<Mutex<IncrLPSolution>>>,
+    ) -> (Relaxer, bool) {
+        use highs::{HighsModelStatus, RowProblem, Sense};
+        use num_traits::ToPrimitive;
+
+        use crate::ordered_float::OrderedFloat;
+
+        return match option_incr_lp_solution {
+            Some(incr_lp_solution) => {
+                let mut incr_lp_solution_ptr = incr_lp_solution.lock();
+                let mut model: highs::Model = incr_lp_solution_ptr.solution.take().unwrap().into();
+
+                let mut edge_contributor: BTreeMap<EdgeIndex, (Rational, BTreeSet<NodeIndex>)> = edge_free_weights
+                    .iter()
+                    .map(|(&edge_index, &edge_free_weight)| (edge_index, (edge_free_weight, BTreeSet::new())))
+                    .collect();
+
+                for (dual_node_index, (invalid_subgraph, _)) in dual_nodes.iter() {
+                    for edge_index in invalid_subgraph.hair.iter() {
+                        edge_contributor
+                            .get_mut(&edge_index)
+                            .unwrap()
+                            .1
+                            .insert(dual_node_index.clone());
+                    }
+                    if incr_lp_solution_ptr.dv_col_map.contains_key(dual_node_index) {
+                        continue;
+                    }
+                    let col = model.add_col(1.0, 0.0.., []);
+
+                    incr_lp_solution_ptr.dv_col_map.insert(dual_node_index.clone(), col);
+                }
+
+                let mut new_edges = BTreeSet::new();
+                let mut update_deges_weight = BTreeSet::new();
+                let mut update_edges_contributors = BTreeSet::new();
+
+                // get difference between edges
+                for (&edge_index, &free_weight) in edge_free_weights.iter() {
+                    match incr_lp_solution_ptr.edge_constraints.get(&edge_index) {
+                        Some((_free_weight, _edge_contributors)) => {
+                            if _free_weight != free_weight {
+                                update_deges_weight.insert(edge_index.clone());
+                            }
+                            if _edge_contributors != &edge_contributor[&edge_index].1 {
+                                update_edges_contributors.insert(edge_index.clone());
+                            }
+                        }
+                        None => {
+                            new_edges.insert(edge_index.clone());
+                        }
+                    }
+                }
+
+                for edge_index in new_edges.into_iter() {
+                    let mut row_entries = vec![];
+                    for var_index in edge_contributor[&edge_index].1.iter() {
+                        row_entries.push((incr_lp_solution_ptr.dv_col_map[var_index], 1.0));
+                    }
+
+                    // constraint of edge: sum(y_S) <= weight
+                    let row = model.add_row(..=edge_free_weights[&edge_index].to_f64().unwrap(), row_entries);
+                    incr_lp_solution_ptr.edge_row_map.insert(edge_index, row);
+                }
+
+                for edge_index in update_deges_weight.into_iter() {
+                    let row = incr_lp_solution_ptr.edge_row_map.get(&edge_index).unwrap();
+                    model.change_row_bounds(*row, ..=edge_free_weights[&edge_index].to_f64().unwrap());
+                }
+
+                for edge_index in update_edges_contributors.into_iter() {
+                    let row = incr_lp_solution_ptr.edge_row_map.get(&edge_index).unwrap();
+                    let diff = edge_contributor[&edge_index]
+                        .1
+                        .difference(&incr_lp_solution_ptr.edge_constraints[&edge_index].1);
+                    for invalid_subgraph in diff {
+                        model.change_matrix_coefficient(*row, incr_lp_solution_ptr.dv_col_map[invalid_subgraph], 1.0)
+                    }
+                }
+
+                let solved = model.solve();
+
+                let mut direction: BTreeMap<Arc<InvalidSubgraph>, OrderedFloat> = BTreeMap::new();
+                if solved.status() == HighsModelStatus::Optimal {
+                    let solution = solved.get_solution();
+
+                    // calculate the objective function
+                    let new_dual_variable_sum = OrderedFloat::from(solution.columns().iter().sum::<f64>());
+
+                    let delta: OrderedFloat =
+                        new_dual_variable_sum - dual_nodes.values().map(|(_, grow_rate)| grow_rate).sum::<OrderedFloat>();
+
+                    // check positivity of the objective
+                    if !(delta.is_positive()) {
+                        incr_lp_solution_ptr.solution = Some(solved);
+                        return (relaxer, true);
+                    }
+
+                    for (node_index, (invalid_subgraph, dv)) in dual_nodes.iter() {
+                        let overall_growth =
+                            OrderedFloat::from(*solution.index(incr_lp_solution_ptr.dv_col_map[node_index])) - dv;
+                        if !overall_growth.is_zero() {
+                            direction.insert(invalid_subgraph.clone(), overall_growth);
+                        }
+                    }
+                } else {
+                    println!("solved status: {:?}", solved.status());
+                    unreachable!();
+                }
+
+                incr_lp_solution_ptr.solution = Some(solved);
+                incr_lp_solution_ptr.edge_constraints = edge_contributor;
+
+                self.relaxers.insert(relaxer);
+                (Relaxer::new(direction), false)
+            }
+            None => {
+                let mut model = RowProblem::default().optimise(Sense::Maximise);
+                model.set_option("parallel", "off");
+                model.set_option("threads", 1);
+
+                let mut edge_row_map: BTreeMap<EdgeIndex, highs::Row> = BTreeMap::new();
+                let mut dv_col_map: BTreeMap<NodeIndex, highs::Col> = BTreeMap::new();
+
+                let mut edge_contributor: BTreeMap<EdgeIndex, (Rational, BTreeSet<NodeIndex>)> = edge_free_weights
+                    .iter()
+                    .map(|(&edge_index, &edge_free_weight)| (edge_index, (edge_free_weight, BTreeSet::new())))
+                    .collect();
+
+                for (dual_node_index, (invalid_subgraph, _)) in dual_nodes.iter() {
+                    // constraint of the dual variable >= 0
+                    let col = model.add_col(1.0, 0.0.., []);
+
+                    dv_col_map.insert(dual_node_index.clone(), col);
+
+                    for &edge_index in invalid_subgraph.hair.iter() {
+                        edge_contributor
+                            .get_mut(&edge_index)
+                            .unwrap()
+                            .1
+                            .insert(dual_node_index.clone());
+                    }
+                }
+
+                for (&edge_index, &free_weight) in edge_free_weights.iter() {
+                    let mut row_entries = vec![];
+                    for var_index in edge_contributor[&edge_index].1.iter() {
+                        row_entries.push((dv_col_map[var_index], 1.0));
+                    }
+
+                    // constraint of edge: sum(y_S) <= weight
+                    let row = model.add_row(..=free_weight.to_f64().unwrap(), row_entries);
+                    edge_row_map.insert(edge_index, row);
+                }
+
+                let solved = model.solve();
+
+                let mut direction: BTreeMap<Arc<InvalidSubgraph>, OrderedFloat> = BTreeMap::new();
+                if solved.status() == HighsModelStatus::Optimal {
+                    let solution = solved.get_solution();
+
+                    // calculate the objective function
+                    let new_dual_variable_sum = OrderedFloat::from(solution.columns().iter().sum::<f64>());
+
+                    let delta: OrderedFloat =
+                        new_dual_variable_sum - dual_nodes.values().map(|(_, grow_rate)| grow_rate).sum::<OrderedFloat>();
+
+                    // check positivity of the objective
+                    if !(delta.is_positive()) {
+                        return (relaxer, true);
+                    }
+
+                    for (node_index, (invalid_subgraph, dv)) in dual_nodes.iter() {
+                        let overall_growth = OrderedFloat::from(*solution.index(dv_col_map[node_index])) - dv;
+                        if !overall_growth.is_zero() {
+                            direction.insert(invalid_subgraph.clone(), overall_growth);
+                        }
+                    }
+                } else {
+                    println!("solved status: {:?}", solved.status());
+                    unreachable!();
+                }
+
+                *option_incr_lp_solution = Some(Arc::new(Mutex::new(IncrLPSolution {
+                    edge_constraints: edge_contributor,
+                    edge_row_map,
+                    dv_col_map,
+                    solution: Some(solved),
+                })));
+
+                self.relaxers.insert(relaxer);
+                (Relaxer::new(direction), false)
+            }
+        };
+    }
 }
 
 #[cfg(test)]
-#[cfg(all(feature = "highs", not(feature = "float_lp")))]
 pub mod tests {
     // use super::*;
-    use highs::{ColProblem, HighsModelStatus, Model, Sense};
 
     // #[test]
     // fn relaxer_optimizer_simple() {
@@ -295,9 +522,11 @@ pub mod tests {
     //     let mut relaxer_optimizer = RelaxerOptimizer::new();
     // }
 
+    #[cfg(feature = "slp")]
     #[test]
     fn lp_solver_simple() {
         use crate::util::Rational;
+        use slp::BigInt;
 
         // cargo test lp_solver_simple -- --nocapture
         // https://docs.rs/slp/latest/slp/
@@ -314,8 +543,11 @@ pub mod tests {
         assert_eq!(
             solution,
             slp::Solution::Optimal(
-                Rational::from_integer(28),
-                vec![Rational::from_integer(5), Rational::from_integer(6)]
+                Rational::from_integer(BigInt::from(28)),
+                vec![
+                    Rational::from_integer(BigInt::from(5)),
+                    Rational::from_integer(BigInt::from(6))
+                ]
             )
         );
         match solution {
@@ -332,8 +564,11 @@ pub mod tests {
         }
     }
 
+    #[cfg(feature = "highs")]
     #[test]
     fn highs_simple() {
+        use highs::{ColProblem, HighsModelStatus, Model, Sense};
+
         let mut model = ColProblem::default().optimise(Sense::Maximise);
         let row1 = model.add_row(..=6., []); // x*3 + y*1 <= 6
         let row2 = model.add_row(..=7., []); // y*1 + z*2 <= 7
@@ -370,5 +605,186 @@ pub mod tests {
         // All the constraints are at their maximum
         assert_eq!(solution.rows(), vec![6., 7., 10.]);
         // model.add_row(..=6, row_factors);
+    }
+
+    #[cfg(feature = "highs")]
+    #[test]
+    fn highs_change_incr() {
+        use highs::{ColProblem, HighsModelStatus, Model, Sense};
+        // max: x + 2y + z
+        // under constraints:
+        // c1: 3x +  y      <= 6
+        // c2:       y + 2z <= 7
+
+        let mut model = ColProblem::default().optimise(Sense::Maximise);
+        let c1 = model.add_row(..6., []);
+        let c2 = model.add_row(..7., []);
+        // x
+        model.add_col(1., (0.).., [(c1, 3.)]);
+        // y
+        model.add_col(2., (0.).., [(c1, 1.), (c2, 1.)]);
+        // z
+        model.add_col(1., (0.).., [(c2, 2.)]);
+
+        let solved = model.solve();
+
+        assert_eq!(solved.status(), HighsModelStatus::Optimal);
+
+        let solution = solved.get_solution();
+        // The expected solution is x=0  y=6  z=0.5
+        assert_eq!(solution.columns(), vec![0., 6., 0.5]);
+        // All the constraints are at their maximum
+        assert_eq!(solution.rows(), vec![6., 7.]);
+
+        // Now we want to change the problem and solve it on top of it
+        let mut model: Model = solved.into();
+
+        // modify row c2 to be y + 2z <= 10
+        // Now:
+        //      max: x + 2y + z
+        //      under constraints:
+        //      c1: 3x +  y      <= 6
+        //      c2:       y + 2z <= 10
+        model.change_row_bounds(c2, ..10.);
+
+        let solved = model.solve();
+
+        assert_eq!(solved.status(), HighsModelStatus::Optimal);
+
+        let solution = solved.get_solution();
+        // The expected solution is x=0  y=6  z=2
+        assert_eq!(solution.columns(), vec![0., 6., 2.]);
+        // All the constraints are at their maximum
+        assert_eq!(solution.rows(), vec![6., 10.]);
+    }
+
+    #[cfg(feature = "highs")]
+    #[test]
+    fn highs_change_incr_coeff() {
+        use highs::{HighsModelStatus, Model, RowProblem, Sense};
+        // max: x + 2y + z
+        // under constraints:
+        // c1: 3x +  y      <= 6
+        // c2:       y + 2z <= 7
+
+        let mut model = RowProblem::default().optimise(Sense::Maximise);
+        // x
+        let x = model.add_col(1., (0.).., []);
+        // y
+        let y = model.add_col(2., (0.).., []);
+        // z
+        let z = model.add_col(1., (0.).., []);
+
+        let c1 = model.add_row(..6., [(x, 3.), (y, 1.)]);
+        let c2 = model.add_row(..7., [(y, 1.), (z, 2.)]);
+
+        let solved = model.solve();
+
+        assert_eq!(solved.status(), HighsModelStatus::Optimal);
+
+        let solution = solved.get_solution();
+        // The expected solution is x=0  y=6  z=0.5
+        assert_eq!(solution.columns(), vec![0., 6., 0.5]);
+        // All the constraints are at their maximum
+        assert_eq!(solution.rows(), vec![6., 7.]);
+
+        // Now we want to change the problem and solve it on top of it
+        let mut model: Model = solved.into();
+
+        // modify row c2 to be y + 2z <= 10
+        // Now:
+        //      max: x + 2y + z + a
+        //      under constraints:
+        //      c1: 3x +  y      <= 6
+        //      c2:       y + 3z + a <= 10
+        model.change_row_bounds(c2, ..10.);
+
+        let a = model.add_col(1., (0.).., []);
+        model.change_matrix_coefficient(c2, a, 1.);
+
+        let solved = model.solve();
+
+        assert_eq!(solved.status(), HighsModelStatus::Optimal);
+
+        let solution = solved.get_solution();
+        // The expected solution is x=0  y=6  z=2
+        assert_eq!(solution.columns(), vec![0., 6., 0., 4.]);
+        // All the constraints are at their maximum
+        assert_eq!(solution.rows(), vec![6., 10.]);
+    }
+
+    #[cfg(feature = "highs")]
+    #[test]
+    fn highs_change_matrix_coefficient() {
+        use highs::{ColProblem, HighsModelStatus, Model, Sense};
+
+        // Create initial problem
+        let mut model = ColProblem::default().optimise(Sense::Maximise);
+        let c1 = model.add_row(..=6., []);
+        let c2 = model.add_row(..=7., []);
+        let x = model.add_col(1., (0.).., [(c1, 3.)]);
+        let _y = model.add_col(2., (0.).., [(c1, 1.), (c2, 1.)]);
+        let z = model.add_col(1., (0.).., [(c2, 2.)]);
+
+        let solved = model.solve();
+        assert_eq!(solved.status(), HighsModelStatus::Optimal);
+
+        let solution = solved.get_solution();
+        assert_eq!(solution.columns(), vec![0., 6., 0.5]);
+        assert_eq!(solution.rows(), vec![6., 7.]);
+
+        // Change a coefficient in the constraint matrix
+        let mut model: Model = solved.into();
+        model.change_matrix_coefficient(c1, x, 1.0);
+
+        let solved = model.solve();
+        assert_eq!(solved.status(), HighsModelStatus::Optimal);
+
+        let solution = solved.get_solution();
+        assert_eq!(solution.columns(), vec![0., 6., 0.5]);
+        assert_eq!(solution.rows(), vec![6., 7.]);
+
+        let mut model: Model = solved.into();
+
+        // Change another coefficient in the constraint matrix
+        model.change_matrix_coefficient(c2, z, 1.0);
+
+        let solved = model.solve();
+        assert_eq!(solved.status(), HighsModelStatus::Optimal);
+
+        let solution = solved.get_solution();
+        // The expected solution should change due to the modification
+        // Let's assume the new expected solution is x=0, y=6, z=1
+        assert_eq!(solution.columns(), vec![0., 6., 1.]);
+        assert_eq!(solution.rows(), vec![6., 7.]);
+    }
+
+    #[cfg(feature = "highs")]
+    #[test]
+    fn highs_change_matrix_coefficient_with_infeasibility() {
+        use highs::{ColProblem, HighsModelStatus, Model, Sense};
+
+        // Create initial problem
+        let mut model = ColProblem::default().optimise(Sense::Maximise);
+        let c1 = model.add_row(..=6., []);
+        let c2 = model.add_row(..=7., []);
+        let x = model.add_col(1., (0.).., [(c1, 3.)]);
+        let _y = model.add_col(2., (0.).., [(c1, 1.), (c2, 1.)]);
+        let lazy_staticz = model.add_col(1., (0.).., [(c2, 2.)]);
+
+        let solved = model.solve();
+        assert_eq!(solved.status(), HighsModelStatus::Optimal);
+
+        let solution = solved.get_solution();
+        assert_eq!(solution.columns(), vec![0., 6., 0.5]);
+        assert_eq!(solution.rows(), vec![6., 7.]);
+
+        // Change a coefficient to create an infeasible problem
+        let mut model: Model = solved.into();
+        model.change_matrix_coefficient(c1, x, 10.0);
+        model.change_col_bounds(x, 1.7..);
+
+        let solved = model.solve();
+        assert_eq!(solved.status(), HighsModelStatus::Infeasible);
     }
 }
