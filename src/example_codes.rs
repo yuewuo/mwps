@@ -878,6 +878,7 @@ impl CodeCapacityColorCode {
 #[cfg(feature = "qecp_integrate")]
 #[cfg_attr(feature = "python_binding", cfg_eval)]
 #[cfg_attr(feature = "python_binding", pyclass)]
+#[derive(Debug, Clone)]
 pub struct QECPlaygroundCode {
     simulator: qecp::simulator::Simulator,
     noise_model: std::sync::Arc<qecp::noise_model::NoiseModel>,
@@ -942,8 +943,7 @@ impl ExampleCode for QECPlaygroundCode {
     }
 }
 
-#[cfg(feature = "python_binding")]
-#[cfg(feature = "qecp_integrate")]
+#[cfg(all(feature = "python_binding", feature = "qecp_integrate"))]
 bind_trait_example_code! {QECPlaygroundCode}
 
 #[cfg(feature = "qecp_integrate")]
