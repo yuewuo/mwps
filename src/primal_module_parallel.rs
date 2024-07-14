@@ -294,7 +294,7 @@ impl PrimalModuleParallelUnitPtr {
                 callback(&primal_unit.interface_ptr, &dual_unit, &primal_unit.serial_module, None);
             }
 
-            for boundary_vertex in primal_unit.
+            for boundary_vertex in primal_unit.adsf
 
             // primal_unit.break_matching_with_mirror(dual_unit.deref_mut());
             // for defect_index in owned_defect_range.whole_defect_range.iter() {
