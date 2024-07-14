@@ -31,6 +31,23 @@ impl ModelHyperGraph {
         Self { initializer, vertices }
     }
 
+    pub fn new_partitioned(partitioned_initializer: &PartitionedSolverInitializer) -> Self {
+        let mut vertices: Vec<ModelHyperGraphVertex> =
+            vec![ModelHyperGraphVertex::default(); partitioned_initializer.vertex_num as usize];
+
+        for (edge_index, (hyperedge, _)) in partitioned_initializer.weighted_edges.iter().enumerate() {
+            for &vertex_index in hyperedge.vertices.iter() {
+                vertices[vertex_index as usize].edges.push(edge_index as EdgeIndex);
+            }
+        }
+
+        let weighted_edges = partitioned_initializer.weighted_edges.clone().into_iter().map(|x| x.0).rev().collect();
+        let initializer = Arc::new(SolverInitializer::new(partitioned_initializer.vertex_num, weighted_edges));
+
+
+        Self { initializer, vertices }
+    }
+
     #[allow(clippy::unnecessary_cast)]
     pub fn get_edge_neighbors(&self, edge_index: EdgeIndex) -> &Vec<VertexIndex> {
         &self.initializer.weighted_edges[edge_index as usize].vertices

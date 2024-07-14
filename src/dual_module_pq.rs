@@ -370,7 +370,7 @@ where
 
     #[allow(clippy::unnecessary_cast)]
     /// Adding a defect node to the DualModule
-    fn add_defect_node(&mut self, dual_node_ptr: &DualNodePtr) {
+    fn add_defect_node(&mut self, dual_node_ptr: &DualNodePtr, bias: usize) {
         let dual_node = dual_node_ptr.read_recursive();
         debug_assert!(dual_node.invalid_subgraph.edges.is_empty());
         debug_assert!(

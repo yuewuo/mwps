@@ -36,7 +36,7 @@ fn debug_demo() {
         print_visualize_link(visualize_filename.clone());
         if is_example {
             visualizer.snapshot_combined("code".to_string(), vec![&code]).unwrap();
-            let mut primal_module = PrimalModuleSerial::new_empty(&initializer);
+            let mut primal_module = PrimalModuleSerial::new_empty(&initializer, &model_graph);
             primal_module.growing_strategy = GrowingStrategy::SingleCluster;
             primal_module.plugins = Arc::new(vec![]);
             primal_module.solve_visualizer(&interface_ptr, syndrome_pattern, &mut dual_module, Some(&mut visualizer));
@@ -106,7 +106,7 @@ fn simple_demo() {
         print_visualize_link(visualize_filename.clone());
         if is_example {
             visualizer.snapshot_combined("code".to_string(), vec![&code]).unwrap();
-            let mut primal_module = PrimalModuleSerial::new_empty(&initializer);
+            let mut primal_module = PrimalModuleSerial::new_empty(&initializer, &model_graph);
             primal_module.growing_strategy = GrowingStrategy::SingleCluster;
             primal_module.plugins = Arc::new(vec![]);
             primal_module.solve_visualizer(&interface_ptr, syndrome_pattern, &mut dual_module, Some(&mut visualizer));
@@ -168,7 +168,7 @@ fn challenge_demo() {
         print_visualize_link(visualize_filename.clone());
         if is_example {
             visualizer.snapshot_combined("code".to_string(), vec![&code]).unwrap();
-            let mut primal_module = PrimalModuleSerial::new_empty(&initializer);
+            let mut primal_module = PrimalModuleSerial::new_empty(&initializer, &model_graph);
             primal_module.growing_strategy = GrowingStrategy::SingleCluster;
             primal_module.plugins = Arc::new(vec![
                 PluginUnionFind::entry(), // to allow timeout using union-find as baseline
@@ -311,7 +311,7 @@ fn surface_code_example() {
             pb.set(seed);
             code.generate_random_errors(seed);
             let syndrome_pattern = Arc::new(code.get_syndrome());
-            let mut primal_module = PrimalModuleSerial::new_empty(&initializer);
+            let mut primal_module = PrimalModuleSerial::new_empty(&initializer, &model_graph);
             primal_module.growing_strategy = GrowingStrategy::MultipleClusters;
             primal_module.plugins = Arc::new(vec![
                 PluginUnionFind::entry(), // to allow timeout using union-find as baseline
@@ -357,7 +357,7 @@ fn triangle_color_code_example() {
             pb.set(seed);
             code.generate_random_errors(seed);
             let syndrome_pattern = Arc::new(code.get_syndrome());
-            let mut primal_module = PrimalModuleSerial::new_empty(&initializer);
+            let mut primal_module = PrimalModuleSerial::new_empty(&initializer, &model_graph);
             primal_module.growing_strategy = GrowingStrategy::MultipleClusters;
             primal_module.plugins = Arc::new(vec![
                 PluginUnionFind::entry(), // to allow timeout using union-find as baseline
@@ -407,7 +407,7 @@ fn small_color_code_example() {
         if syndrome_pattern.defect_vertices.is_empty() {
             continue;
         }
-        let mut primal_module = PrimalModuleSerial::new_empty(&initializer);
+        let mut primal_module = PrimalModuleSerial::new_empty(&initializer, &model_graph);
         primal_module.growing_strategy = GrowingStrategy::MultipleClusters;
         primal_module.plugins = Arc::new(vec![
             PluginUnionFind::entry(), // to allow timeout using union-find as baseline

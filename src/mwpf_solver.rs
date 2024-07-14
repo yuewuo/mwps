@@ -113,7 +113,7 @@ impl MWPSVisualizer for SolverSerialPlugins {
 impl SolverSerialPlugins {
     pub fn new(initializer: &SolverInitializer, plugins: Arc<Vec<PluginEntry>>, config: serde_json::Value) -> Self {
         let model_graph = Arc::new(ModelHyperGraph::new(Arc::new(initializer.clone())));
-        let mut primal_module = PrimalModuleSerial::new_empty(initializer);
+        let mut primal_module = PrimalModuleSerial::new_empty(initializer, &model_graph);
         let config: SolverSerialPluginsConfig = serde_json::from_value(config).unwrap();
         primal_module.growing_strategy = config.growing_strategy;
         primal_module.plugins = plugins;

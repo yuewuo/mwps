@@ -6,6 +6,7 @@ extern crate serde_json;
 extern crate cfg_if;
 extern crate chrono;
 extern crate clap;
+extern crate core_affinity;
 extern crate derivative;
 extern crate itertools;
 #[macro_use]
@@ -35,7 +36,7 @@ pub mod decoding_hypergraph;
 pub mod dual_module;
 pub mod dual_module_pq;
 pub mod dual_module_serial;
-pub mod dual_module_parallel; // added by yl
+pub mod dual_module_parallel;
 pub mod example_codes;
 pub mod invalid_subgraph;
 pub mod matrix;
@@ -47,6 +48,7 @@ pub mod plugin_union_find;
 pub mod pointers;
 pub mod primal_module;
 pub mod primal_module_serial;
+pub mod primal_module_parallel;
 pub mod primal_module_union_find;
 pub mod relaxer;
 pub mod relaxer_forest;
@@ -86,7 +88,7 @@ pub fn get_version() -> String {
     let model_graph = code.get_model_graph();
     let mut dual_module = DualModuleSerial::new_empty(&model_graph.initializer);
     // create primal module
-    let mut primal_module = PrimalModuleSerial::new_empty(&model_graph.initializer);
+    let mut primal_module = PrimalModuleSerial::new_empty(&model_graph.initializer, &model_graph);
     primal_module.growing_strategy = GrowingStrategy::SingleCluster;
     primal_module.plugins = std::sync::Arc::new(vec![]);
     // try to work on a simple syndrome

@@ -5,6 +5,7 @@
 //! Testing for push, pull for github
 
 use crate::decoding_hypergraph::*;
+use crate::model_hypergraph::ModelHyperGraph;
 use crate::dual_module::*;
 use crate::invalid_subgraph::*;
 use crate::matrix::*;
@@ -41,6 +42,14 @@ pub struct PrimalModuleSerial {
     pub config: PrimalModuleSerialConfig,
     /// the time spent on resolving the obstacles
     pub time_resolve: f64,
+    /// index bias as a result of fusion
+    pub global_index: NodeIndex,
+    /// the indices of primal nodes that is possibly matched to the mirrored vertex, and need to break when mirrored vertices are no longer mirrored
+    pub possible_break_nodes: Vec<NodeIndex>,
+    /// the indices of clusters that is possibly matched to the mirrored vertex, and need to break when mirrored vertices are no longer mirrored
+    pub possible_break_clusters: Vec<NodeIndex>,
+    /// whether this unit has ever been fused with other units
+    pub involved_in_fusion: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -99,7 +108,7 @@ pub type PrimalClusterPtr = ArcRwLock<PrimalCluster>;
 pub type PrimalClusterWeak = WeakRwLock<PrimalCluster>;
 
 impl PrimalModuleImpl for PrimalModuleSerial {
-    fn new_empty(_initializer: &SolverInitializer) -> Self {
+    fn new_empty(_initializer: &SolverInitializer, _model_graph: &ModelHyperGraph) -> Self {
         Self {
             growing_strategy: GrowingStrategy::SingleCluster,
             nodes: vec![],
@@ -110,6 +119,10 @@ impl PrimalModuleImpl for PrimalModuleSerial {
             plugin_pending_clusters: vec![],
             config: serde_json::from_value(json!({})).unwrap(),
             time_resolve: 0.,
+            global_index: 0,
+            possible_break_nodes: vec![],
+            possible_break_clusters: vec![],
+            involved_in_fusion: false,
         }
     }
 
@@ -120,10 +133,13 @@ impl PrimalModuleImpl for PrimalModuleSerial {
         *self.plugin_count.write() = 1;
         self.plugin_pending_clusters.clear();
         self.time_resolve = 0.;
+        self.possible_break_clusters.clear();
+        self.possible_break_nodes.clear();
     }
 
     #[allow(clippy::unnecessary_cast)]
     fn load<D: DualModuleImpl>(&mut self, interface_ptr: &DualModuleInterfacePtr, dual_module: &mut D) {
+        println!("in fn load");
         let interface = interface_ptr.read_recursive();
         for index in 0..interface.nodes.len() as NodeIndex {
             let dual_node_ptr = &interface.nodes[index as usize];
@@ -142,7 +158,8 @@ impl PrimalModuleImpl for PrimalModuleSerial {
             );
             assert_eq!(node.index as usize, self.nodes.len(), "must load defect nodes in order");
             // construct cluster and its parity matrix (will be reused over all iterations)
-            let primal_cluster_ptr = PrimalClusterPtr::new_value(PrimalCluster {
+            let primal_cluster_ptr = 
+            PrimalClusterPtr::new_value(PrimalCluster {
                 cluster_index: self.clusters.len() as NodeIndex,
                 nodes: vec![],
                 edges: node.invalid_subgraph.hair.clone(),
@@ -177,6 +194,7 @@ impl PrimalModuleImpl for PrimalModuleSerial {
         interface_ptr: &DualModuleInterfacePtr,
         dual_module: &mut impl DualModuleImpl,
     ) {
+        println!("in resolve fn");
         let begin = Instant::now();
         self.resolve_core(group_max_update_length, interface_ptr, dual_module);
         self.time_resolve += begin.elapsed().as_secs_f64();
@@ -184,11 +202,16 @@ impl PrimalModuleImpl for PrimalModuleSerial {
 
     fn subgraph(&mut self, _interface: &DualModuleInterfacePtr, _dual_module: &mut impl DualModuleImpl) -> Subgraph {
         let mut subgraph = vec![];
+        println!("cluster len: {}", self.clusters.len());
         for cluster_ptr in self.clusters.iter() {
             let cluster = cluster_ptr.read_recursive();
             if cluster.nodes.is_empty() {
                 continue;
             }
+            // for x in cluster.subgraph.clone().unwrap() {
+            //     println!("cluster subgraph: {}", x);
+            // }
+            // println!("cluster subgraph: {}", cluster.subgraph.clone().unwrap());
             subgraph.extend(
                 cluster
                     .subgraph
@@ -344,6 +367,7 @@ impl PrimalModuleSerial {
         interface_ptr: &DualModuleInterfacePtr,
         dual_module: &mut impl DualModuleImpl,
     ) -> bool {
+        println!("resolve_cluster fn called");
         let cluster_ptr = self.clusters[cluster_index as usize].clone();
         let mut cluster = cluster_ptr.write();
         if cluster.nodes.is_empty() {
@@ -427,8 +451,54 @@ impl PrimalModuleSerial {
         let initializer = interface.decoding_graph.model_graph.initializer.as_ref();
         let weight_of = |edge_index: EdgeIndex| initializer.weighted_edges[edge_index].weight;
         cluster.subgraph = Some(cluster.matrix.get_solution_local_minimum(weight_of).expect("satisfiable"));
+        for x in  cluster.subgraph.clone().unwrap() {
+            println!("cluster.subgraph {}", x);
+        }
         true
     }
+
+    // pub fn fuse(&self, other: &Self) {
+
+    //     let mut module = self.write();
+    //     let mut other_module = other.write();
+    //     module
+
+    //     // let mut module = self.write();
+    //     // let mut other_module = other.write();
+    //     // let bias = self.nodes.len() as NodeIndex;
+    //     // // copy the nodes 
+    //     // for other_node_index in 0..other.nodes.len() as NodeIndex {
+    //     //     let node_ptr = &other.nodes[other_node_index as usize];
+    //     //     self.nodes[(bias + other_node_index) as usize] = node_ptr.clone();
+    //     // }
+    //     // // copy the clusters
+    //     // let cluster_bias = self.clusters.len();
+    //     // for other_cluster_index in 0..other.clusters.len() {
+    //     //     let cluster_ptr = &other.clusters[other_cluster_index];
+    //     //     self.clusters[(cluster_bias + other_cluster_index) as usize] = cluster_ptr.clone();
+    //     // }
+
+    //     // // copy the pending_nodes
+    //     // let  = self.clusters.len();
+    //     // for other_cluster_index in 0..other.clusters.len() {
+    //     //     let cluster_ptr = &other.clusters[other_cluster_index];
+    //     //     self.clusters[(cluster_bias + other_cluster_index) as usize] = cluster_ptr.clone();
+    //     // }
+    // }
+
+    //     // copy `possible_break`
+    //     for node_index in other_module.possible_break.iter() {
+    //         module.possible_break.push(*node_index + bias);
+    //     }
+    // }
+
+    // /// fuse two modules by (virtually) copying the nodes in `other` into myself, with O(1) time complexity
+    // pub fn fuse(&self, other: &Self) {
+    //     let mut module = self.write();
+    //     let mut other_module = other.write();
+    //     other_module.index_bias = module.nodes_count();
+    //     // possible break implementation
+    // }
 }
 
 impl MWPSVisualizer for PrimalModuleSerial {
@@ -463,12 +533,13 @@ pub mod tests {
         impl DualModuleImpl + MWPSVisualizer,
     ) {
         // create primal module
-        let mut primal_module = PrimalModuleSerial::new_empty(&model_graph.initializer);
+        let decoding_graph = DecodingHyperGraph::new_defects(model_graph.clone(), defect_vertices.clone());
+
+        let mut primal_module = PrimalModuleSerial::new_empty(&model_graph.initializer, &model_graph);
         primal_module.growing_strategy = growing_strategy;
         primal_module.plugins = Arc::new(plugins);
         // primal_module.config = serde_json::from_value(json!({"timeout":1})).unwrap();
         // try to work on a simple syndrome
-        let decoding_graph = DecodingHyperGraph::new_defects(model_graph, defect_vertices.clone());
         let interface_ptr = DualModuleInterfacePtr::new(decoding_graph.model_graph.clone());
         primal_module.solve_visualizer(
             &interface_ptr,
@@ -587,13 +658,15 @@ pub mod tests {
     fn primal_module_serial_basic_1() {
         // cargo test primal_module_serial_basic_1 -- --nocapture
         let visualize_filename = "primal_module_serial_basic_1.json".to_string();
-        let defect_vertices = vec![23, 24, 29, 30];
-        let code = CodeCapacityTailoredCode::new(7, 0., 0.01, 1);
+        // let defect_vertices = vec![23, 24, 29, 30];
+        // let code = CodeCapacityTailoredCode::new(7, 0., 0.01, 1);
+        let code = CodeCapacityPlanarCode::new(7, 0.1, 1);
+        let defect_vertices = vec![15];
         primal_module_serial_basic_standard_syndrome(
             code,
             visualize_filename,
             defect_vertices,
-            1,
+            3,
             vec![],
             GrowingStrategy::SingleCluster,
         );

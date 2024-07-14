@@ -3,7 +3,9 @@
 //! Generics for primal modules, defining the necessary interfaces for a primal module
 //!
 
+use crate::decoding_hypergraph::DecodingHyperGraph;
 use crate::dual_module::*;
+use crate::model_hypergraph::ModelHyperGraph;
 use crate::num_traits::FromPrimitive;
 use crate::pointers::*;
 use crate::util::*;
@@ -13,7 +15,7 @@ use std::sync::Arc;
 /// common trait that must be implemented for each implementation of primal module
 pub trait PrimalModuleImpl {
     /// create a primal module given the dual module
-    fn new_empty(solver_initializer: &SolverInitializer) -> Self;
+    fn new_empty(solver_initializer: &SolverInitializer, model_graph: &ModelHyperGraph) -> Self;
 
     /// clear all states; however this method is not necessarily called when load a new decoding problem, so you need to call it yourself
     fn clear(&mut self);
@@ -108,15 +110,20 @@ pub trait PrimalModuleImpl {
     ) where
         F: FnMut(&DualModuleInterfacePtr, &mut D, &mut Self, &GroupMaxUpdateLength),
     {
+        println!("solve step callback interface loaded fn");
         let mut group_max_update_length = dual_module.compute_maximum_update_length();
+        println!("compute group max length: {group_max_update_length:?}");
         while !group_max_update_length.is_unbounded() {
+            println!("inside while loop !group_max_update_length is not unbounded");
             callback(interface, dual_module, self, &group_max_update_length);
             if let Some(length) = group_max_update_length.get_valid_growth() {
                 dual_module.grow(length);
             } else {
+                println!("group_max_update_length is not a valid growth");
                 self.resolve(group_max_update_length, interface, dual_module);
             }
             group_max_update_length = dual_module.compute_maximum_update_length();
+            println!("group_max_update_length is {group_max_update_length:?}");
         }
     }
 

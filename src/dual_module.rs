@@ -3,6 +3,8 @@
 //! Generics for dual modules
 //!
 
+use rayon::vec;
+
 use crate::decoding_hypergraph::*;
 use crate::derivative::Derivative;
 use crate::invalid_subgraph::*;
@@ -30,6 +32,8 @@ pub struct DualNode {
     pub last_updated_time: Rational,
     /// dual variable's value at the last updated time
     pub dual_variable_at_last_updated_time: Rational,
+    /// the DualModuleInterface this DualNode belongs to 
+    pub belonging: DualModuleInterfaceWeak,
 }
 
 impl DualNode {
@@ -74,10 +78,9 @@ impl std::fmt::Debug for DualNodePtr {
         let global_time = dual_node.global_time.as_ref().unwrap_or(&new).read_recursive();
         write!(
             f,
-            "\n\t\tindex: {}, global_time: {:?}, grow_rate: {:?}, dual_variable: {}\n\t\tdual_variable_at_last_updated_time: {}, last_updated_time: {}",
+            "\n\t\tindex: {}, global_time: {:?}, dual_variable: {}\n\t\tdual_variable_at_last_updated_time: {}, last_updated_time: {}",
             dual_node.index,
             global_time,
-            dual_node.grow_rate,
             dual_node.get_dual_variable(),
             dual_node.dual_variable_at_last_updated_time,
             dual_node.last_updated_time
@@ -103,24 +106,23 @@ impl PartialOrd for DualNodePtr {
     }
 }
 
-////////////////////////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////////////////////////
-/// Added by yl
-// note that here, DualNodePtr = ArcRwLock<DualNode> instead of the ArcManualSafeLock<DualNode> in fusion blossom
 impl DualNodePtr {
-    // when fused, dual node may be outdated; refresh here
-    pub fn update(&self) -> &Self {
-        unimplemented!()
+    /// we mainly use the vertex_index from this function to run bfs to find the partition unit responsible for this dual node
+    pub fn get_representative_vertex(&self) -> VertexIndex {
+        let dual_node = self.read_recursive();
+        let defect_vertex = dual_node.invalid_subgraph.vertices.first().unwrap();
+        *defect_vertex
     }
 
-    pub fn updated_index(&self) -> NodeIndex {
-        self.update();
-        self.read_recursive().index
-    }
+    // /// when fused, dual node may be outdated; refresh here
+    // pub fn update(&self) -> &Self {
+    //     let mut current_belonging = self.read_recursive().belonging.upgrade_force();
+    //     let mut bias = 0;
+    //     let mut node = self.write();
+    //     node.index += current_belonging.index_bias;
+    //     self
+    // }
 }
-
-////////////////////////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////////////////////////
 
 
 /// an array of dual nodes
@@ -134,25 +136,14 @@ pub struct DualModuleInterface {
     pub hashmap: HashMap<Arc<InvalidSubgraph>, NodeIndex>,
     /// the decoding graph
     pub decoding_graph: DecodingHyperGraph,
-    /// current nodes length, to enable constant-time clear operation 
-    pub nodes_length: usize,
-    /// added by yl, for fusion, 
-    /// allow pointer reuse will reduce the time of reallocation, but it's unsafe if not owning it;
-    /// this will be automatically disabled when [`DualModuleInterface::fuse`] is called;
-    /// if an interface is involved in a fusion operation (whether as parent or child), it will be set.
-    pub is_fusion: bool,
-    /// parent of this interface, when fused
-    pub parent: Option<DualModuleInterfaceWeak>,
-    /// when fused, this will indicate the relative bias given by the parent
-    pub index_bias: NodeIndex,
-    /// the two children of this interface, when fused; following the length of this child
-    /// given that fused children interface will not have new nodes anymore
-    pub children: Option<((DualModuleInterfaceWeak, NodeIndex), (DualModuleInterfaceWeak, NodeIndex))>,
-    /// record theh total growing nodes, should be non-negative in a normal running algorithm
-    pub sum_grow_speed: Rational,
-    /// record the total sum of dual variables
-    pub sum_dual_variables: Rational,
-    
+    /// unit index of this interface, default to 0
+    pub unit_index: usize, 
+    /// the adjacent DualModuleInterface units and whether this adjacent unit is fused with self
+    pub adjacent_parallel_units: Vec<(DualModuleInterfaceWeak, bool)>,
+    /// global bias
+    pub global_bias: usize,
+    /// index bias as a result of fusion 
+    pub index_bias: usize,
 }
 
 pub type DualModuleInterfacePtr = ArcRwLock<DualModuleInterface>;
@@ -168,34 +159,6 @@ impl std::fmt::Debug for DualModuleInterfacePtr {
 impl std::fmt::Debug for DualModuleInterfaceWeak {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         self.upgrade_force().fmt(f)
-    }
-}
-
-/// synchronize request on vertices, when a vertex is mirrored
-#[derive(Derivative)]
-#[derivative(Debug)]
-pub struct SyncRequest {
-    /// the unit that owns this vertex
-    pub mirror_unit_weak: PartitionUnitWeak,
-    /// the vertex index to be synchronized
-    pub vertex_index: VertexIndex,
-    /// propagated dual node index and the dual variable of the propagated dual node;
-    /// this field is necessary to differentiate between normal shrink and the one that needs to report VertexShrinkStop event, when the syndrome is on the interface;
-    /// it also includes the representative vertex of the dual node, so that parents can keep track of whether it should be elevated
-    pub propagated_dual_node: Option<(DualNodeWeak, Weight, VertexIndex)>,
-    /// propagated grandson node: must be a syndrome node
-    pub propagated_grandson_dual_node: Option<(DualNodeWeak, Weight, VertexIndex)>,
-}
-
-impl SyncRequest {
-    /// update all the interface nodes to be up-to-date, only necessary when there are fusion
-    pub fn update(&self) {
-        if let Some((weak, ..)) = &self.propagated_dual_node {
-            weak.upgrade_force().update();
-        }
-        if let Some((weak, ..)) = &self.propagated_grandson_dual_node {
-            weak.upgrade_force().update();
-        }
     }
 }
 
@@ -236,7 +199,7 @@ pub trait DualModuleImpl {
     fn clear(&mut self);
 
     /// add defect node
-    fn add_defect_node(&mut self, dual_node_ptr: &DualNodePtr);
+    fn add_defect_node(&mut self, dual_node_ptr: &DualNodePtr, bias: usize);
 
     /// add corresponding dual node, note that the `internal_vertices` and `hair_edges` are not set
     fn add_dual_node(&mut self, dual_node_ptr: &DualNodePtr);
@@ -272,46 +235,12 @@ pub trait DualModuleImpl {
     fn get_edge_slack(&self, edge_index: EdgeIndex) -> Rational;
     fn is_edge_tight(&self, edge_index: EdgeIndex) -> bool;
 
-
-    /*
-     * the following apis are only required when this dual module can be used as a partitioned one
-     */
-
+    /// for fusion operation 
     /// create a partitioned dual module (hosting only a subgraph and subset of dual nodes) to be used in the parallel dual module
     fn new_partitioned(_partitioned_initializer: &PartitionedSolverInitializer) -> Self
     where
         Self: std::marker::Sized,
     {
-        panic!("the dual module implementation doesn't support this function, please use another dual module")
-    }
-
-    /// prepare the growing or shrinking state of all nodes and return a list of sync requests in case of mirrored vertices are changed
-    fn prepare_all(&mut self) -> &mut Vec<SyncRequest> {
-        panic!("the dual module implementation doesn't support this function, please use another dual module")
-    }
-
-    /// execute a synchronize event by updating the state of a vertex and also update the internal dual node accordingly
-    fn execute_sync_event(&mut self, _sync_event: &SyncRequest) {
-        panic!("the dual module implementation doesn't support this function, please use another dual module")
-    }
-
-    /// judge whether the current module hosts the dual node
-    fn contains_dual_node(&self, _dual_node_ptr: &DualNodePtr) -> bool {
-        panic!("the dual module implementation doesn't support this function, please use another dual module")
-    }
-
-    /// judge whether the current module hosts any of these dual node
-    fn contains_dual_nodes_any(&self, dual_node_ptrs: &[DualNodePtr]) -> bool {
-        for dual_node_ptr in dual_node_ptrs.iter() {
-            if self.contains_dual_node(dual_node_ptr) {
-                return true;
-            }
-        }
-        false
-    }
-
-    /// judge whether the current module hosts a vertex
-    fn contains_vertex(&self, _vertex_index: VertexIndex) -> bool {
         panic!("the dual module implementation doesn't support this function, please use another dual module")
     }
 
@@ -322,6 +251,7 @@ pub trait DualModuleImpl {
 
 }
 
+/// trait for DualModuleParallelImpl, 
 /// this dual module is a parallel version that hosts many partitioned ones
 pub trait DualModuleParallelImpl {
     type UnitType: DualModuleImpl + Send + Sync;
@@ -347,6 +277,21 @@ impl MaxUpdateLength {
             _ => {} // do nothing if it's already a conflict
         }
     }
+
+    // // a function to update all the interface nodes to be up-to-date
+    // pub fn update(&self) {
+    //     match self {
+    //         Self::Unbounded => {}
+    //         Self::Conflicting(edge_index) => {
+    //             let dual_nodes = dual_module.get_edge_nodes(edge_index);
+
+    //         }
+    //         Self::ShrinkProhibited() => {
+
+    //         }
+    //         Self::ValidGrow(_) => {} // do nothing
+    //     }
+    // }
 }
 
 impl GroupMaxUpdateLength {
@@ -412,105 +357,43 @@ impl GroupMaxUpdateLength {
         }
     }
 
-    ///////////////////////////////////////////////////////////////////////////////////////////////////
-    ///////////////////////////////////////////////////////////////////////////////////////////////////
-    /// Added by yl
-    // pub fn is_empty(&self) -> bool {
-    //     matches!(self, Self::ValidGrow(Rational::MAX)) // if `has_empty_boundary_node`, then it's not considered empty
-    // }
+    // not sure whether this is correct
+    pub fn is_active(&self) -> bool {
+        !matches!(self, Self::Unbounded | Self::ValidGrow(_))
+    }
 
     pub fn extend(&mut self, other: Self) {
-        // if other.is_empty() {
-        //     return; // do nothing
-        // }
         match self {
-            Self::ValidGrow(current_length) => match other {
-                Self::ValidGrow(length) => {
-                    *current_length = std::cmp::min(*current_length, length);
+            Self::Conflicts(conflicts) => {
+                if let Self::Conflicts(other_conflicts) = other {
+                    conflicts.extend(other_conflicts);
+                } // only add conflicts
+            },
+            Self::Unbounded => {
+                match other {
+                    Self::Unbounded => {} // do nothing
+                    Self::ValidGrow(length) => *self = Self::ValidGrow(length),
+                    Self::Conflicts(mut other_list) => {
+                        let mut list = Vec::<MaxUpdateLength>::new();
+                        std::mem::swap(&mut list, &mut other_list);
+                        *self = Self::Conflicts(list);
+                    }
                 }
+            },
+            Self::ValidGrow(current_length) => match other {
                 Self::Conflicts(mut other_list) => {
-                    let mut list = vec![];
+                    let mut list = Vec::<MaxUpdateLength>::new();
                     std::mem::swap(&mut list, &mut other_list);
                     *self = Self::Conflicts(list);
                 }
-            },
-            Self::Conflicts((list, pending_stops)) => {
-                if let Self::Conflicts((other_list, other_pending_stops)) = other {
-                    list.extend(other_list);
-                    for (_, max_update_length) in other_pending_stops.into_iter() {
-                        Self::add_pending_stop(list, pending_stops, max_update_length);
-                    }
-                } // only add conflicts, not NonZeroGrow
+                Self::Unbounded => {} // do nothing
+                Self::ValidGrow(length) => {
+                    *current_length = std::cmp::min(current_length.clone(), length);
+                }
             }
         }
     }
-
 }
-
-///////////////////////////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////////////////////////
-/// Added by yl
-
-
-impl DualModuleInterface {
-    /// return the count of all nodes including those of the children interfaces
-    pub fn nodes_count(&self) -> NodeNum {
-        let mut count = self.nodes_length as NodeNum;
-        if let Some(((_, left_count), (_, right_count))) = &self.children {
-            count += left_count + right_count;
-        }
-        count
-    }
-
-    /// get node ptr by index; if calling from the ancestor interface, node_index is absolute, otherwise it's relative
-    /// maybe delete it!!!
-    #[allow(clippy::unnecessary_cast)]
-    pub fn get_node(&self, relative_node_index: NodeIndex) -> Option<DualNodePtr> {
-        debug_assert!(relative_node_index < self.nodes_count(), "cannot find node in this interface");
-        let mut bias = 0;
-        if let Some(((left_weak, left_count), (right_weak, right_count))) = &self.children {
-            if relative_node_index < *left_count {
-                // this node belongs to the left
-                return left_weak.upgrade_force().read_recursive().get_node(relative_node_index);
-            } else if relative_node_index < *left_count + *right_count {
-                // this node belongs to the right
-                return right_weak
-                    .upgrade_force()
-                    .read_recursive()
-                    .get_node(relative_node_index - *left_count);
-            }
-            bias = left_count + right_count;
-        }
-        Some(self.nodes[(relative_node_index - bias) as usize].clone())
-    }
-
-    // /// set the corresponding node index to None
-    // /// maybe delete it!!!
-    // #[allow(clippy::unnecessary_cast)]
-    // pub fn remove_node(&mut self, relative_node_index: NodeIndex) {
-    //     debug_assert!(relative_node_index < self.nodes_count(), "cannot find node in this interface");
-    //     let mut bias = 0;
-    //     if let Some(((left_weak, left_count), (right_weak, right_count))) = &self.children {
-    //         if relative_node_index < *left_count {
-    //             // this node belongs to the left
-    //             left_weak.upgrade_force().write().remove_node(relative_node_index);
-    //             return;
-    //         } else if relative_node_index < *left_count + *right_count {
-    //             // this node belongs to the right
-    //             right_weak
-    //                 .upgrade_force()
-    //                 .write()
-    //                 .remove_node(relative_node_index - *left_count);
-    //             return;
-    //         }
-    //         bias = left_count + right_count;
-    //     }
-    //     self.nodes[(relative_node_index - bias) as usize] = None; // we did not define nodes to be Option<DualNode>, so this line has type error and does not compile
-    // }
-}
-
-////////////////////////////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////////////////////////
 
 impl DualModuleInterfacePtr {
     pub fn new(model_graph: Arc<ModelHyperGraph>) -> Self {
@@ -518,13 +401,10 @@ impl DualModuleInterfacePtr {
             nodes: Vec::new(),
             hashmap: HashMap::new(),
             decoding_graph: DecodingHyperGraph::new(model_graph, Arc::new(SyndromePattern::new_empty())),
-            is_fusion: false,
-            parent: None,
+            unit_index: 0, // if necessary, manually change it
+            adjacent_parallel_units: vec![],
+            global_bias: 0,
             index_bias: 0,
-            children: None,
-            nodes_length: 0,
-            sum_grow_speed: Rational::zero(),
-            sum_dual_variables: Rational::zero(),
         })
     }
 
@@ -582,15 +462,15 @@ impl DualModuleInterfacePtr {
             dual_variable_at_last_updated_time: Rational::zero(),
             global_time: None,
             last_updated_time: Rational::zero(),
+            belonging: self.downgrade(),
         });
-        // println!("created node in create_defect_node {:?}", node_ptr);
         let cloned_node_ptr = node_ptr.clone();
         drop(interface);
         let mut interface = self.write();
         interface.nodes.push(node_ptr);
         interface.hashmap.insert(invalid_subgraph, node_index);
         drop(interface);
-        dual_module.add_defect_node(&cloned_node_ptr);
+        dual_module.add_defect_node(&cloned_node_ptr, 0);
         cloned_node_ptr
     }
 
@@ -619,38 +499,12 @@ impl DualModuleInterfacePtr {
             dual_variable_at_last_updated_time: Rational::zero(),
             global_time: None,
             last_updated_time: Rational::zero(),
-        });
-        interface.nodes.push(node_ptr.clone());
-        drop(interface);
-        dual_module.add_dual_node(&node_ptr);
-        // println!("created node in create_node {:?}", node_ptr);
-        node_ptr
-    }
+            belonging: self.downgrade(),
 
-    pub fn create_node_tune(
-        &self,
-        invalid_subgraph: Arc<InvalidSubgraph>,
-        dual_module: &mut impl DualModuleImpl,
-    ) -> DualNodePtr {
-        debug_assert!(
-            self.find_node(&invalid_subgraph).is_none(),
-            "do not create the same node twice"
-        );
-        let mut interface = self.write();
-        let node_index = interface.nodes.len() as NodeIndex;
-        interface.hashmap.insert(invalid_subgraph.clone(), node_index);
-        let node_ptr = DualNodePtr::new_value(DualNode {
-            index: node_index,
-            invalid_subgraph,
-            grow_rate: Rational::zero(),
-            dual_variable_at_last_updated_time: Rational::zero(),
-            global_time: None,
-            last_updated_time: Rational::zero(),
         });
         interface.nodes.push(node_ptr.clone());
         drop(interface);
         dual_module.add_dual_node(&node_ptr);
-        // println!("created node in create_node {:?}", node_ptr);
         node_ptr
     }
 
@@ -666,17 +520,11 @@ impl DualModuleInterfacePtr {
         }
     }
 
-    /// return whether it's existing node or not
-    pub fn find_or_create_node_tune(
-        &self,
-        invalid_subgraph: &Arc<InvalidSubgraph>,
-        dual_module: &mut impl DualModuleImpl,
-    ) -> (bool, DualNodePtr) {
-        match self.find_node(invalid_subgraph) {
-            Some(node_ptr) => (true, node_ptr),
-            None => (false, self.create_node_tune(invalid_subgraph.clone(), dual_module)),
-        }
-    }
+    // pub fn fuse(&self, other: &Self) {
+    //     let mut interface = self.write();
+    //     let mut other_interface = other.write();
+    //     // other_interface.index_bias = interface.nodes_count();
+    // }
 }
 
 // shortcuts for easier code writing at debugging
@@ -700,39 +548,6 @@ impl DualModuleInterfacePtr {
             &self.read_recursive().decoding_graph,
         ));
         self.create_node(invalid_subgraph, dual_module)
-    }
-
-    /// Added by yl
-    /// tree structure fuse, same as fusion blossom 
-    /// fuse 2 interfaces by (virtually) copying the nodes in `other` into myself, with O(1) time complexity
-    /// consider implementating fuse as a chain, so that we do not have to copy; in other words, fusion should
-    /// only depend on the boundary, not the volume of the block
-    pub fn fuse(&self, left: &Self, right: &Self) {
-        let parent_weak = self.downgrade();
-        let left_weak = left.downgrade();
-        let right_weak = right.downgrade();
-        let mut interface = self.write();
-        interface.is_fusion = true; // for sanity 
-        debug_assert!(interface.children.is_none(), "cannot fuse twice");
-        let mut left_interface = left.write();
-        let mut right_interface = right.write();
-        left_interface.is_fusion = true;
-        right_interface.is_fusion = true;
-        debug_assert!(left_interface.parent.is_none(), "cannot fuse an interface twice");
-        debug_assert!(right_interface.parent.is_none(), "cannot fuse an interface twice");
-        left_interface.parent = Some(parent_weak.clone());
-        right_interface.parent = Some(parent_weak);
-        left_interface.index_bias = 0;
-        right_interface.index_bias = left_interface.nodes_count();
-        interface.children = Some((
-            (left_weak, left_interface.nodes_count()),
-            (right_weak, right_interface.nodes_count()),
-        ));
-        for other_interface in [left_interface, right_interface] {
-            interface.sum_dual_variables += other_interface.sum_dual_variables.clone();
-            interface.sum_grow_speed += other_interface.sum_grow_speed.clone();
-        }
-
     }
 }
 

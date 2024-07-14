@@ -131,7 +131,8 @@ pub fn snapshot_combine_object_known_key(obj: &mut ObjectMap, obj_2: &mut Object
             // println!("[snapshot_combine_object_known_key] {}: {:?} == {:?}", key, obj[key], obj_2[key]);
             assert_eq!(
                 obj[key], obj_2[key],
-                "cannot combine different values: please make sure values don't conflict"
+                "cannot combine different values {} and {} for key {}: please make sure values don't conflict",
+                obj[key], obj_2[key], key
             );
             obj_2.remove(key).unwrap();
         }
@@ -149,17 +150,153 @@ pub fn snapshot_copy_remaining_fields(obj: &mut ObjectMap, obj_2: &mut ObjectMap
                 obj.insert(key.to_string(), obj_2.remove(key).unwrap());
             }
             true => {
+                // println!("\n\n");
                 // println!("[snapshot_copy_remaining_fields] {}: {:?} == {:?}", key, obj[key], obj_2[key]);
                 // println!("obj: {obj:?}");
                 // println!("obj_2: {obj_2:?}");
+                // println!("\n\n");
                 assert_eq!(
                     obj[key], obj_2[key],
-                    "cannot combine unknown fields: don't know what to do, please modify `snapshot_combine_values` function"
+                    "cannot combine unknown fields with key {}: don't know what to do, please modify `snapshot_combine_values` function",
+                    key
                 );
                 obj_2.remove(key).unwrap();
             }
         }
     }
+}
+
+pub fn snapshot_append_values(value: &mut serde_json::Value, mut value_2: serde_json::Value, abbrev: bool) {
+    let value = value.as_object_mut().expect("snapshot must be an object");
+    let value_2 = value_2.as_object_mut().expect("snapshot must be an object");
+    // we try to append value_2 to value
+    match (value.contains_key("vertices"), value_2.contains_key("vertices")) {
+        (_, false) => {} // do nothing
+        (false, true) => {
+            value.insert("vertices".to_string(), value_2.remove("vertices").unwrap());
+        }
+        (true, true) => {
+            // combine
+            let vertices = value
+                .get_mut("vertices")
+                .unwrap()
+                .as_array_mut()
+                .expect("vertices must be an array");
+            let vertices_2 = value_2
+                .get_mut("vertices")
+                .unwrap()
+                .as_array_mut()
+                .expect("vertices must be an array");
+            assert!(vertices.len() == vertices_2.len(), "vertices must be compatible");
+            println!("vertices.len(): {}", vertices.len());
+            for (vertex_idx, vertex) in vertices.iter_mut().enumerate() {
+                println!("vertex_idx: {vertex_idx}");
+                let vertex_2 = &mut vertices_2[vertex_idx];
+                if vertex_2.is_null() {
+                    continue;
+                }
+                if vertex.is_null() {
+                    *vertex = vertex_2.clone();
+                    continue;
+                }
+                // println!("vertex_idx: {vertex_idx}");
+                let vertex = vertex.as_object_mut().expect("each vertex must be an object");
+                let vertex_2 = vertex_2.as_object_mut().expect("each vertex must be an object");
+                // // list known keys
+                // let key_is_virtual = if abbrev { "v" } else { "is_virtual" };
+                // let key_is_defect = if abbrev { "s" } else { "is_defect" };
+                // let known_keys = [key_is_virtual, key_is_defect];
+                // for key in known_keys {
+                //     snapshot_combine_object_known_key(vertex, vertex_2, key);
+                // }
+                snapshot_copy_remaining_fields(vertex, vertex_2);
+                assert_eq!(vertex_2.len(), 0, "there should be nothing left");
+            }
+            value_2.remove("vertices").unwrap();
+        }
+    }
+    match (value.contains_key("edges"), value_2.contains_key("edges")) {
+        (_, false) => {} // do nothing
+        (false, true) => {
+            value.insert("edges".to_string(), value_2.remove("edges").unwrap());
+        }
+        (true, true) => {
+            // combine
+            let edges = value
+                .get_mut("edges")
+                .unwrap()
+                .as_array_mut()
+                .expect("edges must be an array");
+            let edges_2 = value_2
+                .get_mut("edges")
+                .unwrap()
+                .as_array_mut()
+                .expect("edges must be an array");
+            assert!(edges.len() == edges_2.len(), "edges must be compatible");
+            for (edge_idx, edge) in edges.iter_mut().enumerate() {
+                let edge_2 = &mut edges_2[edge_idx];
+                if edge_2.is_null() {
+                    continue;
+                }
+                if edge.is_null() {
+                    *edge = edge_2.clone();
+                    continue;
+                }
+                let edge = edge.as_object_mut().expect("each edge must be an object");
+                let edge_2 = edge_2.as_object_mut().expect("each edge must be an object");
+                // // list known keys
+                // let key_weight = if abbrev { "w" } else { "weight" };
+                // let key_left = if abbrev { "l" } else { "left" };
+                // let key_right = if abbrev { "r" } else { "right" };
+                // let key_growth = if abbrev { "g" } else { "growth" };
+                // let known_keys = [key_weight, key_left, key_right, key_growth];
+                // for key in known_keys {
+                //     snapshot_combine_object_known_key(edge, edge_2, key);
+                // }
+                snapshot_copy_remaining_fields(edge, edge_2);
+                assert_eq!(edge_2.len(), 0, "there should be nothing left");
+            }
+            value_2.remove("edges").unwrap();
+        }
+    }
+    snapshot_copy_remaining_fields(value, value_2);
+    
+    // {let vertices = value
+    //     .get_mut("vertices")
+    //     .unwrap()
+    //     .as_array_mut()
+    //     .expect("vertices must be an array");
+    // let vertices_2 = value_2
+    //     .get_mut("vertices")
+    //     .unwrap()
+    //     .as_array_mut()
+    //     .expect("vertices must be an array");
+
+    // vertices.append(vertices_2);
+    // }
+  
+    // {let edges = value
+    //     .get_mut("edges")
+    //     .unwrap()
+    //     .as_array_mut()
+    //     .expect("edges must be an array");
+    // let edges_2 = value_2
+    //     .get_mut("edges")
+    //     .unwrap()
+    //     .as_array_mut()
+    //     .expect("edges must be an array");
+
+    // edges.append(edges_2);
+    // }
+
+    // // Use the modified value to create a new JSON object
+    // let result = json!({
+    //     "vertices": value.get("vertices").unwrap(),
+    //     "edges": value.get("edges").unwrap(),
+    // });
+    // result
+
+
 }
 
 pub fn snapshot_combine_values(value: &mut serde_json::Value, mut value_2: serde_json::Value, abbrev: bool) {

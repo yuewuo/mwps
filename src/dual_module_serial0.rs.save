@@ -10,9 +10,9 @@ use crate::num_traits::{ToPrimitive, Zero};
 use crate::pointers::*;
 use crate::util::*;
 use crate::visualize::*;
-use itertools::partition;
 use num_traits::FromPrimitive;
-use std::collections::{BTreeSet, HashMap};
+use std::collections::BTreeSet;
+use std::collections::HashMap;
 
 pub struct DualModuleSerial {
     /// all vertices including virtual ones
@@ -24,12 +24,8 @@ pub struct DualModuleSerial {
     pub active_edges: BTreeSet<EdgeIndex>,
     /// active nodes
     pub active_nodes: BTreeSet<DualNodePtr>,
-    /// the number of all vertices (including those partitioned into other serial module)
-    pub vertex_num: VertexNum, 
-    /// the number of all edges (including those partitioned into other seiral module)
-    pub edge_num: usize,
-    /// vertices exclusively owned by this module, useful when partitioning the decoding graph into multiple [`DualModuleSerial`]
-    pub owning_range: VertexRange,
+    /// (added by yl) temporary list of synchronize requests, i.e. those propagating into the mirrored vertices; should always be empty when not partitioned, i.e. serial version
+    pub sync_requests: Vec<SyncRequest>,
 }
 
 pub type DualModuleSerialPtr = ArcRwLock<DualModuleSerial>;
@@ -45,9 +41,8 @@ pub struct Vertex {
     /// all neighbor edges, in surface code this should be constant number of edges
     #[derivative(Debug = "ignore")]
     pub edges: Vec<EdgeWeak>,
-    /// (added by yl) whether a vertex is in the boundary vertices, since boundary vertices are not "owned" by any partition and should be 
-    /// shared/mirroed between adjacent partitions   
-    pub is_boundary: bool,
+    /// (added by yl) if it's a mirrored vertex (present on multiple units), then this is the parallel unit that exclusively owns it
+    pub mirror_unit: Option<PartitionUnitWeak>,
 }
 
 pub type VertexPtr = ArcRwLock<Vertex>;
@@ -72,17 +67,17 @@ impl std::fmt::Debug for VertexWeak {
 #[derivative(Debug)]
 pub struct Edge {
     /// global edge index
-    pub edge_index: EdgeIndex,
+    edge_index: EdgeIndex,
     /// total weight of this edge
-    pub weight: Rational,
+    weight: Rational,
     #[derivative(Debug = "ignore")]
-    pub vertices: Vec<VertexWeak>,
+    vertices: Vec<VertexWeak>,
     /// growth value, growth <= weight
-    pub growth: Rational,
+    growth: Rational,
     /// the dual nodes that contributes to this edge
-    pub dual_nodes: Vec<DualNodeWeak>,
+    dual_nodes: Vec<DualNodeWeak>,
     /// the speed of growth
-    pub grow_rate: Rational,
+    grow_rate: Rational,
 }
 
 pub type EdgePtr = ArcRwLock<Edge>;
@@ -123,7 +118,7 @@ impl DualModuleImpl for DualModuleSerial {
                     vertex_index,
                     is_defect: false,
                     edges: vec![],
-                    is_boundary: false,
+                    mirror_unit: None,
                 })
             })
             .collect();
@@ -152,9 +147,7 @@ impl DualModuleImpl for DualModuleSerial {
             edges,
             active_edges: BTreeSet::new(),
             active_nodes: BTreeSet::new(),
-            vertex_num: initializer.vertex_num,
-            edge_num: initializer.weighted_edges.len(),
-            owning_range: VertexRange::new(0, initializer.vertex_num),
+            sync_requests: vec![],
         }
     }
 
@@ -170,7 +163,7 @@ impl DualModuleImpl for DualModuleSerial {
         }
     }
 
-    fn add_defect_node(&mut self, dual_node_ptr: &DualNodePtr, bias: usize) {
+    fn add_defect_node(&mut self, dual_node_ptr: &DualNodePtr) {
         let dual_node = dual_node_ptr.read_recursive();
         debug_assert!(dual_node.invalid_subgraph.edges.is_empty());
         debug_assert!(
@@ -178,15 +171,7 @@ impl DualModuleImpl for DualModuleSerial {
             "defect node (without edges) should only work on a single vertex, for simplicity"
         );
         let vertex_index = dual_node.invalid_subgraph.vertices.iter().next().unwrap();
-        // for vertex0 in dual_node.invalid_subgraph.vertices.iter() {
-        //     println!("dual node invalid subgraph vertices: {vertex0:?}");
-        // }
-        // println!("vertex_index to be accessed {vertex_index:?}");
-        // println!("self.vertices len {}", self.vertices.len());
-        // for vertex00 in self.vertices.iter() {
-        //     println!("vertex index in self.vertices {}", vertex00.read().vertex_index);
-        // }
-        let mut vertex = self.vertices[vertex_index - bias].write();
+        let mut vertex = self.vertices[*vertex_index].write();
         assert!(!vertex.is_defect, "defect should not be added twice");
         vertex.is_defect = true;
         drop(dual_node);
@@ -199,25 +184,8 @@ impl DualModuleImpl for DualModuleSerial {
         // make sure the active edges are set
         let dual_node_weak = dual_node_ptr.downgrade();
         let dual_node = dual_node_ptr.read_recursive();
-        println!("this dual node index {}", dual_node_ptr.read_recursive().index);
-        // println!("edges len : {}", self.edges.len());
-        // for &edge_index in dual_node.invalid_subgraph.hair.iter() {
-        //     println!("edge index in this invalid subgraph: {edge_index:?}");
-        // }
-
-        // for edge00 in self.edges.iter() {
-        //     println!("edge index in self.edges {}", edge00.read().edge_index);
-        // }
-        
-        let edge_offset = self.edges[0].read().edge_index;
         for &edge_index in dual_node.invalid_subgraph.hair.iter() {
-            println!("edge_index {}", edge_index);
-            if edge_index - edge_offset >= self.edges.len() {
-                println!("edge_offset {}", edge_offset);
-                println!("edges len {}", self.edges.len());
-                continue;
-            }
-            let mut edge = self.edges[edge_index - edge_offset].write();
+            let mut edge = self.edges[edge_index as usize].write();
             edge.grow_rate += &dual_node.grow_rate;
             edge.dual_nodes.push(dual_node_weak.clone());
             if edge.grow_rate.is_zero() {
@@ -236,12 +204,8 @@ impl DualModuleImpl for DualModuleSerial {
         dual_node.grow_rate = grow_rate;
         drop(dual_node);
         let dual_node = dual_node_ptr.read_recursive();
-        let edge_offset = self.edges[0].read().edge_index;
         for &edge_index in dual_node.invalid_subgraph.hair.iter() {
-            if edge_index - edge_offset >= self.edges.len() {
-                continue;
-            }
-            let mut edge = self.edges[edge_index - edge_offset].write();
+            let mut edge = self.edges[edge_index as usize].write();
             edge.grow_rate += &grow_rate_diff;
             if edge.grow_rate.is_zero() {
                 self.active_edges.remove(&edge_index);
@@ -264,13 +228,8 @@ impl DualModuleImpl for DualModuleSerial {
     ) -> MaxUpdateLength {
         let node = dual_node_ptr.read_recursive();
         let mut max_update_length = MaxUpdateLength::new();
-        let edge_offset = self.edges[0].read().edge_index;
-        println!("edge_offset: {}", edge_offset);
         for &edge_index in node.invalid_subgraph.hair.iter() {
-            if edge_index - edge_offset >= self.edges.len() {
-                continue;
-            }
-            let edge = self.edges[edge_index - edge_offset as usize].read_recursive();
+            let edge = self.edges[edge_index as usize].read_recursive();
             let mut grow_rate = Rational::zero();
             if simultaneous_update {
                 // consider all dual nodes
@@ -315,13 +274,8 @@ impl DualModuleImpl for DualModuleSerial {
     #[allow(clippy::unnecessary_cast)]
     fn compute_maximum_update_length(&mut self) -> GroupMaxUpdateLength {
         let mut group_max_update_length = GroupMaxUpdateLength::new();
-        let edge_offset = self.edges[0].read().edge_index;
-        println!("edge_offset in compute max update length: {}", edge_offset);
         for &edge_index in self.active_edges.iter() {
-            if edge_index - edge_offset >= self.edges.len() {
-                continue;
-            }
-            let edge = self.edges[edge_index - edge_offset as usize].read_recursive();
+            let edge = self.edges[edge_index as usize].read_recursive();
             let mut grow_rate = Rational::zero();
             for node_weak in edge.dual_nodes.iter() {
                 let node_ptr = node_weak.upgrade_force();
@@ -364,14 +318,9 @@ impl DualModuleImpl for DualModuleSerial {
             return;
         }
         let node = dual_node_ptr.read_recursive();
-        // println!("length: {}, grow_rate {}", length, node.grow_rate);
         let grow_amount = length * node.grow_rate.clone();
-        let edge_offset = self.edges[0].read().edge_index;
         for &edge_index in node.invalid_subgraph.hair.iter() {
-            if edge_index - edge_offset >= self.edges.len() {
-                continue;
-            }
-            let mut edge = self.edges[edge_index - edge_offset].write();
+            let mut edge = self.edges[edge_index as usize].write();
             edge.growth += grow_amount.clone();
             assert!(
                 !edge.growth.is_negative(),
@@ -388,12 +337,10 @@ impl DualModuleImpl for DualModuleSerial {
             );
         }
         drop(node);
-        
         // update dual variable
         let mut dual_node_ptr_write = dual_node_ptr.write();
         let dual_variable = dual_node_ptr_write.get_dual_variable();
         dual_node_ptr_write.set_dual_variable(dual_variable + grow_amount);
-        
     }
 
     #[allow(clippy::unnecessary_cast)]
@@ -403,12 +350,8 @@ impl DualModuleImpl for DualModuleSerial {
             "growth should be positive; if desired, please set grow rate to negative for shrinking"
         );
         // update the active edges
-        let edge_offset = self.edges[0].read().edge_index;
         for &edge_index in self.active_edges.iter() {
-            if edge_index - edge_offset >= self.edges.len() {
-                continue;
-            }
-            let mut edge = self.edges[edge_index - edge_offset as usize].write();
+            let mut edge = self.edges[edge_index as usize].write();
             let mut grow_rate = Rational::zero();
             for node_weak in edge.dual_nodes.iter() {
                 grow_rate += node_weak.upgrade_force().read_recursive().grow_rate.clone();
@@ -439,8 +382,7 @@ impl DualModuleImpl for DualModuleSerial {
 
     #[allow(clippy::unnecessary_cast)]
     fn get_edge_nodes(&self, edge_index: EdgeIndex) -> Vec<DualNodePtr> {
-        let edge_offset = self.edges[0].read().edge_index;
-        self.edges[edge_index - edge_offset as usize]
+        self.edges[edge_index as usize]
             .read_recursive()
             .dual_nodes
             .iter()
@@ -449,105 +391,91 @@ impl DualModuleImpl for DualModuleSerial {
     }
 
     fn get_edge_slack(&self, edge_index: EdgeIndex) -> Rational {
-        let edge_offset = self.edges[0].read().edge_index;
-        let edge = self.edges[edge_index - edge_offset].read_recursive();
+        let edge = self.edges[edge_index].read_recursive();
         edge.weight.clone() - edge.growth.clone()
     }
 
     #[allow(clippy::unnecessary_cast)]
     fn is_edge_tight(&self, edge_index: EdgeIndex) -> bool {
-        let edge_offset = self.edges[0].read().edge_index;
-        let edge = self.edges[edge_index - edge_offset as usize].read_recursive();
+        let edge = self.edges[edge_index as usize].read_recursive();
         edge.growth == edge.weight
     }
 
-    /// to be called in dual_module_parallel.rs
+    #[allow(clippy::unnecessary_cast)]
     fn new_partitioned(partitioned_initializer: &PartitionedSolverInitializer) -> Self {
-        // println!("///////////////////////////////////////////////////////////////////////////////");
-        // println!("for new_partitioned: {partitioned_initializer:?}");
-        // println!("///////////////////////////////////////////////////////////////////////////////");
-
-        // create vertices 
-        let mut vertices: Vec<VertexPtr> = partitioned_initializer.owning_range.iter().map(|vertex_index| {
-            VertexPtr::new_value(Vertex {
-                vertex_index,
-                is_defect: false,
-                edges: Vec::new(),
-                is_boundary: false,
-            })
-        }).collect();
-
-        // now we want to add the boundary vertices into the vertices for this partition
-        let mut total_boundary_vertices = HashMap::<VertexIndex, VertexIndex>::new(); // all boundary vertices mapping to the specific local partition index
-        // only the index_range matters here, the units of the adjacent partitions do not matter here
-        for (index_range, (_adjacent_partition_1, _adjacent_partition_2)) in &partitioned_initializer.boundary_vertices {
-            for vertex_index in index_range.range[0]..index_range.range[1] {
-                total_boundary_vertices.insert(vertex_index, vertices.len() as VertexIndex);
-                vertices.push(VertexPtr::new_value(Vertex {
-                    vertex_index: vertex_index,
+        // create vertices
+        let mut vertices: Vec<VertexPtr> = partitioned_initializer
+            .owning_range
+            .iter()
+            .map(|vertex_index| {
+                VertexPtr::new_value(Vertex {
+                    vertex_index,
                     is_defect: false,
+                    mirror_unit: partitioned_initializer.owning_interface.clone(),
                     edges: Vec::new(),
-                    is_boundary: true,
+                })
+            })
+            .collect();
+        // add interface vertices
+        let mut mirrored_vertices = HashMap::<VertexIndex, VertexIndex>::new(); // all mirrored vertices mapping to their local indices
+        for (mirror_unit, interface_vertices) in partitioned_initializer.interfaces.iter() {
+            for vertex_index in interface_vertices.iter() {
+                mirrored_vertices.insert(*vertex_index, vertices.len() as VertexIndex);
+                vertices.push(VertexPtr::new_value(Vertex {
+                    vertex_index: *vertex_index,
+                    is_defect: false,
+                    mirror_unit: Some(mirror_unit.clone()),
+                    edges: Vec::new(),
                 }))
             }
         }
-
-        // set edges 
+        // set edges
         let mut edges = Vec::<EdgePtr>::new();
-        for (hyper_edge, edge_index) in partitioned_initializer.weighted_edges.iter() {
-            // above, we have created the vertices that follow its own numbering rule for the index
-            // so we need to calculate the vertex indices of the hyper_edge to make it match the local index 
-            // then, we can create EdgePtr 
-            let mut local_hyper_edge_vertices = Vec::<WeakRwLock<Vertex>>::new();
+        for (edge_index, hyper_edge) in partitioned_initializer.weighted_edges.iter().enumerate() {
+            // sanity check, turn off for performance, added by yl
+            for i in 0..hyper_edge.vertices.len() {
+                for j in i+1..hyper_edge.vertices.len() {
+                    assert_ne!(hyper_edge.vertices[i], hyper_edge.vertices[j], "invalid edge connecting 2 same vertex {}", hyper_edge.vertices[i]);
+                }
+            }
+            assert!(hyper_edge.weight >= 0, "edge ({}) is negative-weighted", edge_index);
+            // calculate the vertex index in partition
+            let mut partitioned_vertex_indicies = Vec::new();
+            let mut verticies_in_partition = Vec::new();
             for vertex_index in hyper_edge.vertices.iter() {
-                let local_index = if partitioned_initializer.owning_range.contains(*vertex_index) {
+                debug_assert!(
+                    partitioned_initializer.owning_range.contains(vertex_index.clone()) || mirrored_vertices.contains_key(vertex_index),
+                    "edge ({}) connected to an invalid vertex {}", edge_index, vertex_index
+                );
+                let vertex_index_in_partition = if partitioned_initializer.owning_range.contains(vertex_index.clone()) {
                     vertex_index - partitioned_initializer.owning_range.start()
                 } else {
-                    total_boundary_vertices[vertex_index]
+                    mirrored_vertices[vertex_index]
                 };
-                local_hyper_edge_vertices.push(vertices[local_index].downgrade());
+                partitioned_vertex_indicies.push(vertex_index_in_partition);
+                verticies_in_partition.push(vertices[vertex_index_in_partition].downgrade())
             }
-            // now we create the edgeptr
+            // define new edge_ptr
             let edge_ptr = EdgePtr::new_value(Edge {
-                edge_index: *edge_index,
-                growth: Rational::zero(),
+                edge_index: edge_index as EdgeIndex,
                 weight: Rational::from_usize(hyper_edge.weight).unwrap(),
+                vertices: verticies_in_partition,
+                growth: Rational::zero(),
                 dual_nodes: vec![],
-                vertices: local_hyper_edge_vertices,
                 grow_rate: Rational::zero(),
             });
-
-            // we also need to update the vertices of this hyper_edge
-            for vertex_index in hyper_edge.vertices.iter() {
-                let local_index = if partitioned_initializer.owning_range.contains(*vertex_index) {
-                    vertex_index - partitioned_initializer.owning_range.start()
-                } else {
-                    total_boundary_vertices[vertex_index]
-                };
-                vertices[local_index].write().edges.push(edge_ptr.downgrade());
+            for &vertex_index in hyper_edge.vertices.iter() {
+                vertices[vertex_index as usize].write().edges.push(edge_ptr.downgrade());
             }
-            // for &vertex_index in hyper_edge.vertices.iter() {
-            //     vertices[vertex_index as usize].write().edges.push(edge_ptr.downgrade());
-            // }
             edges.push(edge_ptr);
-
         }
-
         Self {
             vertices,
             edges,
             active_edges: BTreeSet::new(),
             active_nodes: BTreeSet::new(),
-            vertex_num: partitioned_initializer.vertex_num,
-            edge_num: partitioned_initializer.edge_num,
-            owning_range: partitioned_initializer.owning_range,
+            sync_requests: vec![],
         }
-    }
-
-    // need to incorporate UnitModuleInfo 
-    fn bias_dual_node_index(&mut self, bias: NodeIndex) {
-        unimplemented!()
-        // self.unit_module_info.as_mut().unwrap().owning_dual_range.bias_by(bias);
     }
 }
 
@@ -574,54 +502,18 @@ Implementing visualization functions
 
 impl MWPSVisualizer for DualModuleSerial {
     fn snapshot(&self, abbrev: bool) -> serde_json::Value {
-        // println!("//////////////////////////////////////////////////////////////////");
-        // println!("vertices MWPSVisualizer: ");
-        // for vertex in self.vertices.iter() {
-        //     println!("vertices {}, is defect {}", vertex.read().vertex_index, vertex.read().is_defect);
-        // }
-        // println!("//////////////////////////////////////////////////////////////////");
-
-        let mut vertices: Vec<serde_json::Value> = (0..self.vertex_num).map(|_| serde_json::Value::Null).collect();
-
+        let mut vertices: Vec<serde_json::Value> = vec![];
         for vertex_ptr in self.vertices.iter() {
             let vertex = vertex_ptr.read_recursive();
-            // if self.owning_range.contains(vertex.vertex_index) {
-            //     // otherwise I don't know whether it's syndrome or not
-            //     // vertices[vertex.vertex_index as usize].as_object_mut().unwrap().insert(
-            //     //     (if abbrev { "s" } else { "is_defect" }).to_string(),
-            //     //     json!(i32::from(vertex.is_defect)),
-            //     // );
-            //     vertices[vertex.vertex_index as usize] = json!({
-            //         if abbrev { "s" } else { "is_defect" }: i32::from(vertex.is_defect),
-            //     });
-            // }
-            
-            // println!("in snapshot vertex_index {}", vertex.vertex_index);
-            vertices[vertex.vertex_index as usize] = json!({
+            vertices.push(json!({
                 if abbrev { "s" } else { "is_defect" }: i32::from(vertex.is_defect),
-            });
-               
-            // vertices[vertex.vertex_index as usize].as_object_mut().unwrap().insert(
-            //     (if abbrev { "s" } else { "is_defect" }).to_string(),
-            //     json!(i32::from(vertex.is_defect)),
-            // );
+            }));
         }
-        // let mut edges: Vec<serde_json::Value> = vec![];
-        let mut edges: Vec<serde_json::Value> = (0..self.edge_num).map(|_| serde_json::Value::Null).collect();
+        let mut edges: Vec<serde_json::Value> = vec![];
         for edge_ptr in self.edges.iter() {
             let edge = edge_ptr.read_recursive();
             let unexplored = edge.weight.clone() - edge.growth.clone();
-            // edges.push(json!({
-            //     if abbrev { "w" } else { "weight" }: edge.weight.to_f64(),
-            //     if abbrev { "v" } else { "vertices" }: edge.vertices.iter().map(|x| x.upgrade_force().read_recursive().vertex_index).collect::<Vec<_>>(),
-            //     if abbrev { "g" } else { "growth" }: edge.growth.to_f64(),
-            //     "gn": edge.growth.numer().to_i64(),
-            //     "gd": edge.growth.denom().to_i64(),
-            //     "un": unexplored.numer().to_i64(),
-            //     "ud": unexplored.denom().to_i64(),
-            // }));
-            // println!("in snapshot edge_index {}", edge.edge_index);
-            edges[edge.edge_index as usize] = json!({
+            edges.push(json!({
                 if abbrev { "w" } else { "weight" }: edge.weight.to_f64(),
                 if abbrev { "v" } else { "vertices" }: edge.vertices.iter().map(|x| x.upgrade_force().read_recursive().vertex_index).collect::<Vec<_>>(),
                 if abbrev { "g" } else { "growth" }: edge.growth.to_f64(),
@@ -629,7 +521,7 @@ impl MWPSVisualizer for DualModuleSerial {
                 "gd": edge.growth.denom().to_i64(),
                 "un": unexplored.numer().to_i64(),
                 "ud": unexplored.denom().to_i64(),
-            });
+            }));
         }
         json!({
             "vertices": vertices,

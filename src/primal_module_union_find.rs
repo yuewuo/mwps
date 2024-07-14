@@ -6,9 +6,11 @@
 //! there might be some minor difference with Delfosse's paper, but the idea is the same
 //!
 
+use crate::decoding_hypergraph::DecodingHyperGraph;
 use crate::derivative::Derivative;
 use crate::dual_module::*;
 use crate::invalid_subgraph::*;
+use crate::model_hypergraph::ModelHyperGraph;
 use crate::num_traits::Zero;
 use crate::pointers::*;
 use crate::primal_module::*;
@@ -64,7 +66,7 @@ impl UnionNodeTrait for PrimalModuleUnionFindNode {
 }
 
 impl PrimalModuleImpl for PrimalModuleUnionFind {
-    fn new_empty(_initializer: &SolverInitializer) -> Self {
+    fn new_empty(_initializer: &SolverInitializer, _model_graph: &ModelHyperGraph) -> Self {
         Self {
             union_find: UnionFind::new(0),
         }
@@ -213,7 +215,7 @@ pub mod tests {
         impl DualModuleImpl + MWPSVisualizer,
     ) {
         // create primal module
-        let mut primal_module = PrimalModuleUnionFind::new_empty(&model_graph.initializer);
+        let mut primal_module = PrimalModuleUnionFind::new_empty(&model_graph.initializer, &model_graph);
         // try to work on a simple syndrome
         code.set_defect_vertices(&defect_vertices);
         let interface_ptr = DualModuleInterfacePtr::new(model_graph.clone());
