@@ -209,6 +209,7 @@ impl<K: Hash + Eq + Clone + std::fmt::Debug, V: PartialOrd + Clone + std::fmt::D
 }
 
 // Ranking
+#[allow(dead_code)]
 impl<K, V> RankPairingHeap<K, V>
 where
     K: Hash + Eq + Clone + std::fmt::Debug,
@@ -287,6 +288,7 @@ where
 }
 
 // utility functions
+#[allow(dead_code)]
 impl<K: Hash + Eq + Clone + std::fmt::Debug, V: PartialOrd + Clone + std::fmt::Debug> RankPairingHeap<K, V> {
     fn last_position(&self) -> Position {
         let size = self.size();

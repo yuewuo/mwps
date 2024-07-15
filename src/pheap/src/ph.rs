@@ -325,7 +325,7 @@ impl<K, P> Drop for PairingHeap<K, P> {
 
                 let sibling = (*node.as_ptr()).right.take();
                 (*node.as_ptr()).parent = None;
-                Box::from_raw(node.as_ptr());
+                let _ = Box::from_raw(node.as_ptr());
 
                 sibling
             } else {
