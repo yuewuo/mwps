@@ -388,7 +388,7 @@ pub trait DualModuleImpl {
             OptimizerResult::Skipped => {
                 // if skipped, should check if is growable, if not return the conflicts that leads to that conclusion
                 // for (dual_node_ptr, grow_rate) in dual_node_deltas.into_iter() {
-                for (dual_node_ptr, (grow_rate, cluster_index)) in dual_node_deltas.into_iter() {
+                for (dual_node_ptr, (grow_rate, _cluster_index)) in dual_node_deltas.into_iter() {
                     // check if the single direction is growable
                     let mut actual_grow_rate = Rational::from_usize(std::usize::MAX).unwrap();
                     let node_ptr_read = dual_node_ptr.ptr.read_recursive();
@@ -415,7 +415,7 @@ pub trait DualModuleImpl {
                         for edge_index in node_ptr_write.invalid_subgraph.hair.iter() {
                             self.grow_edge(*edge_index, &actual_grow_rate);
                             #[cfg(feature = "incr_lp")]
-                            self.update_edge_cluster_weights(*edge_index, cluster_index, actual_grow_rate); // note: comment out if not using cluster-based
+                            self.update_edge_cluster_weights(*edge_index, _cluster_index, actual_grow_rate); // note: comment out if not using cluster-based
                             if actual_grow_rate.is_positive() && self.is_edge_tight_tune(*edge_index) {
                                 conflicts.insert(MaxUpdateLength::Conflicting(*edge_index));
                             }
@@ -434,7 +434,7 @@ pub trait DualModuleImpl {
                 // in other cases, optimizer should have optimized, so we should apply the deltas and return the nwe conflicts
                 let mut edge_deltas = BTreeMap::new();
                 // for (dual_node_ptr, grow_rate) in dual_node_deltas.into_iter() {
-                for (dual_node_ptr, (grow_rate, cluster_index)) in dual_node_deltas.into_iter() {
+                for (dual_node_ptr, (grow_rate, _cluster_index)) in dual_node_deltas.into_iter() {
                     // update the dual node and check for conflicts
                     let mut node_ptr_write = dual_node_ptr.ptr.write();
                     node_ptr_write.dual_variable_at_last_updated_time += grow_rate.clone();
@@ -457,7 +457,7 @@ pub trait DualModuleImpl {
                             }
                         }
                         #[cfg(feature = "incr_lp")]
-                        self.update_edge_cluster_weights(*edge_index, cluster_index, grow_rate.clone());
+                        self.update_edge_cluster_weights(*edge_index, _cluster_index, grow_rate.clone());
                         // note: comment out if not using cluster-based
                     }
                 }

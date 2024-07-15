@@ -162,8 +162,6 @@ pub trait PrimalModuleImpl {
             if start {
                 start = false;
                 dual_module.advance_mode();
-                #[cfg(feature = "incr_lp")]
-                self.calculate_edges_free_weight_clusters(dual_module);
             }
             self.update_sorted_clusters_aff(dual_module);
             let cluster_affs = self.get_sorted_clusters_aff();
@@ -251,16 +249,30 @@ pub trait PrimalModuleImpl {
     }
 
     /* affinity */
+
+    /// calculate the affinity map of clusters and maintain an decreasing order of priority
     fn update_sorted_clusters_aff<D: DualModuleImpl>(&mut self, _dual_module: &mut D) {
         panic!("not implemented `update_sorted_clusters_aff`");
     }
 
+    /// get the sorted clusters by affinity
     fn get_sorted_clusters_aff(&mut self) -> BTreeSet<ClusterAffinity> {
         panic!("not implemented `get_sorted_clusters_aff`");
     }
 
     #[cfg(feature = "incr_lp")]
+    /// calculate the edges free weight map by cluster
     fn calculate_edges_free_weight_clusters(&mut self, _dual_module: &mut impl DualModuleImpl) {
         panic!("not implemented `calculate_edges_free_weight_clusters`");
+    }
+
+    /// unset the cluster_weight parameter
+    #[cfg(feature = "incr_lp")]
+    fn uninit_cluster_weight(&mut self) {}
+
+    /// get the cluster_weight parameter
+    #[cfg(feature = "incr_lp")]
+    fn is_cluster_weight_initialized(&self) -> bool {
+        true
     }
 }

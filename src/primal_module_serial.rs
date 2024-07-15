@@ -47,6 +47,9 @@ pub struct PrimalModuleSerial {
     pub time_resolve: f64,
     /// sorted clusters by affinity, only exist when needed
     pub sorted_clusters_aff: Option<BTreeSet<ClusterAffinity>>,
+    #[cfg(feature = "incr_lp")]
+    /// parameter indicating if the primal module has initialized states necessary for `incr_lp` slack calculation
+    pub cluster_weights_initialized: bool,
 }
 
 #[derive(Eq, Debug)]
@@ -154,6 +157,8 @@ impl PrimalModuleImpl for PrimalModuleSerial {
             config: serde_json::from_value(json!({})).unwrap(),
             time_resolve: 0.,
             sorted_clusters_aff: None,
+            #[cfg(feature = "incr_lp")]
+            cluster_weights_initialized: false,
         }
     }
 
@@ -164,6 +169,8 @@ impl PrimalModuleImpl for PrimalModuleSerial {
         *self.plugin_count.write() = 1;
         self.plugin_pending_clusters.clear();
         self.time_resolve = 0.;
+        #[cfg(feature = "incr_lp")]
+        self.uninit_cluster_weight();
     }
 
     #[allow(clippy::unnecessary_cast)]
@@ -382,13 +389,20 @@ impl PrimalModuleImpl for PrimalModuleSerial {
         dual_node_deltas: &mut BTreeMap<OrderedDualNodePtr, (Rational, NodeIndex)>,
     ) -> (bool, OptimizerResult) {
         let mut optimizer_result = OptimizerResult::default();
+        #[cfg(feature = "incr_lp")]
+        let mut cluster_ptr = self.clusters[cluster_index as usize].clone();
+        #[cfg(not(feature = "incr_lp"))]
         let cluster_ptr = self.clusters[cluster_index as usize].clone();
-        let mut cluster = cluster_ptr.write();
-        if cluster.nodes.is_empty() {
+        let mut cluster_temp = cluster_ptr.write();
+        if cluster_temp.nodes.is_empty() {
             return (true, optimizer_result); // no longer a cluster, no need to handle
         }
         // update the matrix with new tight edges
-        let cluster = &mut *cluster;
+        #[cfg(feature = "incr_lp")]
+        let mut cluster = &mut *cluster_temp;
+        #[cfg(not(feature = "incr_lp"))]
+        let cluster = &mut *cluster_temp;
+
         for &edge_index in cluster.edges.iter() {
             cluster
                 .matrix
@@ -453,6 +467,14 @@ impl PrimalModuleImpl for PrimalModuleSerial {
 
                 #[cfg(feature = "incr_lp")]
                 {
+                    if !self.is_cluster_weight_initialized() {
+                        drop(cluster_temp);
+                        drop(cluster_ptr);
+                        self.calculate_edges_free_weight_clusters(dual_module);
+                        cluster_ptr = self.clusters[cluster_index as usize].clone();
+                        cluster_temp = cluster_ptr.write();
+                        cluster = &mut *cluster_temp;
+                    }
                     let mut dual_variables: BTreeMap<NodeIndex, (Arc<InvalidSubgraph>, Rational)> = BTreeMap::new();
                     let mut participating_dual_variable_indices = hashbrown::HashSet::new();
                     for primal_node_ptr in cluster.nodes.iter() {
@@ -641,6 +663,17 @@ impl PrimalModuleImpl for PrimalModuleSerial {
                 }
             }
         }
+        self.cluster_weights_initialized = true;
+    }
+
+    #[cfg(feature = "incr_lp")]
+    fn uninit_cluster_weight(&mut self) {
+        self.cluster_weights_initialized = false;
+    }
+
+    #[cfg(feature = "incr_lp")]
+    fn is_cluster_weight_initialized(&self) -> bool {
+        self.cluster_weights_initialized
     }
 }
 
@@ -652,7 +685,7 @@ impl PrimalModuleSerial {
         dual_node_ptr_1: &DualNodePtr,
         dual_node_ptr_2: &DualNodePtr,
         decoding_graph: &DecodingHyperGraph,
-        dual_module: &mut impl DualModuleImpl, // note: remove if not for cluster-based
+        _dual_module: &mut impl DualModuleImpl, // note: remove if not for cluster-based
     ) {
         // cluster_1 will become the union of cluster_1 and cluster_2
         // and cluster_2 will be outdated
@@ -669,38 +702,72 @@ impl PrimalModuleSerial {
         drop(primal_node_2);
         let mut cluster_1 = cluster_ptr_1.write();
         let mut cluster_2 = cluster_ptr_2.write();
-        let cluster_2_index = cluster_2.cluster_index;
-        for primal_node_ptr in cluster_2.nodes.drain(..) {
-            #[cfg(feature = "incr_lp")]
-            {
-                let primal_node = primal_node_ptr.read_recursive();
-                dual_module.update_edge_cluster_weights_union(
-                    &primal_node.dual_node_ptr,
-                    cluster_2_index,
-                    cluster_1.cluster_index,
-                );
-            }
 
-            primal_node_ptr.write().cluster_weak = cluster_ptr_1.downgrade();
-            cluster_1.nodes.push(primal_node_ptr);
-        }
-        cluster_1.edges.append(&mut cluster_2.edges);
-        cluster_1.subgraph = None; // mark as no subgraph
+        #[cfg(feature = "incr_lp")]
+        if self.is_cluster_weight_initialized() {
+            let cluster_2_index = cluster_2.cluster_index;
+            for primal_node_ptr in cluster_2.nodes.drain(..) {
+                {
+                    let primal_node = primal_node_ptr.read_recursive();
+                    _dual_module.update_edge_cluster_weights_union(
+                        &primal_node.dual_node_ptr,
+                        cluster_2_index,
+                        cluster_1.cluster_index,
+                    );
+                }
 
-        #[cfg(all(feature = "incr_lp", feature = "highs"))]
-        match (&cluster_1.incr_solution, &cluster_2.incr_solution) {
-            (None, Some(_)) => {
-                cluster_1.incr_solution = cluster_2.incr_solution.take();
+                primal_node_ptr.write().cluster_weak = cluster_ptr_1.downgrade();
+                cluster_1.nodes.push(primal_node_ptr);
             }
-            (Some(c1), Some(c2)) => {
-                if c2.lock().constraints_len() > c1.lock().constraints_len() {
+            cluster_1.edges.append(&mut cluster_2.edges);
+            cluster_1.subgraph = None; // mark as no subgraph
+
+            match (&cluster_1.incr_solution, &cluster_2.incr_solution) {
+                (None, Some(_)) => {
                     cluster_1.incr_solution = cluster_2.incr_solution.take();
                 }
-            }
+                (Some(c1), Some(c2)) => {
+                    if c2.lock().constraints_len() > c1.lock().constraints_len() {
+                        cluster_1.incr_solution = cluster_2.incr_solution.take();
+                    }
+                }
 
-            // no need to changes
-            (None, None) => {}
-            (Some(_), None) => {}
+                // no need to changes
+                (None, None) => {}
+                (Some(_), None) => {}
+            }
+        } else {
+            for primal_node_ptr in cluster_2.nodes.drain(..) {
+                primal_node_ptr.write().cluster_weak = cluster_ptr_1.downgrade();
+                cluster_1.nodes.push(primal_node_ptr);
+            }
+            cluster_1.edges.append(&mut cluster_2.edges);
+            cluster_1.subgraph = None; // mark as no subgraph
+
+            match (&cluster_1.incr_solution, &cluster_2.incr_solution) {
+                (None, Some(_)) => {
+                    cluster_1.incr_solution = cluster_2.incr_solution.take();
+                }
+                (Some(c1), Some(c2)) => {
+                    if c2.lock().constraints_len() > c1.lock().constraints_len() {
+                        cluster_1.incr_solution = cluster_2.incr_solution.take();
+                    }
+                }
+
+                // no need to changes
+                (None, None) => {}
+                (Some(_), None) => {}
+            }
+        }
+
+        #[cfg(not(feature = "incr_lp"))]
+        {
+            for primal_node_ptr in cluster_2.nodes.drain(..) {
+                primal_node_ptr.write().cluster_weak = cluster_ptr_1.downgrade();
+                cluster_1.nodes.push(primal_node_ptr);
+            }
+            cluster_1.edges.append(&mut cluster_2.edges);
+            cluster_1.subgraph = None; // mark as no subgraph
         }
 
         for &vertex_index in cluster_2.vertices.iter() {
