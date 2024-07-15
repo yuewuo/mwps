@@ -383,11 +383,11 @@ impl<K: Hash + Eq + Clone + std::fmt::Debug, V: PartialOrd + Clone + std::fmt::D
         assert_ne!(node_a, node_b);
         let a = self.get_node_mut(node_a).unwrap() as *mut Node<K, V>;
         let b = self.get_node_mut(node_b).unwrap() as *mut Node<K, V>;
-        let mut parent: Position;
-        let mut child: Position;
+        let parent: Position;
+        let child: Position;
         unsafe {
-            let mut parent_node: *mut Node<K, V>;
-            let mut child_node: *mut Node<K, V>;
+            let parent_node: *mut Node<K, V>;
+            let child_node: *mut Node<K, V>;
             let node_a_is_parent = if self.heap_type == HeapType::Max {
                 (*a).value > (*b).value
             } else {

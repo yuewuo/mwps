@@ -260,7 +260,7 @@ pub trait PrimalModuleImpl {
     }
 
     #[cfg(feature = "incr_lp")]
-    fn calculate_edges_free_weight_clusters(&mut self, dual_module: &mut impl DualModuleImpl) {
+    fn calculate_edges_free_weight_clusters(&mut self, _dual_module: &mut impl DualModuleImpl) {
         panic!("not implemented `calculate_edges_free_weight_clusters`");
     }
 }

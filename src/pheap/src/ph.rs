@@ -19,7 +19,7 @@ impl<K: Clone, P: Clone + PartialOrd> Clone for PairingHeap<K, P> {
         while let Some(node) = queue.pop_front() {
             unsafe {
                 let node = node.as_ref();
-                let new_node = new_heap.insert2(node.key.clone(), node.prio.clone());
+                let _new_node = new_heap.insert2(node.key.clone(), node.prio.clone());
                 if let Some(left) = node.left {
                     queue.push_back(left);
                 }
