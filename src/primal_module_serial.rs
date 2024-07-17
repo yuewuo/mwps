@@ -690,10 +690,11 @@ impl PrimalModuleImpl for PrimalModuleSerial {
     }
 }
 
+// return results regarding if something can be unioned
 pub enum CanUnionResult {
-    Can,
-    Cannot,
-    Len1,
+    Can,    // can union
+    Cannot, // cannot union
+    Len1,   // only one node, or one cluster, won't union but simply update
 }
 
 impl PrimalModuleSerial {
@@ -840,11 +841,6 @@ impl PrimalModuleSerial {
                     return CanUnionResult::Len1;
                 }
 
-                // println!(
-                //     "comparing {:?} and {:?}",
-                //     num_distinct_clusters.values().sum::<usize>(),
-                //     len_limit
-                // );
                 if num_distinct_clusters.values().sum::<usize>() <= len_limit {
                     CanUnionResult::Can
                 } else {
@@ -1057,31 +1053,21 @@ impl PrimalModuleSerial {
                         "should not conflict if no dual nodes are contributing"
                     );
 
-                    // if !self.can_union(&dual_nodes) {
-                    //     // for dual_node_ptr in dual_nodes.iter() {
-                    //     //     let cluster_ptr = self.nodes[dual_node_ptr.read_recursive().index as usize]
-                    //     //         .read_recursive()
-                    //     //         .cluster_weak
-                    //     //         .upgrade_force();
-                    //     //     let index = cluster_ptr.read_recursive().cluster_index;
-                    //     //     active_clusters.insert(index);
-                    //     // }
-                    //     println!("encountered");
-                    //     continue;
-                    // }
-
                     match self.can_union(&dual_nodes) {
-                        CanUnionResult::Can => {}
+                        CanUnionResult::Can => {
+                            // continue to process
+                        }
                         CanUnionResult::Cannot => {
+                            // cannot union, return
                             continue;
                         }
                         CanUnionResult::Len1 => {
+                            // do the same as `can union` but don't mark this as if unioned but don't need to solve again, as no cluster node modification is conducted
                             let cluster_ptr = self.nodes[dual_nodes[0].read_recursive().index as usize]
                                 .read_recursive()
                                 .cluster_weak
                                 .upgrade_force();
                             let mut cluster = cluster_ptr.write();
-                            // then add new constraints because these edges may touch new vertices
                             let incident_vertices = decoding_graph.get_edge_neighbors(edge_index);
                             for &vertex_index in incident_vertices.iter() {
                                 if !cluster.vertices.contains(&vertex_index) {
