@@ -495,32 +495,40 @@ impl PrimalModuleImpl for PrimalModuleSerial {
                     }
 
                     for (invalid_subgraph, _) in relaxer.get_direction().iter() {
-                        let (existing, dual_node_ptr) =
-                            interface_ptr.find_or_create_node_tune(invalid_subgraph, dual_module);
-                        if !existing {
-                            // create the corresponding primal node and add it to cluster
-                            let primal_node_ptr = PrimalModuleSerialNodePtr::new_value(PrimalModuleSerialNode {
-                                dual_node_ptr: dual_node_ptr.clone(),
-                                cluster_weak: cluster_ptr.downgrade(),
-                            });
-                            cluster.nodes.push(primal_node_ptr.clone());
-                            self.nodes.push(primal_node_ptr);
-                            // participating_dual_variable_indices.insert(dual_node_ptr.read_recursive().index);
+                        if let Some((existing, dual_node_ptr)) = interface_ptr.find_or_create_node_tune(
+                            invalid_subgraph,
+                            dual_module,
+                            if let Some(limit) = self.cluster_node_limit {
+                                cluster.nodes.len() < limit
+                            } else {
+                                true
+                            },
+                        ) {
+                            if !existing {
+                                // create the corresponding primal node and add it to cluster
+                                let primal_node_ptr = PrimalModuleSerialNodePtr::new_value(PrimalModuleSerialNode {
+                                    dual_node_ptr: dual_node_ptr.clone(),
+                                    cluster_weak: cluster_ptr.downgrade(),
+                                });
+                                cluster.nodes.push(primal_node_ptr.clone());
+                                self.nodes.push(primal_node_ptr);
+                                // participating_dual_variable_indices.insert(dual_node_ptr.read_recursive().index);
 
-                            // maybe optimize here
-                        }
-                        match dual_variables.get_mut(&dual_node_ptr.read_recursive().index) {
-                            Some(_) => {}
-                            None => {
-                                dual_variables.insert(
-                                    dual_node_ptr.read_recursive().index,
-                                    (
-                                        dual_node_ptr.read_recursive().invalid_subgraph.clone(),
-                                        dual_node_ptr.read_recursive().dual_variable_at_last_updated_time,
-                                    ),
-                                );
+                                // maybe optimize here
                             }
-                        };
+                            match dual_variables.get_mut(&dual_node_ptr.read_recursive().index) {
+                                Some(_) => {}
+                                None => {
+                                    dual_variables.insert(
+                                        dual_node_ptr.read_recursive().index,
+                                        (
+                                            dual_node_ptr.read_recursive().invalid_subgraph.clone(),
+                                            dual_node_ptr.read_recursive().dual_variable_at_last_updated_time,
+                                        ),
+                                    );
+                                }
+                            };
+                        }
                     }
                     let edge_free_weights: BTreeMap<EdgeIndex, Rational> = dual_variables
                         .values()
