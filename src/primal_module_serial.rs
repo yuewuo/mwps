@@ -50,6 +50,9 @@ pub struct PrimalModuleSerial {
     #[cfg(feature = "incr_lp")]
     /// parameter indicating if the primal module has initialized states necessary for `incr_lp` slack calculation
     pub cluster_weights_initialized: bool,
+    /// optional cluster size limit in tuning phase, based on the code-distance
+    ///     note: this is not monitored in the searching phase because then there will be no solution
+    pub cluster_node_limit: Option<usize>,
 }
 
 #[derive(Eq, Debug)]
@@ -159,6 +162,7 @@ impl PrimalModuleImpl for PrimalModuleSerial {
             sorted_clusters_aff: None,
             #[cfg(feature = "incr_lp")]
             cluster_weights_initialized: false,
+            cluster_node_limit: None,
         }
     }
 
@@ -276,7 +280,7 @@ impl PrimalModuleImpl for PrimalModuleSerial {
                 cluster
                     .subgraph
                     .clone()
-                    .unwrap_or_else(|| panic!("bug occurs: cluster should be solved, but the subgraph is not yet generated || the seed is {seed:?}"))
+                    .unwrap_or_else(|| panic!("bug occurs: cluster should be solved, but the subgraph is not yet generated || the seed is {seed:?} || the cluster is {:?}", cluster.cluster_index))
                     .iter(),
             );
         }
@@ -592,23 +596,32 @@ impl PrimalModuleImpl for PrimalModuleSerial {
             }
 
             for (invalid_subgraph, grow_rate) in relaxer.get_direction() {
-                let (existing, dual_node_ptr) = interface_ptr.find_or_create_node_tune(invalid_subgraph, dual_module);
-                if !existing {
-                    // create the corresponding primal node and add it to cluster
-                    let primal_node_ptr = PrimalModuleSerialNodePtr::new_value(PrimalModuleSerialNode {
-                        dual_node_ptr: dual_node_ptr.clone(),
-                        cluster_weak: cluster_ptr.downgrade(),
-                    });
-                    cluster.nodes.push(primal_node_ptr.clone());
-                    self.nodes.push(primal_node_ptr);
-                }
+                if let Some((existing, dual_node_ptr)) = interface_ptr.find_or_create_node_tune(
+                    invalid_subgraph,
+                    dual_module,
+                    if let Some(limit) = self.cluster_node_limit {
+                        cluster.nodes.len() < limit
+                    } else {
+                        true
+                    },
+                ) {
+                    if !existing {
+                        // create the corresponding primal node and add it to cluster
+                        let primal_node_ptr = PrimalModuleSerialNodePtr::new_value(PrimalModuleSerialNode {
+                            dual_node_ptr: dual_node_ptr.clone(),
+                            cluster_weak: cluster_ptr.downgrade(),
+                        });
+                        cluster.nodes.push(primal_node_ptr.clone());
+                        self.nodes.push(primal_node_ptr);
+                    }
 
-                // Document the desired deltas
-                let index = dual_node_ptr.read_recursive().index;
-                dual_node_deltas.insert(
-                    OrderedDualNodePtr::new(index, dual_node_ptr),
-                    (grow_rate.clone(), cluster_index),
-                );
+                    // Document the desired deltas
+                    let index = dual_node_ptr.read_recursive().index;
+                    dual_node_deltas.insert(
+                        OrderedDualNodePtr::new(index, dual_node_ptr),
+                        (grow_rate.clone(), cluster_index),
+                    );
+                }
             }
 
             cluster.relaxer_optimizer.insert(relaxer);
@@ -767,7 +780,19 @@ impl PrimalModuleSerial {
                 cluster_1.nodes.push(primal_node_ptr);
             }
             cluster_1.edges.append(&mut cluster_2.edges);
-            cluster_1.subgraph = None; // mark as no subgraph
+
+            // in the case that union fails later on, the previous solutions should be preserved
+            match (cluster_1.subgraph.take(), cluster_2.subgraph.take()) {
+                (Some(mut c1), Some(mut c2)) => {
+                    c1.append(&mut c2);
+                    cluster_1.subgraph = Some(c1);
+                }
+                (None, Some(c2)) => {
+                    cluster_1.subgraph = Some(c2);
+                }
+                _ => {}
+            }
+            // cluster_1.subgraph = None; // mark as no subgraph
         }
 
         for &vertex_index in cluster_2.vertices.iter() {
@@ -780,6 +805,44 @@ impl PrimalModuleSerial {
         }
         cluster_1.relaxer_optimizer.append(&mut cluster_2.relaxer_optimizer);
         cluster_2.vertices.clear();
+    }
+
+    fn can_union(&self, dual_nodes: &[ArcRwLock<DualNode>]) -> bool {
+        return match self.cluster_node_limit {
+            Some(len_limit) => {
+                let dual_node_indexes = dual_nodes
+                    .iter()
+                    .map(|dual_node| dual_node.read_recursive().index)
+                    .unique()
+                    .collect::<Vec<_>>();
+
+                // not going to union because the nodes all have the same index, only updates
+                if dual_node_indexes.len() == 1 {
+                    return true;
+                }
+
+                let mut num_distinct_clusters = BTreeMap::new();
+                for dual_node_index in dual_node_indexes.iter() {
+                    let node_read = self.nodes[*dual_node_index].read_recursive();
+                    let cluster_ptr = node_read.cluster_weak.upgrade_force();
+                    let cluster_ptr_read = cluster_ptr.read_recursive();
+                    num_distinct_clusters.insert(cluster_ptr_read.cluster_index, cluster_ptr_read.nodes.len());
+                }
+
+                // not going to union because the nodes all belong to the same cluster, only updates
+                if num_distinct_clusters.len() == 1 {
+                    return true;
+                }
+
+                // println!(
+                //     "comparing {:?} and {:?}",
+                //     num_distinct_clusters.values().sum::<usize>(),
+                //     len_limit
+                // );
+                num_distinct_clusters.values().sum::<usize>() <= len_limit
+            }
+            None => true,
+        };
     }
 
     #[allow(clippy::unnecessary_cast)]
@@ -970,6 +1033,10 @@ impl PrimalModuleSerial {
         let mut active_clusters = BTreeSet::<NodeIndex>::new();
         let interface = interface_ptr.read_recursive();
         let decoding_graph = &interface.decoding_graph;
+
+        // if any change to clusters have been observed
+        let mut change = false;
+
         for conflict in group_max_update_length.into_iter() {
             match conflict {
                 MaxUpdateLength::Conflicting(edge_index) => {
@@ -979,6 +1046,20 @@ impl PrimalModuleSerial {
                         !dual_nodes.is_empty(),
                         "should not conflict if no dual nodes are contributing"
                     );
+
+                    if !self.can_union(&dual_nodes) {
+                        // for dual_node_ptr in dual_nodes.iter() {
+                        //     let cluster_ptr = self.nodes[dual_node_ptr.read_recursive().index as usize]
+                        //         .read_recursive()
+                        //         .cluster_weak
+                        //         .upgrade_force();
+                        //     let index = cluster_ptr.read_recursive().cluster_index;
+                        //     active_clusters.insert(index);
+                        // }
+                        println!("encountered");
+                        continue;
+                    }
+
                     let dual_node_ptr_0 = &dual_nodes[0];
                     // first union all the dual nodes
                     for dual_node_ptr in dual_nodes.iter().skip(1) {
@@ -1003,6 +1084,7 @@ impl PrimalModuleSerial {
                     cluster.edges.insert(edge_index);
                     // add to active cluster so that it's processed later
                     active_clusters.insert(cluster.cluster_index);
+                    change = true;
                 }
                 MaxUpdateLength::ShrinkProhibited(dual_node_ptr) => {
                     let cluster_ptr = self.nodes[dual_node_ptr.index as usize]
@@ -1011,12 +1093,18 @@ impl PrimalModuleSerial {
                         .upgrade_force();
                     let cluster_index = cluster_ptr.read_recursive().cluster_index;
                     active_clusters.insert(cluster_index);
+                    change = true;
                 }
                 _ => {
                     unreachable!()
                 }
             }
         }
+
+        if !change {
+            return (BTreeSet::new(), true);
+        }
+
         drop(interface);
         if *self.plugin_count.read_recursive() != 0 && self.time_resolve > self.config.timeout {
             *self.plugin_count.write() = 0; // force only the first plugin

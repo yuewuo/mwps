@@ -111,13 +111,19 @@ impl MWPSVisualizer for SolverSerialPlugins {
 }
 
 impl SolverSerialPlugins {
-    pub fn new(initializer: &SolverInitializer, plugins: Arc<Vec<PluginEntry>>, config: serde_json::Value) -> Self {
+    pub fn new(
+        initializer: &SolverInitializer,
+        plugins: Arc<Vec<PluginEntry>>,
+        config: serde_json::Value,
+        d: usize,
+    ) -> Self {
         let model_graph = Arc::new(ModelHyperGraph::new(Arc::new(initializer.clone())));
         let mut primal_module = PrimalModuleSerial::new_empty(initializer);
         let config: SolverSerialPluginsConfig = serde_json::from_value(config).unwrap();
         primal_module.growing_strategy = config.growing_strategy;
         primal_module.plugins = plugins;
         primal_module.config = config.primal.clone();
+        primal_module.cluster_node_limit = Some(10 * d);
         Self {
             dual_module: DualModulePQ::new_empty(initializer),
             // dual_module: DualModuleSerial::new_empty(initializer),
@@ -215,8 +221,8 @@ macro_rules! bind_primal_dual_solver_trait {
 pub struct SolverSerialUnionFind(SolverSerialPlugins);
 
 impl SolverSerialUnionFind {
-    pub fn new(initializer: &SolverInitializer, config: serde_json::Value) -> Self {
-        Self(SolverSerialPlugins::new(initializer, Arc::new(vec![]), config))
+    pub fn new(initializer: &SolverInitializer, config: serde_json::Value, d: usize) -> Self {
+        Self(SolverSerialPlugins::new(initializer, Arc::new(vec![]), config, d))
     }
 }
 
@@ -240,7 +246,7 @@ bind_trait_to_python!(SolverSerialUnionFind);
 pub struct SolverSerialSingleHair(SolverSerialPlugins);
 
 impl SolverSerialSingleHair {
-    pub fn new(initializer: &SolverInitializer, config: serde_json::Value) -> Self {
+    pub fn new(initializer: &SolverInitializer, config: serde_json::Value, d: usize) -> Self {
         Self(SolverSerialPlugins::new(
             initializer,
             Arc::new(vec![
@@ -248,6 +254,7 @@ impl SolverSerialSingleHair {
                 PluginSingleHair::entry_with_strategy(RepeatStrategy::Once),
             ]),
             config,
+            d,
         ))
     }
 }
@@ -272,7 +279,7 @@ bind_trait_to_python!(SolverSerialSingleHair);
 pub struct SolverSerialJointSingleHair(SolverSerialPlugins);
 
 impl SolverSerialJointSingleHair {
-    pub fn new(initializer: &SolverInitializer, config: serde_json::Value) -> Self {
+    pub fn new(initializer: &SolverInitializer, config: serde_json::Value, d: usize) -> Self {
         Self(SolverSerialPlugins::new(
             initializer,
             Arc::new(vec![
@@ -283,6 +290,7 @@ impl SolverSerialJointSingleHair {
                 }),
             ]),
             config,
+            d,
         ))
     }
 }

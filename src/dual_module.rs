@@ -736,10 +736,17 @@ impl DualModuleInterfacePtr {
         &self,
         invalid_subgraph: &Arc<InvalidSubgraph>,
         dual_module: &mut impl DualModuleImpl,
-    ) -> (bool, DualNodePtr) {
+        can_create: bool,
+    ) -> Option<(bool, DualNodePtr)> {
         match self.find_node(invalid_subgraph) {
-            Some(node_ptr) => (true, node_ptr),
-            None => (false, self.create_node_tune(invalid_subgraph.clone(), dual_module)),
+            Some(node_ptr) => Some((true, node_ptr)),
+            None => {
+                if can_create {
+                    Some((false, self.create_node_tune(invalid_subgraph.clone(), dual_module)))
+                } else {
+                    None
+                }
+            }
         }
     }
 }

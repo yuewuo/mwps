@@ -310,7 +310,7 @@ impl Cli {
                 }
                 // create initializer and solver
                 let initializer = code.get_initializer();
-                let mut primal_dual_solver = primal_dual_type.build(&initializer, &*code, primal_dual_config);
+                let mut primal_dual_solver = primal_dual_type.build(&initializer, &*code, primal_dual_config, d);
                 let mut result_verifier = verifier.build(&initializer);
                 // prepare progress bar display
                 let mut pb = if !disable_progress_bar {
@@ -596,11 +596,12 @@ impl PrimalDualType {
         initializer: &SolverInitializer,
         code: &dyn ExampleCode,
         primal_dual_config: serde_json::Value,
+        d: usize,
     ) -> Box<dyn PrimalDualSolver> {
         match self {
-            Self::UnionFind => Box::new(SolverSerialUnionFind::new(initializer, primal_dual_config)),
-            Self::SingleHair => Box::new(SolverSerialSingleHair::new(initializer, primal_dual_config)),
-            Self::JointSingleHair => Box::new(SolverSerialJointSingleHair::new(initializer, primal_dual_config)),
+            Self::UnionFind => Box::new(SolverSerialUnionFind::new(initializer, primal_dual_config, d)),
+            Self::SingleHair => Box::new(SolverSerialSingleHair::new(initializer, primal_dual_config, d)),
+            Self::JointSingleHair => Box::new(SolverSerialJointSingleHair::new(initializer, primal_dual_config, d)),
             Self::ErrorPatternLogger => Box::new(SolverErrorPatternLogger::new(initializer, code, primal_dual_config)),
         }
     }
