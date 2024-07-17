@@ -173,12 +173,9 @@ pub trait PrimalModuleImpl {
                     self.resolve_cluster_tune(cluster_index, interface, dual_module, &mut dual_node_deltas);
 
                 let mut conflicts = dual_module.get_conflicts_tune(optimizer_result, dual_node_deltas);
-                // println!("conflicts: {:?}", conflicts);
                 while !resolved {
                     let (_conflicts, _resolved) = self.resolve_tune(conflicts.clone(), interface, dual_module);
-                    // println!("conflicts: {:?}", _conflicts);
-                    // if _resolved {
-                    if _resolved || conflicts.eq(&_conflicts) {
+                    if _resolved {
                         break;
                     }
                     conflicts = _conflicts;

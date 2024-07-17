@@ -690,6 +690,12 @@ impl PrimalModuleImpl for PrimalModuleSerial {
     }
 }
 
+pub enum CanUnionResult {
+    Can,
+    Cannot,
+    Len1,
+}
+
 impl PrimalModuleSerial {
     // union the cluster of two dual nodes
     #[allow(clippy::unnecessary_cast)]
@@ -807,7 +813,7 @@ impl PrimalModuleSerial {
         cluster_2.vertices.clear();
     }
 
-    fn can_union(&self, dual_nodes: &[ArcRwLock<DualNode>]) -> bool {
+    fn can_union(&self, dual_nodes: &[ArcRwLock<DualNode>]) -> CanUnionResult {
         return match self.cluster_node_limit {
             Some(len_limit) => {
                 let dual_node_indexes = dual_nodes
@@ -818,7 +824,7 @@ impl PrimalModuleSerial {
 
                 // not going to union because the nodes all have the same index, only updates
                 if dual_node_indexes.len() == 1 {
-                    return true;
+                    return CanUnionResult::Len1;
                 }
 
                 let mut num_distinct_clusters = BTreeMap::new();
@@ -831,7 +837,7 @@ impl PrimalModuleSerial {
 
                 // not going to union because the nodes all belong to the same cluster, only updates
                 if num_distinct_clusters.len() == 1 {
-                    return true;
+                    return CanUnionResult::Len1;
                 }
 
                 // println!(
@@ -839,9 +845,13 @@ impl PrimalModuleSerial {
                 //     num_distinct_clusters.values().sum::<usize>(),
                 //     len_limit
                 // );
-                num_distinct_clusters.values().sum::<usize>() <= len_limit
+                if num_distinct_clusters.values().sum::<usize>() <= len_limit {
+                    CanUnionResult::Can
+                } else {
+                    CanUnionResult::Cannot
+                }
             }
-            None => true,
+            None => CanUnionResult::Can,
         };
     }
 
@@ -1047,17 +1057,43 @@ impl PrimalModuleSerial {
                         "should not conflict if no dual nodes are contributing"
                     );
 
-                    if !self.can_union(&dual_nodes) {
-                        // for dual_node_ptr in dual_nodes.iter() {
-                        //     let cluster_ptr = self.nodes[dual_node_ptr.read_recursive().index as usize]
-                        //         .read_recursive()
-                        //         .cluster_weak
-                        //         .upgrade_force();
-                        //     let index = cluster_ptr.read_recursive().cluster_index;
-                        //     active_clusters.insert(index);
-                        // }
-                        println!("encountered");
-                        continue;
+                    // if !self.can_union(&dual_nodes) {
+                    //     // for dual_node_ptr in dual_nodes.iter() {
+                    //     //     let cluster_ptr = self.nodes[dual_node_ptr.read_recursive().index as usize]
+                    //     //         .read_recursive()
+                    //     //         .cluster_weak
+                    //     //         .upgrade_force();
+                    //     //     let index = cluster_ptr.read_recursive().cluster_index;
+                    //     //     active_clusters.insert(index);
+                    //     // }
+                    //     println!("encountered");
+                    //     continue;
+                    // }
+
+                    match self.can_union(&dual_nodes) {
+                        CanUnionResult::Can => {}
+                        CanUnionResult::Cannot => {
+                            continue;
+                        }
+                        CanUnionResult::Len1 => {
+                            let cluster_ptr = self.nodes[dual_nodes[0].read_recursive().index as usize]
+                                .read_recursive()
+                                .cluster_weak
+                                .upgrade_force();
+                            let mut cluster = cluster_ptr.write();
+                            // then add new constraints because these edges may touch new vertices
+                            let incident_vertices = decoding_graph.get_edge_neighbors(edge_index);
+                            for &vertex_index in incident_vertices.iter() {
+                                if !cluster.vertices.contains(&vertex_index) {
+                                    cluster.vertices.insert(vertex_index);
+                                    let incident_edges = decoding_graph.get_vertex_neighbors(vertex_index);
+                                    let parity = decoding_graph.is_vertex_defect(vertex_index);
+                                    cluster.matrix.add_constraint(vertex_index, incident_edges, parity);
+                                }
+                            }
+                            cluster.edges.insert(edge_index);
+                            continue;
+                        }
                     }
 
                     let dual_node_ptr_0 = &dual_nodes[0];
