@@ -748,7 +748,18 @@ impl PrimalModuleSerial {
                 cluster_1.nodes.push(primal_node_ptr);
             }
             cluster_1.edges.append(&mut cluster_2.edges);
-            cluster_1.subgraph = None; // mark as no subgraph
+            // in the case that union fails later on, the previous solutions should be preserved
+            match (cluster_1.subgraph.take(), cluster_2.subgraph.take()) {
+                (Some(mut c1), Some(mut c2)) => {
+                    c1.append(&mut c2);
+                    cluster_1.subgraph = Some(c1);
+                }
+                (None, Some(c2)) => {
+                    cluster_1.subgraph = Some(c2);
+                }
+                _ => {}
+            }
+            // cluster_1.subgraph = None; // mark as no subgraph
 
             match (&cluster_1.incr_solution, &cluster_2.incr_solution) {
                 (None, Some(_)) => {
@@ -770,7 +781,18 @@ impl PrimalModuleSerial {
                 cluster_1.nodes.push(primal_node_ptr);
             }
             cluster_1.edges.append(&mut cluster_2.edges);
-            cluster_1.subgraph = None; // mark as no subgraph
+            // in the case that union fails later on, the previous solutions should be preserved
+            match (cluster_1.subgraph.take(), cluster_2.subgraph.take()) {
+                (Some(mut c1), Some(mut c2)) => {
+                    c1.append(&mut c2);
+                    cluster_1.subgraph = Some(c1);
+                }
+                (None, Some(c2)) => {
+                    cluster_1.subgraph = Some(c2);
+                }
+                _ => {}
+            }
+            // cluster_1.subgraph = None; // mark as no subgraph
 
             match (&cluster_1.incr_solution, &cluster_2.incr_solution) {
                 (None, Some(_)) => {
