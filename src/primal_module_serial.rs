@@ -15,8 +15,7 @@ use crate::relaxer_optimizer::*;
 use crate::util::*;
 use crate::visualize::*;
 
-use std::collections::BTreeMap;
-use std::collections::{BTreeSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::fmt::Debug;
 use std::sync::Arc;
 use std::time::Instant;

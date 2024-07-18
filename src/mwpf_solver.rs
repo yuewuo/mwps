@@ -39,6 +39,9 @@ pub trait PrimalDualSolver {
     }
     fn sum_dual_variables(&self) -> Rational;
     fn generate_profiler_report(&self) -> serde_json::Value;
+
+    fn get_tuning_time(&self) -> Option<f64>;
+    fn clear_tuning_time(&mut self);
 }
 
 #[cfg(feature = "python_binding")]
@@ -182,6 +185,12 @@ impl PrimalDualSolver for SolverSerialPlugins {
             "primal": self.primal_module.generate_profiler_report(),
         })
     }
+    fn get_tuning_time(&self) -> Option<f64> {
+        self.dual_module.get_total_tuning_time()
+    }
+    fn clear_tuning_time(&mut self) {
+        self.dual_module.clear_tuning_time()
+    }
 }
 
 macro_rules! bind_primal_dual_solver_trait {
@@ -210,6 +219,12 @@ macro_rules! bind_primal_dual_solver_trait {
             }
             fn generate_profiler_report(&self) -> serde_json::Value {
                 self.0.generate_profiler_report()
+            }
+            fn get_tuning_time(&self) -> Option<f64> {
+                self.0.get_tuning_time()
+            }
+            fn clear_tuning_time(&mut self) {
+                self.0.clear_tuning_time()
             }
         }
     };
@@ -356,6 +371,10 @@ impl PrimalDualSolver for SolverErrorPatternLogger {
     fn generate_profiler_report(&self) -> serde_json::Value {
         json!({})
     }
+    fn get_tuning_time(&self) -> Option<f64> {
+        None
+    }
+    fn clear_tuning_time(&mut self) {}
 }
 
 #[cfg(feature = "python_binding")]

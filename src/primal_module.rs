@@ -176,6 +176,7 @@ pub trait PrimalModuleImpl {
                 while !resolved {
                     let (_conflicts, _resolved) = self.resolve_tune(conflicts.clone(), interface, dual_module);
                     if _resolved {
+                        dual_module.end_tuning();
                         break;
                     }
                     conflicts = _conflicts;

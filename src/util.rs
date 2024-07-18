@@ -10,6 +10,7 @@ use pyo3::prelude::*;
 #[cfg(feature = "python_binding")]
 use pyo3::types::PyFloat;
 use serde::{Deserialize, Serialize};
+
 use std::collections::BTreeSet;
 use std::fs::File;
 use std::io::prelude::*;
@@ -347,6 +348,9 @@ pub struct BenchmarkProfiler {
     pub noisy_measurements: VertexNum,
     /// the file to output the profiler results
     pub benchmark_profiler_output: Option<File>,
+
+    /// summation of all tuning time
+    pub sum_tuning_time: f64,
 }
 
 impl BenchmarkProfiler {
@@ -371,6 +375,7 @@ impl BenchmarkProfiler {
             sum_error: 0,
             noisy_measurements,
             benchmark_profiler_output,
+            sum_tuning_time: 0.,
         }
     }
     /// record the beginning of a decoding procedure
@@ -416,13 +421,19 @@ impl BenchmarkProfiler {
             });
             if let Some(solver) = solver {
                 let solver_profile = solver.generate_profiler_report();
-                value
-                    .as_object_mut()
-                    .unwrap()
-                    .insert("solver_profile".to_string(), solver_profile);
+                let value_mut = value.as_object_mut().unwrap();
+                value_mut.insert("solver_profile".to_string(), solver_profile);
+                if let Some(tuning_time) = solver.get_tuning_time() {
+                    value_mut.insert("tuning_time".to_string(), tuning_time.into());
+                    self.sum_tuning_time += tuning_time;
+                }
             }
             file.write_all(serde_json::to_string(&value).unwrap().as_bytes()).unwrap();
             file.write_all(b"\n").unwrap();
+        } else if let Some(solver) = solver {
+            if let Some(tuning_time) = solver.get_tuning_time() {
+                self.sum_tuning_time += tuning_time;
+            }
         }
     }
     /// print out a brief one-line statistics

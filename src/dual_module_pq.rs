@@ -17,6 +17,7 @@ use crate::{add_shared_methods, dual_module::*};
 use std::{
     cmp::{Ordering, Reverse},
     collections::{BTreeSet, BinaryHeap},
+    time::Instant,
 };
 
 use derivative::Derivative;
@@ -411,6 +412,9 @@ where
     /// the current mode of the dual module
     ///     note: currently does not have too much functionality
     mode: DualModuleMode,
+
+    tuning_start_time: Option<Instant>,
+    total_tuning_time: Option<f64>,
 }
 
 impl<Queue> DualModulePQ<Queue>
@@ -528,6 +532,8 @@ where
             obstacle_queue: Queue::default(),
             global_time: ArcRwLock::new_value(Rational::zero()),
             mode: DualModuleMode::default(),
+            tuning_start_time: None,
+            total_tuning_time: None,
         }
     }
 
@@ -539,6 +545,8 @@ where
         self.obstacle_queue.clear();
         self.global_time.write().set_zero();
         self.mode_mut().reset();
+
+        self.tuning_start_time = None;
     }
 
     #[allow(clippy::unnecessary_cast)]
@@ -777,9 +785,25 @@ where
 
     /// change mode, clear queue as queue is no longer needed. also sync to get rid off the need for global time
     fn advance_mode(&mut self) {
+        self.tuning_start_time = Some(Instant::now());
         self.mode_mut().advance();
         self.obstacle_queue.clear();
         self.sync();
+    }
+
+    /// at the end of tuning mode, record the total time spent on tuning
+    fn end_tuning(&mut self) {
+        self.total_tuning_time = Some(self.tuning_start_time.unwrap().elapsed().as_secs_f64());
+    }
+
+    /// get the total time spent on tuning
+    fn get_total_tuning_time(&self) -> Option<f64> {
+        self.total_tuning_time
+    }
+
+    /// clear the tuning time
+    fn clear_tuning_time(&mut self) {
+        self.total_tuning_time = None;
     }
 
     /// grow specific amount for a specific edge

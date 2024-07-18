@@ -307,6 +307,18 @@ pub trait DualModuleImpl {
         *self.mode_mut() = DualModuleMode::default();
     }
 
+    fn end_tuning(&mut self) {
+        panic!("this module doesn't work with tuning")
+    }
+
+    fn get_total_tuning_time(&self) -> Option<f64> {
+        panic!("this module doesn't work with tuning")
+    }
+
+    fn clear_tuning_time(&mut self) {
+        panic!("this module doesn't work with tuning")
+    }
+
     /// "set_grow_rate", but in tuning phase
     fn set_grow_rate_tune(&mut self, dual_node_ptr: &DualNodePtr, grow_rate: Rational) {
         eprintln!("this dual_module does not implement tuning");

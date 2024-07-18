@@ -401,6 +401,11 @@ impl Cli {
                     primal_dual_solver.clear(); // also count the clear operation
 
                     benchmark_profiler.end(Some(&*primal_dual_solver));
+
+                    if primal_dual_solver.get_tuning_time().is_some() {
+                        primal_dual_solver.clear_tuning_time();
+                    }
+
                     if let Some(pb) = pb.as_mut() {
                         if pb_message.is_empty() {
                             pb.message(format!("{} ", benchmark_profiler.brief()).as_str());
@@ -418,6 +423,7 @@ impl Cli {
                 }
 
                 eprintln!("total resolve time {:?}", benchmark_profiler.sum_round_time);
+                eprintln!("total tuning time {:?}", benchmark_profiler.sum_tuning_time);
             }
             Commands::MatrixSpeed(parameters) => {
                 let MatrixSpeedParameters {
