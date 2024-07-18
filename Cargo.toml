@@ -36,7 +36,7 @@ debug = true
 
 [features]
 # to enable a feature, use `--features xxx`
-default = ["cli"]
+default = ["f64_weight", "cli", "qecp_integrate"]
 cli = ["pbr"]
 r64_weight = []                 # use Rational64 instead of BigRational as weight type
 f64_weight = []                 # use f64 instead of BigRational as weight type
@@ -79,7 +79,7 @@ slp = "0.1.11"
 highs = { version = "1.6.1", optional = true }
 sugar = "0.2.0"
 maplit = "1.0.2"
-qecp = { version = "0.2.4", optional = true, default-features = false, features = [
+qecp = { version = "0.2.5", optional = true, default-features = false, features = [
     "fusion_blossom",
 ] }
 serde_variant = "0.1.3"

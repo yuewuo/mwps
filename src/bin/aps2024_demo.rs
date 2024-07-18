@@ -434,6 +434,8 @@ fn small_color_code_example() {
 
 #[cfg(feature = "qecp_integrate")]
 fn circuit_level_example() {
+    use mwpf::model_hypergraph;
+
     let timeout = 1.0;
     for (count, p) in [(50, 0.003), (100, 0.001), (200, 0.0003)] {
         let mut pb = ProgressBar::on(std::io::stderr(), count);
@@ -461,7 +463,7 @@ fn circuit_level_example() {
             pb.set(seed);
             code.generate_random_errors(seed);
             let syndrome_pattern = Arc::new(code.get_syndrome());
-            let mut primal_module = PrimalModuleSerial::new_empty(&initializer);
+            let mut primal_module = PrimalModuleSerial::new_empty(&initializer, &model_graph);
             primal_module.growing_strategy = GrowingStrategy::MultipleClusters;
             primal_module.plugins = Arc::new(vec![
                 PluginUnionFind::entry(), // to allow timeout using union-find as baseline

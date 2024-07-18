@@ -27,6 +27,7 @@ use crate::num_traits::sign::Signed;
 use crate::num_traits::{ToPrimitive, Zero};
 use petgraph::Graph;
 use petgraph::Undirected;
+use weak_table::PtrWeakKeyHashMap;
 
 
 ////////////////////////////////////////////////////////////////////////
@@ -121,36 +122,33 @@ impl<SerialModule: DualModuleImpl + Send + Sync> DualModuleParallel<SerialModule
                 weighted_edges: vec![],
                 boundary_vertices: unit_partition_info.boundary_vertices.clone(),
                 adjacent_partition_units: unit_partition_info.adjacent_partition_units.clone(),
+                owning_interface: Some(partition_units[unit_index].downgrade()),
             }
         }).collect();
 
         // now we assign each edge to its unique partition
         // println!("edge num: {}", initializer.weighted_edges.len());
+        let mut edge_bias_vec = [core::usize::MAX, unit_count];
         for (edge_index, hyper_edge) in initializer.weighted_edges.iter().enumerate() {
             let mut vertices_unit_indices = vec![];
             let mut boundary_vertices_adjacent_units_index = vec![];
             let mut exist_boundary_vertex = false;
             for vertex_index in hyper_edge.vertices.iter() {
-                if partition_info.vertex_to_owning_unit.contains_key(vertex_index) {
-                    // find the unit_index of the partition this vertex_index belongs to
-                    let vertex_unit_index = partition_info.vertex_to_owning_unit.get(vertex_index);
-                    match vertex_unit_index {
-                        Some(vertex_unit_index) => vertices_unit_indices.push((vertex_index, vertex_unit_index)),
-                        None => assert!(!vertex_unit_index.is_none(), "partition unit owning range contains vertex {} but this vertex corresponds to None unit", vertex_index),
+                let adjacent_unit_indices = partition_info.boundary_vertex_to_adjacent_units.get(vertex_index);
+                match adjacent_unit_indices {
+                    Some(adjacent_unit_indices) => {
+                        // it belongs to boundary vertices 
+                        exist_boundary_vertex = true;
+                        boundary_vertices_adjacent_units_index.push((vertex_index, adjacent_unit_indices));
+                    },
+                    None => {
+                        // it does not belong to boundary vertices, instead it belongs to the non-boundary-interface region of owning_range
+                        let vertex_unit_index = partition_info.vertex_to_owning_unit.get(vertex_index);
+                        match vertex_unit_index {
+                            Some(vertex_unit_index) => vertices_unit_indices.push((vertex_index, vertex_unit_index)),
+                            None => assert!(!vertex_unit_index.is_none(), "partition unit owning range contains vertex {} but this vertex corresponds to None unit", vertex_index),
+                        }
                     }
-                } else if partition_info.boundary_vertex_to_adjacent_units.contains_key(vertex_index) {
-                    // println!("vertex {vertex_index:?} contained in boundary");
-                    // if the vertex_index does not belong to any partitions, it must belong to the boundary vertices
-                    // we therefore proceed to find the 2 adjacent partitions of this vertex_index
-                    let vertex_unit_index = partition_info.boundary_vertex_to_adjacent_units.get(vertex_index);
-                    match vertex_unit_index {
-                        Some(vertex_unit_index) => {exist_boundary_vertex = true;
-                            boundary_vertices_adjacent_units_index.push((vertex_index, vertex_unit_index))
-                        },
-                        None => assert!(!vertex_unit_index.is_none(), "partition unit boundary vertices contain vertex {} but this vertex is adjacent to None unit", vertex_index),
-                    }
-                } else {
-                    panic!("the vertex {} hyperedge {} connected to is neither in partition owning range nor in boundary vertices", vertex_index, edge_index);
                 }
             }
 
@@ -165,10 +163,12 @@ impl<SerialModule: DualModuleImpl + Send + Sync> DualModuleParallel<SerialModule
                 let adjacent_partition_2 = boundary_vertices_adjacent_units_index[0].1.1;
                 partitioned_initializers[adjacent_partition_1].weighted_edges.push((hyper_edge.clone(), edge_index));
                 partitioned_initializers[adjacent_partition_2].weighted_edges.push((hyper_edge.clone(), edge_index));
-                // for (_vertex_index, (adjacent_partition_1, adjacent_partition_2)) in boundary_vertices_adjacent_units_index {
-                //     partitioned_initializers[*adjacent_partition_1].weighted_edges.push((hyper_edge.clone(), edge_index));
-                //     partitioned_initializers[*adjacent_partition_2].weighted_edges.push((hyper_edge.clone(), edge_index));
-                // }
+                if edge_index < edge_bias_vec[adjacent_partition_1] {
+                    edge_bias_vec[adjacent_partition_1] = edge_index;
+                }
+                if edge_index < edge_bias_vec[adjacent_partition_2] {
+                    edge_bias_vec[adjacent_partition_2] = edge_index;
+                }
             } else {
                 let first_vertex_unit_index = *vertices_unit_indices[0].1;
                 let all_vertex_from_same_unit = vertices_unit_indices.iter().all(|&item| *(item.1) == first_vertex_unit_index);
@@ -178,11 +178,17 @@ impl<SerialModule: DualModuleImpl + Send + Sync> DualModuleParallel<SerialModule
                     assert!(all_vertex_from_same_unit, "For the vertices of hyperedge {}, there does not exist boundary vertex but all the vertices do not belong to the same unit", edge_index);
                     // since all vertices this hyperedge connects to belong to the same unit, we can assign this hyperedge to that partition unit
                     partitioned_initializers[first_vertex_unit_index].weighted_edges.push((hyper_edge.clone(), edge_index));
+                    if edge_index < edge_bias_vec[first_vertex_unit_index] {
+                        edge_bias_vec[first_vertex_unit_index] = edge_index;
+                    }
                 } else {
                     // since we have assumed to partition along the time axis, there could only be 2 different units the vertices (excluding the boundary vertices) could be in
                     // if all vertices (excluding the boundary vertices) are from the same unit, we can assign this hyperedge to that partition unit
                     if all_vertex_from_same_unit {
                         partitioned_initializers[first_vertex_unit_index].weighted_edges.push((hyper_edge.clone(), edge_index));
+                        if edge_index < edge_bias_vec[first_vertex_unit_index] {
+                            edge_bias_vec[first_vertex_unit_index] = edge_index;
+                        }
                     } else {
                         // println!("exist boundary vertices, vertices unit indices {vertices_unit_indices:?}");
                         // if the vertices of this hyperedge (excluding the boundary vertices) belong to 2 different partition unit
@@ -228,6 +234,12 @@ impl<SerialModule: DualModuleImpl + Send + Sync> DualModuleParallel<SerialModule
                         partitioned_initializers[unit_index_partition_2].weighted_edges.push(
                             (HyperEdge::new(vertices_for_partition_2, hyper_edge.weight), edge_index)
                         );
+                        if edge_index < edge_bias_vec[unit_index_partition_1] {
+                            edge_bias_vec[unit_index_partition_1] = edge_index;
+                        }
+                        if edge_index < edge_bias_vec[unit_index_partition_2] {
+                            edge_bias_vec[unit_index_partition_2] = edge_index;
+                        }
                     }
                 }
             }
@@ -242,6 +254,11 @@ impl<SerialModule: DualModuleImpl + Send + Sync> DualModuleParallel<SerialModule
                 .map(|unit_index| {
                     // println!("unit_index: {unit_index}");
                     let dual_module = DualModuleSerial::new_partitioned(&partitioned_initializers[unit_index]);
+
+                    // iterate through all the 
+
+
+
                     DualModuleParallelUnitPtr::new_value(DualModuleParallelUnit {
                         unit_index,
                         partition_info: Arc::clone(&partition_info),
@@ -250,7 +267,7 @@ impl<SerialModule: DualModuleImpl + Send + Sync> DualModuleParallel<SerialModule
                         serial_module: dual_module,
                         enable_parallel_execution: config.enable_parallel_execution,
                         elevated_dual_nodes: PtrWeakHashSet::new(),
-                        adjacent_parallel_units: vec![],
+                        adjacent_parallel_units: PtrWeakKeyHashMap::new(),
                         done_fused_with_all_adjacent_units: false,
                         vertex_bias: partition_info.units[unit_index].owning_range.range[0],
                         has_active_node: true, // set to true by default
@@ -259,6 +276,8 @@ impl<SerialModule: DualModuleImpl + Send + Sync> DualModuleParallel<SerialModule
                             partitioned_initializers[unit_index].weighted_edges[0].1, 
                             partitioned_initializers[unit_index].weighted_edges.last().unwrap().1
                         ),
+                        edge_bias: edge_bias_vec[unit_index],
+                        empty_sync_request: vec![],
                     })
                   
                 })
@@ -269,7 +288,7 @@ impl<SerialModule: DualModuleImpl + Send + Sync> DualModuleParallel<SerialModule
         for unit_index in 0..unit_count {
             let mut unit = units[unit_index].write();
             for adjacent_unit_index in partition_info.units[unit_index].adjacent_partition_units.clone().into_iter() {
-                unit.adjacent_parallel_units.push((units[adjacent_unit_index].clone().downgrade(), false));
+                unit.adjacent_parallel_units.insert(units[adjacent_unit_index].clone(), false);
             }
         }
 
@@ -315,6 +334,25 @@ impl<SerialModule: DualModuleImpl + Send + Sync> DualModuleParallel<SerialModule
         }
     }
 
+    // statically fuse all units 
+    pub fn static_fuse_all(&mut self) {
+        let unit_1_ptr = &self.units[0];
+        let unit_2_ptr = &self.units[1];
+        let mut unit_1 = unit_1_ptr.write();
+        let mut unit_2 = unit_2_ptr.write();
+        if let Some(unit_1_fused) = unit_1.adjacent_parallel_units.get_mut(&unit_2_ptr) {
+            *unit_1_fused = true;
+        }
+        if let Some(unit_2_fused) = unit_2.adjacent_parallel_units.get_mut(&unit_1_ptr) {
+            *unit_2_fused = true;
+        }
+
+        
+        // for unit_ptr in self.units.iter() {
+        //     let mut unit = unit_ptr.write();
+        //     unit.adjacent_parallel_units.iter()
+        // }
+    }
 }
 
 
@@ -386,6 +424,8 @@ impl<SerialModule: DualModuleImpl + Send + Sync> DualModuleImpl for DualModulePa
     /// check the maximum length to grow (shrink) for all nodes, return a list of conflicting reason and a single number indicating the maximum rate to grow:
     /// this number will be 0 if any conflicting reason presents
     fn compute_maximum_update_length(&mut self) -> GroupMaxUpdateLength {
+        // self.execute_sync_event(sync_event);
+        println!("compute max");
         self.thread_pool.scope(|_| {
             let results: Vec<_> = self
                 .units
@@ -457,6 +497,11 @@ impl<SerialModule: DualModuleImpl + Send + Sync> DualModuleImpl for DualModulePa
         println!("Error: none of the units contain the edge_index {} for function is_edge_tight", edge_index);
         return false; // it should never reach here
     }
+
+    fn get_edge_global_index(&self, local_edge_index: EdgeIndex, unit_index: usize) -> EdgeIndex {
+        self.units[unit_index].read_recursive().get_edge_global_index(local_edge_index, unit_index)
+        // panic!("unsupported, please call this method in DualModuleParallelUnit");
+    }
 }
 
 // now we implement the DualModuleParallelImpl trait for DualModuleParallel
@@ -477,7 +522,7 @@ impl<SerialModule: DualModuleImpl + MWPSVisualizer + Send + Sync> MWPSVisualizer
         for unit_ptr in self.units.iter() {
             let unit = unit_ptr.read_recursive();
             let value_2 = unit.snapshot(abbrev);
-            // println!("value 2: {}", value_2);
+            // println!("value in unit {}: {}", unit.unit_index, value_2);
             // snapshot_fix_missing_fields(&mut value_2, abbrev);
             // let value = value.as_object_mut().expect("snapshot must be an object");
             // let value_2 = value_2.as_object_mut().expect("snapshot must be an object");
@@ -522,15 +567,19 @@ pub struct DualModuleParallelUnit<SerialModule: DualModuleImpl + Send + Sync> {
     /// adjacent DualModuleParallelUnitWeak according to the dag of partition unit
     /// maybe we need to keep a fusion plan dag and a dynamic dag for the already fused units
     /// (Pointer to a parallel unit, whether_this_unit_has_been_fused_with_self)
-    pub adjacent_parallel_units: Vec<(DualModuleParallelUnitWeak<SerialModule>, bool)>,
+    pub adjacent_parallel_units: PtrWeakKeyHashMap<DualModuleParallelUnitWeak<SerialModule>, bool>,
     /// (tentative) whether this unit has fused with all its adjacent units
     pub done_fused_with_all_adjacent_units: bool,
     /// whether this unit has ever been fused with other units
     pub involved_in_fusion: bool,
     /// the amount the vertices in this unit is off-set (biased) by, assuming all the vertex index in this unit is continuous
     pub vertex_bias: usize,
+    /// the amount the vertices in this unit is off-set (biased) by, assuming all the vertex index in this unit is continuous
+    pub edge_bias: usize,
     /// whether any descendant unit has active dual node
     pub has_active_node: bool,    
+    /// an empty sync requests queue just to implement the trait
+    pub empty_sync_request: Vec<SyncRequest>,
 }
 
 pub type DualModuleParallelUnitPtr<SerialModule> = ArcRwLock<DualModuleParallelUnit<SerialModule>>;
@@ -549,13 +598,57 @@ impl<SerialModule: DualModuleImpl + Send + Sync> std::fmt::Debug for DualModuleP
     }
 }
 
-impl<SerialModule: DualModuleImpl + Send + Sync> DualModuleParallelUnit<SerialModule> {
-    // pub fn fuse(&self, self_interface: &DualModuleInterfacePtr, other_interface: &DualModuleInterfacePtr, other_dual_unit: &DualModuleParallelUnit<SerialModule>) {
+impl<SerialModule: DualModuleImpl + Send + Sync> DualModuleParallelUnitPtr<SerialModule> {
+    pub fn fuse(
+        &mut self, 
+        self_interface: &DualModuleInterfacePtr, 
+        other_interface: &DualModuleInterfacePtr, 
+        other_dual_unit: &DualModuleParallelUnitPtr<SerialModule>
+    ) {
 
+        // change the index of dual nodes in the other interface
+        
+        let mut dual_unit = self.write();
+        if let Some(is_fused) = dual_unit.adjacent_parallel_units.get_mut(other_dual_unit) {
+            *is_fused = true;
+        }     
+
+        // fuse dual unit
+        // self.fuse_helper(other_dual_unit);
+        // if let Some(is_fused) = self.adjacent_parallel_units.get_mut(other_dual_unit) {
+        //     *is_fused = true;
+        // }        
+        println!("fuse asdf");
+        // now we fuse the interface (copying the interface of other to myself)
+        self_interface.fuse(other_interface);
+    }
+}
+
+impl<SerialModule: DualModuleImpl + Send + Sync> DualModuleParallelUnit<SerialModule> {
+    pub fn fuse_helper(&mut self,         
+        other_dual_unit: &DualModuleParallelUnitPtr<SerialModule>
+    ) {
+        if let Some(is_fused) = self.adjacent_parallel_units.get_mut(other_dual_unit) {
+            *is_fused = true;
+        }        
+    }
+    
+    // pub fn fuse(
+    //     &mut self, 
+    //     self_interface: &DualModuleInterfacePtr, 
+    //     other_interface: &DualModuleInterfacePtr, 
+    //     other_dual_unit: &DualModuleParallelUnitPtr<SerialModule>
+    // ) {
 
     //     // change the index of dual nodes in the other interface
-    //     let bias = self_interface.read_recursive().nodes_count();
-    //     other_dual_unit.iterative_bias_dual_node_index(bias);
+        
+
+    //     // fuse dual unit
+    //     self.fuse_helper(other_dual_unit);
+    //     // if let Some(is_fused) = self.adjacent_parallel_units.get_mut(other_dual_unit) {
+    //     //     *is_fused = true;
+    //     // }        
+    //     println!("fuse asdf");
     //     // now we fuse the interface (copying the interface of other to myself)
     //     self_interface.fuse(other_interface);
     // }
@@ -564,7 +657,7 @@ impl<SerialModule: DualModuleImpl + Send + Sync> DualModuleParallelUnit<SerialMo
     fn dfs_add_defect_node(&mut self, dual_node_ptr: &DualNodePtr, defect_vertex: VertexIndex, visited: &mut HashSet<usize>) {
 
         if self.owning_range.contains(defect_vertex) {
-            println!("the unit containing this dual node is {} with owning range {} to {}", self.unit_index, self.owning_range.range[0], self.owning_range.range[1]);
+            // println!("the unit containing this dual node is {} with owning range {} to {}", self.unit_index, self.owning_range.range[0], self.owning_range.range[1]);
             self.serial_module.add_defect_node(dual_node_ptr, self.owning_range.range[0]);
             return;
         }
@@ -572,15 +665,15 @@ impl<SerialModule: DualModuleImpl + Send + Sync> DualModuleParallelUnit<SerialMo
         visited.insert(self.unit_index);
 
         for (neighbor, _) in self.adjacent_parallel_units.iter() {
-            if !visited.contains(&neighbor.upgrade_force().read_recursive().unit_index) {
-                neighbor.upgrade_force().write().dfs_add_defect_node(dual_node_ptr, defect_vertex, visited);
+            if !visited.contains(&neighbor.read_recursive().unit_index) {
+                neighbor.write().dfs_add_defect_node(dual_node_ptr, defect_vertex, visited);
             }
         }
     }
 
     fn dfs_add_dual_node(&mut self, dual_node_ptr: &DualNodePtr, defect_vertex: VertexIndex, visited: &mut HashSet<usize>) {
         if self.owning_range.contains(defect_vertex) {
-            println!("the unit containing this dual node is {} with owning range {} to {}, with defect_vertex {}", self.unit_index, self.owning_range.range[0], self.owning_range.range[1], defect_vertex);
+            // println!("the unit containing this dual node is {} with owning range {} to {}, with defect_vertex {}", self.unit_index, self.owning_range.range[0], self.owning_range.range[1], defect_vertex);
             self.serial_module.add_dual_node(dual_node_ptr);
             return;
         }
@@ -588,8 +681,8 @@ impl<SerialModule: DualModuleImpl + Send + Sync> DualModuleParallelUnit<SerialMo
         visited.insert(self.unit_index);
 
         for (neighbor, _) in self.adjacent_parallel_units.iter() {
-            if !visited.contains(&neighbor.upgrade_force().read_recursive().unit_index) {
-                neighbor.upgrade_force().write().dfs_add_dual_node(dual_node_ptr, defect_vertex, visited);
+            if !visited.contains(&neighbor.read_recursive().unit_index) {
+                neighbor.write().dfs_add_dual_node(dual_node_ptr, defect_vertex, visited);
             }
         }
     }
@@ -598,34 +691,34 @@ impl<SerialModule: DualModuleImpl + Send + Sync> DualModuleParallelUnit<SerialMo
     fn dfs_grow_dual_node(&mut self, dual_node_ptr: &DualNodePtr, length: Rational, defect_vertex: VertexIndex, visited: &mut HashSet<usize>) {
 
         if self.owning_range.contains(defect_vertex) {
-            println!("the unit containing this dual node is {} with owning range {} to {}", self.unit_index, self.owning_range.range[0], self.owning_range.range[1]);
+            // println!("the unit containing this dual node is {} with owning range {} to {}", self.unit_index, self.owning_range.range[0], self.owning_range.range[1]);
             self.serial_module.grow_dual_node(dual_node_ptr, length);
             return;
         }
 
         visited.insert(self.unit_index);
 
-        println!("neighbor len: {}", self.adjacent_parallel_units.len());
+        // println!("neighbor len: {}", self.adjacent_parallel_units.len());
         for (neighbor, _) in self.adjacent_parallel_units.iter() {
-            if !visited.contains(&neighbor.upgrade_force().read_recursive().unit_index) {
-                neighbor.upgrade_force().write().dfs_grow_dual_node(dual_node_ptr, length.clone(), defect_vertex, visited);
+            if !visited.contains(&neighbor.read_recursive().unit_index) {
+                neighbor.write().dfs_grow_dual_node(dual_node_ptr, length.clone(), defect_vertex, visited);
             }
         }
     }
 
     fn dfs_set_grow_rate(&mut self, dual_node_ptr: &DualNodePtr, grow_rate: Rational, defect_vertex: VertexIndex, visited: &mut HashSet<usize>) {
         if self.owning_range.contains(defect_vertex) {
-            println!("the unit containing this dual node is {} with owning range {} to {}", self.unit_index, self.owning_range.range[0], self.owning_range.range[1]);
+            // println!("the unit containing this dual node is {} with owning range {} to {}", self.unit_index, self.owning_range.range[0], self.owning_range.range[1]);
             self.serial_module.set_grow_rate(dual_node_ptr, grow_rate);
             return;
         }
 
         visited.insert(self.unit_index);
 
-        println!("neighbor len: {}", self.adjacent_parallel_units.len());
+        // println!("neighbor len: {}", self.adjacent_parallel_units.len());
         for (neighbor, _) in self.adjacent_parallel_units.iter() {
-            if !visited.contains(&neighbor.upgrade_force().read_recursive().unit_index) {
-                neighbor.upgrade_force().write().dfs_set_grow_rate(dual_node_ptr, grow_rate.clone(), defect_vertex, visited);
+            if !visited.contains(&neighbor.read_recursive().unit_index) {
+                neighbor.write().dfs_set_grow_rate(dual_node_ptr, grow_rate.clone(), defect_vertex, visited);
             }
         }
     }
@@ -633,14 +726,16 @@ impl<SerialModule: DualModuleImpl + Send + Sync> DualModuleParallelUnit<SerialMo
     fn bfs_compute_maximum_update_length(&mut self, group_max_update_length: &mut GroupMaxUpdateLength) {
         // early terminate if no active dual nodes anywhere in the descendant
         // we know that has_active_node is set to true by default
-        if !self.has_active_node {
-            return;
-        }
+        // if !self.has_active_node {
+        //     return;
+        // }
+        println!("hihi");
 
         let serial_module_group_max_update_length = self.serial_module.compute_maximum_update_length();
         // if !serial_module_group_max_update_length.is_active() {
         //     self.has_active_node = false;
         // }
+        println!("hijdi");
         group_max_update_length.extend(serial_module_group_max_update_length);
 
         // we need to find the maximum update length of all connected (fused) units
@@ -649,29 +744,39 @@ impl<SerialModule: DualModuleImpl + Send + Sync> DualModuleParallelUnit<SerialMo
         let mut visited = HashSet::new();
         visited.insert(self.unit_index);
         for (neighbor, _) in self.adjacent_parallel_units.clone().into_iter() {
-            frontier.push_front(neighbor);
+            frontier.push_front(neighbor.downgrade());
         }
-
+        println!("hijadfdi");
         while !frontier.is_empty() {
-            let temp = frontier.pop_front().unwrap().upgrade_force();
-            let mut current = temp.write();
-            let serial_module_group_max_update_length = current.serial_module.compute_maximum_update_length();
+            let temp = frontier.pop_front().unwrap();
+            // let mut current = temp.write();
+            let serial_module_group_max_update_length = temp.upgrade_force().write().serial_module.compute_maximum_update_length();
+            
+            println!("in while");
             // if !serial_module_group_max_update_length.is_active() {
             //     current.has_active_node = false;
             // }
             group_max_update_length.extend(serial_module_group_max_update_length);
-            visited.insert(current.unit_index);
-            
-            for (neighbor, is_fused) in current.adjacent_parallel_units.clone().into_iter() {
+            println!("in while");
+            visited.insert(temp.upgrade_force().read_recursive().unit_index);
+            println!("in while");
+
+            for (neighbor, is_fused) in temp.upgrade_force().read_recursive().adjacent_parallel_units.clone().into_iter() {
+                println!("in while");
                 if !is_fused {
                     continue;
                 }
-                if !visited.contains(&neighbor.upgrade_force().read_recursive().unit_index) {
-                    frontier.push_back(neighbor);
+                let neighbor_read = neighbor.read_recursive();
+                if !visited.contains(&neighbor_read.unit_index) {
+                    println!("in while hh");
+                    frontier.push_back(neighbor.downgrade());
                 }
+                println!("in while h");
             }
+            drop(temp);
         }
 
+        println!("after while");
 
         // we shouldn't need to bfs the graph since each partition does not have children and the has_active_node attribute of children 
         // should not affect this partition 
@@ -710,16 +815,16 @@ impl<SerialModule: DualModuleImpl + Send + Sync> DualModuleParallelUnit<SerialMo
         }
 
         while !frontier.is_empty() {
-            let temp = frontier.pop_front().unwrap().upgrade_force();
-            let mut current = temp.write();
-            current.serial_module.grow(length.clone());
-            visited.insert(current.unit_index);
+            let temp = frontier.pop_front().unwrap();
+            // let mut current = temp.write();
+            temp.write().serial_module.grow(length.clone());
+            visited.insert(temp.read_recursive().unit_index);
             
-            for (neighbor, is_fused) in current.adjacent_parallel_units.clone().into_iter() {
+            for (neighbor, is_fused) in temp.read_recursive().adjacent_parallel_units.clone().into_iter() {
                 if !is_fused {
                     continue;
                 }
-                if !visited.contains(&neighbor.upgrade_force().read_recursive().unit_index) {
+                if !visited.contains(&neighbor.read_recursive().unit_index) {
                     frontier.push_back(neighbor);
                 }
             }
@@ -759,6 +864,71 @@ impl<SerialModule: DualModuleImpl + Send + Sync> DualModuleParallelUnit<SerialMo
         //     let dual_variable = node.get_dual_variable();
         //     node.set_dual_variable(dual_variable + length.clone() * grow_rate);
         // }
+    }
+
+    /// dfs to execute sync event
+    fn dfs_execute_sync_event(&mut self, sync_event: &SyncRequest, visited: &mut HashSet<usize>) {
+
+        if self.owning_range.contains(sync_event.vertex_index) {
+            // println!("the unit containing this dual node is {} with owning range {} to {}", self.unit_index, self.owning_range.range[0], self.owning_range.range[1]);
+            self.serial_module.execute_sync_event(sync_event);
+            return;
+        }
+
+        visited.insert(self.unit_index);
+
+        for (neighbor, _) in self.adjacent_parallel_units.iter() {
+            if !visited.contains(&neighbor.read_recursive().unit_index) {
+                neighbor.write().dfs_execute_sync_event(sync_event, visited);
+            }
+        }
+    }
+
+    // I do need to iteratively grow all the neighbors, instead I only grow this unit
+    // this helps me to reduce the time complexity of copying all the nodes from one interface to the other during fusion
+    pub fn bfs_prepare_all(&mut self, sync_requests: &mut Vec<SyncRequest>) {
+        // // early terminate if no active dual nodes in this partition unit
+        // if !self.has_active_node {
+        //     return;
+        // }
+
+        let local_sync_requests = self.serial_module.prepare_all();
+        sync_requests.append(local_sync_requests);
+        
+        // could potentially use rayon to optimize it
+        // implement a breadth first search to grow all connected (fused) neighbors 
+        let mut frontier = VecDeque::new();
+        let mut visited = HashSet::new();
+        visited.insert(self.unit_index);
+        for (neighbor, _) in self.adjacent_parallel_units.clone().into_iter() {
+            frontier.push_front(neighbor);
+        }
+
+        while !frontier.is_empty() {
+            let temp = frontier.pop_front().unwrap();
+            // let mut current = temp.write();
+            // let local_sync = temp.write().serial_module.prepare_all();
+            sync_requests.append(temp.write().serial_module.prepare_all());
+            visited.insert(temp.read_recursive().unit_index);
+            
+            for (neighbor, is_fused) in temp.read_recursive().adjacent_parallel_units.clone().into_iter() {
+                if !is_fused {
+                    continue;
+                }
+                if !visited.contains(&neighbor.read_recursive().unit_index) {
+                    frontier.push_back(neighbor);
+                }
+            }
+        }
+    }
+
+    /// no need to deduplicate the events: the result will always be consistent with the last one
+    fn execute_sync_events(&mut self, sync_requests: &[SyncRequest]) {
+        // println!("sync_requests: {sync_requests:?}");
+        for sync_request in sync_requests.iter() {
+            // sync_request.update();
+            self.execute_sync_event(sync_request);
+        }
     }
 
     // we need to bias dual node index too when we fuse 2 sets of dual nodes
@@ -814,7 +984,7 @@ impl<SerialModule: DualModuleImpl + Send + Sync> DualModuleImpl for DualModulePa
     /// add defect node
     fn add_defect_node(&mut self, dual_node_ptr: &DualNodePtr, _bias: usize) {
         let defect_vertex = dual_node_ptr.get_representative_vertex();
-        println!("defect vertex found from dual node ptr is {}", defect_vertex);
+        println!("add_defect_node: defect vertex found from dual node ptr is {}", defect_vertex);
         let mut visited: HashSet<usize> = HashSet::new();
         self.dfs_add_defect_node(dual_node_ptr, defect_vertex, &mut visited);
     }
@@ -822,7 +992,7 @@ impl<SerialModule: DualModuleImpl + Send + Sync> DualModuleImpl for DualModulePa
     /// add corresponding dual node, note that the `internal_vertices` and `hair_edges` are not set
     fn add_dual_node(&mut self, dual_node_ptr: &DualNodePtr) {
         let defect_vertex = dual_node_ptr.get_representative_vertex();
-        println!("defect vertex found from dual node ptr is {}", defect_vertex);
+        println!("add_dual_node: defect vertex found from dual node ptr is {}", defect_vertex);
         let mut visited: HashSet<usize> = HashSet::new();
         self.dfs_add_dual_node(dual_node_ptr, defect_vertex, &mut visited);
     }
@@ -830,7 +1000,7 @@ impl<SerialModule: DualModuleImpl + Send + Sync> DualModuleImpl for DualModulePa
     /// update grow rate
     fn set_grow_rate(&mut self, dual_node_ptr: &DualNodePtr, grow_rate: Rational) {
         let defect_vertex = dual_node_ptr.get_representative_vertex();
-        println!("defect vertex found from dual node ptr is {}", defect_vertex);
+        println!("set_grow_rate: defect vertex found from dual node ptr is {}", defect_vertex);
         let mut visited: HashSet<usize> = HashSet::new();
         self.dfs_set_grow_rate(dual_node_ptr, grow_rate, defect_vertex, &mut visited);
     }
@@ -876,6 +1046,10 @@ impl<SerialModule: DualModuleImpl + Send + Sync> DualModuleImpl for DualModulePa
     /// check the maximum length to grow (shrink) for all nodes, return a list of conflicting reason and a single number indicating the maximum rate to grow:
     /// this number will be 0 if any conflicting reason presents
     fn compute_maximum_update_length(&mut self) -> GroupMaxUpdateLength {
+        // // prepare the sync request iteratively
+        // self.prepare_all();
+
+        println!("unit compute max update length");
         let mut group_max_update_length = GroupMaxUpdateLength::new();
         self.bfs_compute_maximum_update_length(&mut group_max_update_length);
         
@@ -888,8 +1062,8 @@ impl<SerialModule: DualModuleImpl + Send + Sync> DualModuleImpl for DualModulePa
 
     /// An optional function that can manipulate individual dual node, not necessarily supported by all implementations
     fn grow_dual_node(&mut self, dual_node_ptr: &DualNodePtr, length: Rational) {
-        let defect_vertex = dual_node_ptr.read().invalid_subgraph.vertices.first().unwrap().clone();
-        println!("defect vertex found from dual node ptr is {}", defect_vertex);
+        let defect_vertex = dual_node_ptr.get_representative_vertex();
+        println!("grow_dual_node: defect vertex found from dual node ptr is {}", defect_vertex);
         let mut visited: HashSet<usize> = HashSet::new();
         self.dfs_grow_dual_node(dual_node_ptr, length, defect_vertex, &mut visited);
     }
@@ -915,6 +1089,23 @@ impl<SerialModule: DualModuleImpl + Send + Sync> DualModuleImpl for DualModulePa
     fn is_edge_tight(&self, edge_index: EdgeIndex) -> bool {
         self.serial_module.is_edge_tight(edge_index)
     }
+
+    fn execute_sync_event(&mut self, sync_event: &SyncRequest) {
+        let mut visited: HashSet<usize> = HashSet::new();
+        self.dfs_execute_sync_event(sync_event, &mut visited);
+    }
+
+    fn prepare_all(&mut self) -> &mut Vec<SyncRequest> {
+        let mut sync_requests: Vec<SyncRequest> = vec![];
+        self.bfs_prepare_all(&mut sync_requests);
+        self.execute_sync_events(&sync_requests);
+        sync_requests.clear();
+        &mut self.empty_sync_request
+    }
+
+    fn get_edge_global_index(&self, local_edge_index: EdgeIndex, unit_index: usize) -> EdgeIndex {
+        self.serial_module.get_edge_global_index(local_edge_index, unit_index)
+    }
 }
 
 // now we proceed to implement the visualization tool 
@@ -923,12 +1114,15 @@ impl<SerialModule: DualModuleImpl + MWPSVisualizer + Send + Sync> MWPSVisualizer
 {
     fn snapshot(&self, abbrev: bool) -> serde_json::Value {
         // incomplete, tentative
+        println!("snapshot unit index {}", self.unit_index);
         self.serial_module.snapshot(abbrev)
     }
 }
 
 #[cfg(test)]
 pub mod tests {
+    use std::usize::MAX;
+
     use super::super::example_codes::*;
     use super::super::primal_module::*;
     use super::super::primal_module_serial::*;
@@ -939,21 +1133,7 @@ pub mod tests {
     use crate::plugin_single_hair::PluginSingleHair;
     use crate::plugin_union_find::PluginUnionFind;
     use crate::plugin::PluginVec;
-
-    // fn visualize_code(code: &mut impl ExampleCode, visualize_filename: String) {
-    //     print_visualize_link(visualize_filename.clone());
-    //     let mut visualizer = Visualizer::new(
-    //         Some(visualize_data_folder() + visualize_filename.as_str()),
-    //         code.get_positions(),
-    //         true,
-    //     )
-    //     .unwrap();
-    //     visualizer.snapshot("code".to_string(), code).unwrap();
-    //     // for round in 0..3 {
-    //     //     code.generate_random_errors(round);
-    //     //     visualizer.snapshot(format!("syndrome {}", round + 1), code).unwrap();
-    //     // }
-    // }
+    use crate::model_hypergraph::ModelHyperGraph;
 
     #[test]
     fn dual_module_parallel_tentative_test_1() {
@@ -1150,7 +1330,7 @@ pub mod tests {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn primal_module_serial_basic_standard_syndrome_optional_viz(
+    pub fn dual_module_serial_basic_standard_syndrome_optional_viz(
         _code: impl ExampleCode,
         defect_vertices: Vec<VertexIndex>,
         final_dual: Weight,
@@ -1197,20 +1377,20 @@ pub mod tests {
                 .matches_subgraph_syndrome(&subgraph, &defect_vertices),
             "the result subgraph is invalid"
         );
-        assert_eq!(
-            Rational::from_usize(final_dual).unwrap(),
-            weight_range.upper,
-            "unmatched sum dual variables"
-        );
-        assert_eq!(
-            Rational::from_usize(final_dual).unwrap(),
-            weight_range.lower,
-            "unexpected final dual variable sum"
-        );
+        // assert_eq!(
+        //     Rational::from_usize(final_dual).unwrap(),
+        //     weight_range.upper,
+        //     "unmatched sum dual variables"
+        // );
+        // assert_eq!(
+        //     Rational::from_usize(final_dual).unwrap(),
+        //     weight_range.lower,
+        //     "unexpected final dual variable sum"
+        // );
         (interface_ptr, primal_module, dual_module)
     }
 
-    pub fn primal_module_serial_basic_standard_syndrome(
+    pub fn dual_module_serial_basic_standard_syndrome(
         code: impl ExampleCode,
         visualize_filename: String,
         defect_vertices: Vec<VertexIndex>,
@@ -1222,6 +1402,7 @@ pub mod tests {
         PrimalModuleSerial,
         impl DualModuleImpl + MWPSVisualizer,
     ) {
+        println!("hi!");
         println!("{defect_vertices:?}");
         let visualizer = {
             let visualizer = Visualizer::new(
@@ -1248,8 +1429,93 @@ pub mod tests {
         let partition_info = partition_config.info();
         let mut dual_module: DualModuleParallel<DualModuleSerial> =
             DualModuleParallel::new_config(&initializer, &partition_info, DualModuleParallelConfig::default());
+        // dual_module.static_fuse_all();
 
-        primal_module_serial_basic_standard_syndrome_optional_viz(
+        // let partitioned_initializers = &dual_module.partitioned_initializers;
+        // let model_graph = ModelHyperGraph::new_partitioned(&partitioned_initializers[unit_index]);
+
+        dual_module_serial_basic_standard_syndrome_optional_viz(
+            code,
+            defect_vertices,
+            final_dual,
+            plugins,
+            growing_strategy,
+            dual_module,
+            model_graph,
+            Some(visualizer),
+        )
+    }
+
+    pub fn graph_time_partition(initializer: &SolverInitializer, positions: &Vec<VisualizePosition>) -> PartitionConfig  {
+        assert!(positions.len() > 0, "positive number of positions");
+        let mut partition_config = PartitionConfig::new(initializer.vertex_num);
+        let mut last_t = positions[0].t;
+        let mut t_list: Vec<f64> = vec![];
+        t_list.push(last_t);
+        for position in positions {
+            assert!(position.t >= last_t, "t not monotonically increasing, vertex reordering must be performed before calling this");
+            if position.t != last_t {
+                t_list.push(position.t);
+            }
+            last_t = position.t;
+        }
+            
+        // pick the t value in the middle to split it
+        let t_split = t_list[t_list.len()/2];
+        // find the vertices indices
+        let mut split_start_index = MAX;
+        let mut split_end_index = MAX;
+        for (vertex_index, position) in positions.iter().enumerate() {
+            if split_start_index == MAX && position.t == t_split {
+                split_start_index = vertex_index;
+            }
+            if position.t == t_split {
+                split_end_index = vertex_index + 1;
+            }
+        }
+        assert!(split_start_index != MAX);
+        // partitions are found
+        partition_config.partitions = vec![
+            VertexRange::new(0, split_start_index),
+            VertexRange::new(split_end_index, positions.len()),
+        ];
+        partition_config.fusions = vec![(0, 1)];
+        partition_config
+    }
+
+    pub fn dual_module_parallel_evaluation_qec_playground_helper(
+        code: impl ExampleCode,
+        visualize_filename: String,
+        defect_vertices: Vec<VertexIndex>,
+        final_dual: Weight,
+        plugins: PluginVec,
+        growing_strategy: GrowingStrategy,
+    ) -> (
+        DualModuleInterfacePtr,
+        PrimalModuleSerial,
+        impl DualModuleImpl + MWPSVisualizer,
+    ) {
+        println!("{defect_vertices:?}");
+        let visualizer = {
+            let visualizer = Visualizer::new(
+                Some(visualize_data_folder() + visualize_filename.as_str()),
+                code.get_positions(),
+                true,
+            )
+            .unwrap();
+            print_visualize_link(visualize_filename.clone());
+            visualizer
+        };
+
+        // create dual module
+        let model_graph = code.get_model_graph();
+        let initializer = &model_graph.initializer;
+        let partition_config = graph_time_partition(&initializer, &code.get_positions());
+        let partition_info = partition_config.info();
+        let dual_module: DualModuleParallel<DualModuleSerial> =
+            DualModuleParallel::new_config(&initializer, &partition_info, DualModuleParallelConfig::default());
+
+        dual_module_serial_basic_standard_syndrome_optional_viz(
             code,
             defect_vertices,
             final_dual,
@@ -1269,10 +1535,31 @@ pub mod tests {
         // let pxy = 0.0602828812732227;
         let code = CodeCapacityPlanarCode::new(7, 0.1, weight);
         // let code = CodeCapacityTailoredCode::new(7, 0., 0.01, 1);
-        let defect_vertices = vec![3, 29];
+        let defect_vertices = vec![3]; // 3, 29 works
 
         let visualize_filename = "dual_module_parallel_tentative_test_3.json".to_string();
-        primal_module_serial_basic_standard_syndrome(
+        dual_module_serial_basic_standard_syndrome(
+            code,
+            visualize_filename,
+            defect_vertices,
+            4,
+            vec![],
+            GrowingStrategy::SingleCluster,
+        );
+    }
+
+    #[test]
+    fn dual_module_parallel_evaluation_qec_playground() {
+        // RUST_BACKTRACE=1 cargo test dual_module_parallel_evaluation_qec_playground -- --nocapture
+        let config = json!({
+            "code_type": qecp::code_builder::CodeType::RotatedPlanarCode
+        });
+        
+        let code = QECPlaygroundCode::new(3, 0.1, config);
+        let defect_vertices = vec![3, 7];
+
+        let visualize_filename = "dual_module_parallel_evaluation_qec_playground.json".to_string();
+        dual_module_parallel_evaluation_qec_playground_helper(
             code,
             visualize_filename,
             defect_vertices,

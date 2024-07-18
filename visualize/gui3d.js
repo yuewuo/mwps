@@ -476,6 +476,9 @@ export async function refresh_snapshot_data() {
         }
         edge_caches = []  // clear cache
         for (let [i, edge] of snapshot.edges.entries()) {
+            if (edge == null) {
+                continue;
+            }
             // calculate the center point of all vertices
             let sum_position = new THREE.Vector3(0, 0, 0)
             for (let j = 0; j < edge.v.length; ++j) {
@@ -645,7 +648,7 @@ export async function refresh_snapshot_data() {
             if (vertex.s) {
                 vertex_outline_mesh.material = defect_vertex_outline_material
             } else if (vertex.v) {
-                vertex_outline_mesh.material = virtual_vertex_outline_material
+                vertex_outline_mesh.material = normal_vertex_outline_material // virtual_vertex_outline_material
             } else {
                 vertex_outline_mesh.material = normal_vertex_outline_material
             }

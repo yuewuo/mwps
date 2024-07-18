@@ -117,6 +117,7 @@ pub trait PrimalModuleImpl {
             println!("inside while loop !group_max_update_length is not unbounded");
             callback(interface, dual_module, self, &group_max_update_length);
             if let Some(length) = group_max_update_length.get_valid_growth() {
+                println!("grow!");
                 dual_module.grow(length);
             } else {
                 println!("group_max_update_length is not a valid growth");

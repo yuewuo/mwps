@@ -10,9 +10,11 @@ use crate::num_traits::{ToPrimitive, Zero};
 use crate::pointers::*;
 use crate::util::*;
 use crate::visualize::*;
-use itertools::partition;
 use num_traits::FromPrimitive;
 use std::collections::{BTreeSet, HashMap};
+use weak_table::PtrWeakKeyHashMap;
+use std::cmp::Ordering;
+use core::hash::{Hash, Hasher};
 
 pub struct DualModuleSerial {
     /// all vertices including virtual ones
@@ -30,6 +32,32 @@ pub struct DualModuleSerial {
     pub edge_num: usize,
     /// vertices exclusively owned by this module, useful when partitioning the decoding graph into multiple [`DualModuleSerial`]
     pub owning_range: VertexRange,
+    /// temporary variable to reduce reallocation
+    updated_boundary: BTreeSet<EdgeIndex>,
+    /// temporary variable to reduce reallocation
+    propagating_vertices: Vec<VertexWeak>,
+    /// temporary list of synchronize requests, i.e. those propagating into the mirrored vertices; should always be empty when not partitioned, i.e. serial version
+    pub sync_requests: Vec<SyncRequest>,
+    /// module information when used as a component in the partitioned dual module
+    pub unit_module_info: Option<UnitModuleInfo>,
+    /// nodes internal information
+    pub nodes: Vec<Option<DualNodePtr>>,
+    /// current nodes length, to enable constant-time clear operation
+    pub nodes_length: usize,
+}
+
+/// records information only available when used as a unit in the partitioned dual module
+#[derive(Derivative)]
+#[derivative(Debug)]
+pub struct UnitModuleInfo {
+    /// unit index
+    pub unit_index: usize,
+    /// all mirrored vertices (excluding owned ones) to query if this module contains the vertex
+    pub mirrored_vertices: HashMap<VertexIndex, VertexIndex>,
+    /// owned dual nodes range
+    pub owning_dual_range: NodeRange,
+    /// hash table for mapping [`DualNodePtr`] to internal [`DualNodeInternalPtr`]
+    pub dual_node_pointers: PtrWeakKeyHashMap<DualNodeWeak, usize>,
 }
 
 pub type DualModuleSerialPtr = ArcRwLock<DualModuleSerial>;
@@ -48,6 +76,10 @@ pub struct Vertex {
     /// (added by yl) whether a vertex is in the boundary vertices, since boundary vertices are not "owned" by any partition and should be 
     /// shared/mirroed between adjacent partitions   
     pub is_boundary: bool,
+    /// propagated dual node
+    pub propagated_dual_node: Option<DualNodeWeak>,
+    /// if it's a mirrored vertex (present on multiple units), then this is the parallel unit that exclusively owns it
+    pub mirror_unit: Option<PartitionUnitWeak>,
 }
 
 pub type VertexPtr = ArcRwLock<Vertex>;
@@ -124,6 +156,8 @@ impl DualModuleImpl for DualModuleSerial {
                     is_defect: false,
                     edges: vec![],
                     is_boundary: false,
+                    propagated_dual_node: None,
+                    mirror_unit: None,
                 })
             })
             .collect();
@@ -155,6 +189,12 @@ impl DualModuleImpl for DualModuleSerial {
             vertex_num: initializer.vertex_num,
             edge_num: initializer.weighted_edges.len(),
             owning_range: VertexRange::new(0, initializer.vertex_num),
+            updated_boundary: BTreeSet::new(),
+            propagating_vertices: vec![],
+            sync_requests: vec![],
+            unit_module_info: None,
+            nodes: vec![],
+            nodes_length: 0,
         }
     }
 
@@ -177,7 +217,10 @@ impl DualModuleImpl for DualModuleSerial {
             dual_node.invalid_subgraph.vertices.len() == 1,
             "defect node (without edges) should only work on a single vertex, for simplicity"
         );
-        let vertex_index = dual_node.invalid_subgraph.vertices.iter().next().unwrap();
+        let vertex_index = self.
+        get_vertex_index(*dual_node.invalid_subgraph.vertices.iter().next().unwrap()).
+        expect("syndrome not belonging to this dual module");
+        
         // for vertex0 in dual_node.invalid_subgraph.vertices.iter() {
         //     println!("dual node invalid subgraph vertices: {vertex0:?}");
         // }
@@ -186,7 +229,7 @@ impl DualModuleImpl for DualModuleSerial {
         // for vertex00 in self.vertices.iter() {
         //     println!("vertex index in self.vertices {}", vertex00.read().vertex_index);
         // }
-        let mut vertex = self.vertices[vertex_index - bias].write();
+        let mut vertex = self.vertices[vertex_index].write();
         assert!(!vertex.is_defect, "defect should not be added twice");
         vertex.is_defect = true;
         drop(dual_node);
@@ -196,10 +239,12 @@ impl DualModuleImpl for DualModuleSerial {
 
     #[allow(clippy::unnecessary_cast)]
     fn add_dual_node(&mut self, dual_node_ptr: &DualNodePtr) {
+        self.register_dual_node_ptr(dual_node_ptr); // increase owning_dual_range
+
         // make sure the active edges are set
         let dual_node_weak = dual_node_ptr.downgrade();
         let dual_node = dual_node_ptr.read_recursive();
-        println!("this dual node index {}", dual_node_ptr.read_recursive().index);
+        // println!("this dual node index {}", dual_node_ptr.read_recursive().index);
         // println!("edges len : {}", self.edges.len());
         // for &edge_index in dual_node.invalid_subgraph.hair.iter() {
         //     println!("edge index in this invalid subgraph: {edge_index:?}");
@@ -208,16 +253,17 @@ impl DualModuleImpl for DualModuleSerial {
         // for edge00 in self.edges.iter() {
         //     println!("edge index in self.edges {}", edge00.read().edge_index);
         // }
-        
-        let edge_offset = self.edges[0].read().edge_index;
+
+        // let edge_offset = self.edges[0].read().edge_index;
+        // println!("edge_offset: {edge_offset:?}");
         for &edge_index in dual_node.invalid_subgraph.hair.iter() {
-            println!("edge_index {}", edge_index);
-            if edge_index - edge_offset >= self.edges.len() {
-                println!("edge_offset {}", edge_offset);
-                println!("edges len {}", self.edges.len());
-                continue;
-            }
-            let mut edge = self.edges[edge_index - edge_offset].write();
+            // println!("edge_index {}", edge_index);
+            // if edge_index - edge_offset >= self.edges.len() {
+            //     // println!("edge_offset {}", edge_offset);
+            //     // println!("edges len {}", self.edges.len());
+            //     continue;
+            // }
+            let mut edge = self.edges[edge_index].write();
             edge.grow_rate += &dual_node.grow_rate;
             edge.dual_nodes.push(dual_node_weak.clone());
             if edge.grow_rate.is_zero() {
@@ -227,6 +273,11 @@ impl DualModuleImpl for DualModuleSerial {
             }
         }
         self.active_nodes.insert(dual_node_ptr.clone());
+        self.nodes_length += 1;
+        if self.nodes.len() < self.nodes_length {
+            self.nodes.push(None);
+        }
+        self.nodes[self.nodes_length - 1] = Some(dual_node_ptr.clone());
     }
 
     #[allow(clippy::unnecessary_cast)]
@@ -236,12 +287,14 @@ impl DualModuleImpl for DualModuleSerial {
         dual_node.grow_rate = grow_rate;
         drop(dual_node);
         let dual_node = dual_node_ptr.read_recursive();
-        let edge_offset = self.edges[0].read().edge_index;
+        // let edge_offset = self.edges[0].read().edge_index;
         for &edge_index in dual_node.invalid_subgraph.hair.iter() {
-            if edge_index - edge_offset >= self.edges.len() {
-                continue;
-            }
-            let mut edge = self.edges[edge_index - edge_offset].write();
+            // if edge_index - edge_offset >= self.edges.len() {
+            //     // println!("edge_offset {}", edge_offset);
+            //     // println!("edges len {}", self.edges.len());
+            //     continue;
+            // }
+            let mut edge = self.edges[edge_index as usize].write();
             edge.grow_rate += &grow_rate_diff;
             if edge.grow_rate.is_zero() {
                 self.active_edges.remove(&edge_index);
@@ -262,15 +315,19 @@ impl DualModuleImpl for DualModuleSerial {
         dual_node_ptr: &DualNodePtr,
         simultaneous_update: bool,
     ) -> MaxUpdateLength {
+        if !simultaneous_update {
+            self.prepare_dual_node_growth_single(dual_node_ptr);
+        }
+
         let node = dual_node_ptr.read_recursive();
         let mut max_update_length = MaxUpdateLength::new();
-        let edge_offset = self.edges[0].read().edge_index;
-        println!("edge_offset: {}", edge_offset);
+        // let edge_offset = self.edges[0].read().edge_index;
+        // println!("edge_offset: {}", edge_offset);
         for &edge_index in node.invalid_subgraph.hair.iter() {
-            if edge_index - edge_offset >= self.edges.len() {
-                continue;
-            }
-            let edge = self.edges[edge_index - edge_offset as usize].read_recursive();
+            // if edge_index >= self.edges.len() {
+            //     continue;
+            // }
+            let edge = self.edges[edge_index as usize].read_recursive();
             let mut grow_rate = Rational::zero();
             if simultaneous_update {
                 // consider all dual nodes
@@ -314,14 +371,19 @@ impl DualModuleImpl for DualModuleSerial {
 
     #[allow(clippy::unnecessary_cast)]
     fn compute_maximum_update_length(&mut self) -> GroupMaxUpdateLength {
+        // generate sync request 
+        // self.generate_sync_request();
+        // self.prepare_all();
+
+
         let mut group_max_update_length = GroupMaxUpdateLength::new();
-        let edge_offset = self.edges[0].read().edge_index;
-        println!("edge_offset in compute max update length: {}", edge_offset);
+        // let edge_offset = self.edges[0].read().edge_index;
+        // println!("edge_offset in compute max update length: {}", edge_offset);
         for &edge_index in self.active_edges.iter() {
-            if edge_index - edge_offset >= self.edges.len() {
-                continue;
-            }
-            let edge = self.edges[edge_index - edge_offset as usize].read_recursive();
+            // if edge_index >= self.edges.len() {
+            //     continue;
+            // }
+            let edge = self.edges[edge_index as usize].read_recursive();
             let mut grow_rate = Rational::zero();
             for node_weak in edge.dual_nodes.iter() {
                 let node_ptr = node_weak.upgrade_force();
@@ -354,6 +416,7 @@ impl DualModuleImpl for DualModuleSerial {
                 }
             }
         }
+        println!("group max update length: {group_max_update_length:?}");
         group_max_update_length
     }
 
@@ -363,15 +426,18 @@ impl DualModuleImpl for DualModuleSerial {
             eprintln!("[warning] calling `grow_dual_node` with zero length, nothing to do");
             return;
         }
+        // self.prepare_dual_node_growth_single(dual_node_ptr);
+
+
         let node = dual_node_ptr.read_recursive();
         // println!("length: {}, grow_rate {}", length, node.grow_rate);
         let grow_amount = length * node.grow_rate.clone();
-        let edge_offset = self.edges[0].read().edge_index;
+        // let edge_offset = self.edges[0].read().edge_index;
         for &edge_index in node.invalid_subgraph.hair.iter() {
-            if edge_index - edge_offset >= self.edges.len() {
-                continue;
-            }
-            let mut edge = self.edges[edge_index - edge_offset].write();
+            // if edge_index >= self.edges.len() {
+            //     continue;
+            // }
+            let mut edge = self.edges[edge_index as usize].write();
             edge.growth += grow_amount.clone();
             assert!(
                 !edge.growth.is_negative(),
@@ -403,12 +469,12 @@ impl DualModuleImpl for DualModuleSerial {
             "growth should be positive; if desired, please set grow rate to negative for shrinking"
         );
         // update the active edges
-        let edge_offset = self.edges[0].read().edge_index;
+        // let edge_offset = self.edges[0].read().edge_index;
         for &edge_index in self.active_edges.iter() {
-            if edge_index - edge_offset >= self.edges.len() {
-                continue;
-            }
-            let mut edge = self.edges[edge_index - edge_offset as usize].write();
+            // if edge_index >= self.edges.len() {
+            //     continue;
+            // }
+            let mut edge = self.edges[edge_index as usize].write();
             let mut grow_rate = Rational::zero();
             for node_weak in edge.dual_nodes.iter() {
                 grow_rate += node_weak.upgrade_force().read_recursive().grow_rate.clone();
@@ -439,8 +505,8 @@ impl DualModuleImpl for DualModuleSerial {
 
     #[allow(clippy::unnecessary_cast)]
     fn get_edge_nodes(&self, edge_index: EdgeIndex) -> Vec<DualNodePtr> {
-        let edge_offset = self.edges[0].read().edge_index;
-        self.edges[edge_index - edge_offset as usize]
+        // let edge_offset = self.edges[0].read().edge_index;
+        self.edges[edge_index as usize]
             .read_recursive()
             .dual_nodes
             .iter()
@@ -449,16 +515,25 @@ impl DualModuleImpl for DualModuleSerial {
     }
 
     fn get_edge_slack(&self, edge_index: EdgeIndex) -> Rational {
-        let edge_offset = self.edges[0].read().edge_index;
-        let edge = self.edges[edge_index - edge_offset].read_recursive();
+        // let edge_offset = self.edges[0].read().edge_index;
+        
+        // if edge_index - edge_offset >= self.edges.len() {
+        //     continue;
+        // }
+        let edge = self.edges[edge_index as usize].read_recursive();
         edge.weight.clone() - edge.growth.clone()
     }
 
     #[allow(clippy::unnecessary_cast)]
     fn is_edge_tight(&self, edge_index: EdgeIndex) -> bool {
-        let edge_offset = self.edges[0].read().edge_index;
-        let edge = self.edges[edge_index - edge_offset as usize].read_recursive();
+        // let edge_offset = self.edges[0].read().edge_index;
+        let edge = self.edges[edge_index as usize].read_recursive();
         edge.growth == edge.weight
+    }
+
+    fn get_edge_global_index(&self, local_edge_index: EdgeIndex, _unit_index: usize) -> EdgeIndex {
+        let edge = self.edges[local_edge_index as usize].read_recursive();
+        edge.edge_index
     }
 
     /// to be called in dual_module_parallel.rs
@@ -474,21 +549,31 @@ impl DualModuleImpl for DualModuleSerial {
                 is_defect: false,
                 edges: Vec::new(),
                 is_boundary: false,
+                propagated_dual_node: None,
+                mirror_unit: partitioned_initializer.owning_interface.clone(),
             })
         }).collect();
 
         // now we want to add the boundary vertices into the vertices for this partition
         let mut total_boundary_vertices = HashMap::<VertexIndex, VertexIndex>::new(); // all boundary vertices mapping to the specific local partition index
+        let mut mirrored_vertices = HashMap::<VertexIndex, VertexIndex>::new(); // all mirrored vertices mapping to their local indices
         // only the index_range matters here, the units of the adjacent partitions do not matter here
         for (index_range, (_adjacent_partition_1, _adjacent_partition_2)) in &partitioned_initializer.boundary_vertices {
             for vertex_index in index_range.range[0]..index_range.range[1] {
-                total_boundary_vertices.insert(vertex_index, vertices.len() as VertexIndex);
-                vertices.push(VertexPtr::new_value(Vertex {
-                    vertex_index: vertex_index,
-                    is_defect: false,
-                    edges: Vec::new(),
-                    is_boundary: true,
-                }))
+                if !partitioned_initializer.owning_range.contains(vertex_index) {
+                    total_boundary_vertices.insert(vertex_index, vertices.len() as VertexIndex);
+                    mirrored_vertices.insert(vertex_index, vertices.len() as VertexIndex);
+                    vertices.push(VertexPtr::new_value(Vertex {
+                        vertex_index: vertex_index,
+                        is_defect: false,
+                        edges: Vec::new(),
+                        is_boundary: true,
+                        propagated_dual_node: None,
+                        mirror_unit: partitioned_initializer.owning_interface.clone(),
+                    }))
+                }else{
+                    mirrored_vertices.insert(vertex_index, vertices.len() as VertexIndex);
+                }
             }
         }
 
@@ -541,14 +626,353 @@ impl DualModuleImpl for DualModuleSerial {
             vertex_num: partitioned_initializer.vertex_num,
             edge_num: partitioned_initializer.edge_num,
             owning_range: partitioned_initializer.owning_range,
+            updated_boundary: BTreeSet::new(),
+            propagating_vertices: vec![],
+            sync_requests: vec![],
+            unit_module_info: Some(UnitModuleInfo {
+                unit_index: partitioned_initializer.unit_index,
+                mirrored_vertices,
+                owning_dual_range: VertexRange::new(0, 0),
+                dual_node_pointers: PtrWeakKeyHashMap::<DualNodeWeak, usize>::new(),
+            }),
+            nodes: vec![],
+            nodes_length: 0,
         }
     }
 
-    // need to incorporate UnitModuleInfo 
     fn bias_dual_node_index(&mut self, bias: NodeIndex) {
-        unimplemented!()
-        // self.unit_module_info.as_mut().unwrap().owning_dual_range.bias_by(bias);
+        self.unit_module_info.as_mut().unwrap().owning_dual_range.bias_by(bias);
     }
+
+    fn contains_vertex(&self, vertex_index: VertexIndex) -> bool {
+        self.get_vertex_index(vertex_index).is_some()
+    }
+
+    fn execute_sync_event(&mut self, sync_event: &SyncRequest) {
+        // first check whether the vertex in the sync request is within the owning_range of the unit
+        debug_assert!(self.contains_vertex(sync_event.vertex_index));
+
+        let propagated_dual_node_ptr =
+            sync_event
+                .propagated_dual_node
+                .as_ref()
+                .map(|(dual_node_weak, dual_variable)| {
+                    self.get_otherwise_add_dual_node(&dual_node_weak.upgrade_force(), dual_variable.clone())
+                });
+
+        let local_vertex_index = self
+        .get_vertex_index(sync_event.vertex_index)
+        .expect("cannot synchronize at a non-existing vertex");
+
+        // let vertex_ptr = &self.vertices[local_vertex_index];
+        // let mut vertex = vertex_ptr.write();
+
+        self.add_dual_node(&propagated_dual_node_ptr.unwrap());
+        
+        // if vertex.propagated_dual_node == propagated_dual_node_ptr.as_ref().map(|x| x.downgrade()) {
+        //     // actually this may happen: if the same vertex is propagated from two different units with the same distance
+        //     // to the closest grandson, it may happen that sync event will conflict on the grandson...
+        //     // this conflict doesn't matter anyway: any grandson is good, as long as they're consistent
+        //     // assert_eq!(vertex.propagated_grandson_dual_node, propagated_grandson_dual_node_internal_ptr.as_ref().map(|x| x.downgrade()));
+        //     println!("the same vertex is propagated from two different units with the same distance
+        //     // to the closest grandson, it may happen that sync event will conflict on the grandson...
+        //     // this conflict doesn't matter anyway: any grandson is good, as long as they're consistent");
+        // } else {
+        //     // conflict with existing value, action needed
+        //     // first vacate the vertex, recovering dual node boundaries accordingly
+        //     if let Some(dual_node_week) = vertex.propagated_dual_node.as_ref() {
+        //         debug_assert!(!vertex.is_defect, "cannot vacate a syndrome vertex: it shouldn't happen that a syndrome vertex is updated in any partitioned unit");
+        //         // let mut updated_boundary = BTreeSet::new();
+        //         let dual_node_ptr = dual_node_week.upgrade_force();
+        //         let mut dual_node = dual_node_ptr.write();
+        //         // vertex.propagated_dual_node = None;
+        //         // // iterate over the boundary to remove any edges associated with the vertex and also reset those edges
+        //         // for &edge_index in dual_node.invalid_subgraph.hair.iter() {
+        //         //     let edge_ptr = &self.edges[edge_index];
+        //         //     let mut edge = edge_ptr.write();
+        //         //     for connected_vertex_weak in edge.vertices.clone().iter() {
+        //         //         let connected_vertex_ptr = connected_vertex_weak.upgrade_force();
+        //         //         if &connected_vertex_ptr == vertex_ptr {
+        //         //             edge.clear();
+        //         //         } else {
+        //         //             updated_boundary.insert(edge_index);
+        //         //         }
+        //         //     }
+        //         // }
+
+        //         // // iterate over the edges around the vertex to add edges to the boundary
+        //         // for edge_week in vertex.edges.iter() {
+        //         //     let edge_ptr = edge_week.upgrade_force();
+        //         //     let mut edge = edge_ptr.write();
+        //         //     for (vertex0_index, vertex0_weak) in edge.vertices.clone().iter().enumerate() {
+        //         //         let vertex0 = vertex0_weak.upgrade_force();
+        //         //         if &vertex0 == vertex_ptr {
+        //         //             if vertex0_index < edge.dual_nodes.len() {
+        //         //                 let dual_node0 = &edge.dual_nodes[vertex0_index];
+        //         //                 // sanity check: if exists, must be the same
+        //         //                 debug_assert!(dual_node0.upgrade_force() == dual_node_ptr);
+        //         //                 // need to add to the boundary
+        //         //                 edge.clear();
+        //         //                 updated_boundary.insert(edge.edge_index);
+        //         //             }
+        //         //         }
+        //         //     }
+        //         // }
+        //         // // update the hair of invalid subgraph 
+        //         // let mut invalid_sub = dual_node.invalid_subgraph.write();
+        //         // std::mem::swap(&mut updated_boundary, &mut dual_node.invalid_subgraph.hair);
+        //     }
+        //     // then update the vertex to the dual node
+        //     if let Some(dual_node_ptr) = propagated_dual_node_ptr.as_ref() {
+        //         vertex.propagated_dual_node = Some(dual_node_ptr.downgrade());
+        //         let mut dual_node = dual_node_ptr.write();
+        //         for edge_weak in vertex.edges.iter() {
+        //             let edge_ptr = edge_weak.upgrade_force();
+        //             let mut edge = edge_ptr.write();
+        //             for (vertex0_index, vertex0_weak) in edge.vertices.clone().iter().enumerate() {
+        //                 let vertex0 = vertex0_weak.upgrade_force();
+        //                 if &vertex0 == vertex_ptr {
+        //                     edge.dual_nodes.push(dual_node_ptr.downgrade());
+        //                     // dual_node.invalid_subgraph.hair.insert(edge.edge_index);
+        //                 }
+        //             }
+        //         }
+        //         self.active_nodes.insert(dual_node_ptr.clone());
+        //     }
+        // }
+    }
+
+    fn prepare_all(&mut self) -> &mut Vec<SyncRequest> {
+        // debug_assert!(
+        //     self.sync_requests.is_empty(),
+        //     "make sure to remove all sync requests before prepare to avoid out-dated requests"
+        // );
+        for node_ptr in self.active_nodes.clone().iter() {
+            self.prepare_dual_node_growth_single(node_ptr);
+        }
+        &mut self.sync_requests
+    }
+}
+
+impl DualModuleSerial {
+    /// register a new dual node ptr, but not creating the internal dual node
+    fn register_dual_node_ptr(&mut self, dual_node_ptr: &DualNodePtr) {
+        // println!("unit {:?}, register_dual_node_ptr: {:?}", self.unit_module_info, dual_node_ptr);
+        let node = dual_node_ptr.read_recursive();
+        if let Some(unit_module_info) = self.unit_module_info.as_mut() {
+            if unit_module_info.owning_dual_range.is_empty() {
+                // set the range instead of inserting into the lookup table, to minimize table lookup
+                unit_module_info.owning_dual_range = VertexRange::new(node.index, node.index);
+            }
+            if unit_module_info.owning_dual_range.end() == node.index
+                && self.nodes_length == unit_module_info.owning_dual_range.len()
+            {
+                // it's able to append into the owning range, minimizing table lookup and thus better performance
+                unit_module_info.owning_dual_range.append_by(1);
+            } else {
+                // will be inserted at this place
+                unit_module_info
+                    .dual_node_pointers
+                    .insert(dual_node_ptr.clone(), self.nodes_length);
+            }
+        } else {
+            debug_assert!(
+                self.nodes_length as NodeIndex == node.index,
+                "dual node must be created in a sequential manner: no missing or duplicating"
+            );
+        }
+        // println!("unit {:?}, register_dual_node_ptr: {:?}", self.unit_module_info, dual_node_ptr);
+    }
+
+    /// get the local index of a vertex, thus has usize type
+    #[allow(clippy::unnecessary_cast)]
+    pub fn get_vertex_index(&self, vertex_index: VertexIndex) -> Option<usize> {
+        if self.owning_range.contains(vertex_index) {
+            return Some((vertex_index - self.owning_range.start()) as usize);
+        }
+        if let Some(unit_module_info) = self.unit_module_info.as_ref() {
+            if let Some(index) = unit_module_info.mirrored_vertices.get(&vertex_index) {
+                return Some(*index as usize);
+            }
+        }
+        None
+    }
+
+    // /// get the local index of a edge, thus has usize type
+    // #[allow(clippy::unnecessary_cast)]
+    // pub fn get_vertex_index(&self, global_edge_index: EdgeIndex) -> Option<usize> {
+
+    // }
+
+
+    /// get the local node_index of a dual node, thus has usize type
+    #[allow(clippy::unnecessary_cast)]
+    pub fn get_dual_node_index(&self, dual_node_ptr: &DualNodePtr) -> Option<usize> {
+        let dual_node = dual_node_ptr.read_recursive();
+        if let Some(unit_module_info) = self.unit_module_info.as_ref() {
+            if unit_module_info.owning_dual_range.contains(dual_node.index) {
+                Some((dual_node.index - unit_module_info.owning_dual_range.start()) as usize)
+            } else {
+                // println!("from unit {:?}, dual_node: {}", self.unit_module_info, dual_node.index);
+                unit_module_info.dual_node_pointers.get(dual_node_ptr).copied()
+            }
+        } else {
+            Some(dual_node.index as usize)
+        }
+    }
+
+    /// possibly add dual node only when sync_event is provided
+    #[allow(clippy::unnecessary_cast)]
+    pub fn get_otherwise_add_dual_node(
+        &mut self,
+        dual_node_ptr: &DualNodePtr,
+        dual_variable: Rational,
+    ) -> DualNodePtr {
+        let dual_node_index = self.get_dual_node_index(dual_node_ptr).unwrap_or_else(|| {
+            // add a new internal dual node corresponding to the dual_node_ptr
+            self.register_dual_node_ptr(dual_node_ptr);
+            let node_index = self.nodes_length as NodeIndex;
+            let mut node = dual_node_ptr.write();
+            node.set_dual_variable(dual_variable);
+            self.active_nodes.insert(dual_node_ptr.clone());
+            self.nodes_length += 1;
+            if self.nodes.len() < self.nodes_length {
+                self.nodes.push(None);
+            }
+            self.nodes[node_index] = Some(dual_node_ptr.clone());
+            node_index as usize
+        });
+        let dual_node_internal_ptr = self.nodes[dual_node_index].as_ref().expect("internal dual node must exists");
+        // debug_assert!(
+        //     dual_node_ptr == &dual_node_internal_ptr.read_recursive().origin.upgrade_force(),
+        //     "dual node and dual internal node must corresponds to each other"
+        // );
+        dual_node_internal_ptr.clone()
+    }
+
+
+    // /// adjust the boundary of each dual node to fit into the need of growing (`length` > 0) or shrinking (`length` < 0)
+    // pub fn prepare_dual_node_growth(&mut self, dual_node_ptr: &DualNodePtr, is_grow: bool) {
+    //     let mut need_another = self.prepare_dual_node_growth_single(dual_node_ptr, is_grow);
+    //     while need_another {
+    //         // when there are 0 weight edges, one may need to run multiple iterations to get it prepared in a proper state
+    //         need_another = self.prepare_dual_node_growth_single(dual_node_ptr, is_grow);
+    //     }
+    // }
+
+    /// this is equivalent to [`DualModuleSerial::prepare_dual_node_growth`] when there are no 0 weight edges, but when it encounters zero-weight edges, it will report `true`
+    pub fn prepare_dual_node_growth_single(&mut self, dual_node_ptr: &DualNodePtr) {        
+        let node = dual_node_ptr.read_recursive();
+        let edge_offset = self.edges[0].read().edge_index;
+        for &edge_index in node.invalid_subgraph.hair.iter() {
+            if edge_index - edge_offset >= self.edges.len() {
+                continue;
+            }
+            let edge_ptr = &self.edges[edge_index - edge_offset];
+            let edge = edge_ptr.read_recursive();
+            if edge.growth == edge.weight {
+                // we need to propagate to a new node 
+                for peer_vertex_weak in edge.vertices.iter() {
+                    let peer_vertex_ptr = peer_vertex_weak.upgrade_force();
+                    let mut peer_vertex = peer_vertex_ptr.write();
+
+                    // if this peer_vertex is not within the invalid subgraph, we could grow into this vertex 
+                    if !node.invalid_subgraph.vertices.contains(&peer_vertex.vertex_index) {
+                        if peer_vertex.is_boundary {
+                            // (not sure) virtual node is never propagated, so keep this edge in the boundary 
+                            // self.updated_boundary.insert(edge_index);
+                        } else {
+                            // debug_assert!(peer_vertex.propagated_dual_node.is_none(), 
+                            // "growing into another propagated vertex forbidden");
+                            self.propagating_vertices.push(peer_vertex_weak.clone());
+                            // drop(edge); // unlock read
+                            // let edge = edge_ptr.write();
+                            peer_vertex.propagated_dual_node = Some(dual_node_ptr.downgrade()); // this is useless, delete later
+                        }
+                    }
+                }
+            } 
+        }
+        drop(node); // unlock 
+
+        for vertex_weak in self.propagating_vertices.iter() {
+            let vertex_ptr = vertex_weak.upgrade_force();
+            let mut vertex = vertex_ptr.write();
+
+            //  add to the sync list 
+            if let Some(mirror_unit_weak) = &vertex.mirror_unit {
+                self.sync_requests.push(SyncRequest {
+                    mirror_unit_weak: mirror_unit_weak.clone(),
+                    vertex_index: vertex.vertex_index,
+                    propagated_dual_node: vertex.propagated_dual_node.clone().map(|weak| {
+                        let dual_node_ptr = weak.upgrade_force();
+                        let dual_node = dual_node_ptr.read_recursive();
+                        (
+                            weak,
+                            dual_node.get_dual_variable(),
+                        )
+                    }),
+                })
+            };
+
+                // if vertex.propagated_dual_node.is_none() {
+                //     vertex.propagated_dual_node = Some(dual_node_ptr.downgrade());
+                    
+                //     // add to the sync list 
+                //     if let Some(mirror_unit_weak) = &vertex.mirror_unit {
+                //         self.sync_requests.push(SyncRequest {
+                //             mirror_unit_weak: mirror_unit_weak.clone(),
+                //             vertex_index: vertex.vertex_index,
+                //             propagated_dual_node: vertex.propagated_dual_node.clone().map(|weak| {
+                //                 let dual_node_ptr = weak.upgrade_force();
+                //                 let dual_node = dual_node_ptr.read_recursive();
+                //                 (
+                //                     weak,
+                //                     dual_node.get_dual_variable(),
+                //                 )
+                //             }),
+                //         })
+                //     };
+
+                // }
+
+                // we do not need this, since we do not need to prepare the boundary for grow/shrink
+                // let mut count_newly_propagated_edge = 0;
+                // for &edge_weak in vertex.edges.iter() {
+                //     let edge_ptr = edge_weak.upgrade_force();
+                //     let edge = edge_ptr.read_recursive();
+                //     if edge.dual_nodes.len() > 1 {
+                //         count_newly_propagated_edge += edge.dual_nodes.len() - 1;
+                //         self.updated_boundary.insert(edge_index);
+                //         let mut edge = edge_ptr.write();
+                //         if edge.weight == Rational::zero() {
+                //             newly_propagated_edge_has_zero_weight = true;
+                //         }
+                //         for peer_vertex_ptr in edge.vertices.iter() {
+                //             let peer_vertex = peer_vertex_ptr.upgrade_force().write();
+                //             peer_vertex.propagated_dual_node = Some(dual_node_ptr.downgrade());
+                //         }
+                //     }
+                // }
+                // if count_newly_propagated_edge == 0 {
+                //     let mut dual_node = dual_node_ptr.write();
+                    // overgrown stack... not implemented
+                // }
+            
+        } 
+        // // update the boundary
+        // let mut dual_node = dual_node_ptr.write();
+        // std::mem::swap(&mut self.updated_boundary, &mut dual_node.invalid_subgraph.hair);
+        // println!("{} boundary: {:?}", tree_node.boundary.len(), tree_node.boundary);
+        // if self.unit_module_info.is_none() {
+        //     debug_assert!(
+        //         !dual_node_internal.boundary.is_empty(),
+        //         "the boundary of a dual cluster is never empty"
+        //     );
+        // }
+                                   
+    }
+
 }
 
 /*
@@ -585,21 +1009,26 @@ impl MWPSVisualizer for DualModuleSerial {
 
         for vertex_ptr in self.vertices.iter() {
             let vertex = vertex_ptr.read_recursive();
-            // if self.owning_range.contains(vertex.vertex_index) {
-            //     // otherwise I don't know whether it's syndrome or not
-            //     // vertices[vertex.vertex_index as usize].as_object_mut().unwrap().insert(
-            //     //     (if abbrev { "s" } else { "is_defect" }).to_string(),
-            //     //     json!(i32::from(vertex.is_defect)),
-            //     // );
-            //     vertices[vertex.vertex_index as usize] = json!({
-            //         if abbrev { "s" } else { "is_defect" }: i32::from(vertex.is_defect),
-            //     });
-            // }
-            
-            // println!("in snapshot vertex_index {}", vertex.vertex_index);
+            // println!("snapshot vertex index {}", vertex.vertex_index);
             vertices[vertex.vertex_index as usize] = json!({
-                if abbrev { "s" } else { "is_defect" }: i32::from(vertex.is_defect),
+                if abbrev { "v" } else { "is_boundary" }: i32::from(vertex.is_boundary),
             });
+            if self.owning_range.contains(vertex.vertex_index) {
+                // otherwise I don't know whether it's syndrome or not
+                // vertices[vertex.vertex_index as usize].as_object_mut().unwrap().insert(
+                //     (if abbrev { "s" } else { "is_defect" }).to_string(),
+                //     json!(i32::from(vertex.is_defect)),
+                // );
+                vertices[vertex.vertex_index as usize] = json!({
+                    if abbrev { "s" } else { "is_defect" }: i32::from(vertex.is_defect),
+                });
+            }
+            
+            
+            // // println!("in snapshot vertex_index {}", vertex.vertex_index);
+            // vertices[vertex.vertex_index as usize] = json!({
+            //     if abbrev { "s" } else { "is_defect" }: i32::from(vertex.is_defect),
+            // });
                
             // vertices[vertex.vertex_index as usize].as_object_mut().unwrap().insert(
             //     (if abbrev { "s" } else { "is_defect" }).to_string(),
@@ -610,6 +1039,7 @@ impl MWPSVisualizer for DualModuleSerial {
         let mut edges: Vec<serde_json::Value> = (0..self.edge_num).map(|_| serde_json::Value::Null).collect();
         for edge_ptr in self.edges.iter() {
             let edge = edge_ptr.read_recursive();
+            // println!("snapshot edge index {}", edge.edge_index);
             let unexplored = edge.weight.clone() - edge.growth.clone();
             // edges.push(json!({
             //     if abbrev { "w" } else { "weight" }: edge.weight.to_f64(),
@@ -631,10 +1061,37 @@ impl MWPSVisualizer for DualModuleSerial {
                 "ud": unexplored.denom().to_i64(),
             });
         }
-        json!({
+        // json!({
+        //     "vertices": vertices,
+        //     "edges": edges,
+        // })
+        let mut value = json!({
             "vertices": vertices,
             "edges": edges,
-        })
+        });
+        // TODO: since each serial module only processes a part of the dual nodes, it's not feasible to list them in a reasonable vector now...
+        // update the visualizer to be able to join multiple dual nodes
+        // if self.owning_range.start() == 0 && self.owning_range.end() == self.vertex_num {
+        //     let mut dual_nodes = Vec::<serde_json::Value>::new();
+        //     for node_index in 0..self.nodes_length {
+        //         let node_ptr = &self.nodes[node_index];
+        //         if let Some(node_ptr) = node_ptr.as_ref() {
+        //             let node = node_ptr.read_recursive();
+        //             dual_nodes.push(json!({
+        //                 if abbrev { "b" } else { "boundary" }: node.boundary.iter().map(|(is_left, edge_weak)|
+        //                     (*is_left, edge_weak.upgrade_force().read_recursive(active_timestamp).edge_index)).collect::<Vec<(bool, EdgeIndex)>>(),
+        //                 if abbrev { "d" } else { "dual_variable" }: node.dual_variable,
+        //             }));
+        //         } else {
+        //             dual_nodes.push(json!(null));
+        //         }
+        //     }
+        //     value
+        //         .as_object_mut()
+        //         .unwrap()
+        //         .insert("dual_nodes".to_string(), json!(dual_nodes));
+        // }
+        value
     }
 }
 

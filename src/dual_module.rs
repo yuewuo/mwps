@@ -15,6 +15,7 @@ use crate::util::*;
 use crate::visualize::*;
 use std::collections::{BTreeSet, HashMap};
 use std::sync::Arc;
+use weak_table::PtrWeakKeyHashMap;
 
 pub struct DualNode {
     /// the index of this dual node, helps to locate internal details of this dual node
@@ -139,11 +140,13 @@ pub struct DualModuleInterface {
     /// unit index of this interface, default to 0
     pub unit_index: usize, 
     /// the adjacent DualModuleInterface units and whether this adjacent unit is fused with self
-    pub adjacent_parallel_units: Vec<(DualModuleInterfaceWeak, bool)>,
+    pub adjacent_parallel_units: PtrWeakKeyHashMap<DualModuleInterfaceWeak, bool>,
     /// global bias
     pub global_bias: usize,
     /// index bias as a result of fusion 
     pub index_bias: usize,
+    /// current nodes length, to enable constant-time clear operation
+    pub nodes_length: usize,
 }
 
 pub type DualModuleInterfacePtr = ArcRwLock<DualModuleInterface>;
@@ -234,6 +237,7 @@ pub trait DualModuleImpl {
     fn get_edge_nodes(&self, edge_index: EdgeIndex) -> Vec<DualNodePtr>;
     fn get_edge_slack(&self, edge_index: EdgeIndex) -> Rational;
     fn is_edge_tight(&self, edge_index: EdgeIndex) -> bool;
+    fn get_edge_global_index(&self, local_edge_index: EdgeIndex, unit_index: usize) -> EdgeIndex;
 
     /// for fusion operation 
     /// create a partitioned dual module (hosting only a subgraph and subset of dual nodes) to be used in the parallel dual module
@@ -249,6 +253,20 @@ pub trait DualModuleImpl {
         panic!("the dual module implementation doesn't support this function, please use another dual module")
     }
 
+    /// execute a synchronize event by updating the state of a vertex and also update the internal dual node accordingly
+    fn execute_sync_event(&mut self, _sync_event: &SyncRequest) {
+        panic!("the dual module implementation doesn't support this function, please use another dual module")
+    }
+
+    /// judge whether the current module hosts a vertex
+    fn contains_vertex(&self, _vertex_index: VertexIndex) -> bool {
+        panic!("the dual module implementation doesn't support this function, please use another dual module")
+    }
+
+    /// prepare the growing or shrinking state of all nodes and return a list of sync requests in case of mirrored vertices are changed
+    fn prepare_all(&mut self) -> &mut Vec<SyncRequest> {
+        panic!("the dual module implementation doesn't support this function, please use another dual module")
+    }
 }
 
 /// trait for DualModuleParallelImpl, 
@@ -402,9 +420,10 @@ impl DualModuleInterfacePtr {
             hashmap: HashMap::new(),
             decoding_graph: DecodingHyperGraph::new(model_graph, Arc::new(SyndromePattern::new_empty())),
             unit_index: 0, // if necessary, manually change it
-            adjacent_parallel_units: vec![],
+            adjacent_parallel_units: PtrWeakKeyHashMap::new(),
             global_bias: 0,
             index_bias: 0,
+            nodes_length: 0,
         })
     }
 
@@ -445,7 +464,7 @@ impl DualModuleInterfacePtr {
     }
 
     /// make it private; use `load` instead
-    fn create_defect_node(&self, vertex_idx: VertexIndex, dual_module: &mut impl DualModuleImpl) -> DualNodePtr {
+    pub fn create_defect_node(&self, vertex_idx: VertexIndex, dual_module: &mut impl DualModuleImpl) -> DualNodePtr {
         let interface = self.read_recursive();
         let mut internal_vertices = BTreeSet::new();
         internal_vertices.insert(vertex_idx);
@@ -454,7 +473,7 @@ impl DualModuleInterfacePtr {
             BTreeSet::new(),
             &interface.decoding_graph,
         ));
-        let node_index = interface.nodes.len() as NodeIndex;
+        let node_index = interface.nodes.len() as NodeIndex;        
         let node_ptr = DualNodePtr::new_value(DualNode {
             index: node_index,
             invalid_subgraph: invalid_subgraph.clone(),
@@ -520,11 +539,14 @@ impl DualModuleInterfacePtr {
         }
     }
 
-    // pub fn fuse(&self, other: &Self) {
-    //     let mut interface = self.write();
-    //     let mut other_interface = other.write();
-    //     // other_interface.index_bias = interface.nodes_count();
-    // }
+    pub fn fuse(&self, other_interface: &Self) {
+        let mut interface = self.write();
+        // fuse dual interface 
+        if let Some(is_fused) = interface.adjacent_parallel_units.get_mut(other_interface) {
+            *is_fused = true;
+        }
+        drop(interface);
+    }
 }
 
 // shortcuts for easier code writing at debugging
@@ -579,4 +601,19 @@ impl MWPSVisualizer for DualModuleInterfacePtr {
             "dual_nodes": dual_nodes,
         })
     }
+}
+
+
+/// synchronize request on vertices, when a vertex is mirrored
+#[derive(Derivative)]
+#[derivative(Debug)]
+pub struct SyncRequest {
+    /// the unit that owns this vertex
+    pub mirror_unit_weak: PartitionUnitWeak,
+    /// the vertex index to be synchronized
+    pub vertex_index: VertexIndex,
+    /// propagated dual node index and the dual variable of the propagated dual node;
+    /// this field is necessary to differentiate between normal shrink and the one that needs to report VertexShrinkStop event, when the syndrome is on the interface;
+    /// it also includes the representative vertex of the dual node, so that parents can keep track of whether it should be elevated
+    pub propagated_dual_node: Option<(DualNodeWeak, Rational)>,
 }

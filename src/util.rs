@@ -733,7 +733,7 @@ impl IndexRange {
     pub fn end(&self) -> VertexNodeIndex {
         self.range[1]
     }
-    pub fn append_range_by(&mut self, append_count: VertexNodeIndex) {
+    pub fn append_by(&mut self, append_count: VertexNodeIndex) {
         self.range[1] += append_count;
     }
     pub fn bias_by(&mut self, bias: VertexNodeIndex) {
@@ -835,6 +835,7 @@ impl PartitionConfig {
     pub fn info(&self) -> PartitionInfo {
         assert!(!self.partitions.is_empty(), "at least one partition must exist");
         let mut owning_ranges = vec![];
+        let unit_count = self.partitions.len() + self.fusions.len();
         for &partition in self.partitions.iter() {
             partition.sanity_check();
             assert!(
@@ -847,14 +848,28 @@ impl PartitionConfig {
 
         // find boundary vertices
         let mut interface_ranges = vec![];
+        let mut upper_interface_ranges = vec![];
+        let mut lower_interface_ranges = vec![];
         for (left_index, right_index) in self.fusions.iter() {
             // find the interface_range 
             let (_whole_range, interface_range) = self.partitions[*left_index].fuse(&self.partitions[*right_index]);
             interface_ranges.push(interface_range);
+            if left_index % 2 == 0 {
+                upper_interface_ranges.push(interface_range);
+            } else {
+                lower_interface_ranges.push(interface_range);
+            }
         }
+        owning_ranges.extend(upper_interface_ranges);
+        owning_ranges.extend(lower_interface_ranges);
+
+        let partitions_len = self.partitions.len();
+        let fusions_len = self.fusions.len();
+        let upper_len = upper_interface_ranges.len();
+        let lower_len = lower_interface_ranges.len();
 
         // construct partition info, assuming partition along the time axis
-        let partition_unit_info: Vec<_> = (0..self.partitions.len())
+        let partition_unit_info: Vec<_> = (0..unit_count)
             .map(|i| PartitionUnitInfo {
                 // owning_range: if i == self.partitions.len() - 1 {
                 //     owning_ranges[i]
@@ -863,26 +878,40 @@ impl PartitionConfig {
                 // },
                 owning_range: owning_ranges[i],
                 unit_index: i,
-                boundary_vertices: if i == 0 {
-                    let mut boundary_vertices = HashMap::new();
-                    boundary_vertices.insert(interface_ranges[i], (0, 1));
-                    boundary_vertices} 
-                    else if i == self.partitions.len() - 1{
-                        let mut boundary_vertices = HashMap::new();
-                        boundary_vertices.insert(interface_ranges[i-1], (i-1, i));
-                        boundary_vertices
+                children: if i < self.partitions.len() {
+                    None
+                } else if i < partitions_len + upper_len {
+                    Some(self.fusions[(i - partitions_len) * 2 - 1])
+                } else {
+                    Some(self.fusions[(i - partitions_len - upper_len) * 2 - 1])
+                },
+                parent: if i < partitions_len {
+                    if i == 0 {
+                        Some(vec![(1, partitions_len)])
+                    } else if i == partitions_len - 1 {
+                        if i % 2 == 0 {
+                            Some(vec![(partitions_len - 2, unit_count - 1)])
+                        } else {
+                            Some(vec![(partitions_len - 2, partitions_len + upper_len - 1)])
+                        }
+                    } else {
+                        if i % 2 == 0 {
+                            Some(vec![
+                                (i - 1, partitions_len + upper_len + i % 2 - 1),
+                                (i + 1, partitions_len + i % 2)
+                            ])
+                        } else {
+                            Some(vec![
+                                (i - 1, partitions_len + i % 2),
+                                (i + 1, partitions_len + upper_len )
+                            ])
+                        }
                     }
-                    else {
-                        let mut boundary_vertices = HashMap::new();
-                        boundary_vertices.insert(interface_ranges[i], (i, i+1));
-                        boundary_vertices.insert(interface_ranges[i-1], (i-1, i));
-                        boundary_vertices
-                    },
-                adjacent_partition_units: {
-                    let node_index_vec = self.dag_partition_units.neighbors(petgraph::graph::NodeIndex::new(i)).collect::<Vec<_>>();
-                    let partition_units = node_index_vec.into_iter().map(|x| {petgraph::graph::NodeIndex::index(x)}).collect();
-                    partition_units
+                } else {
+                    None
                 }
+                
+                
             })
             .collect();
 
@@ -965,6 +994,7 @@ impl<'a> PartitionedSyndromePattern<'a> {
             }
             left_index
         };
+        println!("start of owning defect vertice: {owning_start_index:?}");
         // second binary search the end of owning defect vertices
         let owning_end_index = {
             let mut left_index = self.whole_defect_range.start();
@@ -980,6 +1010,8 @@ impl<'a> PartitionedSyndromePattern<'a> {
             }
             left_index
         };
+        println!("end of owning defect vertice: {owning_end_index:?}");
+
         (
             Self {
                 syndrome_pattern: self.syndrome_pattern,
@@ -1014,11 +1046,15 @@ pub struct PartitionUnitInfo {
     pub owning_range: VertexRange,
     /// partition unit index
     pub unit_index: usize,
-    /// boundary vertices, following the global vertex index
-    /// key: indexrange of the boundary vertices. value: (unit_index, unit_index), the pair of unit_index of the two partition units adjacent to the boundary
-    pub boundary_vertices: HashMap<IndexRange, (usize, usize)>,
-    /// adjacent PartitionUnits, vector of partition unit_index
-    pub adjacent_partition_units: Vec<usize>,
+    /// left and right
+    pub children: Option<(usize, usize)>,
+    /// the parent with another unit, (another unit's index, parent index)
+    pub parent: Option<Vec<(usize, usize)>>,
+    // /// boundary vertices, following the global vertex index
+    // /// key: indexrange of the boundary vertices. value: (unit_index, unit_index), the pair of unit_index of the two partition units adjacent to the boundary
+    // pub boundary_vertices: Option<HashMap<IndexRange, (usize, usize)>>,
+    // /// adjacent PartitionUnits, vector of partition unit_index
+    // pub adjacent_partition_units: Vec<usize>,
 }
 
 #[derive(Debug, Clone)]
@@ -1039,7 +1075,8 @@ pub struct PartitionedSolverInitializer {
     pub boundary_vertices: HashMap<IndexRange, (usize, usize)>,
     /// (not sure whether we need it, just in case)
     pub adjacent_partition_units: Vec<usize>,
-    
+    /// applicable when all the owning vertices are partitioned (i.e. this belongs to a fusion unit)
+    pub owning_interface: Option<PartitionUnitWeak>,
 }
 
 /// perform index transformation

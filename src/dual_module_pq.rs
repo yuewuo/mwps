@@ -548,6 +548,11 @@ where
     fn is_edge_tight(&self, edge_index: EdgeIndex) -> bool {
         self.get_edge_slack(edge_index).is_zero()
     }
+
+    fn get_edge_global_index(&self, local_edge_index: EdgeIndex, _unit_index: usize) -> EdgeIndex {
+        let edge = self.edges[local_edge_index as usize].read_recursive();
+        edge.edge_index
+    }
 }
 
 impl<Queue> MWPSVisualizer for DualModulePQ<Queue>

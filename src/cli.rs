@@ -142,6 +142,10 @@ pub enum ExampleCodeType {
     CodeCapacityTailoredCode,
     /// read from error pattern file, generated using option `--primal-dual-type error-pattern-logger`
     ErrorPatternReader,
+    /// code constructed by QEC-Playground, pass configurations using `--code-config`
+    #[cfg(feature = "qecp_integrate")]
+    #[serde(rename = "qec-playground-code")]
+    QECPlaygroundCode,
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum, Serialize, Debug)]
@@ -525,6 +529,8 @@ impl ExampleCodeType {
                 Box::new(CodeCapacityColorCode::new(d, p, max_weight))
             }
             Self::ErrorPatternReader => Box::new(ErrorPatternReader::new(code_config)),
+            #[cfg(feature = "qecp_integrate")]
+            Self::QECPlaygroundCode => Box::new(QECPlaygroundCode::new(d, p, code_config)),
         }
     }
 }

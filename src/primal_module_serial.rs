@@ -42,14 +42,22 @@ pub struct PrimalModuleSerial {
     pub config: PrimalModuleSerialConfig,
     /// the time spent on resolving the obstacles
     pub time_resolve: f64,
-    /// index bias as a result of fusion
-    pub global_index: NodeIndex,
+    /// node index bias as a result of fusion
+    pub global_bias: NodeIndex,
     /// the indices of primal nodes that is possibly matched to the mirrored vertex, and need to break when mirrored vertices are no longer mirrored
     pub possible_break_nodes: Vec<NodeIndex>,
     /// the indices of clusters that is possibly matched to the mirrored vertex, and need to break when mirrored vertices are no longer mirrored
     pub possible_break_clusters: Vec<NodeIndex>,
     /// whether this unit has ever been fused with other units
     pub involved_in_fusion: bool,
+    /// the indices of primal nodes that is possibly matched to the mirrored vertex, and need to break when mirrored vertices are no longer mirrored
+    pub possible_break: Vec<NodeIndex>,
+    /// temporary match with another node, (target, touching_grandson)
+    /// (vertex_index, is_boundary, dualnode)
+    // pub temporary_match: Option<(VertexIndex, bool, DualNodeWeak)>,
+    pub temporary_match: BTreeMap<VertexIndex, PrimalClusterWeak>,
+
+
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -119,10 +127,12 @@ impl PrimalModuleImpl for PrimalModuleSerial {
             plugin_pending_clusters: vec![],
             config: serde_json::from_value(json!({})).unwrap(),
             time_resolve: 0.,
-            global_index: 0,
+            global_bias: 0,
             possible_break_nodes: vec![],
             possible_break_clusters: vec![],
             involved_in_fusion: false,
+            possible_break: vec![],
+            temporary_match: BTreeMap::new(),
         }
     }
 
@@ -219,6 +229,7 @@ impl PrimalModuleImpl for PrimalModuleSerial {
                     .expect("bug occurs: cluster should be solved, but the subgraph is not yet generated")
                     .iter(),
             );
+
         }
         subgraph
     }
@@ -297,6 +308,9 @@ impl PrimalModuleSerial {
                             let incident_edges = decoding_graph.get_vertex_neighbors(vertex_index);
                             let parity = decoding_graph.is_vertex_defect(vertex_index);
                             cluster.matrix.add_constraint(vertex_index, incident_edges, parity);
+                        } else {
+                            // check whether incident vertice is a mirror/boundary vertex
+                            self.temporary_match.insert(vertex_index, cluster_ptr.downgrade());
                         }
                     }
                     cluster.edges.insert(edge_index);
@@ -456,6 +470,71 @@ impl PrimalModuleSerial {
         }
         true
     }
+
+    /// get node ptr by index; if calling from the ancestor module, node_index is absolute, otherwise it's relative
+    #[allow(clippy::unnecessary_cast)]
+    pub fn get_node(&self, relative_node_index: NodeIndex) -> Option<PrimalClusterPtr> {
+        unimplemented!()
+        // debug_assert!(relative_node_index < self.nodes_count(), "cannot find node in this module");
+        // let mut bias = 0;
+        // if let Some(((left_weak, left_count), (right_weak, right_count))) = &self.children {
+        //     if relative_node_index < *left_count {
+        //         // this node belongs to the left
+        //         return left_weak.upgrade_force().read_recursive().get_node(relative_node_index);
+        //     } else if relative_node_index < *left_count + *right_count {
+        //         // this node belongs to the right
+        //         return right_weak
+        //             .upgrade_force()
+        //             .read_recursive()
+        //             .get_node(relative_node_index - *left_count);
+        //     }
+        //     bias = left_count + right_count;
+        // }
+        // self.nodes[(relative_node_index - bias) as usize].clone()
+    }
+
+    pub fn load_defect_dual_node(&mut self, dual_node_ptr: &DualNodePtr, interface_ptr: &DualModuleInterfacePtr) {
+        let node = dual_node_ptr.read_recursive();
+        let interface = interface_ptr.read_recursive();
+        // construct cluster and its parity matrix (will be reused over all iterations)
+        let primal_cluster_ptr = 
+        PrimalClusterPtr::new_value(PrimalCluster {
+            cluster_index: self.clusters.len() as NodeIndex,
+            nodes: vec![],
+            edges: node.invalid_subgraph.hair.clone(),
+            vertices: node.invalid_subgraph.vertices.clone(),
+            matrix: node.invalid_subgraph.generate_matrix(&interface.decoding_graph),
+            subgraph: None,
+            plugin_manager: PluginManager::new(self.plugins.clone(), self.plugin_count.clone()),
+            relaxer_optimizer: RelaxerOptimizer::new(),
+        });
+        // create the primal node of this defect node and insert into cluster
+        let primal_node_ptr = PrimalModuleSerialNodePtr::new_value(PrimalModuleSerialNode {
+            dual_node_ptr: dual_node_ptr.clone(),
+            cluster_weak: primal_cluster_ptr.downgrade(),
+        });
+        primal_cluster_ptr.write().nodes.push(primal_node_ptr.clone());
+        // add to self
+        self.nodes.push(primal_node_ptr);
+        self.clusters.push(primal_cluster_ptr);
+    }
+
+    /// load a single syndrome and update the dual module and the interface
+    pub fn load_defect<D: DualModuleImpl>(
+        &mut self,
+        defect_vertex: VertexIndex,
+        interface_ptr: &DualModuleInterfacePtr,
+        dual_module: &mut D,
+    ) {
+        interface_ptr.create_defect_node(defect_vertex, dual_module);
+        let interface: parking_lot::lock_api::RwLockReadGuard<parking_lot::RawRwLock, DualModuleInterface> = interface_ptr.read_recursive();
+        let index = interface.nodes_length - 1;
+        self.load_defect_dual_node(
+            &interface.nodes[index],
+            interface_ptr
+        )
+    }
+
 
     // pub fn fuse(&self, other: &Self) {
 
