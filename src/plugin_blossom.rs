@@ -20,7 +20,7 @@ impl PluginImpl for PluginBlossom {
     fn find_relaxers(
         &self,
         decoding_graph: &DecodingHyperGraph,
-        matrix: &mut EchelonMatrix,
+        _matrix: &mut EchelonMatrix,
         positive_dual_nodes: &[DualNodePtr],
     ) -> Vec<Relaxer> {
         let mut relaxers = Vec::new();
@@ -31,7 +31,7 @@ impl PluginImpl for PluginBlossom {
 
         for vertex in positive_dual_nodes.iter().map(|node| node.read_recursive().index) {
             if !matched[vertex] {
-                if let Some(path) = find_augmenting_path(decoding_graph, matrix, vertex, &mut matched, &mut partners) {
+                if let Some(path) = find_augmenting_path(decoding_graph, vertex, &mut matched, &mut partners) {
                     let (vertices, edges) = construct_subgraph(&path, decoding_graph);
                     let invalid_subgraph = Arc::new(InvalidSubgraph::new_complete(
                         vertices,
@@ -53,7 +53,6 @@ impl PluginImpl for PluginBlossom {
 
 fn find_augmenting_path(
     decoding_graph: &DecodingHyperGraph,
-    matrix: &mut EchelonMatrix,
     start_vertex: VertexIndex,
     matched: &mut Vec<bool>,
     partners: &mut Vec<Option<VertexIndex>>,
@@ -70,7 +69,7 @@ fn find_augmenting_path(
     while let Some(v) = queue.pop_front() {
         for &edge in decoding_graph.get_vertex_neighbors(v) {
             for &u in decoding_graph.get_edge_neighbors(edge) {
-                if base[v] == base[u] || matched[v] && matched[u] {
+                if base[v] == base[u] || (matched[v] && matched[u]) {
                     continue;
                 }
                 if u == start_vertex || partners[u].is_some() && parent[partners[u].unwrap()].is_some() {
@@ -165,21 +164,15 @@ fn construct_subgraph(path: &[VertexIndex], decoding_graph: &DecodingHyperGraph)
         vertices.insert(vertex);
     }
 
-    for i in 0..path.len() - 1 {
-        let edge = get_edge_between_vertices(decoding_graph, path[i], path[i + 1]).unwrap();
-        edges.insert(edge);
+    for edge in &decoding_graph.model_graph.initializer.weighted_edges {
+        let edge_vertices: BTreeSet<_> = edge.vertices.iter().copied().collect();
+        let path_vertices: BTreeSet<_> = path.iter().copied().collect();
+        if edge_vertices.is_subset(&path_vertices) {
+            edges.insert(edge.weight as EdgeIndex); // Using weight as a placeholder for edge index
+        }
     }
 
     (vertices, edges)
-}
-
-fn get_edge_between_vertices(decoding_graph: &DecodingHyperGraph, vertex1: VertexIndex, vertex2: VertexIndex) -> Option<EdgeIndex> {
-    for &edge in decoding_graph.get_vertex_neighbors(vertex1) {
-        if decoding_graph.get_edge_neighbors(edge).contains(&vertex2) {
-            return Some(edge);
-        }
-    }
-    None
 }
 
 fn expand_blossoms(decoding_graph: &DecodingHyperGraph, relaxer: &mut Relaxer) {
