@@ -3,7 +3,7 @@
 //! Generics for primal modules, defining the necessary interfaces for a primal module
 //!
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::sync::Arc;
 
 use crate::dual_module::*;
@@ -16,6 +16,8 @@ use crate::util::*;
 use crate::visualize::*;
 
 pub type Affinity = OrderedFloat;
+
+const MAX_HISTORY: usize = 10;
 
 /// common trait that must be implemented for each implementation of primal module
 pub trait PrimalModuleImpl {
@@ -173,12 +175,48 @@ pub trait PrimalModuleImpl {
                     self.resolve_cluster_tune(cluster_index, interface, dual_module, &mut dual_node_deltas);
 
                 let mut conflicts = dual_module.get_conflicts_tune(optimizer_result, dual_node_deltas);
-                while !resolved {
+
+                // for cycle resolution
+                let mut order: VecDeque<BTreeSet<MaxUpdateLength>> = VecDeque::with_capacity(MAX_HISTORY); // fifo order of the conflicts sets seen
+                let mut current_sequences: Vec<(usize, BTreeSet<MaxUpdateLength>)> = Vec::new(); // the indexes that are currently being processed
+
+                'resolving: while !resolved {
                     let (_conflicts, _resolved) = self.resolve_tune(conflicts.clone(), interface, dual_module);
+
+                    let drained: Vec<(usize, BTreeSet<MaxUpdateLength>)> = std::mem::take(&mut current_sequences);
+                    for (idx, start) in drained.into_iter() {
+                        if _conflicts.eq(&start) {
+                            dual_module.end_tuning();
+                            break 'resolving;
+                        }
+                        if _conflicts.eq(order
+                            .get(MAX_HISTORY - idx - 1)
+                            .unwrap_or(order.get(order.len() - idx - 1).unwrap()))
+                        {
+                            current_sequences.push((idx + 1, start));
+                        }
+                    }
+
+                    order.push_back(_conflicts.clone());
+                    if order.len() > MAX_HISTORY {
+                        order.pop_front();
+                        current_sequences = current_sequences
+                            .into_iter()
+                            .filter_map(|(x, start)| if x >= MAX_HISTORY { None } else { Some((x + 1, start)) })
+                            .collect();
+                    }
+
+                    for (idx, c) in order.iter().enumerate() {
+                        if c.eq(&_conflicts) {
+                            current_sequences.push((idx, c.clone()));
+                        }
+                    }
+
                     if _resolved {
                         dual_module.end_tuning();
                         break;
                     }
+
                     conflicts = _conflicts;
                     resolved = _resolved;
                 }

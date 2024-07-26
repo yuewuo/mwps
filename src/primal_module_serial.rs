@@ -608,6 +608,7 @@ impl PrimalModuleImpl for PrimalModuleSerial {
                     dual_module,
                     if let Some(limit) = self.cluster_node_limit {
                         cluster.nodes.len() < limit
+                        // true
                     } else {
                         true
                     },
@@ -697,13 +698,6 @@ impl PrimalModuleImpl for PrimalModuleSerial {
     }
 }
 
-// return results regarding if something can be unioned
-pub enum CanUnionResult {
-    Can,    // can union
-    Cannot, // cannot union
-    Len1,   // only one node, or one cluster, won't union but simply update
-}
-
 impl PrimalModuleSerial {
     // union the cluster of two dual nodes
     #[allow(clippy::unnecessary_cast)]
@@ -718,6 +712,9 @@ impl PrimalModuleSerial {
         // and cluster_2 will be outdated
         let node_index_1 = dual_node_ptr_1.read_recursive().index;
         let node_index_2 = dual_node_ptr_2.read_recursive().index;
+        if node_index_1 == node_index_2 {
+            return; // already the same node
+        }
         let primal_node_1 = self.nodes[node_index_1 as usize].read_recursive();
         let primal_node_2 = self.nodes[node_index_2 as usize].read_recursive();
         if primal_node_1.cluster_weak.ptr_eq(&primal_node_2.cluster_weak) {
@@ -843,7 +840,7 @@ impl PrimalModuleSerial {
         cluster_2.vertices.clear();
     }
 
-    fn can_union(&self, dual_nodes: &[ArcRwLock<DualNode>]) -> CanUnionResult {
+    fn can_union(&self, dual_nodes: &[ArcRwLock<DualNode>]) -> bool {
         return match self.cluster_node_limit {
             Some(len_limit) => {
                 let dual_node_indexes = dual_nodes
@@ -854,7 +851,7 @@ impl PrimalModuleSerial {
 
                 // not going to union because the nodes all have the same index, only updates
                 if dual_node_indexes.len() == 1 {
-                    return CanUnionResult::Len1;
+                    return false;
                 }
 
                 let mut num_distinct_clusters = BTreeMap::new();
@@ -867,16 +864,12 @@ impl PrimalModuleSerial {
 
                 // not going to union because the nodes all belong to the same cluster, only updates
                 if num_distinct_clusters.len() == 1 {
-                    return CanUnionResult::Len1;
+                    return false;
                 }
 
-                if num_distinct_clusters.values().sum::<usize>() <= len_limit {
-                    CanUnionResult::Can
-                } else {
-                    CanUnionResult::Cannot
-                }
+                num_distinct_clusters.values().sum::<usize>() <= len_limit
             }
-            None => CanUnionResult::Can,
+            None => true,
         };
     }
 
@@ -1069,9 +1062,6 @@ impl PrimalModuleSerial {
         let interface = interface_ptr.read_recursive();
         let decoding_graph = &interface.decoding_graph;
 
-        // if any change to clusters have been observed
-        let mut change = false;
-
         for conflict in group_max_update_length.into_iter() {
             match conflict {
                 MaxUpdateLength::Conflicting(edge_index) => {
@@ -1082,40 +1072,15 @@ impl PrimalModuleSerial {
                         "should not conflict if no dual nodes are contributing"
                     );
 
-                    match self.can_union(&dual_nodes) {
-                        CanUnionResult::Can => {
-                            // continue to process
-                        }
-                        CanUnionResult::Cannot => {
-                            // cannot union, return
-                            continue;
-                        }
-                        CanUnionResult::Len1 => {
-                            // do the same as `can union` but don't mark this as if unioned but don't need to solve again, as no cluster node modification is conducted
-                            let cluster_ptr = self.nodes[dual_nodes[0].read_recursive().index as usize]
-                                .read_recursive()
-                                .cluster_weak
-                                .upgrade_force();
-                            let mut cluster = cluster_ptr.write();
-                            let incident_vertices = decoding_graph.get_edge_neighbors(edge_index);
-                            for &vertex_index in incident_vertices.iter() {
-                                if !cluster.vertices.contains(&vertex_index) {
-                                    cluster.vertices.insert(vertex_index);
-                                    let incident_edges = decoding_graph.get_vertex_neighbors(vertex_index);
-                                    let parity = decoding_graph.is_vertex_defect(vertex_index);
-                                    cluster.matrix.add_constraint(vertex_index, incident_edges, parity);
-                                }
-                            }
-                            cluster.edges.insert(edge_index);
-                            continue;
-                        }
-                    }
+                    let can_union = self.can_union(&dual_nodes);
 
                     let dual_node_ptr_0 = &dual_nodes[0];
-                    // first union all the dual nodes
-                    for dual_node_ptr in dual_nodes.iter().skip(1) {
-                        // self.union(dual_node_ptr_0, dual_node_ptr, &interface.decoding_graph);
-                        self.union(dual_node_ptr_0, dual_node_ptr, &interface.decoding_graph, dual_module);
+                    if can_union {
+                        // first union all the dual nodes
+                        for dual_node_ptr in dual_nodes.iter().skip(1) {
+                            // self.union(dual_node_ptr_0, dual_node_ptr, &interface.decoding_graph);
+                            self.union(dual_node_ptr_0, dual_node_ptr, &interface.decoding_graph, dual_module);
+                        }
                     }
                     let cluster_ptr = self.nodes[dual_node_ptr_0.read_recursive().index as usize]
                         .read_recursive()
@@ -1135,7 +1100,6 @@ impl PrimalModuleSerial {
                     cluster.edges.insert(edge_index);
                     // add to active cluster so that it's processed later
                     active_clusters.insert(cluster.cluster_index);
-                    change = true;
                 }
                 MaxUpdateLength::ShrinkProhibited(dual_node_ptr) => {
                     let cluster_ptr = self.nodes[dual_node_ptr.index as usize]
@@ -1144,16 +1108,11 @@ impl PrimalModuleSerial {
                         .upgrade_force();
                     let cluster_index = cluster_ptr.read_recursive().cluster_index;
                     active_clusters.insert(cluster_index);
-                    change = true;
                 }
                 _ => {
                     unreachable!()
                 }
             }
-        }
-
-        if !change {
-            return (BTreeSet::new(), true);
         }
 
         drop(interface);
