@@ -17,6 +17,7 @@ use crate::visualize::*;
 
 pub type Affinity = OrderedFloat;
 
+#[cfg(feature = "cluster_size_limit")]
 const MAX_HISTORY: usize = 10;
 
 /// common trait that must be implemented for each implementation of primal module
@@ -177,38 +178,44 @@ pub trait PrimalModuleImpl {
                 let mut conflicts = dual_module.get_conflicts_tune(optimizer_result, dual_node_deltas);
 
                 // for cycle resolution
+                #[cfg(feature = "cluster_size_limit")]
                 let mut order: VecDeque<BTreeSet<MaxUpdateLength>> = VecDeque::with_capacity(MAX_HISTORY); // fifo order of the conflicts sets seen
+                #[cfg(feature = "cluster_size_limit")]
                 let mut current_sequences: Vec<(usize, BTreeSet<MaxUpdateLength>)> = Vec::new(); // the indexes that are currently being processed
 
-                'resolving: while !resolved {
+                '_resolving: while !resolved {
                     let (_conflicts, _resolved) = self.resolve_tune(conflicts.clone(), interface, dual_module);
 
-                    let drained: Vec<(usize, BTreeSet<MaxUpdateLength>)> = std::mem::take(&mut current_sequences);
-                    for (idx, start) in drained.into_iter() {
-                        if _conflicts.eq(&start) {
-                            dual_module.end_tuning();
-                            break 'resolving;
+                    #[cfg(feature = "cluster_size_limit")]
+                    {
+                        // cycle resolution
+                        let drained: Vec<(usize, BTreeSet<MaxUpdateLength>)> = std::mem::take(&mut current_sequences);
+                        for (idx, start) in drained.into_iter() {
+                            if _conflicts.eq(&start) {
+                                dual_module.end_tuning();
+                                break '_resolving;
+                            }
+                            if _conflicts.eq(order
+                                .get(MAX_HISTORY - idx - 1)
+                                .unwrap_or(order.get(order.len() - idx - 1).unwrap()))
+                            {
+                                current_sequences.push((idx + 1, start));
+                            }
                         }
-                        if _conflicts.eq(order
-                            .get(MAX_HISTORY - idx - 1)
-                            .unwrap_or(order.get(order.len() - idx - 1).unwrap()))
-                        {
-                            current_sequences.push((idx + 1, start));
+
+                        order.push_back(_conflicts.clone());
+                        if order.len() > MAX_HISTORY {
+                            order.pop_front();
+                            current_sequences = current_sequences
+                                .into_iter()
+                                .filter_map(|(x, start)| if x >= MAX_HISTORY { None } else { Some((x + 1, start)) })
+                                .collect();
                         }
-                    }
 
-                    order.push_back(_conflicts.clone());
-                    if order.len() > MAX_HISTORY {
-                        order.pop_front();
-                        current_sequences = current_sequences
-                            .into_iter()
-                            .filter_map(|(x, start)| if x >= MAX_HISTORY { None } else { Some((x + 1, start)) })
-                            .collect();
-                    }
-
-                    for (idx, c) in order.iter().enumerate() {
-                        if c.eq(&_conflicts) {
-                            current_sequences.push((idx, c.clone()));
+                        for (idx, c) in order.iter().enumerate() {
+                            if c.eq(&_conflicts) {
+                                current_sequences.push((idx, c.clone()));
+                            }
                         }
                     }
 
