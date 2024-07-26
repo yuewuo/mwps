@@ -49,6 +49,8 @@ pub struct PrimalModuleSerial {
     #[cfg(feature = "incr_lp")]
     /// parameter indicating if the primal module has initialized states necessary for `incr_lp` slack calculation
     pub cluster_weights_initialized: bool,
+
+    #[cfg(feature = "cluster_size_limit")]
     /// optional cluster size limit in tuning phase, based on the code-distance
     ///     note: this is not monitored in the searching phase because then there will be no solution
     pub cluster_node_limit: Option<usize>,
@@ -161,6 +163,7 @@ impl PrimalModuleImpl for PrimalModuleSerial {
             sorted_clusters_aff: None,
             #[cfg(feature = "incr_lp")]
             cluster_weights_initialized: false,
+            #[cfg(feature = "cluster_size_limit")]
             cluster_node_limit: None,
         }
     }
@@ -497,11 +500,14 @@ impl PrimalModuleImpl for PrimalModuleSerial {
                         if let Some((existing, dual_node_ptr)) = interface_ptr.find_or_create_node_tune(
                             invalid_subgraph,
                             dual_module,
+                            #[cfg(feature = "cluster_size_limit")]
                             if let Some(limit) = self.cluster_node_limit {
                                 cluster.nodes.len() < limit
                             } else {
                                 true
                             },
+                            #[cfg(not(feature = "cluster_size_limit"))]
+                            true,
                         ) {
                             if !existing {
                                 // create the corresponding primal node and add it to cluster
@@ -606,12 +612,15 @@ impl PrimalModuleImpl for PrimalModuleSerial {
                 if let Some((existing, dual_node_ptr)) = interface_ptr.find_or_create_node_tune(
                     invalid_subgraph,
                     dual_module,
+                    #[cfg(feature = "cluster_size_limit")]
                     if let Some(limit) = self.cluster_node_limit {
                         cluster.nodes.len() < limit
                         // true
                     } else {
                         true
                     },
+                    #[cfg(not(feature = "cluster_size_limit"))]
+                    true,
                 ) {
                     if !existing {
                         // create the corresponding primal node and add it to cluster
@@ -840,6 +849,7 @@ impl PrimalModuleSerial {
         cluster_2.vertices.clear();
     }
 
+    #[cfg(feature = "cluster_size_limit")]
     fn can_union(&self, dual_nodes: &[ArcRwLock<DualNode>]) -> bool {
         return match self.cluster_node_limit {
             Some(len_limit) => {
@@ -1072,10 +1082,20 @@ impl PrimalModuleSerial {
                         "should not conflict if no dual nodes are contributing"
                     );
 
-                    let can_union = self.can_union(&dual_nodes);
-
                     let dual_node_ptr_0 = &dual_nodes[0];
-                    if can_union {
+                    #[cfg(feature = "cluster_size_limit")]
+                    {
+                        let can_union = self.can_union(&dual_nodes);
+                        if can_union {
+                            // first union all the dual nodes
+                            for dual_node_ptr in dual_nodes.iter().skip(1) {
+                                // self.union(dual_node_ptr_0, dual_node_ptr, &interface.decoding_graph);
+                                self.union(dual_node_ptr_0, dual_node_ptr, &interface.decoding_graph, dual_module);
+                            }
+                        }
+                    }
+                    #[cfg(not(feature = "cluster_size_limit"))]
+                    {
                         // first union all the dual nodes
                         for dual_node_ptr in dual_nodes.iter().skip(1) {
                             // self.union(dual_node_ptr_0, dual_node_ptr, &interface.decoding_graph);
