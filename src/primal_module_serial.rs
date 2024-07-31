@@ -266,23 +266,20 @@ impl PrimalModuleImpl for PrimalModuleSerial {
         res
     }
 
-    fn subgraph(
-        &mut self,
-        _interface: &DualModuleInterfacePtr,
-        _dual_module: &mut impl DualModuleImpl,
-        seed: u64,
-    ) -> Subgraph {
+    fn subgraph(&mut self, _interface: &DualModuleInterfacePtr, _dual_module: &mut impl DualModuleImpl) -> Subgraph {
         let mut subgraph = vec![];
         for cluster_ptr in self.clusters.iter() {
             let cluster = cluster_ptr.read_recursive();
             if cluster.nodes.is_empty() {
                 continue;
             }
+
+            // note: use `std::panic::catch_unwind` as necessary
             subgraph.extend(
                 cluster
                     .subgraph
                     .clone()
-                    .unwrap_or_else(|| panic!("bug occurs: cluster should be solved, but the subgraph is not yet generated || the seed is {seed:?} || the cluster is {:?}", cluster.cluster_index))
+                    .unwrap_or_else(|| panic!("bug occurs: cluster should be solved, but the subgraph is not yet generated || the cluster is {:?}", cluster.cluster_index))
                     .iter(),
             );
         }
@@ -501,13 +498,7 @@ impl PrimalModuleImpl for PrimalModuleSerial {
                             invalid_subgraph,
                             dual_module,
                             #[cfg(feature = "cluster_size_limit")]
-                            if let Some(limit) = self.cluster_node_limit {
-                                cluster.nodes.len() < limit
-                            } else {
-                                true
-                            },
-                            #[cfg(not(feature = "cluster_size_limit"))]
-                            true,
+                            (self.cluster_node_limit, cluster.nodes.len()),
                         ) {
                             if !existing {
                                 // create the corresponding primal node and add it to cluster
@@ -613,14 +604,7 @@ impl PrimalModuleImpl for PrimalModuleSerial {
                     invalid_subgraph,
                     dual_module,
                     #[cfg(feature = "cluster_size_limit")]
-                    if let Some(limit) = self.cluster_node_limit {
-                        cluster.nodes.len() < limit
-                        // true
-                    } else {
-                        true
-                    },
-                    #[cfg(not(feature = "cluster_size_limit"))]
-                    true,
+                    (self.cluster_node_limit, cluster.nodes.len()),
                 ) {
                     if !existing {
                         // create the corresponding primal node and add it to cluster
@@ -1205,7 +1189,7 @@ pub mod tests {
             visualizer.as_mut(),
         );
 
-        let (subgraph, weight_range) = primal_module.subgraph_range(&interface_ptr, &mut dual_module, 0);
+        let (subgraph, weight_range) = primal_module.subgraph_range(&interface_ptr, &mut dual_module);
         if let Some(visualizer) = visualizer.as_mut() {
             visualizer
                 .snapshot_combined(

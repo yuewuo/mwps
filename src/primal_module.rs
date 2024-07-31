@@ -161,7 +161,6 @@ pub trait PrimalModuleImpl {
         // starting with unbounded state here: All edges and nodes are not growing as of now
         // Tune
         while self.has_more_plugins() {
-            // Note: intersting, seems these aren't needed... But just kept here in case of future need, as well as correctness related failures
             if start {
                 start = false;
                 dual_module.advance_mode();
@@ -231,16 +230,14 @@ pub trait PrimalModuleImpl {
         }
     }
 
-    fn subgraph(&mut self, interface: &DualModuleInterfacePtr, dual_module: &mut impl DualModuleImpl, seed: u64)
-        -> Subgraph;
+    fn subgraph(&mut self, interface: &DualModuleInterfacePtr, dual_module: &mut impl DualModuleImpl) -> Subgraph;
 
     fn subgraph_range(
         &mut self,
         interface: &DualModuleInterfacePtr,
         dual_module: &mut impl DualModuleImpl,
-        seed: u64,
     ) -> (Subgraph, WeightRange) {
-        let subgraph = self.subgraph(interface, dual_module, seed);
+        let subgraph = self.subgraph(interface, dual_module);
         let weight_range = WeightRange::new(
             interface.sum_dual_variables(),
             Rational::from_usize(
