@@ -23,7 +23,6 @@ pub trait PluginImpl {
     /// given the tight edges and parity constraints, find relaxers
     fn find_relaxers(
         &self,
-        decoding_graph: &DecodingHyperGraph,
         matrix: &mut EchelonMatrix,
         positive_dual_nodes: &[DualNodePtr],
     ) -> RelaxerVec;
@@ -75,7 +74,6 @@ pub struct PluginEntry {
 impl PluginEntry {
     pub fn execute(
         &self,
-        decoding_graph: &DecodingHyperGraph,
         matrix: &mut EchelonMatrix,
         positive_dual_nodes: &[DualNodePtr],
         relaxer_forest: &mut RelaxerForest,
@@ -84,13 +82,13 @@ impl PluginEntry {
         let mut repeat_count = 0;
         while repeat {
             // execute the plugin
-            let relaxers = self.plugin.find_relaxers(decoding_graph, &mut *matrix, positive_dual_nodes);
+            let relaxers = self.plugin.find_relaxers(&mut *matrix, positive_dual_nodes);
             if relaxers.is_empty() {
                 repeat = false;
             }
             for relaxer in relaxers.into_iter() {
                 for edge_index in relaxer.get_untighten_edges().keys() {
-                    matrix.update_edge_tightness(*edge_index, false);
+                    matrix.update_edge_tightness(edge_index.downgrade(), false);
                 }
                 let relaxer = Arc::new(relaxer);
                 let sum_speed = relaxer.get_sum_speed();
@@ -148,11 +146,11 @@ impl PluginManager {
                 .map(|ptr| ptr.read_recursive().invalid_subgraph.clone()),
         );
         for plugin_entry in self.plugins.iter().take(*self.plugin_count.read_recursive()) {
-            if let Some(relaxer) = plugin_entry.execute(decoding_graph, matrix, positive_dual_nodes, &mut relaxer_forest) {
+            if let Some(relaxer) = plugin_entry.execute( matrix, positive_dual_nodes, &mut relaxer_forest) {
                 return Some(relaxer);
             }
         }
         // add a union find relaxer finder as the last resort if nothing is reported
-        PluginUnionFind::entry().execute(decoding_graph, matrix, positive_dual_nodes, &mut relaxer_forest)
+        PluginUnionFind::entry().execute( matrix, positive_dual_nodes, &mut relaxer_forest)
     }
 }

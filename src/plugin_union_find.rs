@@ -5,6 +5,8 @@
 //! sure there is a feasible MINLP solution.
 //!
 
+use weak_table::PtrWeakHashSet;
+
 use crate::decoding_hypergraph::*;
 use crate::dual_module::*;
 use crate::invalid_subgraph::*;
@@ -15,19 +17,24 @@ use crate::relaxer::*;
 use crate::util::*;
 use std::collections::BTreeSet;
 
+#[cfg(feature = "pq")]
+use crate::dual_module_pq::{EdgeWeak, VertexWeak};
+#[cfg(feature = "non-pq")]
+use crate::dual_module_serial::{EdgeWeak, VertexWeak};
+
 #[derive(Debug, Clone, Default)]
 pub struct PluginUnionFind {}
 
 impl PluginUnionFind {
     /// check if the cluster is valid (hypergraph union-find decoder)
-    pub fn find_single_relaxer(decoding_graph: &DecodingHyperGraph, matrix: &mut EchelonMatrix) -> Option<Relaxer> {
+    pub fn find_single_relaxer(matrix: &mut EchelonMatrix) -> Option<Relaxer> {
         if matrix.get_echelon_info().satisfiable {
             return None; // cannot find any relaxer
         }
+        let local_edges: PtrWeakHashSet<EdgeWeak> = matrix.get_view_edges().iter().map(|e| e.upgrade_force()).collect();
         let invalid_subgraph = InvalidSubgraph::new_complete_ptr(
-            matrix.get_vertices(),
-            BTreeSet::from_iter(matrix.get_view_edges()),
-            decoding_graph,
+            &matrix.get_vertices(),
+            &local_edges,
         );
         Some(Relaxer::new([(invalid_subgraph, Rational::one())].into()))
     }
@@ -36,11 +43,10 @@ impl PluginUnionFind {
 impl PluginImpl for PluginUnionFind {
     fn find_relaxers(
         &self,
-        decoding_graph: &DecodingHyperGraph,
         matrix: &mut EchelonMatrix,
         _positive_dual_nodes: &[DualNodePtr],
     ) -> Vec<Relaxer> {
-        if let Some(relaxer) = Self::find_single_relaxer(decoding_graph, matrix) {
+        if let Some(relaxer) = Self::find_single_relaxer(matrix) {
             vec![relaxer]
         } else {
             vec![]

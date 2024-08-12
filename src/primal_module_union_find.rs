@@ -6,11 +6,11 @@
 //! there might be some minor difference with Delfosse's paper, but the idea is the same
 //!
 
-use crate::decoding_hypergraph::DecodingHyperGraph;
+use weak_table::PtrWeakHashSet;
+
 use crate::derivative::Derivative;
 use crate::dual_module::*;
 use crate::invalid_subgraph::*;
-use crate::model_hypergraph::ModelHyperGraph;
 use crate::num_traits::Zero;
 use crate::pointers::*;
 use crate::primal_module::*;
@@ -19,6 +19,11 @@ use crate::union_find::*;
 use crate::util::*;
 use crate::visualize::*;
 use std::collections::BTreeSet;
+
+#[cfg(feature = "pq")]
+use crate::dual_module_pq::{EdgeWeak, VertexWeak, EdgePtr, VertexPtr};
+#[cfg(feature = "non-pq")]
+use crate::dual_module_serial::{EdgeWeak, VertexWeak, EdgePtr, VertexPtr};
 
 #[derive(Derivative)]
 #[derivative(Debug)]
@@ -30,10 +35,10 @@ pub struct PrimalModuleUnionFind {
 type UnionFind = UnionFindGeneric<PrimalModuleUnionFindNode>;
 
 /// define your own union-find node data structure like this
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Clone)]
 pub struct PrimalModuleUnionFindNode {
     /// all the internal edges
-    pub internal_edges: BTreeSet<EdgeIndex>,
+    pub internal_edges: PtrWeakHashSet<EdgeWeak>,
     /// the corresponding node index with these internal edges
     pub node_index: NodeIndex,
 }
@@ -42,9 +47,9 @@ pub struct PrimalModuleUnionFindNode {
 impl UnionNodeTrait for PrimalModuleUnionFindNode {
     #[inline]
     fn union(left: &Self, right: &Self) -> (bool, Self) {
-        let mut internal_edges = BTreeSet::new();
-        internal_edges.extend(left.internal_edges.iter().cloned());
-        internal_edges.extend(right.internal_edges.iter().cloned());
+        let mut internal_edges = PtrWeakHashSet::new();
+        internal_edges.extend(left.internal_edges.iter());
+        internal_edges.extend(right.internal_edges.iter());
         let result = Self {
             internal_edges,
             node_index: NodeIndex::MAX, // waiting for assignment
@@ -59,14 +64,14 @@ impl UnionNodeTrait for PrimalModuleUnionFindNode {
     #[inline]
     fn default() -> Self {
         Self {
-            internal_edges: BTreeSet::new(),
+            internal_edges: PtrWeakHashSet::new(),
             node_index: NodeIndex::MAX, // waiting for assignment
         }
     }
 }
 
 impl PrimalModuleImpl for PrimalModuleUnionFind {
-    fn new_empty(_initializer: &SolverInitializer, _model_graph: &ModelHyperGraph) -> Self {
+    fn new_empty(_initializer: &SolverInitializer) -> Self {
         Self {
             union_find: UnionFind::new(0),
         }
@@ -96,7 +101,7 @@ impl PrimalModuleImpl for PrimalModuleUnionFind {
             );
             assert_eq!(node.index as usize, self.union_find.size(), "must load defect nodes in order");
             self.union_find.insert(PrimalModuleUnionFindNode {
-                internal_edges: BTreeSet::new(),
+                internal_edges: PtrWeakHashSet::new(),
                 node_index: node.index,
             });
         }
@@ -108,15 +113,14 @@ impl PrimalModuleImpl for PrimalModuleUnionFind {
         mut group_max_update_length: GroupMaxUpdateLength,
         interface_ptr: &DualModuleInterfacePtr,
         dual_module: &mut impl DualModuleImpl,
-    ) {
+    ) -> bool {
         debug_assert!(!group_max_update_length.is_unbounded() && group_max_update_length.get_valid_growth().is_none());
         let mut active_clusters = BTreeSet::<NodeIndex>::new();
         while let Some(conflict) = group_max_update_length.pop() {
-            // println!("conflict: {conflict:?}");
             match conflict {
                 MaxUpdateLength::Conflicting(edge_index) => {
                     // union all the dual nodes in the edge index and create new dual node by adding this edge to `internal_edges`
-                    let dual_nodes = dual_module.get_edge_nodes(edge_index);
+                    let dual_nodes = dual_module.get_edge_nodes(edge_index.clone());
                     debug_assert!(
                         !dual_nodes.is_empty(),
                         "should not conflict if no dual nodes are contributing"
@@ -131,7 +135,7 @@ impl PrimalModuleImpl for PrimalModuleUnionFind {
                     self.union_find
                         .get_mut(cluster_index as usize)
                         .internal_edges
-                        .insert(edge_index);
+                        .insert(edge_index.clone());
                     active_clusters.insert(self.union_find.find(cluster_index as usize) as NodeIndex);
                 }
                 _ => {
@@ -149,20 +153,25 @@ impl PrimalModuleImpl for PrimalModuleUnionFind {
             } else {
                 let new_cluster_node_index = self.union_find.size() as NodeIndex;
                 self.union_find.insert(PrimalModuleUnionFindNode {
-                    internal_edges: BTreeSet::new(),
+                    internal_edges: PtrWeakHashSet::new(),
                     node_index: new_cluster_node_index,
                 });
                 self.union_find.union(cluster_index as usize, new_cluster_node_index as usize);
                 let invalid_subgraph = InvalidSubgraph::new_ptr(
-                    self.union_find.get(cluster_index as usize).internal_edges.clone(),
-                    &interface_ptr.read_recursive().decoding_graph,
+                    &self.union_find.get(cluster_index as usize).internal_edges.clone(),
                 );
                 interface_ptr.create_node(invalid_subgraph, dual_module);
             }
         }
+        false
     }
 
-    fn subgraph(&mut self, interface_ptr: &DualModuleInterfacePtr, _dual_module: &mut impl DualModuleImpl) -> Subgraph {
+    fn subgraph(
+        &mut self,
+        interface_ptr: &DualModuleInterfacePtr,
+        _dual_module: &mut impl DualModuleImpl,
+        _seed: u64,
+    ) -> Subgraph {
         let mut valid_clusters = BTreeSet::new();
         let mut subgraph = vec![];
         for i in 0..self.union_find.size() {
@@ -174,7 +183,7 @@ impl PrimalModuleImpl for PrimalModuleUnionFind {
                     .decoding_graph
                     .find_valid_subgraph_auto_vertices(&self.union_find.get(root_index).internal_edges)
                     .expect("must be valid cluster");
-                subgraph.extend(cluster_subgraph.iter());
+                subgraph.extend(cluster_subgraph);
             }
         }
         subgraph
@@ -196,8 +205,12 @@ pub mod tests {
     use super::super::dual_module_serial::*;
     use super::super::example_codes::*;
     use super::*;
+    use crate::dual_module;
     use crate::dual_module_pq::DualModulePQ;
     use crate::dual_module_pq::FutureObstacleQueue;
+    // use crate::dual_module_pq::_FutureObstacleQueue;
+    // use crate::dual_module_pq::PairingPQ;
+    // use crate::dual_module_pq::RankPairingPQ;
     use crate::more_asserts::*;
     use crate::num_traits::{FromPrimitive, ToPrimitive};
     use std::sync::Arc;
@@ -215,7 +228,7 @@ pub mod tests {
         impl DualModuleImpl + MWPSVisualizer,
     ) {
         // create primal module
-        let mut primal_module = PrimalModuleUnionFind::new_empty(&model_graph.initializer, &model_graph);
+        let mut primal_module = PrimalModuleUnionFind::new_empty(&model_graph.initializer);
         // try to work on a simple syndrome
         code.set_defect_vertices(&defect_vertices);
         let interface_ptr = DualModuleInterfacePtr::new(model_graph.clone());
@@ -225,7 +238,7 @@ pub mod tests {
             &mut dual_module,
             visualizer.as_mut(),
         );
-        let (subgraph, weight_range) = primal_module.subgraph_range(&interface_ptr, &mut dual_module);
+        let (subgraph, weight_range) = primal_module.subgraph_range(&interface_ptr, &mut dual_module, 0);
         if let Some(visualizer) = visualizer.as_mut() {
             visualizer
                 .snapshot_combined(
@@ -280,12 +293,13 @@ pub mod tests {
 
         // create dual module
         let model_graph = code.get_model_graph();
+        let mut dual_module: DualModulePQ<FutureObstacleQueue<Rational>> = DualModulePQ::new_empty(&model_graph.initializer);
 
         primal_module_union_find_basic_standard_syndrome_optional_viz(
             code,
             defect_vertices,
             final_dual,
-            DualModuleSerial::new_empty(&model_graph.initializer),
+            dual_module,
             model_graph,
             Some(visualizer),
         )

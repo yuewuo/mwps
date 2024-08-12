@@ -3,13 +3,20 @@ use super::visualize::*;
 use crate::util::*;
 use derivative::Derivative;
 use std::collections::BTreeSet;
+use weak_table::PtrWeakHashSet;
+
+#[cfg(feature = "pq")]
+use crate::dual_module_pq::{EdgeWeak, VertexWeak};
+#[cfg(feature = "non-pq")]
+use crate::dual_module_serial::{EdgeWeak, VertexWeak};
+
 
 #[derive(Clone, Derivative)]
 #[derivative(Default(new = "true"))]
 pub struct Tight<M: MatrixView> {
     base: M,
     /// the set of tight edges: should be a relatively small set
-    tight_edges: BTreeSet<EdgeIndex>,
+    tight_edges: PtrWeakHashSet<EdgeWeak>,
     /// tight matrix gives a view of only tight edges, with sorted indices
     #[derivative(Default(value = "true"))]
     is_var_indices_outdated: bool,
@@ -24,34 +31,34 @@ impl<M: MatrixView> Tight<M> {
 }
 
 impl<M: MatrixView> MatrixTight for Tight<M> {
-    fn update_edge_tightness(&mut self, edge_index: EdgeIndex, is_tight: bool) {
-        debug_assert!(self.exists_edge(edge_index));
+    fn update_edge_tightness(&mut self, edge_weak: EdgeWeak, is_tight: bool) {
+        debug_assert!(self.exists_edge(edge_weak.clone()));
         self.is_var_indices_outdated = true;
         if is_tight {
-            self.tight_edges.insert(edge_index);
+            self.tight_edges.insert(edge_weak.upgrade_force());
         } else {
-            self.tight_edges.remove(&edge_index);
+            self.tight_edges.remove(&edge_weak.upgrade_force());
         }
     }
 
-    fn is_tight(&self, edge_index: usize) -> bool {
-        debug_assert!(self.exists_edge(edge_index));
-        self.tight_edges.contains(&edge_index)
+    fn is_tight(&self, edge_weak: EdgeWeak) -> bool {
+        debug_assert!(self.exists_edge(edge_weak.clone()));
+        self.tight_edges.contains(&edge_weak.upgrade_force())
     }
 }
 
 impl<M: MatrixView> MatrixBasic for Tight<M> {
-    fn add_variable(&mut self, edge_index: EdgeIndex) -> Option<VarIndex> {
-        self.base.add_variable(edge_index)
+    fn add_variable(&mut self, edge_weak: EdgeWeak) -> Option<VarIndex> {
+        self.base.add_variable(edge_weak)
     }
 
     fn add_constraint(
         &mut self,
-        vertex_index: VertexIndex,
-        incident_edges: &[EdgeIndex],
+        vertex_weak: VertexWeak,
+        incident_edges: &[EdgeWeak],
         parity: bool,
     ) -> Option<Vec<VarIndex>> {
-        self.base.add_constraint(vertex_index, incident_edges, parity)
+        self.base.add_constraint(vertex_weak, incident_edges, parity)
     }
 
     fn xor_row(&mut self, target: RowIndex, source: RowIndex) {
@@ -66,13 +73,13 @@ impl<M: MatrixView> MatrixBasic for Tight<M> {
     fn get_rhs(&self, row: RowIndex) -> bool {
         self.get_base().get_rhs(row)
     }
-    fn var_to_edge_index(&self, var_index: VarIndex) -> EdgeIndex {
+    fn var_to_edge_index(&self, var_index: VarIndex) -> EdgeWeak {
         self.get_base().var_to_edge_index(var_index)
     }
-    fn edge_to_var_index(&self, edge_index: EdgeIndex) -> Option<VarIndex> {
-        self.get_base().edge_to_var_index(edge_index)
+    fn edge_to_var_index(&self, edge_weak: EdgeWeak) -> Option<VarIndex> {
+        self.get_base().edge_to_var_index(edge_weak)
     }
-    fn get_vertices(&self) -> BTreeSet<VertexIndex> {
+    fn get_vertices(&self) -> PtrWeakHashSet<VertexWeak> {
         self.get_base().get_vertices()
     }
 }
@@ -124,15 +131,47 @@ pub mod tests {
     use super::super::basic::*;
     use super::*;
 
+    use crate::dual_module_pq::{EdgePtr, Edge, VertexPtr, Vertex};
+    use crate::pointers::*;
+    use num_traits::Zero;
+
     type TightMatrix = Tight<BasicMatrix>;
 
     #[test]
     fn tight_matrix_1() {
         // cargo test --features=colorful tight_matrix_1 -- --nocapture
         let mut matrix = TightMatrix::new();
-        matrix.add_constraint(0, &[1, 4, 6], true);
-        matrix.add_constraint(1, &[4, 9], false);
-        matrix.add_constraint(2, &[1, 9], true);
+
+        // create vertices 
+        let vertices: Vec<VertexPtr> = (0..3)
+        .map(|vertex_index| {
+            VertexPtr::new_value(Vertex {
+                vertex_index,
+                is_defect: false,
+                edges: vec![],
+            })
+        })
+        .collect();
+
+        // create edges
+        let edges: Vec<EdgePtr> = vec![1, 4, 6, 9].into_iter()
+            .map(|edge_index| {
+                EdgePtr::new_value(Edge {
+                    edge_index: edge_index,
+                    weight: Rational::zero(),
+                    dual_nodes: vec![],
+                    vertices: vec![],
+                    last_updated_time: Rational::zero(),
+                    growth_at_last_updated_time: Rational::zero(),
+                    grow_rate: Rational::zero(),
+                    #[cfg(feature = "incr_lp")]
+                    cluster_weights: hashbrown::HashMap::new(),
+                })
+            }).collect();
+
+        matrix.add_constraint(vertices[0].downgrade(), &[edges[0].downgrade(), edges[1].downgrade(), edges[2].downgrade()], true);
+        matrix.add_constraint(vertices[1].downgrade(), &[edges[1].downgrade(), edges[3].downgrade()], false);
+        matrix.add_constraint(vertices[2].downgrade(), &[edges[0].downgrade(), edges[3].downgrade()], true);
         matrix.printstd();
         // this is because by default all edges are not tight
         assert_eq!(
@@ -149,8 +188,8 @@ pub mod tests {
 └─┴───┘
 "
         );
-        matrix.update_edge_tightness(4, true);
-        matrix.update_edge_tightness(9, true);
+        matrix.update_edge_tightness(edges[1].downgrade(), true);
+        matrix.update_edge_tightness(edges[3].downgrade(), true);
         matrix.printstd();
         assert_eq!(
             matrix.clone().printstd_str(),
@@ -166,7 +205,7 @@ pub mod tests {
 └─┴─┴─┴───┘
 "
         );
-        matrix.update_edge_tightness(9, false);
+        matrix.update_edge_tightness(edges[3].downgrade(), false);
         matrix.printstd();
         assert_eq!(
             matrix.clone().printstd_str(),
@@ -189,8 +228,47 @@ pub mod tests {
     fn tight_matrix_cannot_set_nonexistent_edge() {
         // cargo test tight_matrix_cannot_set_nonexistent_edge -- --nocapture
         let mut matrix = TightMatrix::new();
-        matrix.add_constraint(0, &[1, 4, 6], true);
-        matrix.update_edge_tightness(2, true);
+
+        // create vertices 
+        let vertices: Vec<VertexPtr> = (0..3)
+        .map(|vertex_index| {
+            VertexPtr::new_value(Vertex {
+                vertex_index,
+                is_defect: false,
+                edges: vec![],
+            })
+        })
+        .collect();
+
+        // create edges
+        let edges: Vec<EdgePtr> = vec![1, 4, 6, 9].into_iter()
+            .map(|edge_index| {
+                EdgePtr::new_value(Edge {
+                    edge_index: edge_index,
+                    weight: Rational::zero(),
+                    dual_nodes: vec![],
+                    vertices: vec![],
+                    last_updated_time: Rational::zero(),
+                    growth_at_last_updated_time: Rational::zero(),
+                    grow_rate: Rational::zero(),
+                    #[cfg(feature = "incr_lp")]
+                    cluster_weights: hashbrown::HashMap::new(),
+                })
+            }).collect();
+
+        let another_edge = EdgePtr::new_value(Edge {
+            edge_index: 2,
+            weight: Rational::zero(),
+            dual_nodes: vec![],
+            vertices: vec![],
+            last_updated_time: Rational::zero(),
+            growth_at_last_updated_time: Rational::zero(),
+            grow_rate: Rational::zero(),
+            #[cfg(feature = "incr_lp")]
+            cluster_weights: hashbrown::HashMap::new(),
+        });
+        matrix.add_constraint(vertices[0].downgrade(), &[edges[0].downgrade(), edges[1].downgrade(), edges[2].downgrade()], true);
+        matrix.update_edge_tightness(another_edge.downgrade(), true);
     }
 
     #[test]
@@ -198,22 +276,101 @@ pub mod tests {
     fn tight_matrix_cannot_read_nonexistent_edge() {
         // cargo test tight_matrix_cannot_read_nonexistent_edge -- --nocapture
         let mut matrix = TightMatrix::new();
-        matrix.add_constraint(0, &[1, 4, 6], true);
-        matrix.is_tight(2);
+
+        // create vertices 
+        let vertices: Vec<VertexPtr> = (0..3)
+        .map(|vertex_index| {
+            VertexPtr::new_value(Vertex {
+                vertex_index,
+                is_defect: false,
+                edges: vec![],
+            })
+        })
+        .collect();
+
+        // create edges
+        let edges: Vec<EdgePtr> = vec![1, 4, 6, 9].into_iter()
+            .map(|edge_index| {
+                EdgePtr::new_value(Edge {
+                    edge_index: edge_index,
+                    weight: Rational::zero(),
+                    dual_nodes: vec![],
+                    vertices: vec![],
+                    last_updated_time: Rational::zero(),
+                    growth_at_last_updated_time: Rational::zero(),
+                    grow_rate: Rational::zero(),
+                    #[cfg(feature = "incr_lp")]
+                    cluster_weights: hashbrown::HashMap::new(),
+                })
+            }).collect();
+
+        let another_edge = EdgePtr::new_value(Edge {
+            edge_index: 2,
+            weight: Rational::zero(),
+            dual_nodes: vec![],
+            vertices: vec![],
+            last_updated_time: Rational::zero(),
+            growth_at_last_updated_time: Rational::zero(),
+            grow_rate: Rational::zero(),
+            #[cfg(feature = "incr_lp")]
+            cluster_weights: hashbrown::HashMap::new(),
+        });
+        matrix.add_constraint(vertices[0].downgrade(), &[edges[0].downgrade(), edges[1].downgrade(), edges[2].downgrade()], true);
+        matrix.is_tight(another_edge.downgrade());
     }
 
     #[test]
     fn tight_matrix_basic_trait() {
         // cargo test --features=colorful tight_matrix_basic_trait -- --nocapture
         let mut matrix = TightMatrix::new();
-        matrix.add_variable(3); // untight edges will not show
-        matrix.add_constraint(0, &[1, 4, 6], true);
-        matrix.add_constraint(1, &[4, 9], false);
-        matrix.add_constraint(2, &[1, 9], true);
+
+        // create vertices 
+        let vertices: Vec<VertexPtr> = (0..3)
+        .map(|vertex_index| {
+            VertexPtr::new_value(Vertex {
+                vertex_index,
+                is_defect: false,
+                edges: vec![],
+            })
+        })
+        .collect();
+
+        // create edges
+        let edges: Vec<EdgePtr> = vec![1, 4, 6, 9].into_iter()
+            .map(|edge_index| {
+                EdgePtr::new_value(Edge {
+                    edge_index: edge_index,
+                    weight: Rational::zero(),
+                    dual_nodes: vec![],
+                    vertices: vec![],
+                    last_updated_time: Rational::zero(),
+                    growth_at_last_updated_time: Rational::zero(),
+                    grow_rate: Rational::zero(),
+                    #[cfg(feature = "incr_lp")]
+                    cluster_weights: hashbrown::HashMap::new(),
+                })
+            }).collect();
+
+        let another_edge = EdgePtr::new_value(Edge {
+            edge_index: 3,
+            weight: Rational::zero(),
+            dual_nodes: vec![],
+            vertices: vec![],
+            last_updated_time: Rational::zero(),
+            growth_at_last_updated_time: Rational::zero(),
+            grow_rate: Rational::zero(),
+            #[cfg(feature = "incr_lp")]
+            cluster_weights: hashbrown::HashMap::new(),
+        });
+
+        matrix.add_variable(another_edge.downgrade()); // untight edges will not show
+        matrix.add_constraint(vertices[0].downgrade(), &[edges[0].downgrade(), edges[1].downgrade(), edges[2].downgrade()], true);
+        matrix.add_constraint(vertices[1].downgrade(), &[edges[1].downgrade(), edges[3].downgrade()], false);
+        matrix.add_constraint(vertices[2].downgrade(), &[edges[0].downgrade(), edges[3].downgrade()], true);
         matrix.swap_row(2, 1);
         matrix.xor_row(0, 1);
-        for edge_index in [1, 4, 6, 9] {
-            matrix.update_edge_tightness(edge_index, true);
+        for edge_index in edges.iter() {
+            matrix.update_edge_tightness(edge_index.downgrade(), true);
         }
         matrix.printstd();
         assert_eq!(
@@ -236,19 +393,59 @@ pub mod tests {
     fn tight_matrix_rebuild_var_indices() {
         // cargo test --features=colorful tight_matrix_rebuild_var_indices -- --nocapture
         let mut matrix = TightMatrix::new();
-        matrix.add_variable(3); // untight edges will not show
-        matrix.add_constraint(0, &[1, 4, 6], true);
+
+        // create vertices 
+        let vertices: Vec<VertexPtr> = (0..3)
+        .map(|vertex_index| {
+            VertexPtr::new_value(Vertex {
+                vertex_index,
+                is_defect: false,
+                edges: vec![],
+            })
+        })
+        .collect();
+
+        // create edges
+        let edges: Vec<EdgePtr> = vec![1, 4, 6, 9].into_iter()
+            .map(|edge_index| {
+                EdgePtr::new_value(Edge {
+                    edge_index: edge_index,
+                    weight: Rational::zero(),
+                    dual_nodes: vec![],
+                    vertices: vec![],
+                    last_updated_time: Rational::zero(),
+                    growth_at_last_updated_time: Rational::zero(),
+                    grow_rate: Rational::zero(),
+                    #[cfg(feature = "incr_lp")]
+                    cluster_weights: hashbrown::HashMap::new(),
+                })
+            }).collect();
+
+        let another_edge = EdgePtr::new_value(Edge {
+            edge_index: 3,
+            weight: Rational::zero(),
+            dual_nodes: vec![],
+            vertices: vec![],
+            last_updated_time: Rational::zero(),
+            growth_at_last_updated_time: Rational::zero(),
+            grow_rate: Rational::zero(),
+            #[cfg(feature = "incr_lp")]
+            cluster_weights: hashbrown::HashMap::new(),
+        });
+
+        matrix.add_variable(another_edge.downgrade()); // untight edges will not show
+        matrix.add_constraint(vertices[0].downgrade(), &[edges[0].downgrade(), edges[1].downgrade(), edges[2].downgrade()], true);
         assert_eq!(matrix.columns(), 0);
-        for edge_index in [1, 4, 6] {
-            matrix.update_edge_tightness(edge_index, true);
+        for edge_index in [0, 1, 2] {
+            matrix.update_edge_tightness(edges[edge_index].downgrade(), true);
         }
         assert_eq!(matrix.columns(), 3);
         assert_eq!(matrix.columns(), 3); // should only update var_indices_once
-        matrix.add_constraint(1, &[4, 9], false);
-        matrix.add_constraint(2, &[1, 9], true);
-        matrix.update_edge_tightness(9, true);
-        matrix.update_edge_tightness(4, false);
-        matrix.update_edge_tightness(6, false);
+        matrix.add_constraint(vertices[1].downgrade(), &[edges[1].downgrade(), edges[3].downgrade()], false);
+        matrix.add_constraint(vertices[2].downgrade(), &[edges[0].downgrade(), edges[3].downgrade()], true);
+        matrix.update_edge_tightness(edges[3].downgrade(), true);
+        matrix.update_edge_tightness(edges[1].downgrade(), false);
+        matrix.update_edge_tightness(edges[2].downgrade(), false);
         assert_eq!(matrix.columns(), 2);
         matrix.printstd();
         assert_eq!(
@@ -272,8 +469,47 @@ pub mod tests {
     fn tight_matrix_cannot_call_dirty_column() {
         // cargo test tight_matrix_cannot_call_dirty_column -- --nocapture
         let mut matrix = TightMatrix::new();
-        matrix.add_constraint(0, &[1, 4, 6], true);
-        matrix.update_edge_tightness(1, true);
+
+        // create vertices 
+        let vertices: Vec<VertexPtr> = (0..3)
+        .map(|vertex_index| {
+            VertexPtr::new_value(Vertex {
+                vertex_index,
+                is_defect: false,
+                edges: vec![],
+            })
+        })
+        .collect();
+
+        // create edges
+        let edges: Vec<EdgePtr> = vec![1, 4, 6, 9].into_iter()
+            .map(|edge_index| {
+                EdgePtr::new_value(Edge {
+                    edge_index: edge_index,
+                    weight: Rational::zero(),
+                    dual_nodes: vec![],
+                    vertices: vec![],
+                    last_updated_time: Rational::zero(),
+                    growth_at_last_updated_time: Rational::zero(),
+                    grow_rate: Rational::zero(),
+                    #[cfg(feature = "incr_lp")]
+                    cluster_weights: hashbrown::HashMap::new(),
+                })
+            }).collect();
+
+        let another_edge = EdgePtr::new_value(Edge {
+            edge_index: 3,
+            weight: Rational::zero(),
+            dual_nodes: vec![],
+            vertices: vec![],
+            last_updated_time: Rational::zero(),
+            growth_at_last_updated_time: Rational::zero(),
+            grow_rate: Rational::zero(),
+            #[cfg(feature = "incr_lp")]
+            cluster_weights: hashbrown::HashMap::new(),
+        });
+        matrix.add_constraint(vertices[0].downgrade(), &[edges[0].downgrade(), edges[1].downgrade(), edges[2].downgrade()], true);
+        matrix.update_edge_tightness(edges[0].downgrade(), true);
         // even though there is indeed such a column, we forbid such dangerous calls
         // always call `columns()` before accessing any column
         matrix.column_to_var_index(0);

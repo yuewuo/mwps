@@ -1,0 +1,5 @@
+/data
+/tmp
+/target
+Cargo.lock
+massif*

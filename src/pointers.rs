@@ -3,8 +3,8 @@
 
 use crate::parking_lot::lock_api::{RwLockReadGuard, RwLockWriteGuard};
 use crate::parking_lot::{RawRwLock, RwLock};
+use std::collections::BTreeSet;
 use std::sync::{Arc, Weak};
-use std::cmp::Ordering;
 
 pub trait RwLockPtr<ObjType> {
     fn new_ptr(ptr: Arc<RwLock<ObjType>>) -> Self;
@@ -107,6 +107,25 @@ impl<T> PartialEq for WeakRwLock<T> {
 
 impl<T> Eq for WeakRwLock<T> {}
 
+impl<T> std::ops::Deref for ArcRwLock<T> {
+    type Target = RwLock<T>;
+    fn deref(&self) -> &Self::Target {
+        &self.ptr
+    }
+}
+
+impl<T> std::hash::Hash for ArcRwLock<T> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+       std::ptr::hash(self, state);
+    }
+}
+
+impl<T> std::hash::Hash for WeakRwLock<T> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+       std::ptr::hash(self, state);
+    }
+}
+
 impl<T: Send + Sync> weak_table::traits::WeakElement for WeakRwLock<T> {
     type Strong = ArcRwLock<T>;
     fn new(view: &Self::Strong) -> Self {
@@ -119,33 +138,6 @@ impl<T: Send + Sync> weak_table::traits::WeakElement for WeakRwLock<T> {
         view.clone()
     }
 }
-
-impl<T> std::ops::Deref for ArcRwLock<T> {
-    type Target = RwLock<T>;
-    fn deref(&self) -> &Self::Target {
-        &self.ptr
-    }
-}
-
-impl<T> PartialOrd for WeakRwLock<T> {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl<T> Ord for WeakRwLock<T> {
-    fn cmp(&self, other: &Self) -> Ordering {
-        self.ptr.as_ptr().cmp(&other.ptr.as_ptr())
-    }
-}
-
-// Implement Ord for &WeakRwLock<T> by delegating to WeakRwLock<T>
-// impl<T> Ord for &WeakRwLock<T> {
-//     fn cmp(&self, other: &Self) -> Ordering {
-//         self.cmp(*other)
-//     }
-// }
-
 
 #[cfg(test)]
 mod tests {

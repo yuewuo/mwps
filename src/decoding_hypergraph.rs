@@ -1,9 +1,16 @@
+use weak_table::PtrWeakHashSet;
+
 use crate::matrix::*;
 use crate::model_hypergraph::*;
 use crate::util::*;
 use crate::visualize::*;
 use std::collections::{BTreeSet, HashSet};
 use std::sync::Arc;
+
+#[cfg(feature = "pq")]
+use crate::dual_module_pq::{EdgeWeak, VertexWeak};
+#[cfg(feature = "non-pq")]
+use crate::dual_module_serial::{EdgeWeak, VertexWeak};
 
 #[derive(Debug, Clone)]
 pub struct DecodingHyperGraph {
@@ -54,29 +61,39 @@ impl DecodingHyperGraph {
         Self::new(model_graph, Arc::new(SyndromePattern::new_vertices(defect_vertices)))
     }
 
-    pub fn find_valid_subgraph(&self, edges: &BTreeSet<EdgeIndex>, vertices: &BTreeSet<VertexIndex>) -> Option<Subgraph> {
+    pub fn find_valid_subgraph(&self, edges: &PtrWeakHashSet<EdgeWeak>, vertices: &PtrWeakHashSet<VertexWeak>) -> Option<Subgraph> {
         let mut matrix = Echelon::<CompleteMatrix>::new();
-        for &edge_index in edges.iter() {
-            matrix.add_variable(edge_index);
+        for edge_index in edges.iter() {
+            matrix.add_variable(edge_index.downgrade());
         }
 
-        for &vertex_index in vertices.iter() {
-            let incident_edges = self.get_vertex_neighbors(vertex_index);
-            let parity = self.is_vertex_defect(vertex_index);
-            matrix.add_constraint(vertex_index, incident_edges, parity);
+        for vertex_index in vertices.iter() {
+            // let incident_edges = self.get_vertex_neighbors(vertex_index);
+            // let parity = self.is_vertex_defect(vertex_index);
+            let incident_edges = &vertex_index.read_recursive().edges;
+            let parity = vertex_index.read_recursive().is_defect;
+            matrix.add_constraint(vertex_index.downgrade(), &incident_edges, parity);
         }
         matrix.get_solution()
     }
 
-    pub fn find_valid_subgraph_auto_vertices(&self, edges: &BTreeSet<EdgeIndex>) -> Option<Subgraph> {
-        self.find_valid_subgraph(edges, &self.get_edges_neighbors(edges))
+    pub fn find_valid_subgraph_auto_vertices(&self, edges: &PtrWeakHashSet<EdgeWeak>) -> Option<Subgraph> {
+        let mut vertices: PtrWeakHashSet<VertexWeak> = PtrWeakHashSet::new();
+        for edge_ptr in edges.iter() {
+            let local_vertices = &edge_ptr.read_recursive().vertices;
+            for vertex in local_vertices {
+                vertices.insert(vertex.upgrade_force());
+            }
+        }
+
+        self.find_valid_subgraph(edges, &vertices)
     }
 
-    pub fn is_valid_cluster(&self, edges: &BTreeSet<EdgeIndex>, vertices: &BTreeSet<VertexIndex>) -> bool {
+    pub fn is_valid_cluster(&self, edges: &PtrWeakHashSet<EdgeWeak>, vertices: &PtrWeakHashSet<VertexWeak>) -> bool {
         self.find_valid_subgraph(edges, vertices).is_some()
     }
 
-    pub fn is_valid_cluster_auto_vertices(&self, edges: &BTreeSet<EdgeIndex>) -> bool {
+    pub fn is_valid_cluster_auto_vertices(&self, edges: &PtrWeakHashSet<EdgeWeak>) -> bool {
         self.find_valid_subgraph_auto_vertices(edges).is_some()
     }
 

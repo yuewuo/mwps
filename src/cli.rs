@@ -9,6 +9,8 @@ use clap::{Parser, Subcommand, ValueEnum};
 use more_asserts::assert_le;
 use num_traits::FromPrimitive;
 use pbr::ProgressBar;
+use rand::rngs::SmallRng;
+use rand::RngCore;
 use rand::{thread_rng, Rng, SeedableRng};
 use serde::Serialize;
 use serde_variant::to_variant_name;
@@ -99,6 +101,12 @@ pub struct BenchmarkParameters {
     /// skip some iterations, useful when debugging
     #[clap(long, default_value_t = 0)]
     starting_iteration: usize,
+    /// apply deterministic seed for debugging purpose
+    #[clap(long, action)]
+    apply_deterministic_seed: Option<u64>,
+    /// single seed for debugging purposes
+    #[clap(long, action)]
+    single_seed: Option<u64>,
 }
 
 #[derive(Subcommand, Clone, Debug)]
@@ -225,45 +233,45 @@ impl TypedValueParser for SerdeJsonParser {
     }
 }
 
-impl MatrixSpeedClass {
-    pub fn run(&self, parameters: MatrixSpeedParameters, samples: Vec<Vec<(Vec<usize>, bool)>>) {
-        match *self {
-            MatrixSpeedClass::EchelonTailTight => {
-                let mut matrix = Echelon::<Tail<Tight<BasicMatrix>>>::new();
-                for edge_index in 0..parameters.width {
-                    matrix.add_tight_variable(edge_index);
-                }
-                Self::run_on_matrix_interface(&matrix, samples)
-            }
-            MatrixSpeedClass::EchelonTight => {
-                let mut matrix = Echelon::<Tight<BasicMatrix>>::new();
-                for edge_index in 0..parameters.width {
-                    matrix.add_tight_variable(edge_index);
-                }
-                Self::run_on_matrix_interface(&matrix, samples)
-            }
-            MatrixSpeedClass::Echelon => {
-                let mut matrix = Echelon::<BasicMatrix>::new();
-                for edge_index in 0..parameters.width {
-                    matrix.add_variable(edge_index);
-                }
-                Self::run_on_matrix_interface(&matrix, samples)
-            }
-        }
-    }
+// impl MatrixSpeedClass {
+//     pub fn run(&self, parameters: MatrixSpeedParameters, samples: Vec<Vec<(Vec<usize>, bool)>>) {
+//         match *self {
+//             MatrixSpeedClass::EchelonTailTight => {
+//                 let mut matrix = Echelon::<Tail<Tight<BasicMatrix>>>::new();
+//                 for edge_index in 0..parameters.width {
+//                     matrix.add_tight_variable(edge_index);
+//                 }
+//                 Self::run_on_matrix_interface(&matrix, samples)
+//             }
+//             MatrixSpeedClass::EchelonTight => {
+//                 let mut matrix = Echelon::<Tight<BasicMatrix>>::new();
+//                 for edge_index in 0..parameters.width {
+//                     matrix.add_tight_variable(edge_index);
+//                 }
+//                 Self::run_on_matrix_interface(&matrix, samples)
+//             }
+//             MatrixSpeedClass::Echelon => {
+//                 let mut matrix = Echelon::<BasicMatrix>::new();
+//                 for edge_index in 0..parameters.width {
+//                     matrix.add_variable(edge_index);
+//                 }
+//                 Self::run_on_matrix_interface(&matrix, samples)
+//             }
+//         }
+//     }
 
-    pub fn run_on_matrix_interface<M: MatrixView + Clone>(matrix: &M, samples: Vec<Vec<(Vec<usize>, bool)>>) {
-        for parity_checks in samples.iter() {
-            let mut matrix = matrix.clone();
-            for (vertex_index, (incident_edges, parity)) in parity_checks.iter().enumerate() {
-                matrix.add_constraint(vertex_index, incident_edges, *parity);
-            }
-            // for a MatrixView, visiting the columns and rows is sufficient to update its internal state
-            matrix.columns();
-            matrix.rows();
-        }
-    }
-}
+//     pub fn run_on_matrix_interface<M: MatrixView + Clone>(matrix: &M, samples: Vec<Vec<(Vec<usize>, bool)>>) {
+//         for parity_checks in samples.iter() {
+//             let mut matrix = matrix.clone();
+//             for (vertex_index, (incident_edges, parity)) in parity_checks.iter().enumerate() {
+//                 matrix.add_constraint(vertex_index, incident_edges, *parity);
+//             }
+//             // for a MatrixView, visiting the columns and rows is sufficient to update its internal state
+//             matrix.columns();
+//             matrix.rows();
+//         }
+//     }
+// }
 
 impl Cli {
     pub fn run(self) {
@@ -287,6 +295,8 @@ impl Cli {
                 print_syndrome_pattern,
                 starting_iteration,
                 print_error_pattern,
+                apply_deterministic_seed,
+                single_seed,
             }) => {
                 // whether to disable progress bar, useful when running jobs in background
                 let disable_progress_bar = env::var("DISABLE_PROGRESS_BAR").is_ok();
@@ -302,7 +312,6 @@ impl Cli {
                 let initializer = code.get_initializer();
                 let mut primal_dual_solver = primal_dual_type.build(&initializer, &*code, primal_dual_config);
                 let mut result_verifier = verifier.build(&initializer);
-                let mut benchmark_profiler = BenchmarkProfiler::new(noisy_measurements, benchmark_profiler_output);
                 // prepare progress bar display
                 let mut pb = if !disable_progress_bar {
                     let mut pb = ProgressBar::on(std::io::stderr(), total_rounds as u64);
@@ -314,10 +323,54 @@ impl Cli {
                     }
                     None
                 };
-                let mut rng = thread_rng();
+
+                if let Some(seed) = single_seed {
+                    let (syndrome_pattern, error_pattern) = code.generate_random_errors(seed);
+                    if print_syndrome_pattern {
+                        println!("syndrome_pattern: {:?}", syndrome_pattern);
+                    }
+                    if print_error_pattern {
+                        println!("error_pattern: {:?}", error_pattern);
+                    }
+                    // create a new visualizer each round
+                    let mut visualizer = None;
+                    if enable_visualizer {
+                        let new_visualizer = Visualizer::new(
+                            Some(visualize_data_folder() + static_visualize_data_filename().as_str()),
+                            code.get_positions(),
+                            true,
+                        )
+                        .unwrap();
+                        visualizer = Some(new_visualizer);
+                    }
+                    primal_dual_solver.solve_visualizer(&syndrome_pattern, visualizer.as_mut(), seed); // FIXME: for release, remove the seed that is passed in for debugging purposes
+
+                    // solver load the defect vertices from their indices
+                    result_verifier.verify(
+                        &mut primal_dual_solver,
+                        &syndrome_pattern,
+                        &error_pattern,
+                        visualizer.as_mut(),
+                        seed,
+                    );
+                    primal_dual_solver.clear(); // also count the clear operation
+
+                    return;
+                }
+
+                let mut benchmark_profiler = BenchmarkProfiler::new(noisy_measurements, benchmark_profiler_output);
+                // let mut rng = thread_rng();
+                thread_rng().gen::<u64>();
+                let mut seed = match apply_deterministic_seed {
+                    Some(seed) => seed,
+                    None => thread_rng().gen::<u64>(),
+                };
+                let mut rng = SmallRng::seed_from_u64(seed);
+                // println!("OG_s: {:?}", seed);
                 for round in (starting_iteration as u64)..(total_rounds as u64) {
                     pb.as_mut().map(|pb| pb.set(round));
-                    let seed = if use_deterministic_seed { round } else { rng.gen() };
+                    seed = if use_deterministic_seed { round } else { rng.next_u64() };
+                    // println!("NEW rng seed: {:?}", seed);
                     let (syndrome_pattern, error_pattern) = code.generate_random_errors(seed);
                     if print_syndrome_pattern {
                         println!("syndrome_pattern: {:?}", syndrome_pattern);
@@ -337,16 +390,18 @@ impl Cli {
                         visualizer = Some(new_visualizer);
                     }
                     benchmark_profiler.begin(&syndrome_pattern, &error_pattern);
-                    primal_dual_solver.solve_visualizer(&syndrome_pattern, visualizer.as_mut());
+                    primal_dual_solver.solve_visualizer(&syndrome_pattern, visualizer.as_mut(), seed); // FIXME: for release, remove the seed that is passed in for debugging purposes
                     benchmark_profiler.event("decoded".to_string());
                     result_verifier.verify(
                         &mut primal_dual_solver,
                         &syndrome_pattern,
                         &error_pattern,
                         visualizer.as_mut(),
+                        seed,
                     );
                     benchmark_profiler.event("verified".to_string());
                     primal_dual_solver.clear(); // also count the clear operation
+
                     benchmark_profiler.end(Some(&*primal_dual_solver));
                     if let Some(pb) = pb.as_mut() {
                         if pb_message.is_empty() {
@@ -363,6 +418,8 @@ impl Cli {
                     }
                     println!();
                 }
+
+                eprintln!("total resolve time {:?}", benchmark_profiler.sum_round_time);
             }
             Commands::MatrixSpeed(parameters) => {
                 let MatrixSpeedParameters {
@@ -388,7 +445,7 @@ impl Cli {
                     samples.push(parity_checks);
                 }
                 // call the matrix operation
-                matrix_type.run(parameters, samples);
+                // matrix_type.run(parameters, samples);
             }
             Commands::Test { command } => match command {
                 TestCommands::Common => {
@@ -575,8 +632,9 @@ trait ResultVerifier {
         &mut self,
         primal_dual_solver: &mut Box<dyn PrimalDualSolver>,
         syndrome_pattern: &SyndromePattern,
-        error_pattern: &Subgraph,
+        error_pattern: &Vec<usize>,
         visualizer: Option<&mut Visualizer>,
+        seed: u64,
     );
 }
 
@@ -587,8 +645,9 @@ impl ResultVerifier for VerifierNone {
         &mut self,
         _primal_dual_solver: &mut Box<dyn PrimalDualSolver>,
         _syndrome_pattern: &SyndromePattern,
-        _error_pattern: &Subgraph,
+        _error_pattern: &Vec<usize>,
         _visualizer: Option<&mut Visualizer>,
+        _seed: u64,
     ) {
     }
 }
@@ -602,8 +661,9 @@ impl ResultVerifier for VerifierFusionSerial {
         &mut self,
         _primal_dual_solver: &mut Box<dyn PrimalDualSolver>,
         _syndrome_pattern: &SyndromePattern,
-        _error_pattern: &Subgraph,
+        _error_pattern: &Vec<usize>,
         _visualizer: Option<&mut Visualizer>,
+        _seed: u64,
     ) {
         println!("{}", self.initializer.vertex_num);
         unimplemented!()
@@ -620,30 +680,36 @@ impl ResultVerifier for VerifierActualError {
         &mut self,
         primal_dual_solver: &mut Box<dyn PrimalDualSolver>,
         syndrome_pattern: &SyndromePattern,
-        error_pattern: &Subgraph,
+        error_pattern: &Vec<usize>,
         visualizer: Option<&mut Visualizer>,
+        seed: u64,
     ) {
         if !syndrome_pattern.erasures.is_empty() {
             unimplemented!()
         }
-        let actual_weight = Rational::from_usize(self.initializer.get_subgraph_total_weight(error_pattern)).unwrap();
-        let (subgraph, weight_range) = primal_dual_solver.subgraph_range_visualizer(visualizer);
+        let actual_weight = if error_pattern.is_empty() && !syndrome_pattern.defect_vertices.is_empty() {
+            // error pattern is not generated by the simulator
+            Rational::from_usize(usize::MAX).unwrap()
+        } else {
+            self.initializer.get_subgraph_index_total_weight(error_pattern)
+        };
+        let (subgraph, weight_range) = primal_dual_solver.subgraph_range_visualizer(visualizer, seed);
         assert!(
             self.initializer
                 .matches_subgraph_syndrome(&subgraph, &syndrome_pattern.defect_vertices),
-            "bug: the result subgraph does not match the syndrome"
+            "bug: the result subgraph does not match the syndrome || the seed is {seed:?}"
         );
         assert_le!(
             weight_range.lower,
             actual_weight,
-            "bug: the lower bound of weight range is larger than the actual weight"
+            "bug: the lower bound of weight range is larger than the actual weight || the seed is {seed:?}"
         );
         if self.is_strict {
-            let subgraph_weight = Rational::from_usize(self.initializer.get_subgraph_total_weight(&subgraph)).unwrap();
+            let subgraph_weight = self.initializer.get_subgraph_total_weight(&subgraph);
             assert_le!(subgraph_weight, actual_weight, "it's not a minimum-weight parity subgraph: the actual error pattern has smaller weight, range: {weight_range:?}");
             assert_eq!(
                 weight_range.lower, weight_range.upper,
-                "the weight range must be optimal: lower = upper"
+                "the weight range must be optimal: lower = upper || the seed is {seed:?}"
             );
         }
     }

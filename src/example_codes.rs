@@ -362,7 +362,7 @@ pub trait ExampleCode {
 
     /// generate random errors based on the edge probabilities and a seed for pseudo number generator
     #[allow(clippy::unnecessary_cast)]
-    fn generate_random_errors(&mut self, seed: u64) -> (SyndromePattern, Subgraph) {
+    fn generate_random_errors(&mut self, seed: u64) -> (SyndromePattern, Vec<usize>) {
         let mut rng = DeterministicRng::seed_from_u64(seed);
         let (vertices, edges) = self.vertices_edges();
         for vertex in vertices.iter_mut() {
@@ -875,7 +875,7 @@ impl CodeCapacityColorCode {
 }
 
 /// example code with QEC-Playground as simulator
-// #[cfg(feature = "qecp_integrate")]
+#[cfg(feature = "qecp_integrate")]
 #[cfg_attr(feature = "python_binding", cfg_eval)]
 #[cfg_attr(feature = "python_binding", pyclass)]
 #[derive(Debug, Clone)]
@@ -892,7 +892,7 @@ pub struct QECPlaygroundCode {
     pub edges: Vec<CodeEdge>,
 }
 
-// #[cfg(feature = "qecp_integrate")]
+#[cfg(feature = "qecp_integrate")]
 impl ExampleCode for QECPlaygroundCode {
     fn vertices_edges(&mut self) -> (&mut Vec<CodeVertex>, &mut Vec<CodeEdge>) {
         (&mut self.vertices, &mut self.edges)
@@ -902,7 +902,7 @@ impl ExampleCode for QECPlaygroundCode {
     }
     // override simulation function
     #[allow(clippy::unnecessary_cast)]
-    fn generate_random_errors(&mut self, seed: u64) -> (SyndromePattern, Subgraph) {
+    fn generate_random_errors(&mut self, seed: u64) -> (SyndromePattern, Vec<usize>) {
         use qecp::simulator::SimulatorGenerics;
         let rng = qecp::reproducible_rand::Xoroshiro128StarStar::seed_from_u64(seed);
         self.simulator.set_rng(rng);
@@ -946,7 +946,7 @@ impl ExampleCode for QECPlaygroundCode {
 #[cfg(all(feature = "python_binding", feature = "qecp_integrate"))]
 bind_trait_example_code! {QECPlaygroundCode}
 
-// #[cfg(feature = "qecp_integrate")]
+#[cfg(feature = "qecp_integrate")]
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct QECPlaygroundCodeConfig {
@@ -974,7 +974,7 @@ pub struct QECPlaygroundCodeConfig {
     pub max_weight: usize,
 }
 
-// #[cfg(feature = "qecp_integrate")]
+#[cfg(feature = "qecp_integrate")]
 pub mod qec_playground_default_configs {
     pub fn pe() -> f64 {
         0.
@@ -999,7 +999,7 @@ pub mod qec_playground_default_configs {
     }
 }
 
-// #[cfg(feature = "qecp_integrate")]
+#[cfg(feature = "qecp_integrate")]
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct HyperionDecoderConfig {
@@ -1015,7 +1015,7 @@ pub struct HyperionDecoderConfig {
     pub hyperion_config: serde_json::Value,
 }
 
-// #[cfg(feature = "qecp_integrate")]
+#[cfg(feature = "qecp_integrate")]
 pub mod hyperion_default_configs {
     use super::*;
     pub fn default_hyperion_config() -> serde_json::Value {
@@ -1029,7 +1029,7 @@ pub mod hyperion_default_configs {
     } // default use combined probability for better accuracy
 }
 
-// #[cfg(feature = "qecp_integrate")]
+#[cfg(feature = "qecp_integrate")]
 impl QECPlaygroundCode {
     #[allow(clippy::unnecessary_cast)]
     pub fn new(d: usize, p: f64, config: serde_json::Value) -> Self {
@@ -1154,7 +1154,7 @@ impl ExampleCode for ErrorPatternReader {
     fn immutable_vertices_edges(&self) -> (&Vec<CodeVertex>, &Vec<CodeEdge>) {
         (&self.vertices, &self.edges)
     }
-    fn generate_random_errors(&mut self, _seed: u64) -> (SyndromePattern, Subgraph) {
+    fn generate_random_errors(&mut self, _seed: u64) -> (SyndromePattern, Vec<usize>) {
         assert!(
             self.syndrome_index < self.syndrome_patterns.len(),
             "reading syndrome pattern more than in the file, consider generate the file with more data points"
@@ -1296,19 +1296,5 @@ mod tests {
         let mut code = CodeCapacityColorCode::new(7, 0.1, 1000);
         code.sanity_check().unwrap();
         visualize_code(&mut code, "example_code_capacity_color_code.json".to_string());
-    }
-
-    #[test]
-    fn example_code_rotated_planar_code() {
-        // cargo test example_code_rotated_planar_code -- --nocapture
-        let config = json!({
-            "code_type": qecp::code_builder::CodeType::RotatedPlanarCode
-        });
-        
-        let mut code = QECPlaygroundCode::new(7, 0.1, config);
-        // let defect_vertices = vec![3, 29];
-
-        code.sanity_check().unwrap();
-        visualize_code(&mut code, "example_code_rotated_planar_code.json".to_string());
     }
 }

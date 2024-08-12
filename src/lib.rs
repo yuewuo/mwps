@@ -6,7 +6,6 @@ extern crate serde_json;
 extern crate cfg_if;
 extern crate chrono;
 extern crate clap;
-extern crate core_affinity;
 extern crate derivative;
 extern crate itertools;
 #[macro_use]
@@ -22,6 +21,7 @@ extern crate prettytable;
 extern crate pyo3;
 extern crate rand;
 extern crate rand_xoshiro;
+#[cfg(feature = "slp")]
 extern crate slp;
 extern crate urlencoding;
 #[cfg(feature = "wasm_binding")]
@@ -36,19 +36,18 @@ pub mod decoding_hypergraph;
 pub mod dual_module;
 pub mod dual_module_pq;
 pub mod dual_module_serial;
-pub mod dual_module_parallel;
 pub mod example_codes;
 pub mod invalid_subgraph;
 pub mod matrix;
 pub mod model_hypergraph;
 pub mod mwpf_solver;
+pub mod ordered_float;
 pub mod plugin;
 pub mod plugin_single_hair;
 pub mod plugin_union_find;
 pub mod pointers;
 pub mod primal_module;
 pub mod primal_module_serial;
-pub mod primal_module_parallel;
 pub mod primal_module_union_find;
 pub mod relaxer;
 pub mod relaxer_forest;
@@ -77,18 +76,20 @@ use wasm_bindgen::prelude::*;
 pub fn get_version() -> String {
     use decoding_hypergraph::*;
     use dual_module::*;
-    use dual_module_serial::*;
+    use dual_module_pq::*;
     use example_codes::*;
     use primal_module::*;
     use primal_module_serial::*;
+    use crate::util::Rational;
+
     // TODO: I'm just testing basic functionality
     let defect_vertices = vec![23, 24, 29, 30];
     let code = CodeCapacityTailoredCode::new(7, 0., 0.01, 1);
     // create dual module
     let model_graph = code.get_model_graph();
-    let mut dual_module = DualModuleSerial::new_empty(&model_graph.initializer);
+    let mut dual_module: DualModulePQ<FutureObstacleQueue<Rational>>  = DualModulePQ::new_empty(&model_graph.initializer);
     // create primal module
-    let mut primal_module = PrimalModuleSerial::new_empty(&model_graph.initializer, &model_graph);
+    let mut primal_module = PrimalModuleSerial::new_empty(&model_graph.initializer);
     primal_module.growing_strategy = GrowingStrategy::SingleCluster;
     primal_module.plugins = std::sync::Arc::new(vec![]);
     // try to work on a simple syndrome
@@ -100,7 +101,7 @@ pub fn get_version() -> String {
         &mut dual_module,
         None,
     );
-    let (subgraph, weight_range) = primal_module.subgraph_range(&interface_ptr, &mut dual_module);
+    let (subgraph, weight_range) = primal_module.subgraph_range(&interface_ptr, &mut dual_module, 0);
     println!("subgraph: {subgraph:?}");
     // env!("CARGO_PKG_VERSION").to_string()
     format!("subgraph: {subgraph:?}, weight_range: {weight_range:?}")

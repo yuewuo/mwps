@@ -3,19 +3,75 @@
 //! Generics for dual modules
 //!
 
-use rayon::vec;
+use weak_table::PtrWeakHashSet;
 
 use crate::decoding_hypergraph::*;
 use crate::derivative::Derivative;
+use crate::dual_module_pq::Edge;
 use crate::invalid_subgraph::*;
 use crate::model_hypergraph::*;
-use crate::num_traits::{One, ToPrimitive, Zero};
+use crate::num_traits::{FromPrimitive, One, Signed, ToPrimitive, Zero};
+use crate::ordered_float::OrderedFloat;
 use crate::pointers::*;
+use crate::primal_module::Affinity;
+use crate::primal_module_serial::PrimalClusterPtr;
+use crate::relaxer_optimizer::OptimizerResult;
 use crate::util::*;
 use crate::visualize::*;
+
+use std::collections::BTreeMap;
 use std::collections::{BTreeSet, HashMap};
 use std::sync::Arc;
-use weak_table::PtrWeakKeyHashMap;
+
+#[cfg(feature = "pq")]
+use crate::dual_module_pq::{EdgeWeak, VertexWeak, EdgePtr, VertexPtr};
+#[cfg(feature = "non-pq")]
+use crate::dual_module_serial::{EdgeWeak, VertexWeak, EdgePtr, VertexPtr};
+
+// this is not effecitively doing much right now due to the My (Leo's) desire for ultra performance (inlining function > branches)
+#[derive(Default, Debug)]
+pub enum DualModuleMode {
+    /// Mode 1
+    #[default]
+    Search, // Searching for a solution
+
+    /// Mode 2
+    Tune, // Tuning for the optimal solution
+}
+
+impl DualModuleMode {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn advance(&mut self) {
+        match self {
+            Self::Search => *self = Self::Tune,
+            Self::Tune => panic!("dual module mode is already in tune mode"),
+        }
+    }
+
+    pub fn reset(&mut self) {
+        *self = Self::Search;
+    }
+}
+
+// Each dual_module impl should have mode and affinity_map, hence these methods should be shared
+//      Note: Affinity Map is not implemented in this branch, but a different file/branch (there incurs performance overhead)
+#[macro_export]
+macro_rules! add_shared_methods {
+    () => {
+        /// Returns a reference to the mode field.
+        fn mode(&self) -> &DualModuleMode {
+            &self.mode
+        }
+
+        /// Returns a mutable reference to the mode field.
+        fn mode_mut(&mut self) -> &mut DualModuleMode {
+            &mut self.mode
+        }
+    };
+}
 
 pub struct DualNode {
     /// the index of this dual node, helps to locate internal details of this dual node
@@ -33,8 +89,6 @@ pub struct DualNode {
     pub last_updated_time: Rational,
     /// dual variable's value at the last updated time
     pub dual_variable_at_last_updated_time: Rational,
-    /// the DualModuleInterface this DualNode belongs to 
-    pub belonging: DualModuleInterfaceWeak,
 }
 
 impl DualNode {
@@ -79,12 +133,14 @@ impl std::fmt::Debug for DualNodePtr {
         let global_time = dual_node.global_time.as_ref().unwrap_or(&new).read_recursive();
         write!(
             f,
-            "\n\t\tindex: {}, global_time: {:?}, dual_variable: {}\n\t\tdual_variable_at_last_updated_time: {}, last_updated_time: {}",
+            "\n\t\tindex: {}, global_time: {:?}, grow_rate: {:?}, dual_variable: {}\n\t\tdual_variable_at_last_updated_time: {}, last_updated_time: {}\n\timpacted_edges: {:?}\n",
             dual_node.index,
             global_time,
+            dual_node.grow_rate,
             dual_node.get_dual_variable(),
             dual_node.dual_variable_at_last_updated_time,
-            dual_node.last_updated_time
+            dual_node.last_updated_time,
+            dual_node.invalid_subgraph.hair.iter().map(|e| e.read_recursive().edge_index).collect::<Vec<_>>(),
         )
     }
 }
@@ -94,37 +150,6 @@ impl std::fmt::Debug for DualNodeWeak {
         self.upgrade_force().fmt(f)
     }
 }
-
-impl Ord for DualNodePtr {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.read_recursive().index.cmp(&other.read_recursive().index)
-    }
-}
-
-impl PartialOrd for DualNodePtr {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl DualNodePtr {
-    /// we mainly use the vertex_index from this function to run bfs to find the partition unit responsible for this dual node
-    pub fn get_representative_vertex(&self) -> VertexIndex {
-        let dual_node = self.read_recursive();
-        let defect_vertex = dual_node.invalid_subgraph.vertices.first().unwrap();
-        *defect_vertex
-    }
-
-    // /// when fused, dual node may be outdated; refresh here
-    // pub fn update(&self) -> &Self {
-    //     let mut current_belonging = self.read_recursive().belonging.upgrade_force();
-    //     let mut bias = 0;
-    //     let mut node = self.write();
-    //     node.index += current_belonging.index_bias;
-    //     self
-    // }
-}
-
 
 /// an array of dual nodes
 /// dual nodes, once created, will never be deconstructed until the next run
@@ -137,16 +162,6 @@ pub struct DualModuleInterface {
     pub hashmap: HashMap<Arc<InvalidSubgraph>, NodeIndex>,
     /// the decoding graph
     pub decoding_graph: DecodingHyperGraph,
-    /// unit index of this interface, default to 0
-    pub unit_index: usize, 
-    /// the adjacent DualModuleInterface units and whether this adjacent unit is fused with self
-    pub adjacent_parallel_units: PtrWeakKeyHashMap<DualModuleInterfaceWeak, bool>,
-    /// global bias
-    pub global_bias: usize,
-    /// index bias as a result of fusion 
-    pub index_bias: usize,
-    /// current nodes length, to enable constant-time clear operation
-    pub nodes_length: usize,
 }
 
 pub type DualModuleInterfacePtr = ArcRwLock<DualModuleInterface>;
@@ -176,9 +191,73 @@ pub enum MaxUpdateLength {
     /// non-zero maximum update length
     ValidGrow(Rational),
     /// conflicting growth, violating the slackness constraint
-    Conflicting(EdgeIndex),
+    Conflicting(EdgePtr),
     /// hitting 0 dual variable while shrinking, only happens when `grow_rate` < 0
-    ShrinkProhibited(DualNodePtr),
+    ///     note: Using OrderedDualNodePtr since we can compare without acquiring the lock, for enabling btreeset/hashset/pq etc. with lower overhead
+    ShrinkProhibited(OrderedDualNodePtr),
+}
+
+/// a pair of node index and dual node pointer, used for comparison without acquiring the lock
+/// useful for when inserting into sets
+#[derive(Derivative, PartialEq, Eq, Clone, Debug)]
+pub struct OrderedDualNodePtr {
+    pub index: NodeIndex,
+    pub ptr: DualNodePtr,
+}
+
+impl OrderedDualNodePtr {
+    pub fn new(index: NodeIndex, ptr: DualNodePtr) -> Self {
+        Self { index, ptr }
+    }
+}
+impl PartialOrd for OrderedDualNodePtr {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        // Some(self.index.cmp(&other.index))
+        Some(self.cmp(other))
+    }
+}
+impl Ord for OrderedDualNodePtr {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        // self.index.cmp(&other.index)
+        let ptr1 = Arc::as_ptr(self.ptr.ptr());
+        let ptr2 = Arc::as_ptr(other.ptr.ptr());
+        // https://doc.rust-lang.org/reference/types/pointer.html
+        // "When comparing raw pointers they are compared by their address, rather than by what they point to."
+        ptr1.cmp(&ptr2)
+    }
+}
+
+#[derive(Derivative, PartialEq, Eq, Clone, Debug)]
+pub struct OrderedDualNodeWeak {
+    pub index: NodeIndex,
+    pub weak_ptr: DualNodeWeak,
+}
+
+impl OrderedDualNodeWeak {
+    pub fn new(index: NodeIndex, weak_ptr: DualNodeWeak) -> Self {
+        Self { index, weak_ptr }
+    }
+
+    pub fn upgrade_force(&self) -> OrderedDualNodePtr {
+        OrderedDualNodePtr::new(self.index, self.weak_ptr.upgrade_force())
+    }
+}
+impl PartialOrd for OrderedDualNodeWeak {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        // Some(self.index.cmp(&other.index))
+        Some(self.cmp(other))
+    }
+}
+impl Ord for OrderedDualNodeWeak {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        // the old version of cmp is to compare their indices only
+        // compare the pointer address 
+        let ptr1 = Arc::as_ptr(self.weak_ptr.upgrade_force().ptr());
+        let ptr2 = Arc::as_ptr(other.weak_ptr.upgrade_force().ptr());
+        // https://doc.rust-lang.org/reference/types/pointer.html
+        // "When comparing raw pointers they are compared by their address, rather than by what they point to."
+        ptr1.cmp(&ptr2)
+    }
 }
 
 #[derive(Derivative, Clone)]
@@ -202,7 +281,7 @@ pub trait DualModuleImpl {
     fn clear(&mut self);
 
     /// add defect node
-    fn add_defect_node(&mut self, dual_node_ptr: &DualNodePtr, bias: usize);
+    fn add_defect_node(&mut self, dual_node_ptr: &DualNodePtr);
 
     /// add corresponding dual node, note that the `internal_vertices` and `hair_edges` are not set
     fn add_dual_node(&mut self, dual_node_ptr: &DualNodePtr);
@@ -234,47 +313,214 @@ pub trait DualModuleImpl {
     /// note that a negative growth should be implemented by reversing the speed of each dual node
     fn grow(&mut self, length: Rational);
 
-    fn get_edge_nodes(&self, edge_index: EdgeIndex) -> Vec<DualNodePtr>;
-    fn get_edge_slack(&self, edge_index: EdgeIndex) -> Rational;
-    fn is_edge_tight(&self, edge_index: EdgeIndex) -> bool;
-    fn get_edge_global_index(&self, local_edge_index: EdgeIndex, unit_index: usize) -> EdgeIndex;
+    fn get_edge_nodes(&self, edge_ptr: EdgePtr) -> Vec<DualNodePtr>;
+    fn get_edge_slack(&self, edge_ptr: EdgePtr) -> Rational;
+    fn is_edge_tight(&self, edge_ptr: EdgePtr) -> bool;
 
-    /// for fusion operation 
-    /// create a partitioned dual module (hosting only a subgraph and subset of dual nodes) to be used in the parallel dual module
-    fn new_partitioned(_partitioned_initializer: &PartitionedSolverInitializer) -> Self
-    where
-        Self: std::marker::Sized,
-    {
-        panic!("the dual module implementation doesn't support this function, please use another dual module")
+    /* New tuning-related methods */
+    /// mode mangements
+    fn mode(&self) -> &DualModuleMode;
+    fn mode_mut(&mut self) -> &mut DualModuleMode;
+    fn advance_mode(&mut self) {
+        eprintln!("this dual_module does not implement different modes");
+    }
+    fn reset_mode(&mut self) {
+        *self.mode_mut() = DualModuleMode::default();
     }
 
-    /// bias the global dual node indices
-    fn bias_dual_node_index(&mut self, _bias: NodeIndex) {
-        panic!("the dual module implementation doesn't support this function, please use another dual module")
+    /// "set_grow_rate", but in tuning phase
+    fn set_grow_rate_tune(&mut self, dual_node_ptr: &DualNodePtr, grow_rate: Rational) {
+        eprintln!("this dual_module does not implement tuning");
+        self.set_grow_rate(dual_node_ptr, grow_rate)
     }
 
-    /// execute a synchronize event by updating the state of a vertex and also update the internal dual node accordingly
-    fn execute_sync_event(&mut self, _sync_event: &SyncRequest) {
-        panic!("the dual module implementation doesn't support this function, please use another dual module")
+    /// "add_dual_node", but in tuning phase
+    fn add_dual_node_tune(&mut self, dual_node_ptr: &DualNodePtr) {
+        eprintln!("this dual_module does not implement tuning");
+        self.add_dual_node(dual_node_ptr);
     }
 
-    /// judge whether the current module hosts a vertex
-    fn contains_vertex(&self, _vertex_index: VertexIndex) -> bool {
-        panic!("the dual module implementation doesn't support this function, please use another dual module")
+    /// syncing all possible states (dual_variable and edge_weights) with global time, so global_time can be discarded later
+    fn sync(&mut self) {
+        panic!("this dual_module does not have global time and does not need to sync");
     }
 
-    /// prepare the growing or shrinking state of all nodes and return a list of sync requests in case of mirrored vertices are changed
-    fn prepare_all(&mut self) -> &mut Vec<SyncRequest> {
-        panic!("the dual module implementation doesn't support this function, please use another dual module")
+    /// grow a specific edge on the spot
+    fn grow_edge(&self, _edge_ptr: EdgePtr, _amount: &Rational) {
+        panic!("this dual_module doesn't support edge growth");
     }
-}
 
-/// trait for DualModuleParallelImpl, 
-/// this dual module is a parallel version that hosts many partitioned ones
-pub trait DualModuleParallelImpl {
-    type UnitType: DualModuleImpl + Send + Sync;
+    /// `is_edge_tight` but in tuning phase
+    fn is_edge_tight_tune(&self, edge_ptr: EdgePtr) -> bool {
+        eprintln!("this dual_module does not implement tuning");
+        self.is_edge_tight(edge_ptr)
+    }
 
-    fn get_unit(&self, unit_index: usize) -> ArcRwLock<Self::UnitType>;
+    /// `get_edge_slack` but in tuning phase
+    fn get_edge_slack_tune(&self, edge_ptr: EdgePtr) -> Rational {
+        eprintln!("this dual_module does not implement tuning");
+        self.get_edge_slack(edge_ptr)
+    }
+
+    /* miscs */
+
+    /// print all the states for the current dual module
+    fn debug_print(&self) {
+        println!("this dual_module doesn't support debug print");
+    }
+
+    /* affinity */
+
+    /// calculate affinity based on the following metric
+    ///     Clusters with larger primal-dual gaps will receive high affinity because working on those clusters
+    ///     will often reduce the gap faster. However, clusters with a large number of dual variables, vertices,
+    ///     and hyperedges will receive a lower affinity
+    fn calculate_cluster_affinity(&mut self, _cluster: PrimalClusterPtr) -> Option<Affinity> {
+        eprintln!("not implemented, skipping");
+        Some(OrderedFloat::from(100.0))
+    }
+
+    fn get_conflicts_tune(
+        &self,
+        optimizer_result: OptimizerResult,
+        // dual_node_deltas: BTreeMap<OrderedDualNodePtr, Rational>,
+        dual_node_deltas: BTreeMap<OrderedDualNodePtr, (Rational, NodeIndex)>,
+    ) -> BTreeSet<MaxUpdateLength> {
+        let mut conflicts = BTreeSet::new();
+        match optimizer_result {
+            OptimizerResult::EarlyReturned => {
+                // if early returned, meaning optimizer didn't optimize, but simply should find current conflicts and return
+                // for (dual_node_ptr, grow_rate) in dual_node_deltas.into_iter() {
+                for (dual_node_ptr, (grow_rate, _)) in dual_node_deltas.into_iter() {
+                    let node_ptr_read = dual_node_ptr.ptr.read_recursive();
+                    if grow_rate.is_negative() && node_ptr_read.dual_variable_at_last_updated_time.is_zero() {
+                        conflicts.insert(MaxUpdateLength::ShrinkProhibited(OrderedDualNodePtr::new(
+                            node_ptr_read.index,
+                            dual_node_ptr.ptr.clone(),
+                        )));
+                    }
+                    for edge_ptr in node_ptr_read.invalid_subgraph.hair.iter() {
+                        if grow_rate.is_positive() && self.is_edge_tight_tune(edge_ptr.clone()) {
+                            conflicts.insert(MaxUpdateLength::Conflicting( edge_ptr.clone() ));
+                        }
+                    }
+                }
+            }
+            OptimizerResult::Skipped => {
+                // if skipped, should check if is growable, if not return the conflicts that leads to that conclusion
+                // for (dual_node_ptr, grow_rate) in dual_node_deltas.into_iter() {
+                for (dual_node_ptr, (grow_rate, cluster_index)) in dual_node_deltas.into_iter() {
+                    // check if the single direction is growable
+                    let mut actual_grow_rate = Rational::from_usize(std::usize::MAX).unwrap();
+                    let node_ptr_read = dual_node_ptr.ptr.read_recursive();
+                    for edge_ptr in node_ptr_read.invalid_subgraph.hair.iter() {
+                        actual_grow_rate = std::cmp::min(actual_grow_rate, self.get_edge_slack_tune(edge_ptr));
+                    }
+                    if actual_grow_rate.is_zero() {
+                        // if not, return the current conflicts
+                        for edge_ptr in node_ptr_read.invalid_subgraph.hair.iter() {
+                            if grow_rate.is_positive() && self.is_edge_tight_tune(edge_ptr.clone()) {
+                                conflicts.insert(MaxUpdateLength::Conflicting( edge_ptr.clone()));
+                            }
+                        }
+                        if grow_rate.is_negative() && node_ptr_read.dual_variable_at_last_updated_time.is_zero() {
+                            conflicts.insert(MaxUpdateLength::ShrinkProhibited(OrderedDualNodePtr::new(
+                                node_ptr_read.index,
+                                dual_node_ptr.ptr.clone(),
+                            )));
+                        }
+                    } else {
+                        // if yes, grow and return new conflicts
+                        drop(node_ptr_read);
+                        let mut node_ptr_write = dual_node_ptr.ptr.write();
+                        for edge_ptr in node_ptr_write.invalid_subgraph.hair.iter() {
+                            self.grow_edge(edge_ptr.clone(), &actual_grow_rate);
+                            #[cfg(feature = "incr_lp")]
+                            self.update_edge_cluster_weights(*edge_index, cluster_index, actual_grow_rate); // note: comment out if not using cluster-based
+                            if actual_grow_rate.is_positive() && self.is_edge_tight_tune(edge_ptr.clone()) {
+                                conflicts.insert(MaxUpdateLength::Conflicting(edge_ptr.clone()));
+                            }
+                        }
+                        node_ptr_write.dual_variable_at_last_updated_time += actual_grow_rate.clone();
+                        if actual_grow_rate.is_negative() && node_ptr_write.dual_variable_at_last_updated_time.is_zero() {
+                            conflicts.insert(MaxUpdateLength::ShrinkProhibited(OrderedDualNodePtr::new(
+                                node_ptr_write.index,
+                                dual_node_ptr.ptr.clone(),
+                            )));
+                        }
+                    }
+                }
+            }
+            _ => {
+                // in other cases, optimizer should have optimized, so we should apply the deltas and return the new conflicts
+                let mut edge_deltas = BTreeMap::new();
+                // for (dual_node_ptr, grow_rate) in dual_node_deltas.into_iter() {
+                for (dual_node_ptr, (grow_rate, cluster_index)) in dual_node_deltas.into_iter() {
+                    // update the dual node and check for conflicts
+                    let mut node_ptr_write = dual_node_ptr.ptr.write();
+                    node_ptr_write.dual_variable_at_last_updated_time += grow_rate.clone();
+                    if grow_rate.is_negative() && node_ptr_write.dual_variable_at_last_updated_time.is_zero() {
+                        conflicts.insert(MaxUpdateLength::ShrinkProhibited(OrderedDualNodePtr::new(
+                            node_ptr_write.index,
+                            dual_node_ptr.ptr.clone(),
+                        )));
+                    }
+
+                    // calculate the total edge deltas
+                    for edge_ptr in node_ptr_write.invalid_subgraph.hair.iter() {
+                        match edge_deltas.entry(edge_ptr) {
+                            std::collections::btree_map::Entry::Vacant(v) => {
+                                v.insert(grow_rate.clone());
+                            }
+                            std::collections::btree_map::Entry::Occupied(mut o) => {
+                                let current = o.get_mut();
+                                *current += grow_rate.clone();
+                            }
+                        }
+                        #[cfg(feature = "incr_lp")]
+                        self.update_edge_cluster_weights(*edge_index, cluster_index, grow_rate.clone());
+                        // note: comment out if not using cluster-based
+                    }
+                }
+
+                // apply the edge deltas and check for conflicts
+                for (edge_ptr, grow_rate) in edge_deltas.into_iter() {
+                    if grow_rate.is_zero() {
+                        continue;
+                    }
+                    self.grow_edge(edge_ptr.clone(), &grow_rate);
+                    if grow_rate.is_positive() && self.is_edge_tight_tune(edge_ptr.clone()) {
+                        conflicts.insert(MaxUpdateLength::Conflicting(edge_ptr.clone()));
+                    }
+                }
+            }
+        }
+        conflicts
+    }
+
+    /// get the edge free weight, for each edge what is the weight that are free to use by the given participating dual variables
+    fn get_edge_free_weight(
+        &self,
+        edge_index: EdgeIndex,
+        participating_dual_variables: &hashbrown::HashSet<usize>,
+    ) -> Rational;
+
+    #[cfg(feature = "incr_lp")]
+    fn update_edge_cluster_weights(&self, edge_index: EdgeIndex, cluster_index: NodeIndex, grow_rate: Rational);
+
+    #[cfg(feature = "incr_lp")]
+    fn get_edge_free_weight_cluster(&self, edge_index: EdgeIndex, cluster_index: NodeIndex) -> Rational;
+
+    #[cfg(feature = "incr_lp")]
+    fn update_edge_cluster_weights_union(
+        &self,
+        dual_node_ptr: &DualNodePtr,
+        drained_cluster_index: NodeIndex,
+        absorbing_cluster_index: NodeIndex,
+    );
+
+    fn get_vertex_ptr(&self, vertex_index: VertexIndex) -> VertexPtr;
+    fn get_edge_ptr(&self, edge_index: EdgeIndex) -> EdgePtr;
 }
 
 impl MaxUpdateLength {
@@ -295,24 +541,16 @@ impl MaxUpdateLength {
             _ => {} // do nothing if it's already a conflict
         }
     }
-
-    // // a function to update all the interface nodes to be up-to-date
-    // pub fn update(&self) {
-    //     match self {
-    //         Self::Unbounded => {}
-    //         Self::Conflicting(edge_index) => {
-    //             let dual_nodes = dual_module.get_edge_nodes(edge_index);
-
-    //         }
-    //         Self::ShrinkProhibited() => {
-
-    //         }
-    //         Self::ValidGrow(_) => {} // do nothing
-    //     }
-    // }
 }
 
 impl GroupMaxUpdateLength {
+    pub fn len (&mut self) -> usize{
+        return match self {
+            GroupMaxUpdateLength::Unbounded => 0,
+            GroupMaxUpdateLength::ValidGrow(_) => 1,
+            GroupMaxUpdateLength::Conflicts(conflicts) => conflicts.len(),
+        }
+    }
     pub fn add(&mut self, max_update_length: MaxUpdateLength) {
         match self {
             Self::Unbounded => {
@@ -374,43 +612,6 @@ impl GroupMaxUpdateLength {
             Self::Conflicts(conflicts) => conflicts.last(),
         }
     }
-
-    // not sure whether this is correct
-    pub fn is_active(&self) -> bool {
-        !matches!(self, Self::Unbounded | Self::ValidGrow(_))
-    }
-
-    pub fn extend(&mut self, other: Self) {
-        match self {
-            Self::Conflicts(conflicts) => {
-                if let Self::Conflicts(other_conflicts) = other {
-                    conflicts.extend(other_conflicts);
-                } // only add conflicts
-            },
-            Self::Unbounded => {
-                match other {
-                    Self::Unbounded => {} // do nothing
-                    Self::ValidGrow(length) => *self = Self::ValidGrow(length),
-                    Self::Conflicts(mut other_list) => {
-                        let mut list = Vec::<MaxUpdateLength>::new();
-                        std::mem::swap(&mut list, &mut other_list);
-                        *self = Self::Conflicts(list);
-                    }
-                }
-            },
-            Self::ValidGrow(current_length) => match other {
-                Self::Conflicts(mut other_list) => {
-                    let mut list = Vec::<MaxUpdateLength>::new();
-                    std::mem::swap(&mut list, &mut other_list);
-                    *self = Self::Conflicts(list);
-                }
-                Self::Unbounded => {} // do nothing
-                Self::ValidGrow(length) => {
-                    *current_length = std::cmp::min(current_length.clone(), length);
-                }
-            }
-        }
-    }
 }
 
 impl DualModuleInterfacePtr {
@@ -419,11 +620,6 @@ impl DualModuleInterfacePtr {
             nodes: Vec::new(),
             hashmap: HashMap::new(),
             decoding_graph: DecodingHyperGraph::new(model_graph, Arc::new(SyndromePattern::new_empty())),
-            unit_index: 0, // if necessary, manually change it
-            adjacent_parallel_units: PtrWeakKeyHashMap::new(),
-            global_bias: 0,
-            index_bias: 0,
-            nodes_length: 0,
         })
     }
 
@@ -434,6 +630,7 @@ impl DualModuleInterfacePtr {
         interface_ptr
     }
 
+    // the defect_vertices here are local vertices
     pub fn load(&self, syndrome_pattern: Arc<SyndromePattern>, dual_module_impl: &mut impl DualModuleImpl) {
         self.write().decoding_graph.set_syndrome(syndrome_pattern.clone());
         for vertex_idx in syndrome_pattern.defect_vertices.iter() {
@@ -464,16 +661,19 @@ impl DualModuleInterfacePtr {
     }
 
     /// make it private; use `load` instead
-    pub fn create_defect_node(&self, vertex_idx: VertexIndex, dual_module: &mut impl DualModuleImpl) -> DualNodePtr {
+    fn create_defect_node(&self, vertex_idx: VertexIndex, dual_module: &mut impl DualModuleImpl) -> DualNodePtr {
         let interface = self.read_recursive();
-        let mut internal_vertices = BTreeSet::new();
-        internal_vertices.insert(vertex_idx);
+        // let mut internal_vertices = BTreeSet::new();
+        // internal_vertices.insert(vertex_idx);
+        let vertex_ptr = dual_module.get_vertex_ptr(vertex_idx); // this is okay because create_defect_node is only called upon local defect vertices, so we won't access index out of range
+        vertex_ptr.write().is_defect = true; // we change the is_defect to true, since is_defect is initialized as false for all vertex pointers
+        let mut vertices = PtrWeakHashSet::new();
+        vertices.insert(vertex_ptr);
         let invalid_subgraph = Arc::new(InvalidSubgraph::new_complete(
-            vec![vertex_idx].into_iter().collect(),
-            BTreeSet::new(),
-            &interface.decoding_graph,
+            &vertices,
+            &PtrWeakHashSet::new()
         ));
-        let node_index = interface.nodes.len() as NodeIndex;        
+        let node_index = interface.nodes.len() as NodeIndex;
         let node_ptr = DualNodePtr::new_value(DualNode {
             index: node_index,
             invalid_subgraph: invalid_subgraph.clone(),
@@ -481,15 +681,15 @@ impl DualModuleInterfacePtr {
             dual_variable_at_last_updated_time: Rational::zero(),
             global_time: None,
             last_updated_time: Rational::zero(),
-            belonging: self.downgrade(),
         });
+
         let cloned_node_ptr = node_ptr.clone();
         drop(interface);
         let mut interface = self.write();
         interface.nodes.push(node_ptr);
         interface.hashmap.insert(invalid_subgraph, node_index);
         drop(interface);
-        dual_module.add_defect_node(&cloned_node_ptr, 0);
+        dual_module.add_defect_node(&cloned_node_ptr);
         cloned_node_ptr
     }
 
@@ -518,12 +718,39 @@ impl DualModuleInterfacePtr {
             dual_variable_at_last_updated_time: Rational::zero(),
             global_time: None,
             last_updated_time: Rational::zero(),
-            belonging: self.downgrade(),
-
         });
         interface.nodes.push(node_ptr.clone());
         drop(interface);
         dual_module.add_dual_node(&node_ptr);
+
+        node_ptr
+    }
+
+    /// `create_node` for tuning
+    pub fn create_node_tune(
+        &self,
+        invalid_subgraph: Arc<InvalidSubgraph>,
+        dual_module: &mut impl DualModuleImpl,
+    ) -> DualNodePtr {
+        debug_assert!(
+            self.find_node(&invalid_subgraph).is_none(),
+            "do not create the same node twice"
+        );
+        let mut interface = self.write();
+        let node_index = interface.nodes.len() as NodeIndex;
+        interface.hashmap.insert(invalid_subgraph.clone(), node_index);
+        let node_ptr = DualNodePtr::new_value(DualNode {
+            index: node_index,
+            invalid_subgraph,
+            grow_rate: Rational::zero(),
+            dual_variable_at_last_updated_time: Rational::zero(),
+            global_time: None,
+            last_updated_time: Rational::zero(),
+        });
+        interface.nodes.push(node_ptr.clone());
+        drop(interface);
+        dual_module.add_dual_node_tune(&node_ptr);
+
         node_ptr
     }
 
@@ -539,35 +766,46 @@ impl DualModuleInterfacePtr {
         }
     }
 
-    pub fn fuse(&self, other_interface: &Self) {
-        let mut interface = self.write();
-        // fuse dual interface 
-        if let Some(is_fused) = interface.adjacent_parallel_units.get_mut(other_interface) {
-            *is_fused = true;
+    /// `find_or_create_node` for tuning
+    pub fn find_or_create_node_tune(
+        &self,
+        invalid_subgraph: &Arc<InvalidSubgraph>,
+        dual_module: &mut impl DualModuleImpl,
+    ) -> (bool, DualNodePtr) {
+        match self.find_node(invalid_subgraph) {
+            Some(node_ptr) => (true, node_ptr),
+            None => (false, self.create_node_tune(invalid_subgraph.clone(), dual_module)),
         }
-        drop(interface);
     }
 }
 
 // shortcuts for easier code writing at debugging
 impl DualModuleInterfacePtr {
-    pub fn create_node_vec(&self, edges: &[EdgeIndex], dual_module: &mut impl DualModuleImpl) -> DualNodePtr {
+    pub fn create_node_vec(&self, edges: &[EdgeWeak], dual_module: &mut impl DualModuleImpl) -> DualNodePtr {
+        let strong_edges = edges.iter()
+            .filter_map(|weak_edge| weak_edge.upgrade())
+            .collect();
         let invalid_subgraph = Arc::new(InvalidSubgraph::new(
-            edges.iter().cloned().collect(),
-            &self.read_recursive().decoding_graph,
+            &strong_edges
         ));
         self.create_node(invalid_subgraph, dual_module)
     }
     pub fn create_node_complete_vec(
         &self,
-        vertices: &[VertexIndex],
-        edges: &[EdgeIndex],
+        vertices: &[VertexWeak],
+        edges: &[EdgeWeak],
         dual_module: &mut impl DualModuleImpl,
     ) -> DualNodePtr {
+        let strong_edges = edges.iter()
+            .filter_map(|weak_edge| weak_edge.upgrade())
+            .collect();
+        let strong_vertices = vertices.iter()
+            .filter_map(|weak_vertex| weak_vertex.upgrade())
+            .collect();
+
         let invalid_subgraph = Arc::new(InvalidSubgraph::new_complete(
-            vertices.iter().cloned().collect(),
-            edges.iter().cloned().collect(),
-            &self.read_recursive().decoding_graph,
+            &strong_vertices,
+            &strong_edges
         ));
         self.create_node(invalid_subgraph, dual_module)
     }
@@ -579,10 +817,13 @@ impl MWPSVisualizer for DualModuleInterfacePtr {
         let mut dual_nodes = Vec::<serde_json::Value>::new();
         for dual_node_ptr in interface.nodes.iter() {
             let dual_node = dual_node_ptr.read_recursive();
+            let edges: Vec<usize> = dual_node.invalid_subgraph.edges.iter().map(|e|e.upgradable_read().edge_index).collect();
+            let vertices: Vec<usize> = dual_node.invalid_subgraph.vertices.iter().map(|e|e.upgradable_read().vertex_index).collect();
+            let hair: Vec<usize>  = dual_node.invalid_subgraph.hair.iter().map(|e|e.upgradable_read().edge_index).collect();
             dual_nodes.push(json!({
-                if abbrev { "e" } else { "edges" }: dual_node.invalid_subgraph.edges,
-                if abbrev { "v" } else { "vertices" }: dual_node.invalid_subgraph.vertices,
-                if abbrev { "h" } else { "hair" }: dual_node.invalid_subgraph.hair,
+                if abbrev { "e" } else { "edges" }: edges,
+                if abbrev { "v" } else { "vertices" }: vertices,
+                if abbrev { "h" } else { "hair" }: hair,
                 if abbrev { "d" } else { "dual_variable" }: dual_node.get_dual_variable().to_f64(),
                 if abbrev { "dn" } else { "dual_variable_numerator" }: dual_node.get_dual_variable().numer().to_i64(),
                 if abbrev { "dd" } else { "dual_variable_denominator" }: dual_node.get_dual_variable().denom().to_i64(),
@@ -601,19 +842,4 @@ impl MWPSVisualizer for DualModuleInterfacePtr {
             "dual_nodes": dual_nodes,
         })
     }
-}
-
-
-/// synchronize request on vertices, when a vertex is mirrored
-#[derive(Derivative)]
-#[derivative(Debug)]
-pub struct SyncRequest {
-    /// the unit that owns this vertex
-    pub mirror_unit_weak: PartitionUnitWeak,
-    /// the vertex index to be synchronized
-    pub vertex_index: VertexIndex,
-    /// propagated dual node index and the dual variable of the propagated dual node;
-    /// this field is necessary to differentiate between normal shrink and the one that needs to report VertexShrinkStop event, when the syndrome is on the interface;
-    /// it also includes the representative vertex of the dual node, so that parents can keep track of whether it should be elevated
-    pub propagated_dual_node: Option<(DualNodeWeak, Rational)>,
 }

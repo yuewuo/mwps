@@ -14,8 +14,10 @@ use crate::plugin_union_find::*;
 use crate::relaxer::*;
 use crate::util::*;
 use num_traits::One;
+use weak_table::PtrWeakHashSet;
 use std::collections::BTreeSet;
 use std::sync::Arc;
+use crate::dual_module_pq::{VertexWeak, EdgeWeak};
 
 #[derive(Debug, Clone, Default)]
 pub struct PluginSingleHair {}
@@ -23,19 +25,19 @@ pub struct PluginSingleHair {}
 impl PluginImpl for PluginSingleHair {
     fn find_relaxers(
         &self,
-        decoding_graph: &DecodingHyperGraph,
         matrix: &mut EchelonMatrix,
         positive_dual_nodes: &[DualNodePtr],
     ) -> Vec<Relaxer> {
         // single hair requires the matrix to have at least one feasible solution
-        if let Some(relaxer) = PluginUnionFind::find_single_relaxer(decoding_graph, matrix) {
+        if let Some(relaxer) = PluginUnionFind::find_single_relaxer(matrix) {
             return vec![relaxer];
         }
         // then try to find more relaxers
         let mut relaxers = vec![];
         for dual_node_ptr in positive_dual_nodes.iter() {
             let dual_node = dual_node_ptr.read_recursive();
-            let mut hair_view = HairView::new(matrix, dual_node.invalid_subgraph.hair.iter().cloned());
+            let hair = dual_node.invalid_subgraph.hair.iter().map(|e| e.downgrade());
+            let mut hair_view = HairView::new(matrix, hair);
             debug_assert!(hair_view.get_echelon_satisfiable());
             // hair_view.printstd();
             // optimization: check if there exists a single-hair solution, if not, clear the previous relaxers
@@ -65,16 +67,18 @@ impl PluginImpl for PluginSingleHair {
                 if !unnecessary_edges.is_empty() {
                     // we can construct a relaxer here, by growing a new invalid subgraph that
                     // removes those unnecessary edges and shrinking the existing one
-                    let mut vertices: BTreeSet<VertexIndex> = hair_view.get_vertices();
-                    let mut edges: BTreeSet<EdgeIndex> = BTreeSet::from_iter(hair_view.get_base_view_edges());
-                    for &edge_index in dual_node.invalid_subgraph.hair.iter() {
-                        edges.remove(&edge_index);
+                    let mut vertices: PtrWeakHashSet<VertexWeak> = hair_view.get_vertices();
+                    let mut edges: PtrWeakHashSet<EdgeWeak> = hair_view.get_base_view_edges().iter().map(|e| e.upgrade_force()).collect();
+                    for edge_ptr in dual_node.invalid_subgraph.hair.iter() {
+                        edges.remove(&edge_ptr);
                     }
-                    for &edge_index in unnecessary_edges.iter() {
-                        edges.insert(edge_index);
-                        vertices.extend(decoding_graph.get_edge_neighbors(edge_index));
+                    for edge_index in unnecessary_edges.iter() {
+                        edges.insert(edge_index.upgrade_force());
+                        for vertex in edge_index.upgrade_force().read_recursive().vertices.iter() {
+                            vertices.insert(vertex.upgrade_force());
+                        }
                     }
-                    let invalid_subgraph = Arc::new(InvalidSubgraph::new_complete(vertices, edges, decoding_graph));
+                    let invalid_subgraph = Arc::new(InvalidSubgraph::new_complete(&vertices, &edges));
                     let relaxer = Relaxer::new(
                         [
                             (invalid_subgraph, Rational::one()),
@@ -150,7 +154,8 @@ pub mod tests {
             defect_vertices,
             4,
             vec![PluginSingleHair::entry_with_strategy(RepeatStrategy::Once)],
-            GrowingStrategy::SingleCluster,
+            GrowingStrategy::ModeBased,
+            // GrowingStrategy::SingleCluster,
         );
     }
 
@@ -168,7 +173,8 @@ pub mod tests {
             defect_vertices,
             4,
             vec![PluginSingleHair::entry_with_strategy(RepeatStrategy::Once)],
-            GrowingStrategy::SingleCluster,
+            // GrowingStrategy::SingleCluster,
+            GrowingStrategy::ModeBased,
         );
     }
 
@@ -246,7 +252,8 @@ pub mod tests {
             vec![PluginSingleHair::entry_with_strategy(RepeatStrategy::Multiple {
                 max_repetition: usize::MAX,
             })],
-            GrowingStrategy::SingleCluster,
+            // GrowingStrategy::SingleCluster,
+            GrowingStrategy::ModeBased,
         );
     }
 

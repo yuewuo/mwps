@@ -1,0 +1,22 @@
+[package]
+name = "heapz"
+version = "1.1.4"
+edition = "2021"
+license-file = "LICENSE.md"
+description = "Heap/Priority Queue implementations"
+repository = "https://github.com/Ruddickmg/heapz"
+readme = "README.md"
+keywords = ["heap", "priority", "queue"]
+categories = ["algorithms", "data-structures", "wasm"]
+
+[dev-dependencies]
+rand = "0.8.5"
+criterion = "0.4.0"
+
+[[bench]]
+name = "rank_pairing_heap"
+harness = false
+
+[[bench]]
+name = "pairing_heap"
+harness = false

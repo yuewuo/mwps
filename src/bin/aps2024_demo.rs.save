@@ -36,11 +36,11 @@ fn debug_demo() {
         print_visualize_link(visualize_filename.clone());
         if is_example {
             visualizer.snapshot_combined("code".to_string(), vec![&code]).unwrap();
-            let mut primal_module = PrimalModuleSerial::new_empty(&initializer, &model_graph);
+            let mut primal_module = PrimalModuleSerial::new_empty(&initializer);
             primal_module.growing_strategy = GrowingStrategy::SingleCluster;
             primal_module.plugins = Arc::new(vec![]);
             primal_module.solve_visualizer(&interface_ptr, syndrome_pattern, &mut dual_module, Some(&mut visualizer));
-            let (subgraph, weight_range) = primal_module.subgraph_range(&interface_ptr, &mut dual_module);
+            let (subgraph, weight_range) = primal_module.subgraph_range(&interface_ptr, &mut dual_module, 0);
             visualizer
                 .snapshot_combined(
                     "subgraph".to_string(),
@@ -106,11 +106,11 @@ fn simple_demo() {
         print_visualize_link(visualize_filename.clone());
         if is_example {
             visualizer.snapshot_combined("code".to_string(), vec![&code]).unwrap();
-            let mut primal_module = PrimalModuleSerial::new_empty(&initializer, &model_graph);
+            let mut primal_module = PrimalModuleSerial::new_empty(&initializer);
             primal_module.growing_strategy = GrowingStrategy::SingleCluster;
             primal_module.plugins = Arc::new(vec![]);
             primal_module.solve_visualizer(&interface_ptr, syndrome_pattern, &mut dual_module, Some(&mut visualizer));
-            let (subgraph, weight_range) = primal_module.subgraph_range(&interface_ptr, &mut dual_module);
+            let (subgraph, weight_range) = primal_module.subgraph_range(&interface_ptr, &mut dual_module, 0);
             visualizer
                 .snapshot_combined(
                     "subgraph".to_string(),
@@ -168,7 +168,7 @@ fn challenge_demo() {
         print_visualize_link(visualize_filename.clone());
         if is_example {
             visualizer.snapshot_combined("code".to_string(), vec![&code]).unwrap();
-            let mut primal_module = PrimalModuleSerial::new_empty(&initializer, &model_graph);
+            let mut primal_module = PrimalModuleSerial::new_empty(&initializer);
             primal_module.growing_strategy = GrowingStrategy::SingleCluster;
             primal_module.plugins = Arc::new(vec![
                 PluginUnionFind::entry(), // to allow timeout using union-find as baseline
@@ -178,7 +178,7 @@ fn challenge_demo() {
                 }),
             ]);
             primal_module.solve_visualizer(&interface_ptr, syndrome_pattern, &mut dual_module, Some(&mut visualizer));
-            let (subgraph, weight_range) = primal_module.subgraph_range(&interface_ptr, &mut dual_module);
+            let (subgraph, weight_range) = primal_module.subgraph_range(&interface_ptr, &mut dual_module, 0);
             visualizer
                 .snapshot_combined(
                     "subgraph".to_string(),
@@ -311,7 +311,7 @@ fn surface_code_example() {
             pb.set(seed);
             code.generate_random_errors(seed);
             let syndrome_pattern = Arc::new(code.get_syndrome());
-            let mut primal_module = PrimalModuleSerial::new_empty(&initializer, &model_graph);
+            let mut primal_module = PrimalModuleSerial::new_empty(&initializer);
             primal_module.growing_strategy = GrowingStrategy::MultipleClusters;
             primal_module.plugins = Arc::new(vec![
                 PluginUnionFind::entry(), // to allow timeout using union-find as baseline
@@ -321,7 +321,7 @@ fn surface_code_example() {
                 }),
             ]);
             primal_module.solve_visualizer(&interface_ptr, syndrome_pattern, &mut dual_module, Some(&mut visualizer));
-            let (subgraph, weight_range) = primal_module.subgraph_range(&interface_ptr, &mut dual_module);
+            let (subgraph, weight_range) = primal_module.subgraph_range(&interface_ptr, &mut dual_module, seed);
             visualizer
                 .snapshot_combined(
                     "subgraph".to_string(),
@@ -357,7 +357,7 @@ fn triangle_color_code_example() {
             pb.set(seed);
             code.generate_random_errors(seed);
             let syndrome_pattern = Arc::new(code.get_syndrome());
-            let mut primal_module = PrimalModuleSerial::new_empty(&initializer, &model_graph);
+            let mut primal_module = PrimalModuleSerial::new_empty(&initializer);
             primal_module.growing_strategy = GrowingStrategy::MultipleClusters;
             primal_module.plugins = Arc::new(vec![
                 PluginUnionFind::entry(), // to allow timeout using union-find as baseline
@@ -367,7 +367,7 @@ fn triangle_color_code_example() {
                 }),
             ]);
             primal_module.solve_visualizer(&interface_ptr, syndrome_pattern, &mut dual_module, Some(&mut visualizer));
-            let (subgraph, weight_range) = primal_module.subgraph_range(&interface_ptr, &mut dual_module);
+            let (subgraph, weight_range) = primal_module.subgraph_range(&interface_ptr, &mut dual_module, seed);
             visualizer
                 .snapshot_combined(
                     "subgraph".to_string(),
@@ -407,7 +407,7 @@ fn small_color_code_example() {
         if syndrome_pattern.defect_vertices.is_empty() {
             continue;
         }
-        let mut primal_module = PrimalModuleSerial::new_empty(&initializer, &model_graph);
+        let mut primal_module = PrimalModuleSerial::new_empty(&initializer);
         primal_module.growing_strategy = GrowingStrategy::MultipleClusters;
         primal_module.plugins = Arc::new(vec![
             PluginUnionFind::entry(), // to allow timeout using union-find as baseline
@@ -417,7 +417,7 @@ fn small_color_code_example() {
             }),
         ]);
         primal_module.solve_visualizer(&interface_ptr, syndrome_pattern, &mut dual_module, Some(&mut visualizer));
-        let (subgraph, weight_range) = primal_module.subgraph_range(&interface_ptr, &mut dual_module);
+        let (subgraph, weight_range) = primal_module.subgraph_range(&interface_ptr, &mut dual_module, seed);
         visualizer
             .snapshot_combined(
                 "subgraph".to_string(),
@@ -434,8 +434,6 @@ fn small_color_code_example() {
 
 #[cfg(feature = "qecp_integrate")]
 fn circuit_level_example() {
-    use mwpf::model_hypergraph;
-
     let timeout = 1.0;
     for (count, p) in [(50, 0.003), (100, 0.001), (200, 0.0003)] {
         let mut pb = ProgressBar::on(std::io::stderr(), count);
@@ -463,7 +461,7 @@ fn circuit_level_example() {
             pb.set(seed);
             code.generate_random_errors(seed);
             let syndrome_pattern = Arc::new(code.get_syndrome());
-            let mut primal_module = PrimalModuleSerial::new_empty(&initializer, &model_graph);
+            let mut primal_module = PrimalModuleSerial::new_empty(&initializer);
             primal_module.growing_strategy = GrowingStrategy::MultipleClusters;
             primal_module.plugins = Arc::new(vec![
                 PluginUnionFind::entry(), // to allow timeout using union-find as baseline
@@ -474,7 +472,7 @@ fn circuit_level_example() {
             ]);
             primal_module.config.timeout = timeout;
             primal_module.solve_visualizer(&interface_ptr, syndrome_pattern, &mut dual_module, Some(&mut visualizer));
-            let (subgraph, weight_range) = primal_module.subgraph_range(&interface_ptr, &mut dual_module);
+            let (subgraph, weight_range) = primal_module.subgraph_range(&interface_ptr, &mut dual_module, 0);
             visualizer
                 .snapshot_combined(
                     "subgraph".to_string(),

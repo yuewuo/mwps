@@ -26,16 +26,16 @@ use std::sync::Arc;
 
 pub trait PrimalDualSolver {
     fn clear(&mut self);
-    fn solve_visualizer(&mut self, syndrome_pattern: &SyndromePattern, visualizer: Option<&mut Visualizer>);
-    fn solve(&mut self, syndrome_pattern: &SyndromePattern) {
-        self.solve_visualizer(syndrome_pattern, None)
+    fn solve_visualizer(&mut self, syndrome_pattern: &SyndromePattern, visualizer: Option<&mut Visualizer>, seed: u64);
+    fn solve(&mut self, syndrome_pattern: &SyndromePattern, seed: u64) {
+        self.solve_visualizer(syndrome_pattern, None, seed)
     }
-    fn subgraph_range_visualizer(&mut self, visualizer: Option<&mut Visualizer>) -> (Subgraph, WeightRange);
-    fn subgraph_range(&mut self) -> (Subgraph, WeightRange) {
-        self.subgraph_range_visualizer(None)
+    fn subgraph_range_visualizer(&mut self, visualizer: Option<&mut Visualizer>, seed: u64) -> (Subgraph, WeightRange);
+    fn subgraph_range(&mut self, seed: u64) -> (Subgraph, WeightRange) {
+        self.subgraph_range_visualizer(None, seed)
     }
-    fn subgraph(&mut self) -> Subgraph {
-        self.subgraph_range().0
+    fn subgraph(&mut self, seed: u64) -> Subgraph {
+        self.subgraph_range(seed).0
     }
     fn sum_dual_variables(&self) -> Rational;
     fn generate_profiler_report(&self) -> serde_json::Value;
@@ -52,15 +52,15 @@ macro_rules! bind_trait_to_python {
             }
             #[pyo3(name = "solve")] // in Python, `solve` and `solve_visualizer` is the same because it can take optional parameter
             fn trait_solve(&mut self, syndrome_pattern: &SyndromePattern, visualizer: Option<&mut Visualizer>) {
-                self.solve_visualizer(syndrome_pattern, visualizer)
+                self.solve_visualizer(syndrome_pattern, visualizer, 0)
             }
             #[pyo3(name = "subgraph_range")] // in Python, `subgraph_range` and `subgraph_range_visualizer` is the same
             fn trait_subgraph_range(&mut self, visualizer: Option<&mut Visualizer>) -> (Subgraph, WeightRange) {
-                self.subgraph_range_visualizer(visualizer)
+                self.subgraph_range_visualizer(visualizer, 0)
             }
             #[pyo3(name = "subgraph")]
             fn trait_subgraph(&mut self, visualizer: Option<&mut Visualizer>) -> Subgraph {
-                self.subgraph_range_visualizer(visualizer).0
+                self.subgraph_range_visualizer(visualizer, 0).0
             }
             #[pyo3(name = "sum_dual_variables")]
             fn trait_sum_dual_variables(&self) -> PyResult<Py<PyAny>> {
@@ -113,13 +113,14 @@ impl MWPSVisualizer for SolverSerialPlugins {
 impl SolverSerialPlugins {
     pub fn new(initializer: &SolverInitializer, plugins: Arc<Vec<PluginEntry>>, config: serde_json::Value) -> Self {
         let model_graph = Arc::new(ModelHyperGraph::new(Arc::new(initializer.clone())));
-        let mut primal_module = PrimalModuleSerial::new_empty(initializer, &model_graph);
+        let mut primal_module = PrimalModuleSerial::new_empty(initializer);
         let config: SolverSerialPluginsConfig = serde_json::from_value(config).unwrap();
         primal_module.growing_strategy = config.growing_strategy;
         primal_module.plugins = plugins;
         primal_module.config = config.primal.clone();
         Self {
             dual_module: DualModulePQ::new_empty(initializer),
+            // dual_module: DualModuleSerial::new_empty(initializer),
             primal_module,
             interface_ptr: DualModuleInterfacePtr::new(model_graph.clone()),
             model_graph,
@@ -133,7 +134,7 @@ impl PrimalDualSolver for SolverSerialPlugins {
         self.dual_module.clear();
         self.interface_ptr.clear();
     }
-    fn solve_visualizer(&mut self, syndrome_pattern: &SyndromePattern, visualizer: Option<&mut Visualizer>) {
+    fn solve_visualizer(&mut self, syndrome_pattern: &SyndromePattern, visualizer: Option<&mut Visualizer>, seed: u64) {
         let syndrome_pattern = Arc::new(syndrome_pattern.clone());
         if !syndrome_pattern.erasures.is_empty() {
             unimplemented!();
@@ -146,15 +147,17 @@ impl PrimalDualSolver for SolverSerialPlugins {
         );
         debug_assert!(
             {
-                let subgraph = self.subgraph();
+                let subgraph = self.subgraph(seed);
                 self.model_graph
                     .matches_subgraph_syndrome(&subgraph, &syndrome_pattern.defect_vertices)
             },
             "the subgraph does not generate the syndrome"
         );
     }
-    fn subgraph_range_visualizer(&mut self, visualizer: Option<&mut Visualizer>) -> (Subgraph, WeightRange) {
-        let (subgraph, weight_range) = self.primal_module.subgraph_range(&self.interface_ptr, &mut self.dual_module);
+    fn subgraph_range_visualizer(&mut self, visualizer: Option<&mut Visualizer>, seed: u64) -> (Subgraph, WeightRange) {
+        let (subgraph, weight_range) = self
+            .primal_module
+            .subgraph_range(&self.interface_ptr, &mut self.dual_module, seed);
         if let Some(visualizer) = visualizer {
             visualizer
                 .snapshot_combined(
@@ -182,11 +185,20 @@ macro_rules! bind_primal_dual_solver_trait {
             fn clear(&mut self) {
                 self.0.clear()
             }
-            fn solve_visualizer(&mut self, syndrome_pattern: &SyndromePattern, visualizer: Option<&mut Visualizer>) {
-                self.0.solve_visualizer(syndrome_pattern, visualizer)
+            fn solve_visualizer(
+                &mut self,
+                syndrome_pattern: &SyndromePattern,
+                visualizer: Option<&mut Visualizer>,
+                seed: u64,
+            ) {
+                self.0.solve_visualizer(syndrome_pattern, visualizer, seed)
             }
-            fn subgraph_range_visualizer(&mut self, visualizer: Option<&mut Visualizer>) -> (Subgraph, WeightRange) {
-                self.0.subgraph_range_visualizer(visualizer)
+            fn subgraph_range_visualizer(
+                &mut self,
+                visualizer: Option<&mut Visualizer>,
+                seed: u64,
+            ) -> (Subgraph, WeightRange) {
+                self.0.subgraph_range_visualizer(visualizer, seed)
             }
             fn sum_dual_variables(&self) -> Rational {
                 self.0.sum_dual_variables()
@@ -320,7 +332,7 @@ impl SolverErrorPatternLogger {
 
 impl PrimalDualSolver for SolverErrorPatternLogger {
     fn clear(&mut self) {}
-    fn solve_visualizer(&mut self, syndrome_pattern: &SyndromePattern, _visualizer: Option<&mut Visualizer>) {
+    fn solve_visualizer(&mut self, syndrome_pattern: &SyndromePattern, _visualizer: Option<&mut Visualizer>, _seed: u64) {
         self.file
             .write_all(
                 serde_json::to_string(&serde_json::json!(syndrome_pattern))
@@ -330,7 +342,7 @@ impl PrimalDualSolver for SolverErrorPatternLogger {
             .unwrap();
         self.file.write_all(b"\n").unwrap();
     }
-    fn subgraph_range_visualizer(&mut self, _visualizer: Option<&mut Visualizer>) -> (Subgraph, WeightRange) {
+    fn subgraph_range_visualizer(&mut self, _visualizer: Option<&mut Visualizer>, _seed: u64) -> (Subgraph, WeightRange) {
         panic!("error pattern logger do not actually solve the problem, please use Verifier::None by `--verifier none`")
     }
     fn sum_dual_variables(&self) -> Rational {
@@ -350,125 +362,3 @@ pub(crate) fn register(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<SolverErrorPatternLogger>()?;
     Ok(())
 }
-
-
-
-// ////////////////////////////////////////////////////////////////////////////
-// ////////////////////////////////////////////////////////////////////////////
-// ///////////////////////////Solver Parallel /////////////////////////////////
-// ////////////////////////////////////////////////////////////////////////////
-// ////////////////////////////////////////////////////////////////////////////
-
-
-// pub struct SolverParallel {
-//     pub dual_module: DualModuleParallel<DualModuleSerial>,
-//     pub primal_module: PrimalModuleParallel,
-//     pub subgraph_builder: SubGraphBuilder,
-// }
-
-// impl SolverParallel {
-//     pub fn new(
-//         initializer: &SolverInitializer,
-//         partition_info: &PartitionInfo,
-//         mut primal_dual_config: serde_json::Value,
-//     ) -> Self {
-//         let primal_dual_config = primal_dual_config.as_object_mut().expect("config must be JSON object");
-//         let mut dual_config = DualModuleParallelConfig::default();
-//         let mut primal_config = PrimalModuleParallelConfig::default();
-//         // remove the key "dual" from the primal_dual_config map and returns Some(value) if the key existed, or None if it did not.
-//         // If the key "dual" is found, its associated value is assigned to the variable value.
-//         if let Some(value) = primal_dual_config.remove("dual") {
-//             dual_config = serde_json::from_value(value).unwrap();
-//         }
-//         // similarly, do the same to assign primal
-//         if let Some(value) = primal_dual_config.remove("primal") {
-//             primal_config = serde_json::from_value(value).unwrap();
-//         }
-//         // after removing the "dual" and "primal", if primal_dual_config is still not empty, panic
-//         if !primal_dual_config.is_empty() {
-//             panic!(
-//                 "unknown primal_dual_config keys: {:?}",
-//                 primal_dual_config.keys().collect::<Vec<&String>>()
-//             );
-//         }
-
-//         // return 
-//         Self {
-//             dual_module: DualModuleParallel::new_config(initializer, partition_info, dual_config),
-//             primal_module: PrimalModuleParallel::new_config(initializer, partition_info, primal_config),
-//             subgraph_builder: SubGraphBuilder::new(initializer),
-//         }
-//     }
-// }
-
-// impl PrimalDualSolver for SolverParallel {
-//     fn clear(&mut self) {
-//         self.dual_module.clear(); // function defined for DualModuleParallel
-//         self.primal_module.clear();
-//         self.subgraph_builder.clear();
-//     }
-
-//     fn solve_visualizer(&mut self, syndrome_pattern: &SyndromePattern, visualizer: Option<&mut Visualizer>) {
-//         // if erasure is not empty, load it 
-//         if !syndrome_pattern.erasures.is_empty() {
-//             self.subgraph_builder.load_erasures(&syndrome_pattern.erasures);
-//         }
-
-//         // return 
-//         self.primal_module.parallel_solve_visualizer(syndrome_pattern, &self.dual_module, visualizer);
-//     }
-
-//     fn perfect_matching_visualizer(&mut self, visualizer: Option<&mut Visualizer>) -> PerfectMatching {
-//         let useless_interface_ptr = DualModuleInterfacePtr::new_empty(); // don't actually use it
-//         let perfect_matching = self
-//             .primal_module
-//             .perfect_matching(&useless_interface_ptr, &mut self.dual_module);
-//         if let Some(visualizer) = visualizer {
-//             let last_interface_ptr = &self.primal_module.units.last().unwrap().read_recursive().interface_ptr;
-//             visualizer
-//                 .snapshot_combined(
-//                     "perfect matching".to_string(),
-//                     vec![last_interface_ptr, &self.dual_module, &perfect_matching],
-//                 )
-//                 .unwrap();
-//         }
-
-//         // return 
-//         perfect_matching
-//     }
-
-//     // 
-//     // fn subgraph_visualizer(&mut self, visualizer: Option<&mut Visualizer>) -> Vec<EdgeIndex> {
-//     //     let perfect_matching = self.perfect_matching();
-//     //     self.subgraph_builder.load_perfect_matching(&perfect_matching);
-//     //     let subgraph = self.subgraph_builder.get_subgraph();
-//     //     if let Some(visualizer) = visualizer {
-//     //         let last_interface_ptr = &self.primal_module.units.last().unwrap().read_recursive().interface_ptr;
-//     //         visualizer
-//     //             .snapshot_combined(
-//     //                 "perfect matching and subgraph".to_string(),
-//     //                 vec![
-//     //                     last_interface_ptr,
-//     //                     &self.dual_module,
-//     //                     &perfect_matching,
-//     //                     &VisualizeSubgraph::new(&subgraph),
-//     //                 ],
-//     //             )
-//     //             .unwrap();
-//     //     }
-//     //     subgraph
-//     // }
-
-//     // fn sum_dual_variables(&self) -> Weight {
-//     //     let last_unit = self.primal_module.units.last().unwrap().write(); // use the interface in the last unit
-//     //     let sum_dual_variables = last_unit.interface_ptr.read_recursive().sum_dual_variables;
-//     //     sum_dual_variables
-//     // }
-//     // fn generate_profiler_report(&self) -> serde_json::Value {
-//     //     json!({
-//     //         "dual": self.dual_module.generate_profiler_report(),
-//     //         "primal": self.primal_module.generate_profiler_report(),
-//     //     })
-//     // }
-
-// }
