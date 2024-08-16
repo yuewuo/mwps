@@ -383,6 +383,9 @@ pub mod tests {
         let mut matrix = BasicMatrix::new();
         matrix.add_constraint(vertices[0].downgrade(), &[edges[0].downgrade(), edges[1].downgrade(), edges[2].downgrade()], true);
         matrix.add_constraint(vertices[1].downgrade(), &[edges[1].downgrade(), edges[3].downgrade()], false);
+        matrix.add_constraint(vertices[2].downgrade(), &[edges[0].downgrade(), edges[3].downgrade()], true);
+
+        matrix.printstd();
         
         matrix.xor_row(2, 0);
         matrix.xor_row(0, 1);

@@ -199,10 +199,9 @@ pub trait MatrixEchelon: MatrixView {
                 pending_flip_edge_indices.clear();
                 let var_index = self.column_to_var_index(column);
                 let edge_weak = self.var_to_edge_index(var_index);
-                let minus_one = Rational::new(-1.0);
                 let local_weight = weight_of(edge_weak.clone());
                 let mut primal_delta =
-                    (local_weight) * (if solution.contains(&edge_weak) { minus_one } else { Rational::one() });
+                    (local_weight) * (if solution.contains(&edge_weak) { -Rational::one() } else { Rational::one() });
                 pending_flip_edge_indices.push(edge_weak);
                 for row in 0..info.rows.len() {
                     if self.get_lhs(row, var_index) {
@@ -211,7 +210,7 @@ pub trait MatrixEchelon: MatrixView {
                         debug_assert!(flip_column < column);
                         let flip_edge_index = self.column_to_edge_index(flip_column);
                         primal_delta += (weight_of(flip_edge_index.clone()))
-                            * (if solution.contains(&flip_edge_index) { minus_one } else { Rational::one() });
+                            * (if solution.contains(&flip_edge_index) { -Rational::one() } else { Rational::one() });
                         pending_flip_edge_indices.push(flip_edge_index);
                     }
                 }
