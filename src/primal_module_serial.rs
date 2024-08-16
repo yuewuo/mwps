@@ -659,7 +659,6 @@ impl PrimalModuleSerial {
         &self,
         dual_node_ptr_1: &DualNodePtr,
         dual_node_ptr_2: &DualNodePtr,
-        decoding_graph: &DecodingHyperGraph,
         dual_module: &mut impl DualModuleImpl, // note: remove if not for cluster-based
     ) {
         // cluster_1 will become the union of cluster_1 and cluster_2
@@ -735,7 +734,6 @@ impl PrimalModuleSerial {
         debug_assert!(!group_max_update_length.is_unbounded() && group_max_update_length.get_valid_growth().is_none());
         let mut active_clusters = BTreeSet::<NodeIndex>::new();
         let interface = interface_ptr.read_recursive();
-        let decoding_graph = &interface.decoding_graph;
         while let Some(conflict) = group_max_update_length.pop() {
             match conflict {
                 MaxUpdateLength::Conflicting(edge_ptr) => {
@@ -749,7 +747,7 @@ impl PrimalModuleSerial {
                     // first union all the dual nodes
                     for dual_node_ptr in dual_nodes.iter().skip(1) {
                         // self.union(dual_node_ptr_0, dual_node_ptr, &interface.decoding_graph);
-                        self.union(dual_node_ptr_0, dual_node_ptr, &interface.decoding_graph, dual_module);
+                        self.union(dual_node_ptr_0, dual_node_ptr,  dual_module);
                     }
                     let cluster_ptr = self.nodes[dual_node_ptr_0.read_recursive().index as usize]
                         .read_recursive()
@@ -815,7 +813,6 @@ impl PrimalModuleSerial {
         debug_assert!(!group_max_update_length.is_unbounded() && group_max_update_length.get_valid_growth().is_none());
         let mut active_clusters = BTreeSet::<NodeIndex>::new();
         let interface = interface_ptr.read_recursive();
-        let decoding_graph = &interface.decoding_graph;
         while let Some(conflict) = group_max_update_length.pop() {
             match conflict {
                 MaxUpdateLength::Conflicting(edge_ptr) => {
@@ -829,7 +826,7 @@ impl PrimalModuleSerial {
                     // first union all the dual nodes
                     for dual_node_ptr in dual_nodes.iter().skip(1) {
                         // self.union(dual_node_ptr_0, dual_node_ptr, &interface.decoding_graph);
-                        self.union(dual_node_ptr_0, dual_node_ptr, &interface.decoding_graph, dual_module);
+                        self.union(dual_node_ptr_0, dual_node_ptr,  dual_module);
                     }
                     let cluster_ptr = self.nodes[dual_node_ptr_0.read_recursive().index as usize]
                         .read_recursive()
@@ -922,7 +919,6 @@ impl PrimalModuleSerial {
     ) -> (BTreeSet<MaxUpdateLength>, bool) {
         let mut active_clusters = BTreeSet::<NodeIndex>::new();
         let interface = interface_ptr.read_recursive();
-        let decoding_graph = &interface.decoding_graph;
         for conflict in group_max_update_length.into_iter() {
             match conflict {
                 MaxUpdateLength::Conflicting(edge_ptr) => {
@@ -936,7 +932,7 @@ impl PrimalModuleSerial {
                     // first union all the dual nodes
                     for dual_node_ptr in dual_nodes.iter().skip(1) {
                         // self.union(dual_node_ptr_0, dual_node_ptr, &interface.decoding_graph);
-                        self.union(dual_node_ptr_0, dual_node_ptr, &interface.decoding_graph, dual_module);
+                        self.union(dual_node_ptr_0, dual_node_ptr, dual_module);
                     }
                     let cluster_ptr = self.nodes[dual_node_ptr_0.read_recursive().index as usize]
                         .read_recursive()
