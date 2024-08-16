@@ -23,9 +23,9 @@ pub struct Relaxer {
     direction: BTreeMap<Arc<InvalidSubgraph>, Rational>,
     /// the edges that will be untightened after growing along `direction`;
     /// basically all the edges that have negative `overall_growing_rate`
-    untighten_edges: PtrWeakKeyHashMap<EdgeWeak, Rational>,
+    untighten_edges: BTreeMap<EdgePtr, Rational>,
     /// the edges that will grow
-    growing_edges: PtrWeakKeyHashMap<EdgeWeak, Rational>,
+    growing_edges: BTreeMap<EdgePtr, Rational>,
 }
 
 impl Hash for Relaxer {
@@ -78,8 +78,8 @@ impl Relaxer {
                 }
             }
         }
-        let mut untighten_edges = PtrWeakKeyHashMap::new();
-        let mut growing_edges = PtrWeakKeyHashMap::new();
+        let mut untighten_edges = BTreeMap::new();
+        let mut growing_edges = BTreeMap::new();
         for (edge_ptr, speed) in edges {
             if speed.is_negative() {
                 untighten_edges.insert(edge_ptr, speed);
@@ -128,11 +128,11 @@ impl Relaxer {
         &self.direction
     }
 
-    pub fn get_growing_edges(&self) -> &PtrWeakKeyHashMap<EdgeWeak, Rational> {
+    pub fn get_growing_edges(&self) -> &BTreeMap<EdgePtr, Rational> {
         &self.growing_edges
     }
 
-    pub fn get_untighten_edges(&self) -> &PtrWeakKeyHashMap<EdgeWeak, Rational> {
+    pub fn get_untighten_edges(&self) -> &BTreeMap<EdgePtr, Rational> {
         &self.untighten_edges
     }
 }

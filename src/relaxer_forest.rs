@@ -24,13 +24,13 @@ pub type RelaxerVec = Vec<Relaxer>;
 pub struct RelaxerForest {
     /// keep track of the remaining tight edges for quick validation:
     /// these edges cannot grow unless untightened by some relaxers
-    tight_edges: PtrWeakHashSet<EdgeWeak>,
+    tight_edges: BTreeSet<EdgePtr>,
     /// keep track of the subgraphs that are allowed to shrink:
     /// these should be all positive dual variables, all others are yS = 0
     shrinkable_subgraphs: BTreeSet<Arc<InvalidSubgraph>>,
     /// each untightened edge corresponds to a relaxer with speed:
     /// to untighten the edge for a unit length, how much should a relaxer be executed
-    edge_untightener: PtrWeakKeyHashMap<EdgeWeak, (Arc<Relaxer>, Rational)>,
+    edge_untightener: BTreeMap<EdgePtr, (Arc<Relaxer>, Rational)>,
     /// expanded relaxer results, as part of the dynamic programming:
     /// the expanded relaxer is a valid relaxer only growing of initial un-tight edges,
     /// not any edges untightened by other relaxers
@@ -49,7 +49,7 @@ impl RelaxerForest {
         Self {
             tight_edges: tight_edges.map(|e| e.upgrade_force()).collect(),
             shrinkable_subgraphs: BTreeSet::from_iter(shrinkable_subgraphs),
-            edge_untightener: PtrWeakKeyHashMap::new(),
+            edge_untightener: BTreeMap::new(),
             expanded_relaxers: BTreeMap::new(),
         }
     }
@@ -82,7 +82,7 @@ impl RelaxerForest {
         for (edge_ptr, speed) in relaxer.get_untighten_edges() {
             debug_assert!(speed.is_negative());
             if !self.edge_untightener.contains_key(&edge_ptr) {
-                self.edge_untightener.insert(edge_ptr, (relaxer.clone(), -speed.recip()));
+                self.edge_untightener.insert(edge_ptr.clone(), (relaxer.clone(), -speed.recip()));
             }
         }
     }
@@ -91,18 +91,18 @@ impl RelaxerForest {
         if self.expanded_relaxers.contains_key(relaxer) {
             return;
         }
-        let mut untightened_edges: PtrWeakKeyHashMap<EdgeWeak, Rational> = PtrWeakKeyHashMap::new();
+        let mut untightened_edges: BTreeMap<EdgePtr, Rational> = BTreeMap::new();
         let mut directions: BTreeMap<Arc<InvalidSubgraph>, Rational> = relaxer.get_direction().clone();
-        println!("relaxer.growing_edges: {:?}", relaxer.get_growing_edges());
+        // println!("relaxer.growing_edges: {:?}", relaxer.get_growing_edges());
         for (edge_ptr, speed) in relaxer.get_growing_edges().iter() {
-            println!("edge_ptr index: {:?}", edge_ptr.read_recursive().edge_index);
-            println!("speed: {:?}", speed);
+            // println!("edge_ptr index: {:?}", edge_ptr.read_recursive().edge_index);
+            // println!("speed: {:?}", speed);
             debug_assert!(speed.is_positive());
             if self.tight_edges.contains(&edge_ptr) {
                 debug_assert!(self.edge_untightener.contains_key(&edge_ptr));
-                println!("untightened_edges: {:?}", untightened_edges);
+                // println!("untightened_edges: {:?}", untightened_edges);
                 let require_speed = if let Some(existing_speed) = untightened_edges.get_mut(&edge_ptr) {
-                    println!("existing speed: {:?}", existing_speed);
+                    // println!("existing speed: {:?}", existing_speed);
                     if &*existing_speed >= speed {
                         *existing_speed -= speed;
                         Rational::zero()
@@ -114,7 +114,7 @@ impl RelaxerForest {
                 } else {
                     speed.clone()
                 };
-                println!("require_speed: {:?}", require_speed);
+                // println!("require_speed: {:?}", require_speed);
                 if require_speed.is_positive() {
                     // we need to invoke another relaxer to untighten this edge
                     let edge_relaxer = self.edge_untightener.get(&edge_ptr).unwrap().0.clone();
@@ -123,7 +123,7 @@ impl RelaxerForest {
                     // println!("self.edge_untightener: {:?}", self.edge_untightener);
                     let (edge_relaxer, speed_ratio) = self.edge_untightener.get(&edge_ptr).unwrap();
                     // println!("edge_relaxer found: {:?}", edge_relaxer);
-                    println!("speed_ratio: {:?}", speed_ratio);
+                    // println!("speed_ratio: {:?}", speed_ratio);
                     debug_assert!(speed_ratio.is_positive());
                     let expanded_edge_relaxer = self.expanded_relaxers.get(edge_relaxer).unwrap();
                     for (subgraph, original_speed) in expanded_edge_relaxer.get_direction() {
@@ -148,9 +148,9 @@ impl RelaxerForest {
                             untightened_edges.insert(edge_index.clone(), new_speed);
                         }
                     }
-                    println!("ungithtended_edges final: {:?}", untightened_edges);
-                    println!("left assert: edge ptr: {:?}", edge_ptr);
-                    println!("right assert: require speed: {:?}", require_speed);
+                    // println!("ungithtended_edges final: {:?}", untightened_edges);
+                    // println!("left assert: edge ptr: {:?}", edge_ptr);
+                    // println!("right assert: require speed: {:?}", require_speed);
                     debug_assert_eq!(untightened_edges.get(&edge_ptr), Some(&require_speed));
                     *untightened_edges.get_mut(&edge_ptr).unwrap() -= require_speed;
                 }
