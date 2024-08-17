@@ -386,7 +386,7 @@ pub trait DualModuleImpl {
         // dual_node_deltas: BTreeMap<OrderedDualNodePtr, Rational>,
         dual_node_deltas: BTreeMap<OrderedDualNodePtr, (Rational, NodeIndex)>,
     ) -> BTreeSet<MaxUpdateLength> {
-        let mut conflicts = BTreeSet::new();
+        let mut conflicts: BTreeSet<MaxUpdateLength> = BTreeSet::new();
         match optimizer_result {
             OptimizerResult::EarlyReturned => {
                 // if early returned, meaning optimizer didn't optimize, but simply should find current conflicts and return
@@ -414,7 +414,7 @@ pub trait DualModuleImpl {
                     let mut actual_grow_rate = Rational::from_usize(std::usize::MAX).unwrap();
                     let node_ptr_read = dual_node_ptr.ptr.read_recursive();
                     for edge_ptr in node_ptr_read.invalid_subgraph.hair.iter() {
-                        actual_grow_rate = std::cmp::min(actual_grow_rate, self.get_edge_slack_tune(edge_ptr));
+                        actual_grow_rate = std::cmp::min(actual_grow_rate, self.get_edge_slack_tune(edge_ptr.clone()));
                     }
                     if actual_grow_rate.is_zero() {
                         // if not, return the current conflicts
@@ -453,7 +453,7 @@ pub trait DualModuleImpl {
             }
             _ => {
                 // in other cases, optimizer should have optimized, so we should apply the deltas and return the new conflicts
-                let mut edge_deltas = BTreeMap::new();
+                let mut edge_deltas: BTreeMap<EdgePtr, OrderedFloat> = BTreeMap::new();
                 // for (dual_node_ptr, grow_rate) in dual_node_deltas.into_iter() {
                 for (dual_node_ptr, (grow_rate, cluster_index)) in dual_node_deltas.into_iter() {
                     // update the dual node and check for conflicts
@@ -468,7 +468,7 @@ pub trait DualModuleImpl {
 
                     // calculate the total edge deltas
                     for edge_ptr in node_ptr_write.invalid_subgraph.hair.iter() {
-                        match edge_deltas.entry(edge_ptr) {
+                        match edge_deltas.entry(edge_ptr.clone()) {
                             std::collections::btree_map::Entry::Vacant(v) => {
                                 v.insert(grow_rate.clone());
                             }
@@ -667,11 +667,11 @@ impl DualModuleInterfacePtr {
         // internal_vertices.insert(vertex_idx);
         let vertex_ptr = dual_module.get_vertex_ptr(vertex_idx); // this is okay because create_defect_node is only called upon local defect vertices, so we won't access index out of range
         vertex_ptr.write().is_defect = true; // we change the is_defect to true, since is_defect is initialized as false for all vertex pointers
-        let mut vertices = PtrWeakHashSet::new();
+        let mut vertices = BTreeSet::new();
         vertices.insert(vertex_ptr);
         let invalid_subgraph = Arc::new(InvalidSubgraph::new_complete(
             &vertices,
-            &PtrWeakHashSet::new()
+            &BTreeSet::new()
         ));
         let node_index = interface.nodes.len() as NodeIndex;
         let node_ptr = DualNodePtr::new_value(DualNode {

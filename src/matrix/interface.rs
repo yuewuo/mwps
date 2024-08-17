@@ -28,9 +28,9 @@ use weak_table::PtrWeakHashSet;
 use std::collections::BTreeSet;
 
 #[cfg(feature = "pq")]
-use crate::dual_module_pq::{EdgeWeak, VertexWeak};
+use crate::dual_module_pq::{EdgeWeak, VertexWeak, EdgePtr, VertexPtr};
 #[cfg(feature = "non-pq")]
-use crate::dual_module_serial::{EdgeWeak, VertexWeak};
+use crate::dual_module_serial::{EdgeWeak, VertexWeak, EdgePtr, VertexPtr};
 
 
 pub type VarIndex = usize;
@@ -66,7 +66,7 @@ pub trait MatrixBasic {
         self.edge_to_var_index(edge_weak).is_some()
     }
 
-    fn get_vertices(&self) -> PtrWeakHashSet<VertexWeak>;
+    fn get_vertices(&self) -> BTreeSet<VertexPtr>;
 }
 
 pub trait MatrixView: MatrixBasic {
@@ -117,8 +117,8 @@ pub trait MatrixTight: MatrixView {
 }
 
 pub trait MatrixTail {
-    fn get_tail_edges(&self) -> &PtrWeakHashSet<EdgeWeak>;
-    fn get_tail_edges_mut(&mut self) -> &mut PtrWeakHashSet<EdgeWeak>;
+    fn get_tail_edges(&self) -> &BTreeSet<EdgePtr>;
+    fn get_tail_edges_mut(&mut self) -> &mut BTreeSet<EdgePtr>;
 
     fn set_tail_edges<EdgeIter>(&mut self, edges: EdgeIter)
     where
@@ -171,7 +171,7 @@ pub trait MatrixEchelon: MatrixView {
         if !info.satisfiable {
             return None; // no solution
         }
-        let mut solution = BTreeSet::new();
+        let mut solution: BTreeSet<EdgeWeak> = BTreeSet::new();
         for (row, row_info) in info.rows.iter().enumerate() {
             debug_assert!(row_info.has_leading());
             if self.get_rhs(row) {

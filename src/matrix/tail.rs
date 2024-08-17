@@ -6,16 +6,16 @@ use weak_table::PtrWeakHashSet;
 use std::collections::BTreeSet;
 
 #[cfg(feature = "pq")]
-use crate::dual_module_pq::{EdgeWeak, VertexWeak};
+use crate::dual_module_pq::{EdgeWeak, VertexWeak, EdgePtr, VertexPtr};
 #[cfg(feature = "non-pq")]
-use crate::dual_module_serial::{EdgeWeak, VertexWeak};
+use crate::dual_module_serial::{EdgeWeak, VertexWeak, EdgePtr, VertexPtr};
 
 #[derive(Clone, Derivative)]
 #[derivative(Default(new = "true"))]
 pub struct Tail<M: MatrixView> {
     base: M,
     /// the set of edges that should be placed at the end, if any
-    tail_edges: PtrWeakHashSet<EdgeWeak>,
+    tail_edges: BTreeSet<EdgePtr>,
     /// var indices are outdated on any changes to the underlying matrix
     #[derivative(Default(value = "true"))]
     is_var_indices_outdated: bool,
@@ -32,10 +32,10 @@ impl<M: MatrixView> Tail<M> {
 }
 
 impl<M: MatrixView> MatrixTail for Tail<M> {
-    fn get_tail_edges(&self) -> &PtrWeakHashSet<EdgeWeak> {
+    fn get_tail_edges(&self) -> &BTreeSet<EdgePtr> {
         &self.tail_edges
     }
-    fn get_tail_edges_mut(&mut self) -> &mut PtrWeakHashSet<EdgeWeak> {
+    fn get_tail_edges_mut(&mut self) -> &mut BTreeSet<EdgePtr> {
         self.is_var_indices_outdated = true;
         &mut self.tail_edges
     }
@@ -84,7 +84,7 @@ impl<M: MatrixView> MatrixBasic for Tail<M> {
     fn edge_to_var_index(&self, edge_weak: EdgeWeak) -> Option<VarIndex> {
         self.get_base().edge_to_var_index(edge_weak)
     }
-    fn get_vertices(&self) -> PtrWeakHashSet<VertexWeak> {
+    fn get_vertices(&self) -> BTreeSet<VertexPtr> {
         self.get_base().get_vertices()
     }
 }

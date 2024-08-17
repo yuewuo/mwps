@@ -6,9 +6,9 @@ use std::collections::BTreeSet;
 use weak_table::PtrWeakHashSet;
 
 #[cfg(feature = "pq")]
-use crate::dual_module_pq::{EdgeWeak, VertexWeak};
+use crate::dual_module_pq::{EdgeWeak, VertexWeak, EdgePtr, VertexPtr};
 #[cfg(feature = "non-pq")]
-use crate::dual_module_serial::{EdgeWeak, VertexWeak};
+use crate::dual_module_serial::{EdgeWeak, VertexWeak, EdgePtr, VertexPtr};
 
 
 #[derive(Clone, Derivative)]
@@ -16,7 +16,7 @@ use crate::dual_module_serial::{EdgeWeak, VertexWeak};
 pub struct Tight<M: MatrixView> {
     base: M,
     /// the set of tight edges: should be a relatively small set
-    tight_edges: PtrWeakHashSet<EdgeWeak>,
+    tight_edges: BTreeSet<EdgePtr>,
     /// tight matrix gives a view of only tight edges, with sorted indices
     #[derivative(Default(value = "true"))]
     is_var_indices_outdated: bool,
@@ -79,7 +79,7 @@ impl<M: MatrixView> MatrixBasic for Tight<M> {
     fn edge_to_var_index(&self, edge_weak: EdgeWeak) -> Option<VarIndex> {
         self.get_base().edge_to_var_index(edge_weak)
     }
-    fn get_vertices(&self) -> PtrWeakHashSet<VertexWeak> {
+    fn get_vertices(&self) -> BTreeSet<VertexPtr> {
         self.get_base().get_vertices()
     }
 }

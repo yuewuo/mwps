@@ -8,18 +8,18 @@ use weak_table::PtrWeakKeyHashMap;
 use std::collections::{BTreeMap, BTreeSet};
 
 #[cfg(feature = "pq")]
-use crate::dual_module_pq::{EdgeWeak, VertexWeak};
+use crate::dual_module_pq::{EdgeWeak, VertexWeak, EdgePtr, VertexPtr};
 #[cfg(feature = "non-pq")]
-use crate::dual_module_serial::{EdgeWeak, VertexWeak};
+use crate::dual_module_serial::{EdgeWeak, VertexWeak, EdgePtr, VertexPtr};
 
 /// complete matrix considers a predefined set of edges and won't consider any other edges
 #[derive(Clone, Derivative)]
 #[derivative(Default(new = "true"))]
 pub struct CompleteMatrix {
     /// the vertices already maintained by this parity check
-    vertices: PtrWeakHashSet<VertexWeak>,
+    vertices: BTreeSet<VertexPtr>,
     /// the edges maintained by this parity check, mapping to the local indices
-    edges: PtrWeakKeyHashMap<EdgeWeak, VarIndex>,
+    edges: BTreeMap<EdgePtr, VarIndex>,
     /// variable index map to edge index
     variables: Vec<EdgeWeak>,
     constraints: Vec<ParityRow>,
@@ -89,7 +89,7 @@ impl MatrixBasic for CompleteMatrix {
         self.edges.get(&edge_weak.upgrade_force()).cloned()
     }
 
-    fn get_vertices(&self) -> PtrWeakHashSet<VertexWeak> {
+    fn get_vertices(&self) -> BTreeSet<VertexPtr> {
         self.vertices.clone()
     }
 }

@@ -82,9 +82,9 @@ impl Relaxer {
         let mut growing_edges = BTreeMap::new();
         for (edge_ptr, speed) in edges {
             if speed.is_negative() {
-                untighten_edges.insert(edge_ptr, speed);
+                untighten_edges.insert(edge_ptr.clone(), speed);
             } else if speed.is_positive() {
-                growing_edges.insert(edge_ptr, speed);
+                growing_edges.insert(edge_ptr.clone(), speed);
             }
         }
         let mut relaxer = Self {

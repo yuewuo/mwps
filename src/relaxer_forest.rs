@@ -125,6 +125,8 @@ impl RelaxerForest {
                     // println!("edge_relaxer found: {:?}", edge_relaxer);
                     // println!("speed_ratio: {:?}", speed_ratio);
                     debug_assert!(speed_ratio.is_positive());
+                    // println!("edge_relaxer: {:?}", edge_relaxer);
+                    // println!("self.expanded_relaxers: {:?}", self.expanded_relaxers);
                     let expanded_edge_relaxer = self.expanded_relaxers.get(edge_relaxer).unwrap();
                     for (subgraph, original_speed) in expanded_edge_relaxer.get_direction() {
                         let new_speed = original_speed * speed_ratio;
@@ -219,29 +221,29 @@ pub mod tests {
             tight_edges.push(edges[edge_index].downgrade());
         }
         
-        let mut local_hair_1 = PtrWeakHashSet::new();
+        let mut local_hair_1 = BTreeSet::new();
         local_hair_1.insert(edges[1].clone());
         local_hair_1.insert(edges[2].clone());
         local_hair_1.insert(edges[3].clone());
-        let mut local_hair_2 = PtrWeakHashSet::new();
+        let mut local_hair_2 = BTreeSet::new();
         local_hair_2.insert(edges[4].clone());
         local_hair_2.insert(edges[5].clone());
-        let mut local_vertice_1 = PtrWeakHashSet::new();
-        let mut local_edge_1 = PtrWeakHashSet::new();
-        let mut local_vertice_2 = PtrWeakHashSet::new();
-        let mut local_edge_2 = PtrWeakHashSet::new();
+        let mut local_vertice_1 = BTreeSet::new();
+        let mut local_edge_1 = BTreeSet::new();
+        let mut local_vertice_2 = BTreeSet::new();
+        let mut local_edge_2 = BTreeSet::new();
         let shrinkable_subgraphs = [
             Arc::new(InvalidSubgraph::new_raw(&local_vertice_1, &local_edge_1, &local_hair_1)),
             Arc::new(InvalidSubgraph::new_raw(&local_vertice_2, &local_edge_2, &local_hair_2)),
         ];
         let mut relaxer_forest = RelaxerForest::new(tight_edges.into_iter(), shrinkable_subgraphs.iter().cloned());
 
-        let mut local_hair_3 = PtrWeakHashSet::new();
+        let mut local_hair_3 = BTreeSet::new();
         local_hair_3.insert(edges[7].clone());
         local_hair_3.insert(edges[8].clone());
         local_hair_3.insert(edges[9].clone()); 
-        let local_vertice_3 = PtrWeakHashSet::new();
-        let local_edge_3 = PtrWeakHashSet::new();
+        let local_vertice_3 = BTreeSet::new();
+        let local_edge_3 = BTreeSet::new();
         let invalid_subgraph_1 = Arc::new(InvalidSubgraph::new_raw(&local_vertice_3, &local_edge_3, &local_hair_3));
         let relaxer_1 = Arc::new(Relaxer::new_raw(
             [
@@ -254,12 +256,12 @@ pub mod tests {
         assert_eq!(expanded_1, *relaxer_1);
         relaxer_forest.add(relaxer_1);
         // now add a relaxer that is relying on relaxer_1
-        let mut local_hair_4 = PtrWeakHashSet::new();
+        let mut local_hair_4 = BTreeSet::new();
         local_hair_4.insert(edges[1].clone());
         local_hair_4.insert(edges[2].clone());
         local_hair_4.insert(edges[7].clone());
-        let mut local_vertice_4 = PtrWeakHashSet::new();
-        let mut local_edge_4 = PtrWeakHashSet::new();
+        let mut local_vertice_4 = BTreeSet::new();
+        let mut local_edge_4 = BTreeSet::new();
         let invalid_subgraph_2 = Arc::new(InvalidSubgraph::new_raw(&local_vertice_4, &local_edge_4, &local_hair_4));
         let relaxer_2 = Arc::new(Relaxer::new_raw([(invalid_subgraph_2.clone(), Rational::one())].into()));
         let expanded_2 = relaxer_forest.expand(&relaxer_2);
@@ -301,15 +303,15 @@ pub mod tests {
             tight_edges.push(edges[edge_index].downgrade());
         }
         
-        let mut local_hair_1 = PtrWeakHashSet::new();
+        let mut local_hair_1 = BTreeSet::new();
         local_hair_1.insert(edges[1].clone());
         local_hair_1.insert(edges[2].clone());
-        let mut local_hair_2 = PtrWeakHashSet::new();
+        let mut local_hair_2 = BTreeSet::new();
         local_hair_2.insert(edges[3].clone());
-        let mut local_vertice_1 = PtrWeakHashSet::new();
-        let mut local_edge_1 = PtrWeakHashSet::new();
-        let mut local_vertice_2 = PtrWeakHashSet::new();
-        let mut local_edge_2 = PtrWeakHashSet::new();
+        let mut local_vertice_1 = BTreeSet::new();
+        let mut local_edge_1 = BTreeSet::new();
+        let mut local_vertice_2 = BTreeSet::new();
+        let mut local_edge_2 = BTreeSet::new();
 
         let shrinkable_subgraphs = [
             Arc::new(InvalidSubgraph::new_raw(&local_vertice_1, &local_edge_1, &local_hair_1)),
@@ -319,12 +321,12 @@ pub mod tests {
         // println!("shrinkable_subgraphs: {:?}", shrinkable_subgraphs);
         let mut relaxer_forest = RelaxerForest::new(tight_edges.into_iter(), shrinkable_subgraphs.iter().cloned());
 
-        let mut local_hair_3 = PtrWeakHashSet::new();
+        let mut local_hair_3 = BTreeSet::new();
         local_hair_3.insert(edges[7].clone());
         local_hair_3.insert(edges[8].clone());
         local_hair_3.insert(edges[9].clone()); 
-        let local_vertice_3 = PtrWeakHashSet::new();
-        let local_edge_3 = PtrWeakHashSet::new();
+        let local_vertice_3 = BTreeSet::new();
+        let local_edge_3 = BTreeSet::new();
         let invalid_subgraph_1 = Arc::new(InvalidSubgraph::new_raw(&local_vertice_3, &local_edge_3, &local_hair_3));
         let relaxer_1 = Arc::new(Relaxer::new_raw(
             [
@@ -337,18 +339,18 @@ pub mod tests {
         relaxer_forest.add(relaxer_1);
 
 
-        let mut local_hair_4 = PtrWeakHashSet::new();
+        let mut local_hair_4 = BTreeSet::new();
         local_hair_4.insert(edges[1].clone());
         local_hair_4.insert(edges[2].clone());
         local_hair_4.insert(edges[7].clone());
-        let mut local_vertice_4 = PtrWeakHashSet::new();
-        let mut local_edge_4 = PtrWeakHashSet::new();
+        let mut local_vertice_4 = BTreeSet::new();
+        let mut local_edge_4 = BTreeSet::new();
         let invalid_subgraph_2 = Arc::new(InvalidSubgraph::new_raw(&local_vertice_4, &local_edge_4, &local_hair_4));
 
-        let mut local_hair_5 = PtrWeakHashSet::new();
+        let mut local_hair_5 = BTreeSet::new();
         local_hair_5.insert(edges[2].clone());       
-        let mut local_vertice_5 = PtrWeakHashSet::new();
-        let mut local_edge_5 = PtrWeakHashSet::new();
+        let mut local_vertice_5 = BTreeSet::new();
+        let mut local_edge_5 = BTreeSet::new();
         let invalid_subgraph_3 = Arc::new(InvalidSubgraph::new_raw(&local_vertice_5, &local_edge_5, &local_hair_5));
         let relaxer_2 = Arc::new(Relaxer::new_raw(
             [

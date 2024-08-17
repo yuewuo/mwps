@@ -83,7 +83,7 @@ impl Obstacle {
     /// return if the current obstacle is valid, only needed for pq that allows for invalid (duplicates that are different) events
     fn is_valid<Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug + Clone>(
         &self,
-        dual_module_pq: &DualModulePQ<Queue>,
+        _dual_module_pq: &DualModulePQ<Queue>,
         event_time: &Rational, // time associated with the obstacle
     ) -> bool {
         #[allow(clippy::unnecessary_cast)]

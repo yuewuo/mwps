@@ -8,7 +8,7 @@ use std::collections::{BTreeSet, HashSet};
 use std::sync::Arc;
 
 #[cfg(feature = "pq")]
-use crate::dual_module_pq::{EdgeWeak, VertexWeak};
+use crate::dual_module_pq::{EdgeWeak, VertexWeak, EdgePtr, VertexPtr};
 #[cfg(feature = "non-pq")]
 use crate::dual_module_serial::{EdgeWeak, VertexWeak};
 
@@ -61,7 +61,7 @@ impl DecodingHyperGraph {
         Self::new(model_graph, Arc::new(SyndromePattern::new_vertices(defect_vertices)))
     }
 
-    pub fn find_valid_subgraph(&self, edges: &PtrWeakHashSet<EdgeWeak>, vertices: &PtrWeakHashSet<VertexWeak>) -> Option<Subgraph> {
+    pub fn find_valid_subgraph(&self, edges: &BTreeSet<EdgePtr>, vertices: &BTreeSet<VertexPtr>) -> Option<Subgraph> {
         let mut matrix = Echelon::<CompleteMatrix>::new();
         for edge_index in edges.iter() {
             matrix.add_variable(edge_index.downgrade());
@@ -77,8 +77,8 @@ impl DecodingHyperGraph {
         matrix.get_solution()
     }
 
-    pub fn find_valid_subgraph_auto_vertices(&self, edges: &PtrWeakHashSet<EdgeWeak>) -> Option<Subgraph> {
-        let mut vertices: PtrWeakHashSet<VertexWeak> = PtrWeakHashSet::new();
+    pub fn find_valid_subgraph_auto_vertices(&self, edges: &BTreeSet<EdgePtr>) -> Option<Subgraph> {
+        let mut vertices: BTreeSet<VertexPtr> = BTreeSet::new();
         for edge_ptr in edges.iter() {
             let local_vertices = &edge_ptr.read_recursive().vertices;
             for vertex in local_vertices {
@@ -89,11 +89,11 @@ impl DecodingHyperGraph {
         self.find_valid_subgraph(edges, &vertices)
     }
 
-    pub fn is_valid_cluster(&self, edges: &PtrWeakHashSet<EdgeWeak>, vertices: &PtrWeakHashSet<VertexWeak>) -> bool {
+    pub fn is_valid_cluster(&self, edges: &BTreeSet<EdgePtr>, vertices: &BTreeSet<VertexPtr>) -> bool {
         self.find_valid_subgraph(edges, vertices).is_some()
     }
 
-    pub fn is_valid_cluster_auto_vertices(&self, edges: &PtrWeakHashSet<EdgeWeak>) -> bool {
+    pub fn is_valid_cluster_auto_vertices(&self, edges: &BTreeSet<EdgePtr>) -> bool {
         self.find_valid_subgraph_auto_vertices(edges).is_some()
     }
 

@@ -18,7 +18,7 @@ use std::io::prelude::*;
 use std::time::Instant;
 
 #[cfg(feature = "pq")]
-use crate::dual_module_pq::{EdgeWeak, VertexWeak};
+use crate::dual_module_pq::{EdgeWeak, VertexWeak, EdgePtr, VertexPtr};
 #[cfg(feature = "non-pq")]
 use crate::dual_module_serial::{EdgeWeak, VertexWeak, EdgePtr, VertexPtr};
 
@@ -175,8 +175,8 @@ impl SolverInitializer {
     }
 
     #[allow(clippy::unnecessary_cast)]
-    pub fn get_subgraph_syndrome(&self, subgraph: &Subgraph) -> PtrWeakHashSet<VertexWeak> {
-        let mut defect_vertices = PtrWeakHashSet::new();
+    pub fn get_subgraph_syndrome(&self, subgraph: &Subgraph) -> BTreeSet<VertexPtr> {
+        let mut defect_vertices = BTreeSet::new();
         for edge_weak in subgraph.iter() {
             // let HyperEdge { vertices, .. } = &self.weighted_edges[edge_index as usize];
             let edge_ptr = edge_weak.upgrade_force();

@@ -135,7 +135,6 @@ impl PluginManager {
 
     pub fn find_relaxer(
         &mut self,
-        decoding_graph: &DecodingHyperGraph,
         matrix: &mut EchelonMatrix,
         positive_dual_nodes: &[DualNodePtr],
     ) -> Option<Relaxer> {

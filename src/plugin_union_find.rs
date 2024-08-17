@@ -18,7 +18,7 @@ use crate::util::*;
 use std::collections::BTreeSet;
 
 #[cfg(feature = "pq")]
-use crate::dual_module_pq::{EdgeWeak, VertexWeak};
+use crate::dual_module_pq::{EdgeWeak, VertexWeak, EdgePtr, VertexPtr};
 #[cfg(feature = "non-pq")]
 use crate::dual_module_serial::{EdgeWeak, VertexWeak};
 
@@ -31,7 +31,7 @@ impl PluginUnionFind {
         if matrix.get_echelon_info().satisfiable {
             return None; // cannot find any relaxer
         }
-        let local_edges: PtrWeakHashSet<EdgeWeak> = matrix.get_view_edges().iter().map(|e| e.upgrade_force()).collect();
+        let local_edges: BTreeSet<EdgePtr> = matrix.get_view_edges().iter().map(|e| e.upgrade_force()).collect();
         let invalid_subgraph = InvalidSubgraph::new_complete_ptr(
             &matrix.get_vertices(),
             &local_edges,

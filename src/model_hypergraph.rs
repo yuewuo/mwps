@@ -42,7 +42,7 @@ impl ModelHyperGraph {
     }
 
     pub fn get_edges_neighbors(&self, edges: &BTreeSet<EdgeIndex>) -> BTreeSet<VertexIndex> {
-        let mut vertices = BTreeSet::new();
+        let mut vertices: BTreeSet<usize> = BTreeSet::new();
         for &edge_index in edges.iter() {
             vertices.extend(self.get_edge_neighbors(edge_index));
         }

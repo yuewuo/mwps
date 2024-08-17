@@ -10,9 +10,9 @@ use prettytable::*;
 use weak_table::PtrWeakHashSet;
 use std::collections::*;
 #[cfg(feature = "pq")]
-use crate::dual_module_pq::{EdgeWeak, VertexWeak};
+use crate::dual_module_pq::{EdgeWeak, VertexWeak, EdgePtr, VertexPtr};
 #[cfg(feature = "non-pq")]
-use crate::dual_module_serial::{EdgeWeak, VertexWeak};
+use crate::dual_module_serial::{EdgeWeak, VertexWeak, EdgePtr, VertexPtr};
 
 pub struct HairView<'a, M: MatrixTail + MatrixEchelon> {
     base: &'a mut M,
@@ -76,10 +76,10 @@ impl<'a, M: MatrixTail + MatrixEchelon> HairView<'a, M> {
 }
 
 impl<'a, M: MatrixTail + MatrixEchelon> MatrixTail for HairView<'a, M> {
-    fn get_tail_edges(&self) -> &PtrWeakHashSet<EdgeWeak> {
+    fn get_tail_edges(&self) -> &BTreeSet<EdgePtr> {
         self.get_base().get_tail_edges()
     }
-    fn get_tail_edges_mut(&mut self) -> &mut PtrWeakHashSet<EdgeWeak> {
+    fn get_tail_edges_mut(&mut self) -> &mut BTreeSet<EdgePtr> {
         panic!("cannot mutate a hair view");
     }
 }
@@ -134,7 +134,7 @@ impl<'a, M: MatrixTail + MatrixEchelon> MatrixBasic for HairView<'a, M> {
     fn edge_to_var_index(&self, edge_weak: EdgeWeak) -> Option<VarIndex> {
         self.get_base().edge_to_var_index(edge_weak)
     }
-    fn get_vertices(&self) -> PtrWeakHashSet<VertexWeak> {
+    fn get_vertices(&self) -> BTreeSet<VertexPtr> {
         self.get_base().get_vertices()
     }
 }

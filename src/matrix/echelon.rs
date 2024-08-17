@@ -2,13 +2,14 @@ use super::interface::*;
 use super::visualize::*;
 use crate::util::*;
 use core::panic;
+use std::collections::BTreeSet;
 use derivative::Derivative;
 use prettytable::*;
 
 #[cfg(feature = "pq")]
-use crate::dual_module_pq::{EdgeWeak, VertexWeak};
+use crate::dual_module_pq::{EdgeWeak, VertexWeak, EdgePtr, VertexPtr};
 #[cfg(feature = "non-pq")]
-use crate::dual_module_serial::{EdgeWeak, VertexWeak};
+use crate::dual_module_serial::{EdgeWeak, VertexWeak, EdgePtr, VertexPtr};
 
 use weak_table::PtrWeakHashSet;
 
@@ -30,10 +31,10 @@ impl<M: MatrixView> Echelon<M> {
 }
 
 impl<M: MatrixTail + MatrixView> MatrixTail for Echelon<M> {
-    fn get_tail_edges(&self) -> &PtrWeakHashSet<EdgeWeak> {
+    fn get_tail_edges(&self) -> &BTreeSet<EdgePtr> {
         self.base.get_tail_edges()
     }
-    fn get_tail_edges_mut(&mut self) -> &mut PtrWeakHashSet<EdgeWeak>{
+    fn get_tail_edges_mut(&mut self) -> &mut BTreeSet<EdgePtr>{
         self.is_info_outdated = true;
         self.base.get_tail_edges_mut()
     }
@@ -83,7 +84,7 @@ impl<M: MatrixView> MatrixBasic for Echelon<M> {
     fn edge_to_var_index(&self, edge_weak: EdgeWeak) -> Option<VarIndex> {
         self.get_base().edge_to_var_index(edge_weak)
     }
-    fn get_vertices(&self) -> PtrWeakHashSet<VertexWeak> {
+    fn get_vertices(&self) -> BTreeSet<VertexPtr> {
         self.get_base().get_vertices()
     }
 }

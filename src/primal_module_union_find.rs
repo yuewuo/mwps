@@ -38,7 +38,7 @@ type UnionFind = UnionFindGeneric<PrimalModuleUnionFindNode>;
 #[derive(Debug, Clone)]
 pub struct PrimalModuleUnionFindNode {
     /// all the internal edges
-    pub internal_edges: PtrWeakHashSet<EdgeWeak>,
+    pub internal_edges: BTreeSet<EdgePtr>,
     /// the corresponding node index with these internal edges
     pub node_index: NodeIndex,
 }
@@ -47,9 +47,9 @@ pub struct PrimalModuleUnionFindNode {
 impl UnionNodeTrait for PrimalModuleUnionFindNode {
     #[inline]
     fn union(left: &Self, right: &Self) -> (bool, Self) {
-        let mut internal_edges = PtrWeakHashSet::new();
-        internal_edges.extend(left.internal_edges.iter());
-        internal_edges.extend(right.internal_edges.iter());
+        let mut internal_edges: BTreeSet<EdgePtr> = BTreeSet::new();
+        internal_edges.extend(left.internal_edges.iter().cloned());
+        internal_edges.extend(right.internal_edges.iter().cloned());
         let result = Self {
             internal_edges,
             node_index: NodeIndex::MAX, // waiting for assignment
@@ -64,7 +64,7 @@ impl UnionNodeTrait for PrimalModuleUnionFindNode {
     #[inline]
     fn default() -> Self {
         Self {
-            internal_edges: PtrWeakHashSet::new(),
+            internal_edges: BTreeSet::new(),
             node_index: NodeIndex::MAX, // waiting for assignment
         }
     }
@@ -101,7 +101,7 @@ impl PrimalModuleImpl for PrimalModuleUnionFind {
             );
             assert_eq!(node.index as usize, self.union_find.size(), "must load defect nodes in order");
             self.union_find.insert(PrimalModuleUnionFindNode {
-                internal_edges: PtrWeakHashSet::new(),
+                internal_edges: BTreeSet::new(),
                 node_index: node.index,
             });
         }
@@ -153,7 +153,7 @@ impl PrimalModuleImpl for PrimalModuleUnionFind {
             } else {
                 let new_cluster_node_index = self.union_find.size() as NodeIndex;
                 self.union_find.insert(PrimalModuleUnionFindNode {
-                    internal_edges: PtrWeakHashSet::new(),
+                    internal_edges: BTreeSet::new(),
                     node_index: new_cluster_node_index,
                 });
                 self.union_find.union(cluster_index as usize, new_cluster_node_index as usize);

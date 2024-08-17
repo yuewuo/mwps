@@ -12,7 +12,7 @@ use std::sync::Arc;
 use weak_table::PtrWeakHashSet;
 
 #[cfg(feature = "pq")]
-use crate::dual_module_pq::{EdgeWeak, VertexWeak};
+use crate::dual_module_pq::{EdgeWeak, VertexWeak, EdgePtr, VertexPtr};
 #[cfg(feature = "non-pq")]
 use crate::dual_module_serial::{EdgeWeak, VertexWeak};
 
@@ -25,11 +25,11 @@ pub struct InvalidSubgraph {
     #[derivative(Debug = "ignore")]
     pub hash_value: u64,
     /// subset of vertex weak pointers, nota that the vertex struct is from dual_module_pq
-    pub vertices: PtrWeakHashSet<VertexWeak>,
+    pub vertices: BTreeSet<VertexPtr>,
     /// subset of edge weak pointers, note that the edge struct is from dual_module_pq
-    pub edges: PtrWeakHashSet<EdgeWeak>,
+    pub edges: BTreeSet<EdgePtr>,
     /// the hair of the invalid subgraph, to avoid repeated computation
-    pub hair: PtrWeakHashSet<EdgeWeak>,
+    pub hair: BTreeSet<EdgePtr>,
 }
 
 impl Hash for InvalidSubgraph {
@@ -73,9 +73,9 @@ impl InvalidSubgraph {
     /// the invalid subgraph generated is a local graph if the decoding_graph is a local graph
     /// delete decoding_graph: &DecodingHyperGraph when release, it is here merely to run sanity_check()
     #[allow(clippy::unnecessary_cast)]
-    pub fn new(edges: &PtrWeakHashSet<EdgeWeak>) -> Self {
+    pub fn new(edges: &BTreeSet<EdgePtr>) -> Self {
         // println!("edges input: {:?}", edges);
-        let mut vertices = PtrWeakHashSet::new();
+        let mut vertices: BTreeSet<VertexPtr> = BTreeSet::new();
         for edge_ptr in edges.iter() {
             for vertex_ptr in edge_ptr.read_recursive().vertices.iter() {
                 vertices.insert(vertex_ptr.upgrade_force().clone());
@@ -91,11 +91,11 @@ impl InvalidSubgraph {
     /// complete definition of invalid subgraph $S = (V_S, E_S)$
     #[allow(clippy::unnecessary_cast)]
     pub fn new_complete(
-        vertices: &PtrWeakHashSet<VertexWeak>,
-        edges: &PtrWeakHashSet<EdgeWeak>
+        vertices: &BTreeSet<VertexPtr>,
+        edges: &BTreeSet<EdgePtr>
     ) -> Self {
         // println!("input vertex to new_complete: {:?}", vertices);
-        let mut hair = PtrWeakHashSet::new();
+        let mut hair: BTreeSet<EdgePtr> = BTreeSet::new();
         for vertex_ptr in vertices.iter() {
             // println!("vertex index in new_complete: {:?}", vertex_ptr.read_recursive().vertex_index);
             for edge_ptr in vertex_ptr.read_recursive().edges.iter() {
@@ -111,7 +111,7 @@ impl InvalidSubgraph {
     }
 
     /// create $S = (V_S, E_S)$ and $\delta(S)$ directly, without any checks
-    pub fn new_raw(vertices: &PtrWeakHashSet<VertexWeak>, edges: &PtrWeakHashSet<EdgeWeak>, hair: &PtrWeakHashSet<EdgeWeak>) -> Self {
+    pub fn new_raw(vertices: &BTreeSet<VertexPtr>, edges: &BTreeSet<EdgePtr>, hair: &BTreeSet<EdgePtr>) -> Self {
         let mut invalid_subgraph = Self {
             hash_value: 0,
             vertices: vertices.clone(),
@@ -184,7 +184,7 @@ impl InvalidSubgraph {
         Ok(())
     }
 
-    pub fn generate_matrix(&self, decoding_graph: &DecodingHyperGraph) -> EchelonMatrix {
+    pub fn generate_matrix(&self) -> EchelonMatrix {
         let mut matrix = EchelonMatrix::new();
         for edge_ptr in self.hair.iter() {
             matrix.add_variable(edge_ptr.downgrade());
@@ -201,29 +201,27 @@ impl InvalidSubgraph {
 
 // shortcuts for easier code writing at debugging
 impl InvalidSubgraph {
-    pub fn new_ptr(edges: &PtrWeakHashSet<EdgeWeak>) -> Arc<Self> {
+    pub fn new_ptr(edges: &BTreeSet<EdgePtr>) -> Arc<Self> {
         Arc::new(Self::new(edges))
     }
-    pub fn new_vec_ptr(edges: &[EdgeWeak]) -> Arc<Self> {
-        let strong_edges = edges.iter()
-            .filter_map(|weak_edge| weak_edge.upgrade())
-            .collect();
+    pub fn new_vec_ptr(edges: &[EdgePtr]) -> Arc<Self> {
+        let strong_edges: BTreeSet<EdgePtr> = edges.iter().cloned().collect();
         Self::new_ptr(&strong_edges)
     }
     pub fn new_complete_ptr(
-        vertices: &PtrWeakHashSet<VertexWeak>,
-        edges: &PtrWeakHashSet<EdgeWeak>
+        vertices: &BTreeSet<VertexPtr>,
+        edges: &BTreeSet<EdgePtr>
     ) -> Arc<Self> {
         Arc::new(Self::new_complete(vertices, edges))
     }
     pub fn new_complete_vec_ptr(
-        vertices: &PtrWeakHashSet<VertexWeak>,
-        edges: &[EdgeWeak],
-        decoding_graph: &DecodingHyperGraph,
+        vertices: &BTreeSet<VertexPtr>,
+        edges: &[EdgePtr],
     ) -> Arc<Self> {
-        let strong_edges = edges.iter()
-        .filter_map(|weak_edge| weak_edge.upgrade())
-        .collect();
+        // let strong_edges = edges.iter()
+        // .filter_map(|weak_edge| weak_edge.upgrade())
+        // .collect();
+        let strong_edges: BTreeSet<EdgePtr> = edges.iter().cloned().collect();
         Self::new_complete_ptr(
             vertices,
             &strong_edges
@@ -288,7 +286,7 @@ pub mod tests {
             edges.push(edge_ptr);
         }
 
-        let mut invalid_subgraph_edges = PtrWeakHashSet::new();
+        let mut invalid_subgraph_edges = BTreeSet::new();
         invalid_subgraph_edges.insert(edges[13].clone());
 
         let invalid_subgraph_1 = InvalidSubgraph::new(&invalid_subgraph_edges);

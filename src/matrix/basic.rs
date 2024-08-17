@@ -8,17 +8,17 @@ use weak_table::PtrWeakKeyHashMap;
 use std::collections::{BTreeMap, BTreeSet};
 
 #[cfg(feature = "pq")]
-use crate::dual_module_pq::{EdgeWeak, VertexWeak};
+use crate::dual_module_pq::{EdgeWeak, VertexWeak, EdgePtr, VertexPtr};
 #[cfg(feature = "non-pq")]
-use crate::dual_module_serial::{EdgeWeak, VertexWeak};
+use crate::dual_module_serial::{EdgeWeak, VertexWeak, EdgePtr, VertexPtr};
 
 #[derive(Clone, Derivative)]
 #[derivative(Default(new = "true"))]
 pub struct BasicMatrix {
     /// the vertices already maintained by this parity check
-    pub vertices: PtrWeakHashSet<VertexWeak>,
+    pub vertices: BTreeSet<VertexPtr>,
     /// the edges maintained by this parity check, mapping to the local indices
-    pub edges: PtrWeakKeyHashMap<EdgeWeak, VarIndex>,
+    pub edges: BTreeMap<EdgePtr, VarIndex>,
     /// variable index map to edge index
     pub variables: Vec<EdgeWeak>,
     pub constraints: Vec<ParityRow>,
@@ -90,7 +90,7 @@ impl MatrixBasic for BasicMatrix {
         self.edges.get(&edge_weak.upgrade_force()).cloned()
     }
 
-    fn get_vertices(&self) -> PtrWeakHashSet<VertexWeak> {
+    fn get_vertices(&self) -> BTreeSet<VertexPtr> {
         self.vertices.clone()
     }
 }

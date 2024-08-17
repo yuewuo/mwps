@@ -129,9 +129,9 @@ pub struct PrimalCluster {
     /// the nodes that belongs to this cluster
     pub nodes: Vec<PrimalModuleSerialNodePtr>,
     /// all the edges ever exists in any hair
-    pub edges: PtrWeakHashSet<EdgeWeak>,
+    pub edges: BTreeSet<EdgePtr>,
     /// all the vertices ever touched by any tight edge
-    pub vertices: PtrWeakHashSet<VertexWeak>,
+    pub vertices: BTreeSet<VertexPtr>,
     /// the parity matrix to determine whether it's a valid cluster and also find new ways to increase the dual
     pub matrix: EchelonMatrix,
     /// the parity subgraph result, only valid when it's solved
@@ -198,7 +198,7 @@ impl PrimalModuleImpl for PrimalModuleSerial {
                 nodes: vec![],
                 edges: node.invalid_subgraph.hair.clone(),
                 vertices: node.invalid_subgraph.vertices.clone(),
-                matrix: node.invalid_subgraph.generate_matrix(&interface.decoding_graph),
+                matrix: node.invalid_subgraph.generate_matrix(),
                 subgraph: None,
                 plugin_manager: PluginManager::new(self.plugins.clone(), self.plugin_count.clone()),
                 relaxer_optimizer: RelaxerOptimizer::new(),
@@ -328,7 +328,7 @@ impl PrimalModuleImpl for PrimalModuleSerial {
         for edge_weak in cluster.edges.iter() {
             cluster
                 .matrix
-                .update_edge_tightness(edge_weak.downgrade(), dual_module.is_edge_tight(edge_weak));
+                .update_edge_tightness(edge_weak.downgrade(), dual_module.is_edge_tight(edge_weak.clone()));
         }
 
         // find an executable relaxer from the plugin manager
@@ -339,11 +339,10 @@ impl PrimalModuleImpl for PrimalModuleSerial {
                 .map(|p| p.read_recursive().dual_node_ptr.clone())
                 .filter(|dual_node_ptr| !dual_node_ptr.read_recursive().get_dual_variable().is_zero())
                 .collect();
-            let decoding_graph = &interface_ptr.read_recursive().decoding_graph;
             let cluster_mut = &mut *cluster; // must first get mutable reference
             let plugin_manager = &mut cluster_mut.plugin_manager;
             let matrix = &mut cluster_mut.matrix;
-            plugin_manager.find_relaxer(decoding_graph, matrix, &positive_dual_variables)
+            plugin_manager.find_relaxer( matrix, &positive_dual_variables)
         };
 
         // if a relaxer is found, execute it and return
@@ -399,7 +398,7 @@ impl PrimalModuleImpl for PrimalModuleSerial {
         for edge_index in cluster.edges.iter() {
             cluster
                 .matrix
-                .update_edge_tightness(edge_index.downgrade(), dual_module.is_edge_tight_tune(edge_index));
+                .update_edge_tightness(edge_index.downgrade(), dual_module.is_edge_tight_tune(edge_index.clone()));
         }
 
         // find an executable relaxer from the plugin manager
@@ -410,11 +409,10 @@ impl PrimalModuleImpl for PrimalModuleSerial {
                 .map(|p| p.read_recursive().dual_node_ptr.clone())
                 .filter(|dual_node_ptr| !dual_node_ptr.read_recursive().dual_variable_at_last_updated_time.is_zero())
                 .collect();
-            let decoding_graph = &interface_ptr.read_recursive().decoding_graph;
             let cluster_mut = &mut *cluster; // must first get mutable reference
             let plugin_manager = &mut cluster_mut.plugin_manager;
             let matrix = &mut cluster_mut.matrix;
-            plugin_manager.find_relaxer(decoding_graph, matrix, &positive_dual_variables)
+            plugin_manager.find_relaxer( matrix, &positive_dual_variables)
         };
 
         // if a relaxer is found, execute it and return
@@ -1482,6 +1480,25 @@ pub mod tests {
         let visualize_filename = "primal_module_serial_basic_4_plugin_one_by_one_with_dual_pq_impl_m.json".to_string();
         let defect_vertices = vec![12, 22, 23, 32, 17, 26, 27, 37, 62, 72, 73, 82, 67, 76, 77, 87];
         let code = CodeCapacityPlanarCode::new(11, 0.01, 1);
+        primal_module_serial_basic_standard_syndrome_with_dual_pq_impl(
+            code,
+            visualize_filename,
+            defect_vertices,
+            12,
+            vec![
+                PluginUnionFind::entry(),
+                PluginSingleHair::entry_with_strategy(RepeatStrategy::Once),
+            ],
+            GrowingStrategy::ModeBased,
+        );
+    }
+
+    #[test]
+    fn primal_module_serial_test_for_seed_131() {
+        // cargo test primal_module_serial_test_for_seed_131 -- --nocapture
+        let visualize_filename = "primal_module_serial_test_for_seed_131.json".to_string();
+        let defect_vertices = vec![24, 42, 50, 51, 53, 56, 57, 60, 62, 68, 75, 80, 86, 88, 93, 94, 96, 98, 104, 106, 115, 127, 128, 129, 133, 134, 136, 141, 142, 146, 150, 151, 152, 154, 164, 172, 173, 182, 183, 191, 192, 199, 207, 218, 225, 226, 229, 230, 231, 232, 235, 243, 245, 246, 247, 259, 260, 281, 282, 292, 293, 309, 326];
+        let code = CodeCapacityPlanarCode::new(19, 0.05, 1000);
         primal_module_serial_basic_standard_syndrome_with_dual_pq_impl(
             code,
             visualize_filename,
