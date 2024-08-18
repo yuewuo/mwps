@@ -227,7 +227,7 @@ impl RelaxerOptimizer {
     pub fn optimize(
         &mut self,
         relaxer: Relaxer,
-        edge_slacks: PtrWeakKeyHashMap<EdgeWeak, Rational>,
+        edge_slacks: BTreeMap<EdgePtr, Rational>,
         mut dual_variables: BTreeMap<Arc<InvalidSubgraph>, Rational>,
     ) -> (Relaxer, bool) {
         use highs::{HighsModelStatus, RowProblem, Sense};
@@ -248,8 +248,8 @@ impl RelaxerOptimizer {
         let mut x_vars = vec![];
         let mut y_vars = vec![];
         let mut invalid_subgraphs = Vec::with_capacity(dual_variables.len());
-        let mut edge_contributor: PtrWeakKeyHashMap<EdgeWeak, Vec<usize>> =
-            edge_slacks.keys().map(|edge_index| (edge_index, vec![])).collect();
+        let mut edge_contributor: BTreeMap<EdgePtr, Vec<usize>> =
+            edge_slacks.keys().map(|edge_index| (edge_index.clone(), vec![])).collect();
 
         for (var_index, (invalid_subgraph, dual_variable)) in dual_variables.iter().enumerate() {
             // constraint of the dual variable >= 0

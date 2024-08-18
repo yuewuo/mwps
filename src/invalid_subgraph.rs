@@ -9,7 +9,6 @@ use std::collections::hash_map::DefaultHasher;
 use std::collections::BTreeSet;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
-use weak_table::PtrWeakHashSet;
 
 #[cfg(feature = "pq")]
 use crate::dual_module_pq::{EdgeWeak, VertexWeak, EdgePtr, VertexPtr};
@@ -46,18 +45,19 @@ impl Ord for InvalidSubgraph {
             Ordering::Equal
         } else {
             // rare cases: same hash value but different state
-            // Compare vertices, then edges, then hair
-            let vertices_cmp = self.vertices.iter().cmp(other.vertices.iter());
-            if vertices_cmp != Ordering::Equal {
-                return vertices_cmp;
-            }
+            (&self.vertices, &self.edges, &self.hair).cmp(&(&other.vertices, &other.edges, &other.hair))
+            // // Compare vertices, then edges, then hair
+            // let vertices_cmp = self.vertices.iter().cmp(other.vertices.iter());
+            // if vertices_cmp != Ordering::Equal {
+            //     return vertices_cmp;
+            // }
 
-            let edges_cmp = self.edges.iter().cmp(other.edges.iter());
-            if edges_cmp != Ordering::Equal {
-                return edges_cmp;
-            }
+            // let edges_cmp = self.edges.iter().cmp(other.edges.iter());
+            // if edges_cmp != Ordering::Equal {
+            //     return edges_cmp;
+            // }
 
-            self.hair.iter().cmp(other.hair.iter())
+            // self.hair.iter().cmp(other.hair.iter())
         }
     }
 }
@@ -124,9 +124,12 @@ impl InvalidSubgraph {
 
     pub fn update_hash(&mut self) {
         let mut hasher = DefaultHasher::new();
-        let _ = self.vertices.iter().map(|e|e.hash(&mut hasher));
-        let _ = self.edges.iter().map(|e|e.hash(&mut hasher));
-        let _ = self.hair.iter().map(|e|e.hash(&mut hasher));
+        // let _ = self.vertices.iter().map(|e|e.hash(&mut hasher));
+        // let _ = self.edges.iter().map(|e|e.hash(&mut hasher));
+        // let _ = self.hair.iter().map(|e|e.hash(&mut hasher));
+        self.vertices.hash(&mut hasher);
+        self.edges.hash(&mut hasher);
+        self.hair.hash(&mut hasher);
         self.hash_value = hasher.finish();
     }
 

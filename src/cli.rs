@@ -357,7 +357,7 @@ impl Cli {
                     );
                     primal_dual_solver.clear(); // also count the clear operation
                     let end_time = std::time::Instant::now();
-                    let resolve_time = (end_time - begin_time).as_micros();
+                    let resolve_time = (end_time - begin_time).as_millis();
                     println!("resolve time {:?}", resolve_time);
 
                     return;

@@ -8,6 +8,7 @@ use std::sync::Arc;
 
 use crate::dual_module::*;
 use crate::num_traits::FromPrimitive;
+use crate::num_traits::Zero;
 use crate::ordered_float::OrderedFloat;
 use crate::pointers::*;
 use crate::primal_module_serial::ClusterAffinity;
@@ -199,15 +200,26 @@ pub trait PrimalModuleImpl {
         seed: u64,
     ) -> (Subgraph, WeightRange) {
         let subgraph = self.subgraph(interface, dual_module, seed);
+        // let weight_range = WeightRange::new(
+        //     interface.sum_dual_variables(),
+        //     interface
+        //         .read_recursive()
+        //         .decoding_graph
+        //         .model_graph
+        //         .initializer
+        //         .get_subgraph_total_weight(&subgraph),
+        // );
+        let mut upper = Rational::zero();
+        for (i, edge_weak) in subgraph.iter().enumerate() {
+            // weight += self.weighted_edges[edge_index as usize].weight;
+            // println!("{:?} edge in subgraph: {:?}, weight: {:?}", i, edge_weak.upgrade_force().read_recursive().edge_index, edge_weak.upgrade_force().read_recursive().weight);
+            upper += edge_weak.upgrade_force().read_recursive().weight;
+        }
         let weight_range = WeightRange::new(
             interface.sum_dual_variables(),
-            interface
-                .read_recursive()
-                .decoding_graph
-                .model_graph
-                .initializer
-                .get_subgraph_total_weight(&subgraph),
+            upper
         );
+
         (subgraph, weight_range)
     }
 

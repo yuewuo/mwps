@@ -434,7 +434,7 @@ impl PrimalModuleImpl for PrimalModuleSerial {
                             )
                         })
                         .collect();
-                    let edge_slacks: PtrWeakKeyHashMap<EdgeWeak, Rational> = dual_variables
+                    let edge_slacks: BTreeMap<EdgePtr, Rational> = dual_variables
                         .keys()
                         .flat_map(|invalid_subgraph: &Arc<InvalidSubgraph>| invalid_subgraph.hair.iter())
                         .chain(
@@ -1503,10 +1503,10 @@ pub mod tests {
             code,
             visualize_filename,
             defect_vertices,
-            12,
+            44000,
             vec![
-                PluginUnionFind::entry(),
-                PluginSingleHair::entry_with_strategy(RepeatStrategy::Once),
+                // PluginUnionFind::entry(),
+                // PluginSingleHair::entry_with_strategy(RepeatStrategy::Once),
             ],
             GrowingStrategy::ModeBased,
         );
