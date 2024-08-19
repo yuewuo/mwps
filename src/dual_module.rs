@@ -151,6 +151,15 @@ impl std::fmt::Debug for DualNodeWeak {
     }
 }
 
+impl DualNodePtr {
+    /// we mainly use the vertex_index from this function to run bfs to find the partition unit responsible for this dual node
+    pub fn get_representative_vertex(&self) -> VertexPtr {
+        let dual_node = self.read_recursive();
+        let defect_vertex = dual_node.invalid_subgraph.vertices.first().unwrap();
+        defect_vertex.clone()
+    }
+}
+
 /// an array of dual nodes
 /// dual nodes, once created, will never be deconstructed until the next run
 #[derive(Derivative)]
@@ -501,7 +510,7 @@ pub trait DualModuleImpl {
     /// get the edge free weight, for each edge what is the weight that are free to use by the given participating dual variables
     fn get_edge_free_weight(
         &self,
-        edge_index: EdgeIndex,
+        edge_ptr: EdgePtr,
         participating_dual_variables: &hashbrown::HashSet<usize>,
     ) -> Rational;
 
@@ -610,6 +619,38 @@ impl GroupMaxUpdateLength {
                 panic!("please call GroupMaxUpdateLength::get_valid_growth to check if this group is none_zero_growth");
             }
             Self::Conflicts(conflicts) => conflicts.last(),
+        }
+    }
+
+    pub fn extend(&mut self, other: Self) {
+        match self {
+            Self::Conflicts(conflicts) => {
+                if let Self::Conflicts(other_conflicts) = other {
+                    conflicts.extend(other_conflicts);
+                } // only add conflicts
+            },
+            Self::Unbounded => {
+                match other {
+                    Self::Unbounded => {} // do nothing
+                    Self::ValidGrow(length) => *self = Self::ValidGrow(length),
+                    Self::Conflicts(mut other_list) => {
+                        let mut list = Vec::<MaxUpdateLength>::new();
+                        std::mem::swap(&mut list, &mut other_list);
+                        *self = Self::Conflicts(list);
+                    }
+                }
+            },
+            Self::ValidGrow(current_length) => match other {
+                Self::Conflicts(mut other_list) => {
+                    let mut list = Vec::<MaxUpdateLength>::new();
+                    std::mem::swap(&mut list, &mut other_list);
+                    *self = Self::Conflicts(list);
+                }
+                Self::Unbounded => {} // do nothing
+                Self::ValidGrow(length) => {
+                    *current_length = std::cmp::min(current_length.clone(), length);
+                }
+            }
         }
     }
 }

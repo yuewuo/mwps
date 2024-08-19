@@ -983,10 +983,11 @@ where
 
     fn get_edge_free_weight(
         &self,
-        edge_index: EdgeIndex,
+        edge_ptr: EdgePtr,
         participating_dual_variables: &hashbrown::HashSet<usize>,
     ) -> Rational {
-        let edge = self.edges[edge_index as usize].read_recursive();
+        // let edge = self.edges[edge_index as usize].read_recursive();
+        let edge = edge_ptr.read_recursive();
         let mut free_weight = edge.weight.clone();
         for dual_node in edge.dual_nodes.iter() {
             if participating_dual_variables.contains(&dual_node.index) {
@@ -997,6 +998,14 @@ where
         }
 
         free_weight
+    }
+
+    fn get_vertex_ptr(&self, vertex_index: VertexIndex) -> VertexPtr {
+        self.vertices[vertex_index].clone()
+    }
+
+    fn get_edge_ptr(&self, edge_index: EdgeIndex) -> EdgePtr {
+        self.edges[edge_index].clone()
     }
 
     #[cfg(feature = "incr_lp")]
@@ -1040,14 +1049,98 @@ where
             }
         }
     }
+}
 
-    fn get_vertex_ptr(&self, vertex_index: VertexIndex) -> VertexPtr {
-        self.vertices[vertex_index].clone()
+
+impl<Queue> DualModulePQ<Queue> 
+where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug + Clone,
+{
+    /// to be called in dual_module_parallel.rs
+    pub fn new_partitioned(partitioned_initializer: &PartitionedSolverInitializer) -> Self {
+        // println!("///////////////////////////////////////////////////////////////////////////////");
+        // println!("for new_partitioned: {partitioned_initializer:?}");
+        // println!("///////////////////////////////////////////////////////////////////////////////");
+
+        // create vertices 
+        let mut vertices: Vec<VertexPtr> = partitioned_initializer.owning_range.iter().map(|vertex_index| {
+            VertexPtr::new_value(Vertex {
+                vertex_index,
+                is_defect: false,
+                edges: Vec::new(),
+            })
+        }).collect();
+
+        // now we want to add the boundary vertices into the vertices for this partition
+        let mut total_boundary_vertices = HashMap::<VertexIndex, VertexIndex>::new(); // all boundary vertices mapping to the specific local partition index
+        let mut mirrored_vertices = HashMap::<VertexIndex, VertexIndex>::new(); // all mirrored vertices mapping to their local indices
+        // only the index_range matters here, the units of the adjacent partitions do not matter here
+        for adjacent_index_range in partitioned_initializer.boundary_vertices.iter(){
+            for vertex_index in adjacent_index_range.range[0]..adjacent_index_range.range[1] {
+                if !partitioned_initializer.owning_range.contains(vertex_index) {
+                    total_boundary_vertices.insert(vertex_index, vertices.len() as VertexIndex);
+                    mirrored_vertices.insert(vertex_index, vertices.len() as VertexIndex);
+                    vertices.push(VertexPtr::new_value(Vertex {
+                        vertex_index: vertex_index,
+                        is_defect: false,
+                        edges: Vec::new(),
+                    }))
+                }else{
+                    mirrored_vertices.insert(vertex_index, vertices.len() as VertexIndex);
+                }
+            }
+        }
+
+        // set edges 
+        let mut edges = Vec::<EdgePtr>::new();
+        for (hyper_edge, edge_index) in partitioned_initializer.weighted_edges.iter() {
+            // above, we have created the vertices that follow its own numbering rule for the index
+            // so we need to calculate the vertex indices of the hyper_edge to make it match the local index 
+            // then, we can create EdgePtr 
+            let mut local_hyper_edge_vertices = Vec::<WeakRwLock<Vertex>>::new();
+            for vertex_index in hyper_edge.vertices.iter() {
+                let local_index = if partitioned_initializer.owning_range.contains(*vertex_index) {
+                    vertex_index - partitioned_initializer.owning_range.start()
+                } else {
+                    total_boundary_vertices[vertex_index]
+                };
+                local_hyper_edge_vertices.push(vertices[local_index].downgrade());
+            }
+            // now we create the edgeptr
+            let edge_ptr = EdgePtr::new_value(Edge {
+                edge_index: *edge_index,
+                weight: Rational::from_usize(hyper_edge.weight).unwrap(),
+                dual_nodes: vec![],
+                vertices: local_hyper_edge_vertices,
+                last_updated_time: Rational::zero(),
+                growth_at_last_updated_time: Rational::zero(),
+                grow_rate: Rational::zero(),
+            });
+
+            // we also need to update the vertices of this hyper_edge
+            for vertex_index in hyper_edge.vertices.iter() {
+                let local_index = if partitioned_initializer.owning_range.contains(*vertex_index) {
+                    vertex_index - partitioned_initializer.owning_range.start()
+                } else {
+                    total_boundary_vertices[vertex_index]
+                };
+                vertices[local_index].write().edges.push(edge_ptr.downgrade());
+            }
+            // for &vertex_index in hyper_edge.vertices.iter() {
+            //     vertices[vertex_index as usize].write().edges.push(edge_ptr.downgrade());
+            // }
+            edges.push(edge_ptr);
+
+        }
+
+        Self {
+            vertices,
+            edges,
+            obstacle_queue: Queue::default(),
+            global_time: ArcRwLock::new_value(Rational::zero()),
+            mode: DualModuleMode::default(),
+        }
     }
 
-    fn get_edge_ptr(&self, edge_index: EdgeIndex) -> EdgePtr {
-        self.edges[edge_index].clone()
-    }
 }
 
 impl<Queue> MWPSVisualizer for DualModulePQ<Queue>
