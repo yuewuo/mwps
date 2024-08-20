@@ -29,7 +29,7 @@ use crate::dual_module_pq::{EdgeWeak, VertexWeak, EdgePtr, VertexPtr};
 use crate::dual_module_serial::{EdgeWeak, VertexWeak, EdgePtr, VertexPtr};
 
 // this is not effecitively doing much right now due to the My (Leo's) desire for ultra performance (inlining function > branches)
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone)]
 pub enum DualModuleMode {
     /// Mode 1
     #[default]

@@ -22,6 +22,7 @@ use crate::primal_module_serial::PrimalClusterPtr;
 use crate::num_traits::{ToPrimitive, Zero};
 use crate::ordered_float::OrderedFloat;
 use std::collections::VecDeque;
+use std::cmp::Ordering;
 
 
 pub struct DualModuleParallelUnit<SerialModule: DualModuleImpl + Send + Sync, Queue> 
@@ -35,7 +36,7 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
     /// we should insert them based on their respective orientation in the time-space chunk block. 
     /// * For boundary unit, the initial state of this vector is the non-boundary unit it connects to.
     /// * When we fuse 2 DualModuleParallelUnit, we could only fuse a non-boundary unit with a boundary unit 
-    pub adjacent_parallel_units: Vec<DualModuleParallelUnitWeak<SerialModule, Queue>>,
+    pub adjacent_parallel_units: Vec<DualModuleParallelUnitPtr<SerialModule, Queue>>,
     /// Whether this unit is a boundary unit
     pub is_boundary_unit: bool,
     /// partition info
@@ -66,6 +67,67 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
 {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         self.upgrade_force().fmt(f)
+    }
+}
+
+impl<SerialModule: DualModuleImpl + Send + Sync, Queue> Ord for DualModuleParallelUnitPtr<SerialModule, Queue> 
+where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug + Send + Sync + Clone,
+{
+    fn cmp(&self, other: &Self) -> Ordering {
+        // compare the pointer address 
+        let ptr1 = Arc::as_ptr(self.ptr());
+        let ptr2 = Arc::as_ptr(other.ptr());
+        // https://doc.rust-lang.org/reference/types/pointer.html
+        // "When comparing raw pointers they are compared by their address, rather than by what they point to."
+        ptr1.cmp(&ptr2)
+    }
+}
+
+impl<SerialModule: DualModuleImpl + Send + Sync, Queue> PartialOrd for DualModuleParallelUnitPtr<SerialModule, Queue> 
+where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug + Send + Sync + Clone,
+{
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl<SerialModule: DualModuleImpl + Send + Sync, Queue> Ord for DualModuleParallelUnitWeak<SerialModule, Queue> 
+where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug + Send + Sync + Clone,
+{
+    fn cmp(&self, other: &Self) -> Ordering {
+        // compare the pointer address 
+        let ptr1 = Arc::as_ptr(self.upgrade_force().ptr());
+        let ptr2 = Arc::as_ptr(other.upgrade_force().ptr());
+        // https://doc.rust-lang.org/reference/types/pointer.html
+        // "When comparing raw pointers they are compared by their address, rather than by what they point to."
+        // println!("ptr1: {:?}", ptr1);
+        // println!("ptr2: {:?}", ptr2);
+        ptr1.cmp(&ptr2)
+    }
+}
+
+impl<SerialModule: DualModuleImpl + Send + Sync, Queue> PartialOrd for DualModuleParallelUnitWeak<SerialModule, Queue> 
+where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug + Send + Sync + Clone,
+{
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl<SerialModule: DualModuleImpl + Send + Sync, Queue> Clone for DualModuleParallelUnit<SerialModule, Queue> 
+where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug + Send + Sync + Clone,
+{
+    fn clone(&self) -> Self {
+        Self {
+            unit_index: self.unit_index.clone(),
+            serial_module: self.serial_module.clone(),
+            adjacent_parallel_units: self.adjacent_parallel_units.clone(),
+            is_boundary_unit: self.is_boundary_unit.clone(),
+            partition_info: self.partition_info.clone(),
+            owning_range: self.owning_range.clone(),
+            enable_parallel_execution: self.enable_parallel_execution.clone(),
+            mode: self.mode.clone(),
+        }
     }
 }
 
@@ -170,7 +232,7 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
                 owning_range: *owning_range,
                 weighted_edges: vec![],
                 boundary_vertices: boundary_vertices.clone(),
-
+                is_boundary_unit: unit_partition_info.is_boundary_unit,
                 // boundary_vertices: unit_partition_info.boundary_vertices.clone(),
                 // adjacent_partition_units: unit_partition_info.adjacent_partition_units.clone(),
                 // owning_interface: Some(partition_units[unit_index].downgrade()),
@@ -179,7 +241,6 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
 
         // now we assign each edge to its unique partition
         // println!("edge num: {}", initializer.weighted_edges.len());
-        let mut edge_bias_vec = [core::usize::MAX, unit_count];
         for (edge_index, hyper_edge) in initializer.weighted_edges.iter().enumerate() {
             let mut vertices_unit_indices: HashMap<usize, Vec<usize>> = HashMap::new();
             let mut boundary_vertices_adjacent_units_index: HashMap<usize, Vec<usize>> = HashMap::new(); // key: unit_index; value: all vertex indices belong to this unit
@@ -287,8 +348,12 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
         // we need to fill in the adjacent_parallel_units here 
         for unit_index in 0..unit_count {
             let mut unit = units[unit_index].write();
+            println!("for unit {:?}", unit_index);
             for adjacent_unit_index in &partition_info.units[unit_index].adjacent_parallel_units {
-                unit.adjacent_parallel_units.push(units[*adjacent_unit_index].downgrade());
+                println!("adjacent_parallel_unit: {:?}", adjacent_unit_index);
+                let pointer = &units[*adjacent_unit_index];
+                unit.adjacent_parallel_units.push(pointer.clone());
+                println!("adjacent_parallel_unit ptr: {:?}", Arc::as_ptr(pointer.clone().ptr()));
             }
         }
 
@@ -421,12 +486,14 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
     /// grow a specific length globally, length must be positive.
     /// note that a negative growth should be implemented by reversing the speed of each dual node
     fn grow(&mut self, length: Rational) {
-        self.thread_pool.scope(|_| {
-            self.units.par_iter().for_each(|unit_ptr| {
-                let mut unit = unit_ptr.write();
-                unit.grow(length.clone()); // to be implemented in DualModuleParallelUnit
-            });
-        })
+        let unit =  &self.units[0];
+        unit.bfs_grow(length.clone());
+        // self.thread_pool.scope(|_| {
+        //     self.units.par_iter().for_each(|unit_ptr| {
+        //         let mut unit = unit_ptr.write();
+        //         unit.grow(length.clone()); // to be implemented in DualModuleParallelUnit
+        //     });
+        // })
     }
 
     /// come back later to fix the owning_edge_range contains
@@ -623,10 +690,22 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
         group_max_update_length
     }
 
+    // /// An optional function that can manipulate individual dual node, not necessarily supported by all implementations
+    // fn grow_dual_node(&mut self, dual_node_ptr: &DualNodePtr, length: Rational) {
+    //     let defect_vertex = dual_node_ptr.get_representative_vertex();
+    //     println!("grow_dual_node: defect vertex found from dual node ptr is {}", defect_vertex.read_recursive().vertex_index);
+    //     let mut visited: HashSet<usize> = HashSet::new();
+    //     self.dfs_grow_dual_node(dual_node_ptr, length, defect_vertex, &mut visited);
+    // }
+
     /// grow a specific length globally, length must be positive.
     /// note that a negative growth should be implemented by reversing the speed of each dual node
     fn grow(&mut self, length: Rational) {
-        self.bfs_grow(length);
+        // let x = &*self;
+        // // let dual_module_unit: ArcRwLock<DualModuleParallelUnit<SerialModule, Queue>> = ArcRwLock::new_value(x.clone());
+        // let dual_module_unit = std::ptr::addr_of!(self);
+        // dual_module_unit.bfs_grow(length);
+        // self.bfs_grow(length);
     }
 
     fn get_edge_nodes(&self, edge_ptr: EdgePtr) -> Vec<DualNodePtr> {
@@ -781,7 +860,7 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
 
         // we need to find the maximum update length of all connected (fused) units
         // so we run a bfs, we could potentially use rayon to optimize it
-        let mut frontier: VecDeque<WeakRwLock<DualModuleParallelUnit<SerialModule, Queue>>> = VecDeque::new();
+        let mut frontier: VecDeque<ArcRwLock<DualModuleParallelUnit<SerialModule, Queue>>> = VecDeque::new();
         let mut visited = HashSet::new();
         visited.insert(self.unit_index);
         for neighbor in self.adjacent_parallel_units.clone().into_iter() {
@@ -791,7 +870,7 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
         while !frontier.is_empty() {
             let temp = frontier.pop_front().unwrap();
             // let mut current = temp.write();
-            let serial_module_group_max_update_length = temp.upgrade_force().write().serial_module.compute_maximum_update_length();
+            let serial_module_group_max_update_length = temp.write().serial_module.compute_maximum_update_length();
             
             println!("in while");
             // if !serial_module_group_max_update_length.is_active() {
@@ -799,16 +878,16 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
             // }
             group_max_update_length.extend(serial_module_group_max_update_length);
             println!("in while");
-            visited.insert(temp.upgrade_force().read_recursive().unit_index);
+            visited.insert(temp.read_recursive().unit_index);
             println!("in while");
 
-            for neighbor in temp.upgrade_force().read_recursive().adjacent_parallel_units.clone().into_iter() {
+            for neighbor in temp.read_recursive().adjacent_parallel_units.clone().into_iter() {
                 println!("in while");
-                let neighbor_ptr = neighbor.upgrade_force();
-                let neighbor_read = neighbor_ptr.read_recursive();
+                // let neighbor_ptr = neighbor.upgrade_force();
+                let neighbor_read = neighbor.read_recursive();
                 if !visited.contains(&neighbor_read.unit_index) {
                     println!("in while hh");
-                    frontier.push_back(neighbor);
+                    frontier.push_back(neighbor.clone());
                 }
                 println!("in while h");
                 drop(neighbor_read);
@@ -819,41 +898,131 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
         println!("after while");
     }
 
-    // I do need to iteratively grow all the neighbors, instead I only grow this unit
+    // // I do need to iteratively grow all the neighbors, instead I only grow this unit
+    // // this helps me to reduce the time complexity of copying all the nodes from one interface to the other during fusion
+    // pub fn bfs_grow(&mut self, length: Rational) {
+    //     // early terminate if no active dual nodes in this partition unit
+    //     // if !self.has_active_node {
+    //     //     return;
+    //     // }
+    //     println!("bfs grow");
+
+    //     self.serial_module.grow(length.clone());
+        
+    //     // could potentially use rayon to optimize it
+    //     // implement a breadth first search to grow all connected (fused) neighbors 
+    //     let mut frontier: VecDeque<_> = VecDeque::new();
+    //     let mut visited: BTreeSet<_> = BTreeSet::new();
+    //     println!("index: {:?}", self.unit_index);
+    //     visited.insert();
+    //     for neighbor in self.adjacent_parallel_units.iter() {
+    //         frontier.push_front(neighbor.clone());
+    //     }
+
+    //     while !frontier.is_empty() {
+    //         let temp_ptr = frontier.pop_front().unwrap();
+    //         // let temp_ptr = temp_weak
+    //         let mut temp = temp_ptr.write();
+    //         temp.serial_module.grow(length.clone());
+    //         drop(temp);
+    //         let temp = temp_ptr.read_recursive();
+    //         visited.insert(temp_ptr);
+    //         println!("temp index: {:?}", temp.unit_index);
+
+    //         for neighbor in temp.adjacent_parallel_units.clone().iter() {
+    //             println!("hihi");
+    //             if !visited.contains(&neighbor.upgrade_force().read_recursive().unit_index) {
+    //                 frontier.push_back(neighbor.clone());
+    //             }
+    //         }
+    //     }
+    //     println!("done with bfs grow");
+    // }
+
+    // /// dfs to add defect node
+    // fn dfs_grow_dual_node(&mut self, dual_node_ptr: &DualNodePtr, length: Rational, defect_vertex: VertexIndex, visited: &mut HashSet<usize>) {
+
+    //     if self.owning_range.contains(defect_vertex) {
+    //         // println!("the unit containing this dual node is {} with owning range {} to {}", self.unit_index, self.owning_range.range[0], self.owning_range.range[1]);
+    //         self.serial_module.grow_dual_node(dual_node_ptr, length);
+    //         return;
+    //     }
+
+    //     visited.insert(self.unit_index);
+
+    //     // println!("neighbor len: {}", self.adjacent_parallel_units.len());
+    //     for neighbor in self.adjacent_parallel_units.iter() {
+    //         if !visited.contains(&neighbor.upgrade_force().read_recursive().unit_index) {
+    //             neighbor.upgrade_force().write().dfs_grow_dual_node(dual_node_ptr, length.clone(), defect_vertex, visited);
+    //         }
+    //     }
+    // }
+}
+
+
+impl<SerialModule: DualModuleImpl + Send + Sync, Queue> DualModuleParallelUnitPtr<SerialModule, Queue> 
+where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug + Send + Sync + Clone,
+{
+     // I do need to iteratively grow all the neighbors, instead I only grow this unit
     // this helps me to reduce the time complexity of copying all the nodes from one interface to the other during fusion
-    pub fn bfs_grow(&mut self, length: Rational) {
+    pub fn bfs_grow(&self, length: Rational) {
         // early terminate if no active dual nodes in this partition unit
         // if !self.has_active_node {
         //     return;
         // }
+        println!("bfs grow");
+        let mut dual_module_unit = self.write();
 
-        self.serial_module.grow(length.clone());
+        dual_module_unit.serial_module.grow(length.clone());
+        drop(dual_module_unit);
+        let dual_module_unit = self.read_recursive();
         
         // could potentially use rayon to optimize it
         // implement a breadth first search to grow all connected (fused) neighbors 
-        let mut frontier: VecDeque<WeakRwLock<DualModuleParallelUnit<SerialModule, Queue>>> = VecDeque::new();
-        let mut visited = HashSet::new();
-        visited.insert(self.unit_index);
-        for neighbor in self.adjacent_parallel_units.clone().into_iter() {
-            frontier.push_front(neighbor);
+        let mut frontier: VecDeque<_> = VecDeque::new();
+        let mut visited = BTreeSet::new();
+        // println!("index: {:?}", self.unit_index);
+        // visited.insert(Arc::as_ptr(self.ptr()));
+        visited.insert(self.clone());
+        println!("self pointer: {:?}", Arc::as_ptr(self.ptr()));
+        let self_pointer_copy = self.clone();
+        println!("self pointer copy: {:?}", Arc::as_ptr(self_pointer_copy.ptr()));
+
+        for neighbor in dual_module_unit.adjacent_parallel_units.iter() {
+            println!("first neighbor pointer: {:?}", Arc::as_ptr(neighbor.ptr()));
+            frontier.push_front(neighbor.clone());
         }
 
+        drop(dual_module_unit);
         while !frontier.is_empty() {
+            println!("frontier len: {:?}", frontier.len());
             let temp = frontier.pop_front().unwrap();
-            // let mut current = temp.write();
-            temp.upgrade_force().write().serial_module.grow(length.clone());
-            visited.insert(temp.upgrade_force().read_recursive().unit_index);
-            
-            for neighbor in temp.upgrade_force().read_recursive().adjacent_parallel_units.clone().into_iter() {
-                if !visited.contains(&neighbor.upgrade_force().read_recursive().unit_index) {
-                    frontier.push_back(neighbor);
+            println!("frontier len: {:?}", frontier.len());
+            // let temp_ptr = temp_weak.upgrade_force();
+            temp.write().serial_module.grow(length.clone());
+            // visited.insert(Arc::as_ptr(temp.ptr()));
+            visited.insert(temp.clone());
+            println!("temp pointer: {:?}",  Arc::as_ptr(temp.ptr()));
+            // println!("temp index: {:?}", temp.unit_index);
+            // println!("len: {:?}", temp.adjacent_parallel_units.len());
+
+            for neighbor in temp.read_recursive().adjacent_parallel_units.iter() {
+                println!("hihi");
+                println!("neighbor pointer: {:?}", Arc::as_ptr(neighbor.ptr()));
+                // if !visited.contains(&Arc::as_ptr(neighbor.ptr())) {
+                //     frontier.push_back(neighbor.clone());
+                // }
+                if !visited.contains(neighbor) {
+                    frontier.push_back(neighbor.clone());
                 }
+                println!("frontier len: {:?}", frontier.len());
             }
+            drop(temp);
+            println!("after for loop");
         }
+        println!("done with bfs grow");
     }
 }
-
-
 
 // now we implement the visualization functions
 impl<SerialModule: DualModuleImpl + MWPSVisualizer + Send + Sync, Queue> MWPSVisualizer for DualModuleParallel<SerialModule, Queue> 
@@ -910,13 +1079,14 @@ pub mod tests {
 
     #[test]
     fn dual_module_parallel_tentative_test_1() 
-    where 
     {
         // cargo test dual_module_parallel_tentative_test_1 -- --nocapture
         let visualize_filename = "dual_module_parallel_tentative_test_1.json".to_string();
+        // let weight = 600; // do not change, the data is hard-coded
+        // let code = CodeCapacityPlanarCode::new(7, 0.1, weight);
         let weight = 600; // do not change, the data is hard-coded
-        // let pxy = 0.0602828812732227;
-        let code = CodeCapacityPlanarCode::new(7, 0.1, weight);
+        let pxy = 0.0602828812732227;
+        let code = CodeCapacityTailoredCode::new(7, pxy, 0.1, weight); // do not change probabilities: the data is hard-coded
         let mut visualizer = Visualizer::new(
             Some(visualize_data_folder() + visualize_filename.as_str()),
             code.get_positions(),
@@ -958,70 +1128,36 @@ pub mod tests {
             .snapshot_combined("syndrome".to_string(), vec![&interface_ptr, &dual_module])
             .unwrap();
 
+        println!("done first visualization");
 
         // // grow them each by half
-        // let dual_node_17_ptr = interface_ptr.read_recursive().nodes[0].clone();
-        // let dual_node_23_ptr = interface_ptr.read_recursive().nodes[1].clone();
-        // let dual_node_29_ptr = interface_ptr.read_recursive().nodes[2].clone();
-        // let dual_node_30_ptr = interface_ptr.read_recursive().nodes[3].clone();
-        // dual_module.grow_dual_node(&dual_node_17_ptr, Rational::from_i64(160).unwrap());
-        // dual_module.grow_dual_node(&dual_node_23_ptr, Rational::from_i64(160).unwrap());
-        // dual_module.grow_dual_node(&dual_node_29_ptr, Rational::from_i64(160).unwrap());
-        // dual_module.grow_dual_node(&dual_node_30_ptr, Rational::from_i64(160).unwrap());
-        // // visualizer
-        // //     .snapshot_combined("grow".to_string(), vec![&interface_ptr, &dual_module])
-        // //     .unwrap();
-        // // create cluster
-        // interface_ptr.create_node_vec(&[24], &mut dual_module);
-        // let dual_node_cluster_ptr = interface_ptr.read_recursive().nodes[4].clone();
-        // dual_module.grow_dual_node(&dual_node_17_ptr, Rational::from_i64(160).unwrap());
-        // dual_module.grow_dual_node(&dual_node_cluster_ptr, Rational::from_i64(160).unwrap());
-        // // visualizer
-        // //     .snapshot_combined("grow".to_string(), vec![&interface_ptr, &dual_module])
-        // //     .unwrap();
-        // // create bigger cluster
-        // interface_ptr.create_node_vec(&[18, 23, 24, 31], &mut dual_module);
-        // let dual_node_bigger_cluster_ptr = interface_ptr.read_recursive().nodes[5].clone();
-        // dual_module.grow_dual_node(&dual_node_bigger_cluster_ptr, Rational::from_i64(120).unwrap());
-        // // visualizer
-        // //     .snapshot_combined("solved".to_string(), vec![&interface_ptr, &dual_module])
-        // //     .unwrap();
-        // // the result subgraph
-        // let subgraph = vec![82, 24];
-        // // visualizer
-        // //     .snapshot_combined("subgraph".to_string(), vec![&interface_ptr, &dual_module, &subgraph])
-        // //     .unwrap();
-
-        // grow them each by half
         let dual_node_3_ptr = interface_ptr.read_recursive().nodes[0].clone();
         let dual_node_12_ptr = interface_ptr.read_recursive().nodes[1].clone();
         let dual_node_30_ptr = interface_ptr.read_recursive().nodes[2].clone();
-        dual_module.grow_dual_node(&dual_node_3_ptr, Rational::from_usize(weight / 2).unwrap());
-        dual_module.grow_dual_node(&dual_node_12_ptr, Rational::from_usize(weight / 2).unwrap());
-        dual_module.grow_dual_node(&dual_node_30_ptr, Rational::from_usize(weight / 2).unwrap());
+        dual_module.set_grow_rate(&dual_node_3_ptr, Rational::from_usize(1).unwrap());
+        dual_module.set_grow_rate(&dual_node_12_ptr, Rational::from_usize(1).unwrap());
+        dual_module.set_grow_rate(&dual_node_30_ptr, Rational::from_usize(1).unwrap());
+       
+        dual_module.grow(Rational::from_usize(weight / 2).unwrap());
+        // dual_module.debug_update_all(&interface_ptr.read_recursive().nodes);
+    
+        println!("start second visualization");
+
         visualizer
             .snapshot_combined("grow".to_string(), vec![&interface_ptr, &dual_module])
             .unwrap();
 
         // cluster becomes solved
-        dual_module.grow_dual_node(&dual_node_3_ptr, Rational::from_usize(weight / 2).unwrap());
-        dual_module.grow_dual_node(&dual_node_12_ptr, Rational::from_usize(weight / 2).unwrap());
-        dual_module.grow_dual_node(&dual_node_30_ptr, Rational::from_usize(weight / 2).unwrap());
-
+        dual_module.grow(Rational::from_usize(weight / 2).unwrap());
         visualizer
             .snapshot_combined("solved".to_string(), vec![&interface_ptr, &dual_module])
             .unwrap();
 
-        // // the result subgraph
-        // let subgraph = vec![15, 20, 27];
-        // visualizer
-        //     .snapshot_combined("subgraph".to_string(), vec![&interface_ptr, &dual_module, &subgraph])
-        //     .unwrap();
-
-        
-        // create primal module
-        // let mut primal_module = PrimalModuleSerialPtr::new_empty(&initializer);
-        // primal_module.write().debug_resolve_only_one = true; // to enable debug mode
+        // the result subgraph
+        let subgraph = vec![dual_module.get_edge_ptr(15).downgrade(), dual_module.get_edge_ptr(20).downgrade()];
+        visualizer
+            .snapshot_combined("subgraph".to_string(), vec![&interface_ptr, &dual_module, &subgraph])
+            .unwrap();
     }
 
     // #[test]

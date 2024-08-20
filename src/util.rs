@@ -20,6 +20,7 @@ use std::io::prelude::*;
 use std::time::Instant;
 use petgraph::Graph;
 use petgraph::Undirected;
+use std::sync::Arc;
 
 #[cfg(feature = "pq")]
 use crate::dual_module_pq::{EdgeWeak, VertexWeak, EdgePtr, VertexPtr};
@@ -630,6 +631,124 @@ impl<'a> PartitionedSyndromePattern<'a> {
     }
 }
 
+////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////
+/////////////// We implement the HashSet to specify vertices in set ////////////////////
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct IndexSet {
+    // spaced-out individual index
+    pub individual_indices: BTreeSet<VertexNodeIndex>,
+    // indices that can be described using range, we assume that there is only one big range among all vertex indices
+    pub range: [VertexNodeIndex; 2],
+}
+
+// just to distinguish them in code, essentially nothing different
+pub type VertexSet = IndexSet;
+pub type DefectSet = IndexSet;
+pub type NodeSet = IndexSet;
+
+impl IndexSet {
+    // initialize a IndexSet that only has a continuous range of indices but no spaced out individual indices
+    fn new_range(start: VertexNodeIndex, end: VertexNodeIndex) -> Self {
+        debug_assert!(end > start, "invalid range [{}, {})", start, end);
+        Self { 
+            individual_indices: BTreeSet::<VertexNodeIndex>::new(),
+            range: [start, end], 
+        }
+    }
+
+    // initialize a IndexSet that only has spaced out individual indicies
+    fn new_individual_indices(indices: Vec<VertexNodeIndex>) -> Self {
+        let mut new_set = BTreeSet::<VertexNodeIndex>::new();
+        for index in indices {
+            new_set.insert(index);
+        }
+        Self {
+            individual_indices: new_set,
+            range: [0, 0],
+        }
+    }
+
+    // initialize a IndexSet that has both continuous range of indices and individual spaced out indices
+    pub fn new(start: VertexNodeIndex, end: VertexNodeIndex, indices: Vec<VertexNodeIndex>) -> Self {
+        debug_assert!(end > start, "invalid range [{}, {})", start, end);
+        if start == end && indices.len() == 0{
+            // range is invalid, we check whether indices are empty 
+            // indices are empty too
+            panic!("both the input range and individual indices are invalid");
+        } else if start == end {
+            return Self::new_individual_indices(indices);
+        } else if indices.len() == 0{
+            return Self::new_range(start, end);
+        } else {
+            let mut new_set = BTreeSet::<VertexNodeIndex>::new();
+            for index in indices {
+                new_set.insert(index);
+            }
+
+            return Self {
+                individual_indices: new_set,
+                range: [start, end],
+            }
+        }
+    }
+
+    // add more individual index to the already created IndexSet 
+    pub fn add_individual_index(&mut self, index: VertexNodeIndex) {
+        self.individual_indices.insert(index);
+    }
+
+    pub fn new_range_by_length(start: VertexNodeIndex, length: VertexNodeIndex) -> Self {
+        Self::new_range(start, start + length)
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.range[1] == self.range[0] && self.individual_indices.is_empty()
+    }
+
+    #[allow(clippy::unnecessary_cast)]
+    pub fn len(&self) -> usize {
+        (self.range[1] - self.range[0] + self.individual_indices.len()) as usize
+    }
+    pub fn range_start(&self) -> VertexNodeIndex {
+        self.range[0]
+    }
+    pub fn range_end(&self) -> VertexNodeIndex {
+        self.range[1]
+    }
+    pub fn extend_range_by(&mut self, append_count: VertexNodeIndex) {
+        self.range[1] += append_count;
+    }
+    pub fn bias_by(&mut self, bias: VertexNodeIndex) {
+        self.range[0] += bias;
+        self.range[1] += bias;
+
+        let set = std::mem::replace(&mut self.individual_indices, BTreeSet::new());
+        self.individual_indices = set.into_iter()
+            .map(|p| p + bias)
+            .collect();
+    }
+    pub fn sanity_check(&self) {
+        assert!(self.range_start() <= self.range_end(), "invalid vertex range {:?}", self);
+    }
+    pub fn contains(&self, vertex_index: VertexNodeIndex) -> bool {
+        (vertex_index >= self.range_start() && vertex_index < self.range_end()) || self.individual_indices.contains(&vertex_index)
+    }
+    // /// fuse two ranges together, returning (the whole range, the interfacing range)
+    // pub fn fuse(&self, other: &Self) -> (Self, Self) {
+    //     self.sanity_check();
+    //     other.sanity_check();
+    //     assert!(self.range[1] <= other.range[0], "only lower range can fuse higher range");
+    //     (
+    //         Self::new(self.range[0], other.range[1]),
+    //         Self::new(self.range[1], other.range[0]),
+    //     )
+    // }
+}
+
+
+
 // we leave the code here just in case we need to describe the vertices in continuos range
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(transparent)]
@@ -769,7 +888,6 @@ impl PartitionConfig {
         let mut owning_ranges = vec![];
         let unit_count = self.partitions.len() + self.fusions.len();
         let partitions_len = self.partitions.len();
-        let fusions_len = self.fusions.len();
 
         for &partition in self.partitions.iter() {
             partition.sanity_check();
@@ -999,6 +1117,8 @@ pub struct PartitionedSolverInitializer {
     pub weighted_edges: Vec<(HyperEdge, usize)>,
     // /// (not sure whether we need it, just in case)
     pub boundary_vertices: Vec<IndexRange>,
+    /// whether this unit is boundary-unit
+    pub is_boundary_unit: bool,
     // /// (not sure whether we need it, just in case)
     // pub adjacent_partition_units: Vec<usize>,
     // /// applicable when all the owning vertices are partitioned (i.e. this belongs to a fusion unit)

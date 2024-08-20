@@ -453,6 +453,7 @@ impl PartialOrd for EdgeWeak {
 }
 
 /* the actual dual module */
+#[derive(Clone)]
 pub struct DualModulePQ<Queue>
 where
     Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug,
@@ -471,6 +472,10 @@ where
     /// the current mode of the dual module
     ///     note: currently does not have too much functionality
     mode: DualModuleMode,
+    /// the number of all vertices (including those partitioned into other serial module)
+    pub vertex_num: VertexNum, 
+    /// the number of all edges (including those partitioned into other seiral module)
+    pub edge_num: usize,
 }
 
 impl<Queue> DualModulePQ<Queue>
@@ -588,6 +593,8 @@ where
             obstacle_queue: Queue::default(),
             global_time: ArcRwLock::new_value(Rational::zero()),
             mode: DualModuleMode::default(),
+            vertex_num: initializer.vertex_num,
+            edge_num: initializer.weighted_edges.len(),
         }
     }
 
@@ -799,6 +806,7 @@ where
         // nothing useful could be done, return unbounded
         GroupMaxUpdateLength::new()
     }
+
 
     /// for pq implementation, simply updating the global time is enough, could be part of the `compute_maximum_update_length` function
     fn grow(&mut self, length: Rational) {
@@ -1070,26 +1078,28 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
             })
         }).collect();
 
-        // now we want to add the boundary vertices into the vertices for this partition
+        // now we want to add the boundary vertices into the vertices for this partition (if this partition is non-boundary unit)
         let mut total_boundary_vertices = HashMap::<VertexIndex, VertexIndex>::new(); // all boundary vertices mapping to the specific local partition index
         let mut mirrored_vertices = HashMap::<VertexIndex, VertexIndex>::new(); // all mirrored vertices mapping to their local indices
-        // only the index_range matters here, the units of the adjacent partitions do not matter here
-        for adjacent_index_range in partitioned_initializer.boundary_vertices.iter(){
-            for vertex_index in adjacent_index_range.range[0]..adjacent_index_range.range[1] {
-                if !partitioned_initializer.owning_range.contains(vertex_index) {
-                    total_boundary_vertices.insert(vertex_index, vertices.len() as VertexIndex);
-                    mirrored_vertices.insert(vertex_index, vertices.len() as VertexIndex);
-                    vertices.push(VertexPtr::new_value(Vertex {
-                        vertex_index: vertex_index,
-                        is_defect: false,
-                        edges: Vec::new(),
-                    }))
-                }else{
-                    mirrored_vertices.insert(vertex_index, vertices.len() as VertexIndex);
+        if !partitioned_initializer.is_boundary_unit {
+            // only the index_range matters here, the units of the adjacent partitions do not matter here
+            for adjacent_index_range in partitioned_initializer.boundary_vertices.iter(){
+                for vertex_index in adjacent_index_range.range[0]..adjacent_index_range.range[1] {
+                    if !partitioned_initializer.owning_range.contains(vertex_index) {
+                        total_boundary_vertices.insert(vertex_index, vertices.len() as VertexIndex);
+                        mirrored_vertices.insert(vertex_index, vertices.len() as VertexIndex);
+                        vertices.push(VertexPtr::new_value(Vertex {
+                            vertex_index: vertex_index,
+                            is_defect: false,
+                            edges: Vec::new(),
+                        }))
+                    }else{
+                        mirrored_vertices.insert(vertex_index, vertices.len() as VertexIndex);
+                    }
                 }
             }
         }
-
+        
         // set edges 
         let mut edges = Vec::<EdgePtr>::new();
         for (hyper_edge, edge_index) in partitioned_initializer.weighted_edges.iter() {
@@ -1138,6 +1148,8 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
             obstacle_queue: Queue::default(),
             global_time: ArcRwLock::new_value(Rational::zero()),
             mode: DualModuleMode::default(),
+            vertex_num: partitioned_initializer.vertex_num,
+            edge_num: partitioned_initializer.edge_num,
         }
     }
 
@@ -1148,21 +1160,25 @@ where
     Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug + Clone,
 {
     fn snapshot(&self, abbrev: bool) -> serde_json::Value {
-        let mut vertices: Vec<serde_json::Value> = vec![];
+        let mut vertices: Vec<serde_json::Value> = (0..self.vertex_num).map(|_| serde_json::Value::Null).collect();
         for vertex_ptr in self.vertices.iter() {
             let vertex = vertex_ptr.read_recursive();
-            vertices.push(json!({
+            // println!("vertex index: {:?}", vertex.vertex_index);
+            vertices[vertex.vertex_index as usize] = json!({
                 if abbrev { "s" } else { "is_defect" }: i32::from(vertex.is_defect),
-            }));
+            });
+            
         }
-        let mut edges: Vec<serde_json::Value> = vec![];
+
+        let mut edges: Vec<serde_json::Value> = (0..self.edge_num).map(|_| serde_json::Value::Null).collect();
         for edge_ptr in self.edges.iter() {
             let edge = edge_ptr.read_recursive();
             let current_growth = &edge.growth_at_last_updated_time
                 + (&self.global_time.read_recursive().clone() - &edge.last_updated_time) * &edge.grow_rate;
 
             let unexplored = &edge.weight - &current_growth;
-            edges.push(json!({
+            // println!("edge_index: {:?}", edge.edge_index);
+            edges[edge.edge_index as usize] = json!({
                 if abbrev { "w" } else { "weight" }: edge.weight.to_f64(),
                 if abbrev { "v" } else { "vertices" }: edge.vertices.iter().map(|x| x.upgrade_force().read_recursive().vertex_index).collect::<Vec<_>>(),
                 if abbrev { "g" } else { "growth" }: current_growth.to_f64(),
@@ -1170,7 +1186,7 @@ where
                 "gd": current_growth.denom().to_i64(),
                 "un": unexplored.numer().to_i64(),
                 "ud": unexplored.denom().to_i64(),
-            }));
+            });
         }
         json!({
             "vertices": vertices,
