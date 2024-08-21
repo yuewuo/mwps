@@ -94,11 +94,12 @@ impl InvalidSubgraph {
         vertices: &BTreeSet<VertexPtr>,
         edges: &BTreeSet<EdgePtr>
     ) -> Self {
+        // current implementation with using helper function 
         // println!("input vertex to new_complete: {:?}", vertices);
         let mut hair: BTreeSet<EdgePtr> = BTreeSet::new();
         for vertex_ptr in vertices.iter() {
             // println!("vertex index in new_complete: {:?}", vertex_ptr.read_recursive().vertex_index);
-            for edge_ptr in vertex_ptr.read_recursive().edges.iter() {
+            for edge_ptr in vertex_ptr.get_edge_neighbors().iter() {
                 // println!("edges near vertex {:?}", edge_ptr.upgrade_force().read_recursive().edge_index);
                 if !edges.contains(&edge_ptr.upgrade_force()) {
                     hair.insert(edge_ptr.upgrade_force());
@@ -108,6 +109,22 @@ impl InvalidSubgraph {
         let invalid_subgraph = Self::new_raw(vertices, edges, &hair);
         // debug_assert_eq!(invalid_subgraph.sanity_check(decoding_graph), Ok(()));
         invalid_subgraph
+
+        // previous implementation with directly finding the incident edges of a vertex
+        // // println!("input vertex to new_complete: {:?}", vertices);
+        // let mut hair: BTreeSet<EdgePtr> = BTreeSet::new();
+        // for vertex_ptr in vertices.iter() {
+        //     // println!("vertex index in new_complete: {:?}", vertex_ptr.read_recursive().vertex_index);
+        //     for edge_ptr in vertex_ptr.read_recursive().edges.iter() {
+        //         // println!("edges near vertex {:?}", edge_ptr.upgrade_force().read_recursive().edge_index);
+        //         if !edges.contains(&edge_ptr.upgrade_force()) {
+        //             hair.insert(edge_ptr.upgrade_force());
+        //         }
+        //     }
+        // }
+        // let invalid_subgraph = Self::new_raw(vertices, edges, &hair);
+        // // debug_assert_eq!(invalid_subgraph.sanity_check(decoding_graph), Ok(()));
+        // invalid_subgraph
     }
 
     /// create $S = (V_S, E_S)$ and $\delta(S)$ directly, without any checks
@@ -258,6 +275,9 @@ pub mod tests {
                     vertex_index,
                     is_defect: false,
                     edges: vec![],
+                    is_mirror: false,
+                    fusion_done: false,
+                    mirrored_vertices: vec![],
                 })
             })
             .collect();
@@ -280,6 +300,7 @@ pub mod tests {
                 last_updated_time: Rational::zero(),
                 growth_at_last_updated_time: Rational::zero(),
                 grow_rate: Rational::zero(),
+                unit_index: None,
                 #[cfg(feature = "incr_lp")]
                 cluster_weights: hashbrown::HashMap::new(),
             });

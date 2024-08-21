@@ -869,6 +869,8 @@ pub struct PartitionConfig {
     pub fusions: Vec<(usize, usize)>,
     /// undirected acyclic graph (DAG) to keep track of the relationship between different partition units
     pub dag_partition_units: Graph::<(), bool, Undirected>,
+    /// defect vertices (global index)
+    pub defect_vertices: BTreeSet<usize>,
 }
 
 impl PartitionConfig {
@@ -878,6 +880,7 @@ impl PartitionConfig {
             partitions: vec![VertexRange::new(0, vertex_num as VertexIndex)],
             fusions: vec![],
             dag_partition_units: Graph::new_undirected(),
+            defect_vertices: BTreeSet::new(),
         }
     }
 
@@ -1119,6 +1122,8 @@ pub struct PartitionedSolverInitializer {
     pub boundary_vertices: Vec<IndexRange>,
     /// whether this unit is boundary-unit
     pub is_boundary_unit: bool,
+    /// all defect vertices (global index), not just for this unit
+    pub defect_vertices: BTreeSet<usize>,
     // /// (not sure whether we need it, just in case)
     // pub adjacent_partition_units: Vec<usize>,
     // /// applicable when all the owning vertices are partitioned (i.e. this belongs to a fusion unit)

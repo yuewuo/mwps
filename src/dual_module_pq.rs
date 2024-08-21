@@ -25,6 +25,7 @@ use hashbrown::hash_map::Entry;
 use hashbrown::HashMap;
 use heapz::RankPairingHeap;
 use heapz::{DecreaseKey, Heap};
+use itertools::partition;
 use num_traits::{FromPrimitive, Signed};
 use parking_lot::{lock_api::RwLockWriteGuard, RawRwLock};
 use pheap::PairingHeap;
@@ -301,6 +302,12 @@ pub struct Vertex {
     /// all neighbor edges, in surface code this should be constant number of edges
     // #[derivative(Debug = "ignore")]
     pub edges: Vec<EdgeWeak>,
+    /// whether this vertex is a mirrored vertex. Note that all the vertices on the boundary (including those in boundary-unit) are mirrored vertices
+    pub is_mirror: bool,
+    /// whether fusion is completed. This relies on the assumption that all units that have this vertex have been fused together
+    pub fusion_done: bool,
+    /// if this vertex is in boundary unit, find its corresponding mirror vertices in the other units
+    pub mirrored_vertices: Vec<VertexWeak>,
 }
 
 impl Vertex {
@@ -344,6 +351,22 @@ impl PartialOrd for VertexPtr {
     }
 }
 
+impl VertexPtr {
+    pub fn get_edge_neighbors(&self) -> Vec<EdgeWeak> {
+        let vertex = self.read_recursive();
+        if vertex.fusion_done && vertex.is_mirror {
+            let mut edges: Vec<EdgeWeak> = vec![];
+            edges.extend(vertex.edges.clone());
+            for mirrored_vertex in vertex.mirrored_vertices.iter() {
+                edges.extend(mirrored_vertex.upgrade_force().read_recursive().edges.clone());
+            }
+            edges
+        } else {
+            vertex.edges.clone()
+        }
+    }
+}
+
 #[derive(Derivative)]
 #[derivative(Debug)]
 pub struct Edge {
@@ -364,6 +387,9 @@ pub struct Edge {
     pub last_updated_time: Rational,
     /// growth value at the last updated time, also, growth_at_last_updated_time <= weight
     pub growth_at_last_updated_time: Rational,
+
+    /// the partition unit this edge belongs to. For non-parallel implementation, this value is set to None.
+    pub unit_index: Option<usize>,
 
     #[cfg(feature = "incr_lp")]
     /// storing the weights of the clusters that are currently contributing to this edge
@@ -451,6 +477,10 @@ impl PartialOrd for EdgeWeak {
         Some(self.cmp(other))
     }
 }
+
+// impl EdgePtr {
+//     fn get_incident_edges()
+// }
 
 /* the actual dual module */
 #[derive(Clone)]
@@ -561,6 +591,9 @@ where
                     vertex_index,
                     is_defect: false,
                     edges: vec![],
+                    is_mirror: false, // set to false for non-parallel implementation
+                    fusion_done: false, // set to false for non-parallel implementation
+                    mirrored_vertices: vec![], // set to empty for non-parallel implementation
                 })
             })
             .collect();
@@ -579,6 +612,7 @@ where
                 last_updated_time: Rational::zero(),
                 growth_at_last_updated_time: Rational::zero(),
                 grow_rate: Rational::zero(),
+                unit_index: None,
                 #[cfg(feature = "incr_lp")]
                 cluster_weights: hashbrown::HashMap::new(),
             });
@@ -685,7 +719,7 @@ where
     #[allow(clippy::unnecessary_cast)]
     fn set_grow_rate(&mut self, dual_node_ptr: &DualNodePtr, grow_rate: Rational) {
         let mut dual_node = dual_node_ptr.write();
-        // println!("set_grow_rate invoked on {:?}, to be {:?}", dual_node.index, grow_rate);
+        println!("set_grow_rate invoked on {:?}, to be {:?}", dual_node.index, grow_rate);
         self.update_dual_node_if_necessary(&mut dual_node);
 
         let global_time = self.global_time.read_recursive();
@@ -724,6 +758,7 @@ where
     #[allow(clippy::unnecessary_cast)]
     fn set_grow_rate_tune(&mut self, dual_node_ptr: &DualNodePtr, grow_rate: Rational) {
         let mut dual_node = dual_node_ptr.write();
+        println!("set_grow_rate_tune invoked on {:?}, to be {:?}", dual_node.index, grow_rate);
 
         let grow_rate_diff = &grow_rate - &dual_node.grow_rate;
         dual_node.grow_rate = grow_rate;
@@ -1068,6 +1103,7 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
         // println!("///////////////////////////////////////////////////////////////////////////////");
         // println!("for new_partitioned: {partitioned_initializer:?}");
         // println!("///////////////////////////////////////////////////////////////////////////////");
+        /// debug printing
 
         // create vertices 
         let mut vertices: Vec<VertexPtr> = partitioned_initializer.owning_range.iter().map(|vertex_index| {
@@ -1075,6 +1111,9 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
                 vertex_index,
                 is_defect: false,
                 edges: Vec::new(),
+                is_mirror: if partitioned_initializer.is_boundary_unit {true} else {false}, // all the vertices on the boundary are mirror vertices
+                fusion_done: false, // initialized to false
+                mirrored_vertices: vec![], // initialized to empty, to be filled in `new_config()` in parallel implementation
             })
         }).collect();
 
@@ -1090,8 +1129,11 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
                         mirrored_vertices.insert(vertex_index, vertices.len() as VertexIndex);
                         vertices.push(VertexPtr::new_value(Vertex {
                             vertex_index: vertex_index,
-                            is_defect: false,
+                            is_defect: if partitioned_initializer.defect_vertices.contains(&vertex_index) {true} else {false},
                             edges: Vec::new(),
+                            is_mirror: true,
+                            fusion_done: false, // initialized to false
+                            mirrored_vertices: vec![], // set to empty, to be filled in `new_config()` in parallel implementation
                         }))
                     }else{
                         mirrored_vertices.insert(vertex_index, vertices.len() as VertexIndex);
@@ -1124,6 +1166,7 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
                 last_updated_time: Rational::zero(),
                 growth_at_last_updated_time: Rational::zero(),
                 grow_rate: Rational::zero(),
+                unit_index: Some(partitioned_initializer.unit_index),
             });
 
             // we also need to update the vertices of this hyper_edge
@@ -1141,6 +1184,8 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
             edges.push(edge_ptr);
 
         }
+
+        
 
         Self {
             vertices,

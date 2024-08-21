@@ -335,6 +335,9 @@ pub mod tests {
                     vertex_index,
                     is_defect: false,
                     edges: vec![],
+                    is_mirror: false,
+                    fusion_done: false,
+                    mirrored_vertices: vec![],
                 })
             })
             .collect();
@@ -350,6 +353,7 @@ pub mod tests {
                     last_updated_time: Rational::zero(),
                     growth_at_last_updated_time: Rational::zero(),
                     grow_rate: Rational::zero(),
+                    unit_index: None,
                     #[cfg(feature = "incr_lp")]
                     cluster_weights: hashbrown::HashMap::new(),
                 })
@@ -444,6 +448,9 @@ pub mod tests {
                     vertex_index,
                     is_defect: false,
                     edges: vec![],
+                    is_mirror: false,
+                    fusion_done: false,
+                    mirrored_vertices: vec![],
                 })
             })
             .collect();
@@ -459,6 +466,7 @@ pub mod tests {
                     last_updated_time: Rational::zero(),
                     growth_at_last_updated_time: Rational::zero(),
                     grow_rate: Rational::zero(),
+                    unit_index: None,
                     #[cfg(feature = "incr_lp")]
                     cluster_weights: hashbrown::HashMap::new(),
                 })
@@ -493,6 +501,9 @@ pub mod tests {
                     vertex_index,
                     is_defect: false,
                     edges: vec![],
+                    is_mirror: false,
+                    fusion_done: false,
+                    mirrored_vertices: vec![],
                 })
             })
             .collect();
@@ -508,6 +519,7 @@ pub mod tests {
                     last_updated_time: Rational::zero(),
                     growth_at_last_updated_time: Rational::zero(),
                     grow_rate: Rational::zero(),
+                    unit_index: None,
                     #[cfg(feature = "incr_lp")]
                     cluster_weights: hashbrown::HashMap::new(),
                 })

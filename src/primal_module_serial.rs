@@ -744,7 +744,6 @@ impl PrimalModuleSerial {
                     let dual_node_ptr_0 = &dual_nodes[0];
                     // first union all the dual nodes
                     for dual_node_ptr in dual_nodes.iter().skip(1) {
-                        // self.union(dual_node_ptr_0, dual_node_ptr, &interface.decoding_graph);
                         self.union(dual_node_ptr_0, dual_node_ptr,  dual_module);
                     }
                     let cluster_ptr = self.nodes[dual_node_ptr_0.read_recursive().index as usize]
@@ -753,13 +752,11 @@ impl PrimalModuleSerial {
                         .upgrade_force();
                     let mut cluster = cluster_ptr.write();
                     // then add new constraints because these edges may touch new vertices
-                    // let incident_vertices = decoding_graph.get_edge_neighbors(edge_index);
                     let incident_vertices = &edge_ptr.read_recursive().vertices;
+                    // println!("incidenet_vertices: {:?}", incident_vertices);
                     for vertex_weak in incident_vertices.iter() {
                         if !cluster.vertices.contains(&vertex_weak.upgrade_force()) {
                             cluster.vertices.insert(vertex_weak.upgrade_force());
-                            // let incident_edges = decoding_graph.get_vertex_neighbors(vertex_index);
-                            // let parity = decoding_graph.is_vertex_defect(vertex_index);
                             let vertex_ptr = vertex_weak.upgrade_force();
                             let vertex = vertex_ptr.read_recursive();
                             let incident_edges = &vertex.edges;
@@ -823,6 +820,7 @@ impl PrimalModuleSerial {
                     let dual_node_ptr_0 = &dual_nodes[0];
                     // first union all the dual nodes
                     for dual_node_ptr in dual_nodes.iter().skip(1) {
+                        println!("iiii");
                         // self.union(dual_node_ptr_0, dual_node_ptr, &interface.decoding_graph);
                         self.union(dual_node_ptr_0, dual_node_ptr,  dual_module);
                     }
