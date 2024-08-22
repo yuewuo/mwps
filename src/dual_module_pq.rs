@@ -478,12 +478,21 @@ impl PartialOrd for EdgeWeak {
     }
 }
 
-// impl EdgePtr {
-//     pub fn get_vertex_neighbors(&self) -> Vec<VertexWeak> {
-//         let edge = self.read_recursive();
-
-//     }
-// }
+impl EdgePtr {
+    pub fn get_vertex_neighbors(&self) -> Vec<VertexWeak> {
+        let edge = self.read_recursive();
+        let mut incident_vertices: Vec<VertexWeak> = vec![];
+        for vertex_weak in edge.vertices.iter() {
+            let vertex_ptr = vertex_weak.upgrade_force();
+            let vertex = vertex_ptr.read_recursive();
+            incident_vertices.push(vertex_weak.clone());
+            if vertex.is_mirror && vertex.fusion_done {
+                incident_vertices.extend(vertex.mirrored_vertices.clone());
+            } 
+        }
+        return incident_vertices;
+    }
+}
 
 /* the actual dual module */
 #[derive(Clone)]

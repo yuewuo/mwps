@@ -183,11 +183,12 @@ impl SolverInitializer {
     pub fn get_subgraph_syndrome(&self, subgraph: &Subgraph) -> BTreeSet<VertexPtr> {
         let mut defect_vertices = BTreeSet::new();
         for edge_weak in subgraph.iter() {
-            println!("edge in subgraph: {:?}", edge_weak.upgrade_force().read_recursive().edge_index);
+            // println!("edge in subgraph: {:?}", edge_weak.upgrade_force().read_recursive().edge_index);
             // let HyperEdge { vertices, .. } = &self.weighted_edges[edge_index as usize];
             let edge_ptr = edge_weak.upgrade_force();
-            let edge = edge_ptr.read_recursive();
-            let vertices = &edge.vertices;
+            // let edge = edge_ptr.read_recursive();
+            // let vertices = &edge.vertices;
+            let vertices = &edge_ptr.get_vertex_neighbors();
             for vertex_weak in vertices.iter() {
                 let vertex_ptr = vertex_weak.upgrade_force();
                 if defect_vertices.contains(&vertex_ptr) {

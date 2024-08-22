@@ -1377,13 +1377,13 @@ pub mod tests {
         let weight = 1; // do not change, the data is hard-coded
         // let pxy = 0.0602828812732227;
         let code = CodeCapacityPlanarCode::new(7, 0.1, weight);
-        let defect_vertices = vec![14, 28];
+        let defect_vertices = vec![13, 20, 27];
 
         dual_module_parallel_basic_standard_syndrome(
             code,
             visualize_filename,
             defect_vertices,
-            2,
+            4,
             vec![],
             GrowingStrategy::ModeBased,
         );

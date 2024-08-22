@@ -715,7 +715,8 @@ impl PrimalModuleSerial {
                 cluster_1.vertices.insert(vertex_ptr.clone());
                 // let incident_edges = decoding_graph.get_vertex_neighbors(vertex_index);
                 // let parity = decoding_graph.is_vertex_defect(vertex_index);
-                let incident_edges = &vertex_ptr.read_recursive().edges;
+                // let incident_edges = &vertex_ptr.read_recursive().edges;
+                let incident_edges = &vertex_ptr.get_edge_neighbors();
                 let parity = vertex_ptr.read_recursive().is_defect;
                 cluster_1.matrix.add_constraint(vertex_ptr.downgrade(), incident_edges, parity);
             }
@@ -754,11 +755,12 @@ impl PrimalModuleSerial {
                         .upgrade_force();
                     let mut cluster = cluster_ptr.write();
                     // then add new constraints because these edges may touch new vertices
-                    let incident_vertices = &edge_ptr.read_recursive().vertices;
+                    // let incident_vertices = &edge_ptr.read_recursive().vertices;
+                    let incident_vertices = &edge_ptr.get_vertex_neighbors();
                     // println!("incidenet_vertices: {:?}", incident_vertices);
-                    println!("cluster matrix before add constraint: {:?}", cluster.matrix.printstd());
+                    // println!("cluster matrix before add constraint: {:?}", cluster.matrix.printstd());
                     for vertex_weak in incident_vertices.iter() {
-                        println!("incident vertex: {:?}", vertex_weak.upgrade_force().read_recursive().vertex_index);
+                        // println!("incident vertex: {:?}", vertex_weak.upgrade_force().read_recursive().vertex_index);
                         if !cluster.vertices.contains(&vertex_weak.upgrade_force()) {
                             cluster.vertices.insert(vertex_weak.upgrade_force());
                             let vertex_ptr = vertex_weak.upgrade_force();
@@ -770,7 +772,7 @@ impl PrimalModuleSerial {
                             cluster.matrix.add_constraint(vertex_weak.clone(), &incident_edges, parity);
                         }
                     }
-                    println!("cluster matrix after add constraint: {:?}", cluster.matrix.printstd());
+                    // println!("cluster matrix after add constraint: {:?}", cluster.matrix.printstd());
                     cluster.edges.insert(edge_ptr.clone());
                     // add to active cluster so that it's processed later
                     active_clusters.insert(cluster.cluster_index);
@@ -943,8 +945,8 @@ impl PrimalModuleSerial {
                         .upgrade_force();
                     let mut cluster = cluster_ptr.write();
                     // then add new constraints because these edges may touch new vertices
-                    // let incident_vertices = decoding_graph.get_edge_neighbors(edge_index);
-                    let incident_vertices = &edge_ptr.read_recursive().vertices;
+                    // let incident_vertices = &edge_ptr.read_recursive().vertices;
+                    let incident_vertices = &edge_ptr.get_vertex_neighbors();
                     for vertex_weak in incident_vertices.iter() {
                         if !cluster.vertices.contains(&vertex_weak.upgrade_force()) {
                             cluster.vertices.insert(vertex_weak.upgrade_force());

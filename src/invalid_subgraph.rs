@@ -77,13 +77,15 @@ impl InvalidSubgraph {
         // println!("edges input: {:?}", edges);
         let mut vertices: BTreeSet<VertexPtr> = BTreeSet::new();
         for edge_ptr in edges.iter() {
-            for vertex_ptr in edge_ptr.read_recursive().vertices.iter() {
+            for vertex_ptr in edge_ptr.get_vertex_neighbors().iter() {
                 vertices.insert(vertex_ptr.upgrade_force().clone());
             }
         }
-        // println!("vertices: {:?}", vertices);
-        // for vertex in vertices.iter() {
-        //     let vertex_index = vertex.read_recursive().vertex_index;
+        // let mut vertices: BTreeSet<VertexPtr> = BTreeSet::new();
+        // for edge_ptr in edges.iter() {
+        //     for vertex_ptr in edge_ptr.read_recursive().vertices.iter() {
+        //         vertices.insert(vertex_ptr.upgrade_force().clone());
+        //     }
         // }
         Self::new_complete(&vertices, edges)
     }
@@ -211,7 +213,8 @@ impl InvalidSubgraph {
         }
         for vertex_ptr in self.vertices.iter() {
             let vertex = vertex_ptr.read_recursive();
-            let incident_edges = &vertex.edges;
+            // let incident_edges = &vertex.edges;
+            let incident_edges = &vertex_ptr.get_edge_neighbors();
             let parity = vertex.is_defect;
             matrix.add_constraint(vertex_ptr.downgrade(), &incident_edges, parity);
         }

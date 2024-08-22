@@ -80,7 +80,8 @@ impl DecodingHyperGraph {
     pub fn find_valid_subgraph_auto_vertices(&self, edges: &BTreeSet<EdgePtr>) -> Option<Subgraph> {
         let mut vertices: BTreeSet<VertexPtr> = BTreeSet::new();
         for edge_ptr in edges.iter() {
-            let local_vertices = &edge_ptr.read_recursive().vertices;
+            // let local_vertices = &edge_ptr.read_recursive().vertices;
+            let local_vertices = &edge_ptr.get_vertex_neighbors();
             for vertex in local_vertices {
                 vertices.insert(vertex.upgrade_force());
             }
