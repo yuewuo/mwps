@@ -168,6 +168,7 @@ pub trait MatrixEchelon: MatrixView {
     {
         self.get_echelon_info(); // make sure it's in echelon form
         let info = self.get_echelon_info_immutable();
+        println!("echelon info: {:?}", info);
         if !info.satisfiable {
             return None; // no solution
         }

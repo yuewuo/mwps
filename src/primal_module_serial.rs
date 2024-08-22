@@ -325,7 +325,8 @@ impl PrimalModuleImpl for PrimalModuleSerial {
         }
         // update the matrix with new tight edges
         let cluster = &mut *cluster;
-        for edge_weak in cluster.edges.iter() {
+        for (i, edge_weak) in cluster.edges.iter().enumerate() {
+            // println!("{:?} cluster edge: {:?}", i, edge_weak.read_recursive().edge_index);
             cluster
                 .matrix
                 .update_edge_tightness(edge_weak.downgrade(), dual_module.is_edge_tight(edge_weak.clone()));
@@ -372,6 +373,7 @@ impl PrimalModuleImpl for PrimalModuleSerial {
         // let interface = interface_ptr.read_recursive();
         // let initializer = interface.decoding_graph.model_graph.initializer.as_ref();
         // let weight_of = |edge_index: EdgeWeak| initializer.weighted_edges[edge_index].weight;
+        println!("`get_solution_local_min` is triggered");
         let weight_of = |edge_weak: EdgeWeak| edge_weak.upgrade_force().read_recursive().weight;
         cluster.subgraph = Some(cluster.matrix.get_solution_local_minimum(weight_of).expect("satisfiable"));
         true
@@ -754,16 +756,21 @@ impl PrimalModuleSerial {
                     // then add new constraints because these edges may touch new vertices
                     let incident_vertices = &edge_ptr.read_recursive().vertices;
                     // println!("incidenet_vertices: {:?}", incident_vertices);
+                    println!("cluster matrix before add constraint: {:?}", cluster.matrix.printstd());
                     for vertex_weak in incident_vertices.iter() {
+                        println!("incident vertex: {:?}", vertex_weak.upgrade_force().read_recursive().vertex_index);
                         if !cluster.vertices.contains(&vertex_weak.upgrade_force()) {
                             cluster.vertices.insert(vertex_weak.upgrade_force());
                             let vertex_ptr = vertex_weak.upgrade_force();
                             let vertex = vertex_ptr.read_recursive();
-                            let incident_edges = &vertex.edges;
+                            // let incident_edges = &vertex.edges;
+                            let incident_edges = &vertex_ptr.get_edge_neighbors();
                             let parity = vertex.is_defect;
+                            
                             cluster.matrix.add_constraint(vertex_weak.clone(), &incident_edges, parity);
                         }
                     }
+                    println!("cluster matrix after add constraint: {:?}", cluster.matrix.printstd());
                     cluster.edges.insert(edge_ptr.clone());
                     // add to active cluster so that it's processed later
                     active_clusters.insert(cluster.cluster_index);
@@ -945,7 +952,8 @@ impl PrimalModuleSerial {
                             // let parity = decoding_graph.is_vertex_defect(vertex_index);
                             let vertex_ptr = vertex_weak.upgrade_force();
                             let vertex = vertex_ptr.read_recursive();
-                            let incident_edges = &vertex.edges;
+                            // let incident_edges = &vertex.edges;
+                            let incident_edges = &vertex_ptr.get_edge_neighbors();
                             let parity = vertex.is_defect;
                             cluster.matrix.add_constraint(vertex_weak.clone(), incident_edges, parity);
                         }

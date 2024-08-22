@@ -479,7 +479,10 @@ impl PartialOrd for EdgeWeak {
 }
 
 // impl EdgePtr {
-//     fn get_incident_edges()
+//     pub fn get_vertex_neighbors(&self) -> Vec<VertexWeak> {
+//         let edge = self.read_recursive();
+
+//     }
 // }
 
 /* the actual dual module */
@@ -719,7 +722,7 @@ where
     #[allow(clippy::unnecessary_cast)]
     fn set_grow_rate(&mut self, dual_node_ptr: &DualNodePtr, grow_rate: Rational) {
         let mut dual_node = dual_node_ptr.write();
-        println!("set_grow_rate invoked on {:?}, to be {:?}", dual_node.index, grow_rate);
+        // println!("set_grow_rate invoked on {:?}, to be {:?}", dual_node.index, grow_rate);
         self.update_dual_node_if_necessary(&mut dual_node);
 
         let global_time = self.global_time.read_recursive();

@@ -144,6 +144,7 @@ pub trait PrimalModuleImpl {
         // println!(" in solve step callback interface loaded");
         // Search, this part is unchanged
         let mut group_max_update_length = dual_module.compute_maximum_update_length();
+        // println!("first group max update length: {:?}", group_max_update_length);
 
         while !group_max_update_length.is_unbounded() {
             callback(interface, dual_module, self, &group_max_update_length);
@@ -154,6 +155,7 @@ pub trait PrimalModuleImpl {
                 }
             }
             group_max_update_length = dual_module.compute_maximum_update_length();
+            // println!("group max update length: {:?}", group_max_update_length);
         }
 
         // from here, all states should be syncronized
