@@ -80,7 +80,7 @@ pub trait PrimalModuleImpl {
     ) where
         Self: MWPSVisualizer + Sized,
     {
-        println!("syndrome pattern: {:?}", syndrome_pattern);
+        // println!("syndrome pattern: {:?}", syndrome_pattern);
         if let Some(visualizer) = visualizer {
             self.solve_step_callback(
                 interface,

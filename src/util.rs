@@ -1099,6 +1099,7 @@ pub struct PartitionUnitInfo {
     
     /// the boundary vertices near to this unit
     pub boundary_vertices: Vec<IndexRange>,
+
     // /// boundary vertices, following the global vertex index
     // /// key: indexrange of the boundary vertices. value: (unit_index, unit_index), the pair of unit_index of the two partition units adjacent to the boundary
     // pub boundary_vertices: Option<HashMap<IndexRange, (usize, usize)>>,

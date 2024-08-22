@@ -306,7 +306,8 @@ pub struct Vertex {
     pub is_mirror: bool,
     /// whether fusion is completed. This relies on the assumption that all units that have this vertex have been fused together
     pub fusion_done: bool,
-    /// if this vertex is in boundary unit, find its corresponding mirror vertices in the other units
+    /// if this vertex is in boundary unit, find its corresponding mirror vertices in the other units. If this vertex is in non-boundary unit but a mirrored vertex, 
+    /// find its other mirrored vertices in other units (both boundary and non-boundary units)
     pub mirrored_vertices: Vec<VertexWeak>,
 }
 
