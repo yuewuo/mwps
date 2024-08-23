@@ -1154,6 +1154,8 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
 pub mod tests {
     use std::usize::MAX;
 
+    use petgraph::graph;
+    use rayon::iter::split;
     use slp::Solver;
 
     use super::super::example_codes::*;
@@ -1542,7 +1544,8 @@ pub mod tests {
 
 
     /// test for time partition
-    pub fn graph_time_partition(initializer: &SolverInitializer, positions: &Vec<VisualizePosition>, defect_vertices: &Vec<VertexIndex>) -> PartitionConfig  {
+    #[allow(clippy::unnecessary_cast)]
+    pub fn graph_time_partition(initializer: &SolverInitializer, positions: &Vec<VisualizePosition>, defect_vertices: &Vec<VertexIndex>, split_num: usize) -> PartitionConfig  {
         assert!(positions.len() > 0, "positive number of positions");
         let mut partition_config = PartitionConfig::new(initializer.vertex_num);
         let mut last_t = positions[0].t;
@@ -1555,30 +1558,119 @@ pub mod tests {
             }
             last_t = position.t;
         }
+
+        // // original implementation
+        // // pick the t value in the middle to split it
+        // let t_split = t_list[t_list.len()/2];
+        // println!("t_split: {:?}", t_split);
+        // // find the vertices indices
+        // let mut split_start_index = MAX;
+        // let mut split_end_index = MAX;
+        // for (vertex_index, position) in positions.iter().enumerate() {
+        //     if split_start_index == MAX && position.t == t_split {
+        //         println!("position: {:?}", position);
+        //         println!("vertex_index: {:?}", vertex_index);
+        //         split_start_index = vertex_index;
+        //         continue;
+        //     }
+        //     if position.t == t_split {
+        //         println!("position: {:?}", position);
+        //         println!("vertex_index: {:?}", vertex_index);
+        //         split_end_index = vertex_index + 1;
+        //     }
+        // }
+        // println!("split_start_index: {:?}", split_start_index);
+        // println!("split_end_index: {:?}", split_end_index);
+        // assert!(split_start_index != MAX);
+        // // partitions are found
+        // partition_config.partitions = vec![
+        //     VertexRange::new(0, split_start_index),
+        //     VertexRange::new(split_end_index, positions.len()),
+        // ];
+        // partition_config.fusions = vec![(0, 1)];
+        // let a = partition_config.dag_partition_units.add_node(());
+        // let b = partition_config.dag_partition_units.add_node(());
+
+        // partition_config.dag_partition_units.add_edge(a, b, false);
+        // partition_config.defect_vertices = BTreeSet::from_iter(defect_vertices.clone());
+        // partition_config
+
             
+        // implementation with split_num, 192, 193
         // pick the t value in the middle to split it
-        let t_split = t_list[t_list.len()/2];
+        let mut t_split_vec: Vec<f64> = vec![0.0; split_num - 1];
+        for i in 0..(split_num - 1) {
+            let index: usize = t_list.len()/split_num * (i + 1);
+            t_split_vec[i] = t_list[index];
+        }
+        println!("t_split_vec: {:?}", t_split_vec);
+        // let t_split = t_list[t_list.len()/split_num];
         // find the vertices indices
-        let mut split_start_index = MAX;
-        let mut split_end_index = MAX;
+        let mut split_start_index_vec = vec![MAX; split_num - 1];
+        let mut split_end_index_vec = vec![MAX; split_num - 1];
+        // let mut split_start_index = MAX;
+        // let mut split_end_index = MAX;
+        let mut start_index = 0;
+        let mut end_index = 0;
         for (vertex_index, position) in positions.iter().enumerate() {
-            if split_start_index == MAX && position.t == t_split {
-                split_start_index = vertex_index;
+            if start_index < split_num - 1 {
+                if split_start_index_vec[start_index] == MAX && position.t == t_split_vec[start_index] {
+                    split_start_index_vec[start_index] = vertex_index;
+                    if start_index != 0 {
+                        end_index += 1;
+                    }
+                    start_index += 1;
+                }
             }
-            if position.t == t_split {
-                split_end_index = vertex_index + 1;
+            
+            if end_index < split_num - 1 {
+                if position.t == t_split_vec[end_index] {
+                    split_end_index_vec[end_index] = vertex_index + 1;
+                    // end_index += 1;
+                }
             }
         }
-        assert!(split_start_index != MAX);
+        println!("split_start_index_vec: {:?}", split_start_index_vec);
+        println!("split_end_index_vec: {:?}", split_end_index_vec);
+
+        assert!(split_start_index_vec.iter().all(|&x| x != MAX), "Some elements in split_start_index_vec are equal to MAX");
+        
         // partitions are found
-        partition_config.partitions = vec![
-            VertexRange::new(0, split_start_index),
-            VertexRange::new(split_end_index, positions.len()),
-        ];
-        partition_config.fusions = vec![(0, 1)];
-        let a = partition_config.dag_partition_units.add_node(());
-        let b = partition_config.dag_partition_units.add_node(());
-        partition_config.dag_partition_units.add_edge(a, b, false);
+        let mut graph_nodes = vec![];
+        let mut partitions_vec = vec![];
+        for i in 0..split_num  {
+            if i == 0 {
+                partitions_vec.push(VertexRange::new(0, split_start_index_vec[0]));
+            } else if i == split_num - 1 {
+                partitions_vec.push(VertexRange::new(split_end_index_vec[i - 1], positions.len()));
+            } else {
+                partitions_vec.push(VertexRange::new(split_end_index_vec[i - 1], split_start_index_vec[i]));
+            }
+
+            if i < split_num - 1 {
+                partition_config.fusions.push((i, i+1));
+            }
+            
+            let a = partition_config.dag_partition_units.add_node(());
+            graph_nodes.push(a.clone());
+        }
+        partition_config.partitions = partitions_vec;
+        println!("graph nodes: {:?}", graph_nodes);
+        println!("partition_config.partitions: {:?}", partition_config.partitions);
+        // partition_config.partitions = vec![
+        //     VertexRange::new(0, split_start_index),
+        //     VertexRange::new(split_end_index, positions.len()),
+        // ];
+        // partition_config.fusions = vec![(0, 1)];
+        // let a = partition_config.dag_partition_units.add_node(());
+        // let b = partition_config.dag_partition_units.add_node(());
+
+        for i in 0..split_num {
+            if i < split_num - 1 {
+                partition_config.dag_partition_units.add_edge(graph_nodes[i], graph_nodes[i+1], false);
+            }
+        }
+        // partition_config.dag_partition_units.add_edge(a, b, false);
         partition_config.defect_vertices = BTreeSet::from_iter(defect_vertices.clone());
 
         partition_config
@@ -1591,6 +1683,7 @@ pub mod tests {
         final_dual: Weight,
         plugins: PluginVec,
         growing_strategy: GrowingStrategy,
+        split_num: usize,
     ) -> (
         DualModuleInterfacePtr,
         PrimalModuleSerial,
@@ -1611,7 +1704,7 @@ pub mod tests {
         // create dual module
         let model_graph = code.get_model_graph();
         let initializer = &model_graph.initializer;
-        let partition_config = graph_time_partition(&initializer, &code.get_positions(), &defect_vertices);
+        let partition_config = graph_time_partition(&initializer, &code.get_positions(), &defect_vertices, split_num);
         let partition_info = partition_config.info();
 
 
@@ -1653,10 +1746,11 @@ pub mod tests {
             1661019,
             vec![],
             GrowingStrategy::ModeBased,
+            2,
         );
     }
 
-    /// test solver on circuit level noise with random errors
+    /// test solver on circuit level noise with random errors, split into 2
     #[test]
     fn dual_module_parallel_circuit_level_noise_qec_playground_2() {
         // cargo test dual_module_parallel_circuit_level_noise_qec_playground_2 -- --nocapture
@@ -1675,6 +1769,30 @@ pub mod tests {
             2424788,
             vec![],
             GrowingStrategy::ModeBased,
+            2,
+        );
+    }
+
+    /// test solver on circuit level noise with random errors, split into 4
+    #[test]
+    fn dual_module_parallel_circuit_level_noise_qec_playground_3() {
+        // cargo test dual_module_parallel_circuit_level_noise_qec_playground_3 -- --nocapture
+        let config = json!({
+            "code_type": qecp::code_builder::CodeType::RotatedPlanarCode
+        });
+        
+        let mut code = QECPlaygroundCode::new(7, 0.005, config);
+        let defect_vertices = code.generate_random_errors(132).0.defect_vertices;
+
+        let visualize_filename = "dual_module_parallel_circuit_level_noise_qec_playground_3.json".to_string();
+        dual_module_parallel_evaluation_qec_playground_helper(
+            code,
+            visualize_filename,
+            defect_vertices.clone(),
+            2424788,
+            vec![],
+            GrowingStrategy::ModeBased,
+            4,
         );
     }
 }
