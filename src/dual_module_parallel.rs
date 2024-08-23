@@ -1297,7 +1297,7 @@ pub mod tests {
         dual_module.static_fuse_all();
         
         // try to work on a simple syndrome
-        let interface_ptr = DualModuleInterfacePtr::new_load(decoding_graph, &mut dual_module);
+        let interface_ptr = DualModuleInterfacePtr::new_load(decoding_graph.syndrome_pattern, &mut dual_module);
         
         // println!("interface_ptr json: {}", interface_ptr.snapshot(false));
         // println!("dual_module json: {}", dual_module.snapshot(false));
@@ -1366,7 +1366,7 @@ pub mod tests {
         // primal_module.config = serde_json::from_value(json!({"timeout":1})).unwrap();
         // try to work on a simple syndrome
         let decoding_graph = DecodingHyperGraph::new_defects(model_graph, defect_vertices.clone());
-        let interface_ptr = DualModuleInterfacePtr::new(decoding_graph.model_graph.clone());
+        let interface_ptr = DualModuleInterfacePtr::new();
 
         let begin_time = std::time::Instant::now();
         primal_module.solve_visualizer(
@@ -1813,7 +1813,7 @@ pub mod tests {
             "code_type": qecp::code_builder::CodeType::RotatedPlanarCode
         });
         
-        let mut code = QECPlaygroundCode::new(11, 0.005, config);
+        let mut code = QECPlaygroundCode::new(7, 0.005, config);
         let defect_vertices = code.generate_random_errors(132).0.defect_vertices;
 
         let visualize_filename = "dual_module_parallel_circuit_level_noise_qec_playground_3.json".to_string();

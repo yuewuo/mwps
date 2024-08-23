@@ -326,6 +326,9 @@ pub mod tests {
         let matrix_vertices: HashSet<_> = hair_view.get_vertices().into_iter().map(|v| v.upgradable_read().vertex_index).collect();
         assert_eq!(matrix_vertices, [0, 1, 2].into());
         assert_eq!(hair_view.get_base_view_edges().iter().map(|e| e.upgrade_force().read_recursive().edge_index).collect::<Vec<_>>(), [4, 9, 1, 6]);
+        drop(vertices);
+        drop(edges);
+        drop(matrix);
     }
 
     fn generate_demo_matrix(edges: &Vec<EdgePtr>, vertices: &Vec<VertexPtr>) -> EchelonMatrix {
@@ -376,6 +379,9 @@ pub mod tests {
         let mut matrix = generate_demo_matrix(&edges, &vertices);
         let mut hair_view = HairView::new(&mut matrix, [].into_iter());
         hair_view.get_tail_edges_mut();
+        drop(vertices);
+        drop(edges);
+        drop(matrix);
     }
 
     #[test]
@@ -417,6 +423,9 @@ pub mod tests {
         let mut matrix = generate_demo_matrix(&edges, &vertices);
         let mut hair_view = HairView::new(&mut matrix, [].into_iter());
         hair_view.update_edge_tightness(edges[0].downgrade(), false);
+        drop(vertices);
+        drop(edges);
+        drop(matrix);
     }
 
     #[test]
@@ -469,6 +478,9 @@ pub mod tests {
             cluster_weights: hashbrown::HashMap::new(),
         });
         hair_view.add_variable(new_edge.downgrade());
+        drop(vertices);
+        drop(edges);
+        drop(matrix);
     }
 
     #[test]
@@ -542,6 +554,9 @@ pub mod tests {
         });
         
         hair_view.add_constraint(new_vertex.downgrade(), &[edges[0].downgrade(), new_edge_1.downgrade(), new_edge_2.downgrade()], false);
+        drop(vertices);
+        drop(edges);
+        drop(matrix);
     }
 
     #[test]
@@ -581,6 +596,9 @@ pub mod tests {
         let mut matrix = generate_demo_matrix(&edges, &vertices);
         let mut hair_view = HairView::new(&mut matrix, [].into_iter());
         hair_view.xor_row(0, 1);
+        drop(vertices);
+        drop(edges);
+        drop(matrix);
     }
 
     #[test]
@@ -621,6 +639,9 @@ pub mod tests {
         let mut matrix = generate_demo_matrix(&edges, &vertices);
         let mut hair_view = HairView::new(&mut matrix, [].into_iter());
         hair_view.swap_row(0, 1);
+        drop(vertices);
+        drop(edges);
+        drop(matrix);
     }
 
     #[test]
@@ -661,6 +682,9 @@ pub mod tests {
         let mut matrix = generate_demo_matrix(&edges, &vertices);
         let mut hair_view = HairView::new(&mut matrix, [].into_iter());
         hair_view.get_echelon_info();
+        drop(vertices);
+        drop(edges);
+        drop(matrix);
     }
 
     #[test]
@@ -700,6 +724,9 @@ pub mod tests {
         let mut matrix = generate_demo_matrix(&edges, &vertices);
         let hair_view = HairView::new(&mut matrix, [].into_iter());
         hair_view.get_echelon_info_immutable();
+        drop(vertices);
+        drop(edges);
+        drop(matrix);
     }
 
     #[test]
@@ -781,5 +808,8 @@ pub mod tests {
 "
         );
         assert!(!hair_view.get_echelon_satisfiable());
+        drop(vertices);
+        drop(edges);
+        drop(matrix);
     }
 }

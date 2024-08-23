@@ -145,8 +145,6 @@ impl PrimalModuleImpl for PrimalModuleUnionFind {
         }
         for &cluster_index in active_clusters.iter() {
             if interface_ptr
-                .read_recursive()
-                .decoding_graph
                 .is_valid_cluster_auto_vertices(&self.union_find.get(cluster_index as usize).internal_edges)
             {
                 // do nothing
@@ -179,8 +177,6 @@ impl PrimalModuleImpl for PrimalModuleUnionFind {
             if !valid_clusters.contains(&root_index) {
                 valid_clusters.insert(root_index);
                 let cluster_subgraph = interface_ptr
-                    .read_recursive()
-                    .decoding_graph
                     .find_valid_subgraph_auto_vertices(&self.union_find.get(root_index).internal_edges)
                     .expect("must be valid cluster");
                 subgraph.extend(cluster_subgraph);
@@ -231,7 +227,7 @@ pub mod tests {
         let mut primal_module = PrimalModuleUnionFind::new_empty(&model_graph.initializer);
         // try to work on a simple syndrome
         code.set_defect_vertices(&defect_vertices);
-        let interface_ptr = DualModuleInterfacePtr::new(model_graph.clone());
+        let interface_ptr = DualModuleInterfacePtr::new();
         primal_module.solve_visualizer(
             &interface_ptr,
             Arc::new(code.get_syndrome()),

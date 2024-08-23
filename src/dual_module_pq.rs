@@ -1325,7 +1325,7 @@ mod tests {
         let mut dual_module: DualModulePQ<FutureObstacleQueue<Rational>> = DualModulePQ::new_empty(&model_graph.initializer);
         // try to work on a simple syndrome
         let decoding_graph = DecodingHyperGraph::new_defects(model_graph, vec![3, 12]);
-        let interface_ptr = DualModuleInterfacePtr::new_load(decoding_graph, &mut dual_module);
+        let interface_ptr = DualModuleInterfacePtr::new_load(decoding_graph.syndrome_pattern, &mut dual_module);
 
         visualizer
             .snapshot_combined("syndrome".to_string(), vec![&interface_ptr, &dual_module])
@@ -1375,7 +1375,7 @@ mod tests {
         let mut dual_module: DualModulePQ<FutureObstacleQueue<Rational>> = DualModulePQ::new_empty(&model_graph.initializer);
         // try to work on a simple syndrome
         let decoding_graph = DecodingHyperGraph::new_defects(model_graph, vec![23, 24, 29, 30]);
-        let interface_ptr = DualModuleInterfacePtr::new_load(decoding_graph, &mut dual_module);
+        let interface_ptr = DualModuleInterfacePtr::new_load(decoding_graph.syndrome_pattern, &mut dual_module);
         visualizer
             .snapshot_combined("syndrome".to_string(), vec![&interface_ptr, &dual_module])
             .unwrap();
@@ -1419,7 +1419,7 @@ mod tests {
         let mut dual_module: DualModulePQ<FutureObstacleQueue<Rational>> = DualModulePQ::new_empty(&model_graph.initializer);
         // try to work on a simple syndrome
         let decoding_graph = DecodingHyperGraph::new_defects(model_graph, vec![17, 23, 29, 30]);
-        let interface_ptr = DualModuleInterfacePtr::new_load(decoding_graph, &mut dual_module);
+        let interface_ptr = DualModuleInterfacePtr::new_load(decoding_graph.syndrome_pattern, &mut dual_module);
         visualizer
             .snapshot_combined("syndrome".to_string(), vec![&interface_ptr, &dual_module])
             .unwrap();

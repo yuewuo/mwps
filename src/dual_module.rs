@@ -3,11 +3,9 @@
 //! Generics for dual modules
 //!
 
-use weak_table::PtrWeakHashSet;
 
 use crate::decoding_hypergraph::*;
 use crate::derivative::Derivative;
-use crate::dual_module_pq::Edge;
 use crate::invalid_subgraph::*;
 use crate::model_hypergraph::*;
 use crate::num_traits::{FromPrimitive, One, Signed, ToPrimitive, Zero};
@@ -18,6 +16,7 @@ use crate::primal_module_serial::PrimalClusterPtr;
 use crate::relaxer_optimizer::OptimizerResult;
 use crate::util::*;
 use crate::visualize::*;
+use crate::matrix::*;
 
 use std::collections::BTreeMap;
 use std::collections::{BTreeSet, HashMap};
@@ -169,8 +168,8 @@ pub struct DualModuleInterface {
     pub nodes: Vec<DualNodePtr>,
     /// given an invalid subgraph, find its corresponding dual node
     pub hashmap: HashMap<Arc<InvalidSubgraph>, NodeIndex>,
-    /// the decoding graph
-    pub decoding_graph: DecodingHyperGraph,
+    // /// the decoding graph
+    // pub decoding_graph: DecodingHyperGraph,
 }
 
 pub type DualModuleInterfacePtr = ArcRwLock<DualModuleInterface>;
@@ -656,24 +655,24 @@ impl GroupMaxUpdateLength {
 }
 
 impl DualModuleInterfacePtr {
-    pub fn new(model_graph: Arc<ModelHyperGraph>) -> Self {
+    pub fn new() -> Self {
         Self::new_value(DualModuleInterface {
             nodes: Vec::new(),
             hashmap: HashMap::new(),
-            decoding_graph: DecodingHyperGraph::new(model_graph, Arc::new(SyndromePattern::new_empty())),
+            // decoding_graph: DecodingHyperGraph::new(model_graph, Arc::new(SyndromePattern::new_empty())),
         })
     }
 
     /// a dual module interface MUST be created given a concrete implementation of the dual module
-    pub fn new_load(decoding_graph: DecodingHyperGraph, dual_module_impl: &mut impl DualModuleImpl) -> Self {
-        let interface_ptr = Self::new(decoding_graph.model_graph.clone());
-        interface_ptr.load(decoding_graph.syndrome_pattern, dual_module_impl);
+    pub fn new_load(syndrome_pattern: Arc<SyndromePattern>, dual_module_impl: &mut impl DualModuleImpl) -> Self {
+        let interface_ptr = Self::new();
+        interface_ptr.load(syndrome_pattern, dual_module_impl);
         interface_ptr
     }
 
     // the defect_vertices here are local vertices
     pub fn load(&self, syndrome_pattern: Arc<SyndromePattern>, dual_module_impl: &mut impl DualModuleImpl) {
-        self.write().decoding_graph.set_syndrome(syndrome_pattern.clone());
+        // self.write().decoding_graph.set_syndrome(syndrome_pattern.clone());
         for vertex_idx in syndrome_pattern.defect_vertices.iter() {
             self.create_defect_node(*vertex_idx, dual_module_impl);
         }
@@ -817,6 +816,36 @@ impl DualModuleInterfacePtr {
             Some(node_ptr) => (true, node_ptr),
             None => (false, self.create_node_tune(invalid_subgraph.clone(), dual_module)),
         }
+    }
+
+    pub fn is_valid_cluster_auto_vertices(&self, edges: &BTreeSet<EdgePtr>) -> bool {
+        self.find_valid_subgraph_auto_vertices(edges).is_some()
+    }
+
+    pub fn find_valid_subgraph_auto_vertices(&self, edges: &BTreeSet<EdgePtr>) -> Option<Subgraph> {
+        let mut vertices: BTreeSet<VertexPtr> = BTreeSet::new();
+        for edge_ptr in edges.iter() {
+            let local_vertices = &edge_ptr.get_vertex_neighbors();
+            for vertex in local_vertices {
+                vertices.insert(vertex.upgrade_force());
+            }
+        }
+
+        self.find_valid_subgraph(edges, &vertices)
+    }
+
+    pub fn find_valid_subgraph(&self, edges: &BTreeSet<EdgePtr>, vertices: &BTreeSet<VertexPtr>) -> Option<Subgraph> {
+        let mut matrix = Echelon::<CompleteMatrix>::new();
+        for edge_index in edges.iter() {
+            matrix.add_variable(edge_index.downgrade());
+        }
+
+        for vertex_index in vertices.iter() {
+            let incident_edges = &vertex_index.read_recursive().edges;
+            let parity = vertex_index.read_recursive().is_defect;
+            matrix.add_constraint(vertex_index.downgrade(), &incident_edges, parity);
+        }
+        matrix.get_solution()
     }
 }
 

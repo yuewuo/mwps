@@ -375,6 +375,9 @@ pub mod tests {
         assert_eq!(matrix.edge_to_column_index(edges[2].downgrade()), None);
         assert_eq!(matrix.edge_to_column_index(edges[3].downgrade()), Some(2));
         assert_eq!(matrix.edge_to_column_index(edges[4].downgrade()), None);
+
+        drop(vertices);
+        drop(edges);
     }
 
     #[test]
@@ -487,11 +490,13 @@ pub mod tests {
         assert_eq!(weights.get_solution_local_minimum(&mut matrix).unwrap().iter().map(|e| e.upgrade_force().read_recursive().edge_index).collect::<Vec<_>>(), vec![3, 4, 8]);
         let weights = TestEdgeWeights::new(&[(edges[3].downgrade(), Rational::from_i64(10).unwrap()), (edges[4].downgrade(), Rational::from_i64(10).unwrap()), (edges[7].downgrade(), Rational::from_i64(10).unwrap())]);
         assert_eq!(weights.get_solution_local_minimum(&mut matrix).unwrap().iter().map(|e| e.upgrade_force().read_recursive().edge_index).collect::<Vec<_>>(), vec![5, 6, 9]);
+        drop(vertices);
+        drop(edges);
     }
 
     #[test]
     fn matrix_interface_echelon_no_solution() {
-        // cargo test matrix_interface_echelon_no_solution -- --nocapture
+        // cargo test --quiet matrix_interface_echelon_no_solution -- --nocapture
         let mut matrix = Echelon::<Tail<BasicMatrix>>::new();
         let parity_checks = vec![(vec![0, 1], false), (vec![0, 1], true)];
 
@@ -533,5 +538,8 @@ pub mod tests {
         assert_eq!(matrix.get_solution(), None);
         let weights = TestEdgeWeights::new(&[]);
         assert_eq!(weights.get_solution_local_minimum(&mut matrix), None);
+
+        drop(vertices);
+        drop(edges);
     }
 }

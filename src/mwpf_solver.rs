@@ -122,7 +122,7 @@ impl SolverSerialPlugins {
             dual_module: DualModulePQ::new_empty(initializer),
             // dual_module: DualModuleSerial::new_empty(initializer),
             primal_module,
-            interface_ptr: DualModuleInterfacePtr::new(model_graph.clone()),
+            interface_ptr: DualModuleInterfacePtr::new(),
             model_graph,
         }
     }

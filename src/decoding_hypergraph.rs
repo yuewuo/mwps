@@ -32,7 +32,7 @@ impl DecodingHyperGraph {
             defect_vertices_hashset: HashSet::new(),
             erasures_hashset: HashSet::new(),
         };
-        decoding_graph.set_syndrome(syndrome_pattern);
+        // decoding_graph.set_syndrome(syndrome_pattern);
         decoding_graph
     }
 
@@ -61,58 +61,58 @@ impl DecodingHyperGraph {
         Self::new(model_graph, Arc::new(SyndromePattern::new_vertices(defect_vertices)))
     }
 
-    pub fn find_valid_subgraph(&self, edges: &BTreeSet<EdgePtr>, vertices: &BTreeSet<VertexPtr>) -> Option<Subgraph> {
-        let mut matrix = Echelon::<CompleteMatrix>::new();
-        for edge_index in edges.iter() {
-            matrix.add_variable(edge_index.downgrade());
-        }
+    // pub fn find_valid_subgraph(&self, edges: &BTreeSet<EdgePtr>, vertices: &BTreeSet<VertexPtr>) -> Option<Subgraph> {
+    //     let mut matrix = Echelon::<CompleteMatrix>::new();
+    //     for edge_index in edges.iter() {
+    //         matrix.add_variable(edge_index.downgrade());
+    //     }
 
-        for vertex_index in vertices.iter() {
-            // let incident_edges = self.get_vertex_neighbors(vertex_index);
-            // let parity = self.is_vertex_defect(vertex_index);
-            let incident_edges = &vertex_index.read_recursive().edges;
-            let parity = vertex_index.read_recursive().is_defect;
-            matrix.add_constraint(vertex_index.downgrade(), &incident_edges, parity);
-        }
-        matrix.get_solution()
-    }
+    //     for vertex_index in vertices.iter() {
+    //         // let incident_edges = self.get_vertex_neighbors(vertex_index);
+    //         // let parity = self.is_vertex_defect(vertex_index);
+    //         let incident_edges = &vertex_index.read_recursive().edges;
+    //         let parity = vertex_index.read_recursive().is_defect;
+    //         matrix.add_constraint(vertex_index.downgrade(), &incident_edges, parity);
+    //     }
+    //     matrix.get_solution()
+    // }
 
-    pub fn find_valid_subgraph_auto_vertices(&self, edges: &BTreeSet<EdgePtr>) -> Option<Subgraph> {
-        let mut vertices: BTreeSet<VertexPtr> = BTreeSet::new();
-        for edge_ptr in edges.iter() {
-            // let local_vertices = &edge_ptr.read_recursive().vertices;
-            let local_vertices = &edge_ptr.get_vertex_neighbors();
-            for vertex in local_vertices {
-                vertices.insert(vertex.upgrade_force());
-            }
-        }
+    // pub fn find_valid_subgraph_auto_vertices(&self, edges: &BTreeSet<EdgePtr>) -> Option<Subgraph> {
+    //     let mut vertices: BTreeSet<VertexPtr> = BTreeSet::new();
+    //     for edge_ptr in edges.iter() {
+    //         // let local_vertices = &edge_ptr.read_recursive().vertices;
+    //         let local_vertices = &edge_ptr.get_vertex_neighbors();
+    //         for vertex in local_vertices {
+    //             vertices.insert(vertex.upgrade_force());
+    //         }
+    //     }
 
-        self.find_valid_subgraph(edges, &vertices)
-    }
+    //     self.find_valid_subgraph(edges, &vertices)
+    // }
 
-    pub fn is_valid_cluster(&self, edges: &BTreeSet<EdgePtr>, vertices: &BTreeSet<VertexPtr>) -> bool {
-        self.find_valid_subgraph(edges, vertices).is_some()
-    }
+    // pub fn is_valid_cluster(&self, edges: &BTreeSet<EdgePtr>, vertices: &BTreeSet<VertexPtr>) -> bool {
+    //     self.find_valid_subgraph(edges, vertices).is_some()
+    // }
 
-    pub fn is_valid_cluster_auto_vertices(&self, edges: &BTreeSet<EdgePtr>) -> bool {
-        self.find_valid_subgraph_auto_vertices(edges).is_some()
-    }
+    // pub fn is_valid_cluster_auto_vertices(&self, edges: &BTreeSet<EdgePtr>) -> bool {
+    //     self.find_valid_subgraph_auto_vertices(edges).is_some()
+    // }
 
-    pub fn is_vertex_defect(&self, vertex_index: VertexIndex) -> bool {
-        self.defect_vertices_hashset.contains(&vertex_index)
-    }
+    // pub fn is_vertex_defect(&self, vertex_index: VertexIndex) -> bool {
+    //     self.defect_vertices_hashset.contains(&vertex_index)
+    // }
 
-    pub fn get_edge_neighbors(&self, edge_index: EdgeIndex) -> &Vec<VertexIndex> {
-        self.model_graph.get_edge_neighbors(edge_index)
-    }
+    // pub fn get_edge_neighbors(&self, edge_index: EdgeIndex) -> &Vec<VertexIndex> {
+    //     self.model_graph.get_edge_neighbors(edge_index)
+    // }
 
-    pub fn get_vertex_neighbors(&self, vertex_index: VertexIndex) -> &Vec<EdgeIndex> {
-        self.model_graph.get_vertex_neighbors(vertex_index)
-    }
+    // pub fn get_vertex_neighbors(&self, vertex_index: VertexIndex) -> &Vec<EdgeIndex> {
+    //     self.model_graph.get_vertex_neighbors(vertex_index)
+    // }
 
-    pub fn get_edges_neighbors(&self, edges: &BTreeSet<EdgeIndex>) -> BTreeSet<VertexIndex> {
-        self.model_graph.get_edges_neighbors(edges)
-    }
+    // pub fn get_edges_neighbors(&self, edges: &BTreeSet<EdgeIndex>) -> BTreeSet<VertexIndex> {
+    //     self.model_graph.get_edges_neighbors(edges)
+    // }
 }
 
 impl MWPSVisualizer for DecodingHyperGraph {
