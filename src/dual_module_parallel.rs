@@ -1559,57 +1559,15 @@ pub mod tests {
             last_t = position.t;
         }
 
-        // // original implementation
-        // // pick the t value in the middle to split it
-        // let t_split = t_list[t_list.len()/2];
-        // println!("t_split: {:?}", t_split);
-        // // find the vertices indices
-        // let mut split_start_index = MAX;
-        // let mut split_end_index = MAX;
-        // for (vertex_index, position) in positions.iter().enumerate() {
-        //     if split_start_index == MAX && position.t == t_split {
-        //         println!("position: {:?}", position);
-        //         println!("vertex_index: {:?}", vertex_index);
-        //         split_start_index = vertex_index;
-        //         continue;
-        //     }
-        //     if position.t == t_split {
-        //         println!("position: {:?}", position);
-        //         println!("vertex_index: {:?}", vertex_index);
-        //         split_end_index = vertex_index + 1;
-        //     }
-        // }
-        // println!("split_start_index: {:?}", split_start_index);
-        // println!("split_end_index: {:?}", split_end_index);
-        // assert!(split_start_index != MAX);
-        // // partitions are found
-        // partition_config.partitions = vec![
-        //     VertexRange::new(0, split_start_index),
-        //     VertexRange::new(split_end_index, positions.len()),
-        // ];
-        // partition_config.fusions = vec![(0, 1)];
-        // let a = partition_config.dag_partition_units.add_node(());
-        // let b = partition_config.dag_partition_units.add_node(());
-
-        // partition_config.dag_partition_units.add_edge(a, b, false);
-        // partition_config.defect_vertices = BTreeSet::from_iter(defect_vertices.clone());
-        // partition_config
-
-            
-        // implementation with split_num, 192, 193
         // pick the t value in the middle to split it
         let mut t_split_vec: Vec<f64> = vec![0.0; split_num - 1];
         for i in 0..(split_num - 1) {
             let index: usize = t_list.len()/split_num * (i + 1);
             t_split_vec[i] = t_list[index];
         }
-        println!("t_split_vec: {:?}", t_split_vec);
-        // let t_split = t_list[t_list.len()/split_num];
         // find the vertices indices
         let mut split_start_index_vec = vec![MAX; split_num - 1];
         let mut split_end_index_vec = vec![MAX; split_num - 1];
-        // let mut split_start_index = MAX;
-        // let mut split_end_index = MAX;
         let mut start_index = 0;
         let mut end_index = 0;
         for (vertex_index, position) in positions.iter().enumerate() {
@@ -1630,8 +1588,6 @@ pub mod tests {
                 }
             }
         }
-        println!("split_start_index_vec: {:?}", split_start_index_vec);
-        println!("split_end_index_vec: {:?}", split_end_index_vec);
 
         assert!(split_start_index_vec.iter().all(|&x| x != MAX), "Some elements in split_start_index_vec are equal to MAX");
         
@@ -1655,22 +1611,12 @@ pub mod tests {
             graph_nodes.push(a.clone());
         }
         partition_config.partitions = partitions_vec;
-        println!("graph nodes: {:?}", graph_nodes);
-        println!("partition_config.partitions: {:?}", partition_config.partitions);
-        // partition_config.partitions = vec![
-        //     VertexRange::new(0, split_start_index),
-        //     VertexRange::new(split_end_index, positions.len()),
-        // ];
-        // partition_config.fusions = vec![(0, 1)];
-        // let a = partition_config.dag_partition_units.add_node(());
-        // let b = partition_config.dag_partition_units.add_node(());
 
         for i in 0..split_num {
             if i < split_num - 1 {
                 partition_config.dag_partition_units.add_edge(graph_nodes[i], graph_nodes[i+1], false);
             }
         }
-        // partition_config.dag_partition_units.add_edge(a, b, false);
         partition_config.defect_vertices = BTreeSet::from_iter(defect_vertices.clone());
 
         partition_config
