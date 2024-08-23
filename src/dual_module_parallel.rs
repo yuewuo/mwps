@@ -961,18 +961,58 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
 impl<SerialModule: DualModuleImpl + Send + Sync, Queue> DualModuleParallelUnitPtr<SerialModule, Queue> 
 where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug + Send + Sync + Clone,
 {
+    // dfs grow all neighbors
+    pub fn dfs_grow(&self, length: Rational, visited: BTreeSet<DualModuleParallelUnitPtr<SerialModule, Queue>>) {
+        let mut dual_module_unit = self.write();
+
+    }
+
+
     // I do need to iteratively grow all the neighbors, instead I only grow this unit
     // this helps me to reduce the time complexity of copying all the nodes from one interface to the other during fusion
     pub fn bfs_grow(&self, length: Rational) {
         let mut dual_module_unit = self.write();
         if dual_module_unit.enable_parallel_execution {
-            // implementation using rayon
+            // println!("enable parallel execution");
+            // implementation using rayon without locks 
             // early terminate if no active dual nodes in this partition unit
             // if !self.has_active_node {
             //     return;
             // }
             // println!("bfs grow");
-            let mut dual_module_unit = self.write();
+
+            // dual_module_unit.serial_module.grow(length.clone());
+            // drop(dual_module_unit);
+            // let dual_module_unit = self.read_recursive();
+            
+            // // could potentially use rayon to optimize it
+            // // implement a breadth first search to grow all connected (fused) neighbors 
+            // let mut queue = VecDeque::new();
+            // let mut visited = BTreeSet::new();
+            // visited.insert(self.clone());
+            // queue.push_back(self.clone());
+            // drop(dual_module_unit);
+
+            // while let Some(node) = {
+            //     queue.pop_front()
+            // } {
+            //     let neighbors = &node.read_recursive().adjacent_parallel_units;
+
+            //     neighbors.par_iter().for_each(|neighbor| {
+            //         if !visited.contains(&neighbor) {
+            //             neighbor.write().serial_module.grow(length.clone());
+            //             visited.insert(neighbor.clone());
+            //             queue.push_back(neighbor.clone());
+            //         }
+            //     });
+            // }
+
+            // implementation using rayon with locks 
+            // early terminate if no active dual nodes in this partition unit
+            // if !self.has_active_node {
+            //     return;
+            // }
+            // println!("bfs grow");
 
             dual_module_unit.serial_module.grow(length.clone());
             drop(dual_module_unit);
@@ -1061,54 +1101,99 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
 
 
     fn bfs_compute_maximum_update_length(&self, group_max_update_length: &mut GroupMaxUpdateLength) {
-        // early terminate if no active dual nodes anywhere in the descendant
-        
-        // println!("bfs_compute_max_update_length");
         let mut dual_module_unit = self.write();
-
-        let serial_module_group_max_update_length = dual_module_unit.serial_module.compute_maximum_update_length();
-        // println!("serial_module group max_update length: {:?}", serial_module_group_max_update_length);
-        drop(dual_module_unit);
-        let dual_module_unit = self.read_recursive();
-
-        group_max_update_length.extend(serial_module_group_max_update_length);
-
-        // we need to find the maximum update length of all connected (fused) units
-        // so we run a bfs, we could potentially use rayon to optimize it
-        let mut frontier: VecDeque<_> = VecDeque::new();
-        let mut visited = BTreeSet::new();
-        visited.insert(self.clone());
-        // println!("self pointer: {:?}", Arc::as_ptr(self.ptr()));
-
-        for neighbor in dual_module_unit.adjacent_parallel_units.iter() {
-            // println!("first neighbor pointer: {:?}", Arc::as_ptr(neighbor.ptr()));
-            frontier.push_front(neighbor.clone());
-        }
-
-        while !frontier.is_empty() {
-            // println!("frontier len: {:?}", frontier.len());
-            let temp = frontier.pop_front().unwrap();
-            // println!("frontier len: {:?}", frontier.len());
-            let serial_module_group_max_update_length = temp.write().serial_module.compute_maximum_update_length();
+        if dual_module_unit.enable_parallel_execution {
+            let serial_module_group_max_update_length = dual_module_unit.serial_module.compute_maximum_update_length();
+            // println!("serial_module group max_update length: {:?}", serial_module_group_max_update_length);
+            drop(dual_module_unit);
+            let dual_module_unit = self.read_recursive();
             group_max_update_length.extend(serial_module_group_max_update_length);
-            visited.insert(temp.clone());
-            // println!("temp pointer: {:?}",  Arc::as_ptr(temp.ptr()));
 
-            for neighbor in temp.read_recursive().adjacent_parallel_units.iter() {       
-                // println!("hihi");
-                // println!("neighbor pointer: {:?}", Arc::as_ptr(neighbor.ptr()));         
-                if !visited.contains(neighbor) {
-                    frontier.push_back(neighbor.clone());
-                }
-                // println!("frontier len: {:?}", frontier.len());
+            // implement a breadth first search to grow all connected (fused) neighbors 
+            let queue = Arc::new(Mutex::new(VecDeque::new()));
+            let visited = Arc::new(Mutex::new(BTreeSet::new()));
+
+            let mut visited_lock = visited.lock().unwrap();
+            visited_lock.insert(self.clone());
+            drop(visited_lock);
+
+            let mut queue_lock = queue.lock().unwrap();
+            queue_lock.push_back(self.clone());
+            drop(queue_lock);
+            drop(dual_module_unit);
+
+            let local_group_max_update_length = Arc::new(Mutex::new(GroupMaxUpdateLength::new()));
+            while let Some(node) = {
+                let mut queue_lock = queue.lock().unwrap();
+                queue_lock.pop_front()
+            } {
+                let neighbors = &node.read_recursive().adjacent_parallel_units;
                 
-            }
-            drop(temp);
-            // println!("after for loop");
-        }
 
-        // println!("group max update length: {:?}", group_max_update_length);
-        // println!("done with bfs_compute_max_update_length");
+                neighbors.par_iter().for_each(|neighbor| {
+                    let mut visited_lock = visited.lock().unwrap();
+                    let mut queue_lock = queue.lock().unwrap();
+                    
+
+                    if !visited_lock.contains(&neighbor) {
+                        let serial_module_group_max_update_length = neighbor.write().serial_module.compute_maximum_update_length();
+                        // group_max_update_length.extend(serial_module_group_max_update_length);
+                        local_group_max_update_length.lock().unwrap().extend(serial_module_group_max_update_length);
+                        visited_lock.insert(neighbor.clone());
+                        queue_lock.push_back(neighbor.clone());
+                    }
+                });
+            }
+            let final_local_group_max_update_length = local_group_max_update_length.lock().unwrap();
+            group_max_update_length.extend(final_local_group_max_update_length.clone());
+        } else {
+            // implementation with sequential iteration of neighbors
+            // early terminate if no active dual nodes anywhere in the descendant
+            
+            // println!("bfs_compute_max_update_length");
+            
+
+            let serial_module_group_max_update_length = dual_module_unit.serial_module.compute_maximum_update_length();
+            // println!("serial_module group max_update length: {:?}", serial_module_group_max_update_length);
+            drop(dual_module_unit);
+            let dual_module_unit = self.read_recursive();
+
+            group_max_update_length.extend(serial_module_group_max_update_length);
+
+            // we need to find the maximum update length of all connected (fused) units
+            // so we run a bfs, we could potentially use rayon to optimize it
+            let mut frontier: VecDeque<_> = VecDeque::new();
+            let mut visited = BTreeSet::new();
+            visited.insert(self.clone());
+            // println!("self pointer: {:?}", Arc::as_ptr(self.ptr()));
+
+            for neighbor in dual_module_unit.adjacent_parallel_units.iter() {
+                // println!("first neighbor pointer: {:?}", Arc::as_ptr(neighbor.ptr()));
+                frontier.push_front(neighbor.clone());
+            }
+
+            while !frontier.is_empty() {
+                // println!("frontier len: {:?}", frontier.len());
+                let temp = frontier.pop_front().unwrap();
+                // println!("frontier len: {:?}", frontier.len());
+                let serial_module_group_max_update_length = temp.write().serial_module.compute_maximum_update_length();
+                group_max_update_length.extend(serial_module_group_max_update_length);
+                visited.insert(temp.clone());
+                // println!("temp pointer: {:?}",  Arc::as_ptr(temp.ptr()));
+
+                for neighbor in temp.read_recursive().adjacent_parallel_units.iter() {       
+                    // println!("hihi");
+                    // println!("neighbor pointer: {:?}", Arc::as_ptr(neighbor.ptr()));         
+                    if !visited.contains(neighbor) {
+                        frontier.push_back(neighbor.clone());
+                    }
+                    // println!("frontier len: {:?}", frontier.len());
+                    
+                }
+                drop(temp);
+                // println!("after for loop");
+            }
+        }
     }
 
 }
@@ -1154,7 +1239,6 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
 pub mod tests {
     use std::usize::MAX;
 
-    use petgraph::graph;
     use rayon::iter::split;
     use slp::Solver;
 
@@ -1657,7 +1741,7 @@ pub mod tests {
         // create dual module
         // let decoding_graph = DecodingHyperGraph::new_defects(model_graph.clone(), vec![3, 29, 30]);
         let mut dual_module_parallel_config = DualModuleParallelConfig::default();
-        // dual_module_parallel_config.enable_parallel_execution = true;
+        dual_module_parallel_config.enable_parallel_execution = true;
         let mut dual_module: DualModuleParallel<DualModulePQ<FutureObstacleQueue<Rational>>, FutureObstacleQueue<Rational>> =
             DualModuleParallel::new_config(&initializer, &partition_info, dual_module_parallel_config);
         dual_module.static_fuse_all();
