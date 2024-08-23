@@ -26,8 +26,6 @@ use crate::itertools::Itertools;
 use parking_lot::Mutex;
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
-use weak_table::PtrWeakHashSet;
-use weak_table::PtrWeakKeyHashMap;
 
 #[cfg(feature = "pq")]
 use crate::dual_module_pq::{EdgeWeak, VertexWeak, EdgePtr, VertexPtr};

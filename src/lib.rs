@@ -14,6 +14,7 @@ extern crate more_asserts;
 extern crate num_rational;
 extern crate num_traits;
 extern crate parking_lot;
+extern crate core_affinity;
 #[cfg(feature = "cli")]
 extern crate pbr;
 extern crate prettytable;
@@ -49,6 +50,7 @@ pub mod plugin_union_find;
 pub mod pointers;
 pub mod primal_module;
 pub mod primal_module_serial;
+pub mod primal_module_parallel;
 pub mod primal_module_union_find;
 pub mod relaxer;
 pub mod relaxer_forest;

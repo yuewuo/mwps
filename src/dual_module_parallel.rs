@@ -1435,8 +1435,10 @@ pub mod tests {
         };
 
         // create dual module 
+        let mut dual_module_parallel_config = DualModuleParallelConfig::default();
+        dual_module_parallel_config.enable_parallel_execution = true;
         let mut dual_module: DualModuleParallel<DualModulePQ<FutureObstacleQueue<Rational>>, FutureObstacleQueue<Rational>> =
-            DualModuleParallel::new_config(&initializer, &partition_info, DualModuleParallelConfig::default());
+            DualModuleParallel::new_config(&initializer, &partition_info, dual_module_parallel_config);
         dual_module.static_fuse_all();
         // let mut dual_module: DualModulePQ<FutureObstacleQueue<Rational>> = DualModulePQ::new_empty(&model_graph.initializer);
 
@@ -1811,7 +1813,7 @@ pub mod tests {
             "code_type": qecp::code_builder::CodeType::RotatedPlanarCode
         });
         
-        let mut code = QECPlaygroundCode::new(7, 0.005, config);
+        let mut code = QECPlaygroundCode::new(11, 0.005, config);
         let defect_vertices = code.generate_random_errors(132).0.defect_vertices;
 
         let visualize_filename = "dual_module_parallel_circuit_level_noise_qec_playground_3.json".to_string();
