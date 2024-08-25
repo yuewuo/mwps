@@ -137,7 +137,7 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
 {
     /// the set of all DualModuleParallelUnits, one for each partition
     /// we set the read-write lock 
-    pub units: Vec<ArcRwLock<DualModuleParallelUnit<SerialModule, Queue>>>,
+    pub units: Vec<DualModuleParallelUnitPtr<SerialModule, Queue>>,
     /// configuration such as thread_pool_size 
     pub config: DualModuleParallelConfig,
     /// partition information 
@@ -483,7 +483,7 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
 
     /// add defect node
     fn add_defect_node(&mut self, dual_node_ptr: &DualNodePtr) {
-        let unit_ptr = self.find_handling_parallel_unit(dual_node_ptr);
+        let mut unit_ptr = self.find_handling_parallel_unit(dual_node_ptr);
         self.thread_pool.scope(|_| {
             let mut unit = unit_ptr.write();
             unit.add_defect_node(dual_node_ptr); 
@@ -492,7 +492,7 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
 
     /// add corresponding dual node, note that the `internal_vertices` and `hair_edges` are not set
     fn add_dual_node(&mut self, dual_node_ptr: &DualNodePtr) {
-        let unit_ptr = self.find_handling_parallel_unit(dual_node_ptr);
+        let mut unit_ptr = self.find_handling_parallel_unit(dual_node_ptr);
         self.thread_pool.scope(|_| {
             let mut unit = unit_ptr.write();
             unit.add_dual_node(dual_node_ptr); 
@@ -501,7 +501,7 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
 
     /// update grow rate
     fn set_grow_rate(&mut self, dual_node_ptr: &DualNodePtr, grow_rate: Rational) {
-        let unit_ptr = self.find_handling_parallel_unit(dual_node_ptr);
+        let mut unit_ptr = self.find_handling_parallel_unit(dual_node_ptr);
         self.thread_pool.scope(|_| {
             let mut unit = unit_ptr.write();
             unit.set_grow_rate(dual_node_ptr, grow_rate); // to be implemented in DualModuleParallelUnit
@@ -516,7 +516,7 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
         dual_node_ptr: &DualNodePtr,
         simultaneous_update: bool,
     ) -> MaxUpdateLength {
-        let unit_ptr = self.find_handling_parallel_unit(dual_node_ptr);
+        let mut unit_ptr = self.find_handling_parallel_unit(dual_node_ptr);
         self.thread_pool.scope(|_| {
             let mut unit = unit_ptr.write();
             unit.compute_maximum_update_length_dual_node(dual_node_ptr, simultaneous_update) // to be implemented in DualModuleParallelUnit
@@ -554,7 +554,7 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
 
     /// An optional function that can manipulate individual dual node, not necessarily supported by all implementations
     fn grow_dual_node(&mut self, dual_node_ptr: &DualNodePtr, length: Rational) {
-        let unit_ptr = self.find_handling_parallel_unit(dual_node_ptr);
+        let mut unit_ptr = self.find_handling_parallel_unit(dual_node_ptr);
         self.thread_pool.scope(|_| {
             let mut unit = unit_ptr.write();
             unit.grow_dual_node(dual_node_ptr, length) // to be implemented in DualModuleParallelUnit
@@ -722,6 +722,24 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
     }
 }
 
+impl<SerialModule: DualModuleImpl + Send + Sync, Queue> DualModuleParallelUnitPtr<SerialModule, Queue> 
+where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug + Send + Sync + Clone, 
+{
+    /// check the maximum length to grow (shrink) for all nodes, return a list of conflicting reason and a single number indicating the maximum rate to grow:
+    /// this number will be 0 if any conflicting reason presents
+    pub fn compute_maximum_update_length(&mut self) -> GroupMaxUpdateLength {
+        let mut group_max_update_length = GroupMaxUpdateLength::new();
+        self.bfs_compute_maximum_update_length(&mut group_max_update_length);
+        group_max_update_length
+    }
+
+    /// grow a specific length globally, length must be positive.
+    /// note that a negative growth should be implemented by reversing the speed of each dual node
+    pub fn grow(&mut self, length: Rational) {
+        self.bfs_grow(length.clone());
+    }
+
+}
 
 impl<SerialModule: DualModuleImpl + Send + Sync, Queue> DualModuleImpl for DualModuleParallelUnit<SerialModule, Queue> 
 where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug + Send + Sync + Clone,
@@ -816,7 +834,16 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
     /* New tuning-related methods */
     /// mode mangements
     // tuning mode shared methods
-    add_shared_methods!();
+    // self.write().serial_module.add_shared_methods!();
+    /// Returns a reference to the mode field.
+    fn mode(&self) -> &DualModuleMode {
+        &self.mode
+    }
+
+    /// Returns a mutable reference to the mode field.
+    fn mode_mut(&mut self) -> &mut DualModuleMode {
+        &mut self.mode
+    }
 
     fn advance_mode(&mut self) {
         self.serial_module.advance_mode();
@@ -881,6 +908,321 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
     }
 }
 
+
+
+// impl<SerialModule: DualModuleImpl + Send + Sync, Queue> DualModuleImpl for DualModuleParallelUnitPtr<SerialModule, Queue> 
+// where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug + Send + Sync + Clone,
+// {
+//     /// create a new dual module with empty syndrome
+//     fn new_empty(initializer: &SolverInitializer) -> Self {
+//         // tentative, but in the future, I need to modify this so that I can create a new PartitionUnit and fuse it with an existing bigger block
+//         panic!("creating parallel unit directly from initializer is forbidden, use `DualModuleParallel::new` instead");
+//     }
+
+//     /// clear all growth and existing dual nodes, prepared for the next decoding
+//     fn clear(&mut self) {
+//         self.write().serial_module.clear();
+//     }
+
+//     /// add defect node
+//     fn add_defect_node(&mut self, dual_node_ptr: &DualNodePtr) {
+//         self.write().serial_module.add_defect_node(dual_node_ptr);
+//     }
+
+//     /// add corresponding dual node, note that the `internal_vertices` and `hair_edges` are not set
+//     fn add_dual_node(&mut self, dual_node_ptr: &DualNodePtr) {
+//         self.write().serial_module.add_dual_node(dual_node_ptr);
+//     }
+
+//     /// update grow rate
+//     fn set_grow_rate(&mut self, dual_node_ptr: &DualNodePtr, grow_rate: Rational) {
+//         self.write().serial_module.set_grow_rate(dual_node_ptr, grow_rate);
+//     }
+
+//     /// An optional function that helps to break down the implementation of [`DualModuleImpl::compute_maximum_update_length`]
+//     /// check the maximum length to grow (shrink) specific dual node, if length is 0, give the reason of why it cannot further grow (shrink).
+//     /// if `simultaneous_update` is true, also check for the peer node according to [`DualNode::grow_state`].
+//     fn compute_maximum_update_length_dual_node(
+//         &mut self,
+//         dual_node_ptr: &DualNodePtr,
+//         simultaneous_update: bool,
+//     ) -> MaxUpdateLength {
+//         self.write().serial_module
+//             .compute_maximum_update_length_dual_node(dual_node_ptr, simultaneous_update)
+    
+//         // updating dual node index is performed in fuse fn 
+//         // // we only update the max_update_length for the units involed in fusion
+//     }
+
+//     /// check the maximum length to grow (shrink) for all nodes, return a list of conflicting reason and a single number indicating the maximum rate to grow:
+//     /// this number will be 0 if any conflicting reason presents
+//     fn compute_maximum_update_length(&mut self) -> GroupMaxUpdateLength {
+//         // we should not need this, refer to the `compute_maximum_update_length()` implementation in DualModuleParallelUnitPtr
+//         unimplemented!()
+//         // println!("unit compute max update length");
+//         // let mut group_max_update_length = GroupMaxUpdateLength::new();
+//         // self.bfs_compute_maximum_update_length(&mut group_max_update_length);
+        
+//         // // // we only update the group_max_update_length for the units involed in fusion
+//         // // if self.involved_in_fusion {
+//         // //     group_max_update_length.update(); 
+//         // // }
+//         // group_max_update_length
+//     }
+
+//     // /// An optional function that can manipulate individual dual node, not necessarily supported by all implementations
+//     // fn grow_dual_node(&mut self, dual_node_ptr: &DualNodePtr, length: Rational) {
+//     //     let defect_vertex = dual_node_ptr.get_representative_vertex();
+//     //     println!("grow_dual_node: defect vertex found from dual node ptr is {}", defect_vertex.read_recursive().vertex_index);
+//     //     let mut visited: HashSet<usize> = HashSet::new();
+//     //     self.dfs_grow_dual_node(dual_node_ptr, length, defect_vertex, &mut visited);
+//     // }
+
+//     /// grow a specific length globally, length must be positive.
+//     /// note that a negative growth should be implemented by reversing the speed of each dual node
+//     fn grow(&mut self, length: Rational) {
+//         // we should not need this, refer to the `grow()` implementation in DualModuleParallelUnitPtr
+//         unimplemented!()
+//         // let x = &*self;
+//         // // let dual_module_unit: ArcRwLock<DualModuleParallelUnit<SerialModule, Queue>> = ArcRwLock::new_value(x.clone());
+//         // let dual_module_unit = std::ptr::addr_of!(self);
+//         // dual_module_unit.bfs_grow(length);
+//         // self.bfs_grow(length);
+//     }
+
+//     fn get_edge_nodes(&self, edge_ptr: EdgePtr) -> Vec<DualNodePtr> {
+//         self.read_recursive().serial_module.get_edge_nodes(edge_ptr)
+//     }
+//     fn get_edge_slack(&self, edge_ptr: EdgePtr) -> Rational {
+//         self.read_recursive().serial_module.get_edge_slack(edge_ptr)
+//     }
+//     fn is_edge_tight(&self, edge_ptr: EdgePtr) -> bool {
+//         self.read_recursive().serial_module.is_edge_tight(edge_ptr)
+//     }
+
+//     /* New tuning-related methods */
+//     /// mode mangements
+//     // tuning mode shared methods
+//     // self.write().serial_module.add_shared_methods!();
+//     /// Returns a reference to the mode field.
+//     fn mode(&self) -> &DualModuleMode {
+//         &self.read_recursive().mode
+//     }
+
+//     /// Returns a mutable reference to the mode field.
+//     fn mode_mut(&mut self) -> &mut DualModuleMode {
+//         &mut self.read_recursive().mode
+//     }
+
+//     fn advance_mode(&mut self) {
+//         self.write().serial_module.advance_mode();
+//     }
+
+//     /// syncing all possible states (dual_variable and edge_weights) with global time, so global_time can be discarded later
+//     fn sync(&mut self) {
+//         self.write().serial_module.sync();
+//     }
+
+//     /// grow a specific edge on the spot
+//     fn grow_edge(&self, edge_ptr: EdgePtr, amount: &Rational) {
+//         self.write().serial_module.grow_edge(edge_ptr, amount);
+//     }
+
+//     /// `is_edge_tight` but in tuning phase
+//     fn is_edge_tight_tune(&self, edge_ptr: EdgePtr) -> bool {
+//         self.read_recursive().serial_module.is_edge_tight_tune(edge_ptr)
+//     }
+
+//     /// `get_edge_slack` but in tuning phase
+//     fn get_edge_slack_tune(&self, edge_ptr: EdgePtr) -> Rational {
+//         self.read_recursive().serial_module.get_edge_slack_tune(edge_ptr)
+//     }
+
+//     /* miscs */
+
+//     /// print all the states for the current dual module
+//     fn debug_print(&self) {
+//         self.read_recursive().serial_module.debug_print();
+//     }
+
+//     /* affinity */
+
+//     /// calculate affinity based on the following metric
+//     ///     Clusters with larger primal-dual gaps will receive high affinity because working on those clusters
+//     ///     will often reduce the gap faster. However, clusters with a large number of dual variables, vertices,
+//     ///     and hyperedges will receive a lower affinity
+//     fn calculate_cluster_affinity(&mut self, cluster: PrimalClusterPtr) -> Option<Affinity> {
+//         self.write().serial_module.calculate_cluster_affinity(cluster)
+//     }
+
+//     /// get the edge free weight, for each edge what is the weight that are free to use by the given participating dual variables
+//     fn get_edge_free_weight(
+//         &self,
+//         edge_ptr: EdgePtr,
+//         participating_dual_variables: &hashbrown::HashSet<usize>,
+//     ) -> Rational {
+//         self.read_recursive().serial_module.get_edge_free_weight(edge_ptr, participating_dual_variables)
+//     }
+
+//     /// exist for testing purposes
+//     fn get_vertex_ptr(&self, vertex_index: VertexIndex) -> VertexPtr {
+//         let local_vertex_index = vertex_index - self.read_recursive().owning_range.start();
+//         self.read_recursive().serial_module.get_vertex_ptr(local_vertex_index)
+//     }
+
+//     /// exist for testing purposes
+//     fn get_edge_ptr(&self, edge_index: EdgeIndex) -> EdgePtr {
+//         let local_edge_index = edge_index - self.read_recursive().owning_range.start();
+//         self.read_recursive().serial_module.get_edge_ptr(local_edge_index)
+//     }
+// }
+
+
+// impl<SerialModule: DualModuleImpl + Send + Sync, Queue> DualModuleImpl for DualModuleParallelUnit<SerialModule, Queue> 
+// where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug + Send + Sync + Clone,
+// {
+//     /// create a new dual module with empty syndrome
+//     fn new_empty(initializer: &SolverInitializer) -> Self {
+//         // tentative, but in the future, I need to modify this so that I can create a new PartitionUnit and fuse it with an existing bigger block
+//         panic!("creating parallel unit directly from initializer is forbidden, use `DualModuleParallel::new` instead");
+//     }
+
+//     /// clear all growth and existing dual nodes, prepared for the next decoding
+//     fn clear(&mut self) {
+//         self.serial_module.clear();
+//     }
+
+//     /// add defect node
+//     fn add_defect_node(&mut self, dual_node_ptr: &DualNodePtr) {
+//         panic!("please use `clear` in DualModuleParallelUnitPtr");
+//     }
+
+//     /// add corresponding dual node, note that the `internal_vertices` and `hair_edges` are not set
+//     fn add_dual_node(&mut self, dual_node_ptr: &DualNodePtr) {
+//         panic!("please use `clear` in DualModuleParallelUnitPtr");
+//     }
+
+//     /// update grow rate
+//     fn set_grow_rate(&mut self, dual_node_ptr: &DualNodePtr, grow_rate: Rational) {
+//         panic!("please use `clear` in DualModuleParallelUnitPtr");
+//     }
+
+//     /// An optional function that helps to break down the implementation of [`DualModuleImpl::compute_maximum_update_length`]
+//     /// check the maximum length to grow (shrink) specific dual node, if length is 0, give the reason of why it cannot further grow (shrink).
+//     /// if `simultaneous_update` is true, also check for the peer node according to [`DualNode::grow_state`].
+//     fn compute_maximum_update_length_dual_node(
+//         &mut self,
+//         dual_node_ptr: &DualNodePtr,
+//         simultaneous_update: bool,
+//     ) -> MaxUpdateLength {
+//         panic!("please use `clear` in DualModuleParallelUnitPtr");
+//     }
+
+//     /// check the maximum length to grow (shrink) for all nodes, return a list of conflicting reason and a single number indicating the maximum rate to grow:
+//     /// this number will be 0 if any conflicting reason presents
+//     fn compute_maximum_update_length(&mut self) -> GroupMaxUpdateLength {
+//         panic!("please use `clear` in DualModuleParallelUnitPtr");
+//     }
+
+//     // /// An optional function that can manipulate individual dual node, not necessarily supported by all implementations
+//     // fn grow_dual_node(&mut self, dual_node_ptr: &DualNodePtr, length: Rational) {
+//     //     let defect_vertex = dual_node_ptr.get_representative_vertex();
+//     //     println!("grow_dual_node: defect vertex found from dual node ptr is {}", defect_vertex.read_recursive().vertex_index);
+//     //     let mut visited: HashSet<usize> = HashSet::new();
+//     //     self.dfs_grow_dual_node(dual_node_ptr, length, defect_vertex, &mut visited);
+//     // }
+
+//     /// grow a specific length globally, length must be positive.
+//     /// note that a negative growth should be implemented by reversing the speed of each dual node
+//     fn grow(&mut self, length: Rational) {
+//         panic!("please use `clear` in DualModuleParallelUnitPtr");
+//     }
+
+//     fn get_edge_nodes(&self, edge_ptr: EdgePtr) -> Vec<DualNodePtr> {
+//         panic!("please use `clear` in DualModuleParallelUnitPtr");
+//     }
+
+//     fn get_edge_slack(&self, edge_ptr: EdgePtr) -> Rational {
+//         panic!("please use `clear` in DualModuleParallelUnitPtr");
+//     }
+//     fn is_edge_tight(&self, edge_ptr: EdgePtr) -> bool {
+//         panic!("please use `clear` in DualModuleParallelUnitPtr");
+//     }
+
+//     /* New tuning-related methods */
+//     /// mode mangements
+//     // tuning mode shared methods
+//     // self.write().serial_module.add_shared_methods!();
+//     /// Returns a reference to the mode field.
+//     fn mode(&self) -> &DualModuleMode {
+//         panic!("please use `clear` in DualModuleParallelUnitPtr");
+//     }
+
+//     /// Returns a mutable reference to the mode field.
+//     fn mode_mut(&mut self) -> &mut DualModuleMode {
+//         panic!("please use `clear` in DualModuleParallelUnitPtr");
+//     }
+
+//     fn advance_mode(&mut self) {
+//         panic!("please use `clear` in DualModuleParallelUnitPtr");
+//     }
+
+//     /// syncing all possible states (dual_variable and edge_weights) with global time, so global_time can be discarded later
+//     fn sync(&mut self) {
+//         panic!("please use `clear` in DualModuleParallelUnitPtr");
+//     }
+
+//     /// grow a specific edge on the spot
+//     fn grow_edge(&self, edge_ptr: EdgePtr, amount: &Rational) {
+//         panic!("please use `clear` in DualModuleParallelUnitPtr");
+//     }
+
+//     /// `is_edge_tight` but in tuning phase
+//     fn is_edge_tight_tune(&self, edge_ptr: EdgePtr) -> bool {
+//         panic!("please use `clear` in DualModuleParallelUnitPtr");
+//     }
+
+//     /// `get_edge_slack` but in tuning phase
+//     fn get_edge_slack_tune(&self, edge_ptr: EdgePtr) -> Rational {
+//         panic!("please use `clear` in DualModuleParallelUnitPtr");
+//     }
+
+//     /* miscs */
+
+//     /// print all the states for the current dual module
+//     fn debug_print(&self) {
+//         panic!("please use `clear` in DualModuleParallelUnitPtr");
+//     }
+
+//     /* affinity */
+
+//     /// calculate affinity based on the following metric
+//     ///     Clusters with larger primal-dual gaps will receive high affinity because working on those clusters
+//     ///     will often reduce the gap faster. However, clusters with a large number of dual variables, vertices,
+//     ///     and hyperedges will receive a lower affinity
+//     fn calculate_cluster_affinity(&mut self, cluster: PrimalClusterPtr) -> Option<Affinity> {
+//         panic!("please use `clear` in DualModuleParallelUnitPtr");
+//     }
+
+//     /// get the edge free weight, for each edge what is the weight that are free to use by the given participating dual variables
+//     fn get_edge_free_weight(
+//         &self,
+//         edge_ptr: EdgePtr,
+//         participating_dual_variables: &hashbrown::HashSet<usize>,
+//     ) -> Rational {
+//         panic!("please use `get_edge_free_weight` in DualModuleParallelUnitPtr");
+//     }
+
+//     /// exist for testing purposes
+//     fn get_vertex_ptr(&self, vertex_index: VertexIndex) -> VertexPtr {
+//         panic!("please use `get_vertex_ptr` in DualModuleParallelUnitPtr");
+//     }
+
+//     /// exist for testing purposes
+//     fn get_edge_ptr(&self, edge_index: EdgeIndex) -> EdgePtr {
+//         panic!("please use `get_edge_ptr` in DualModuleParallelUnitPtr");
+//     }
+// }
 
 // impl<SerialModule: DualModuleImpl + Send + Sync, Queue> DualModuleParallelUnit<SerialModule, Queue> 
 // where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug,

@@ -678,6 +678,14 @@ impl DualModuleInterfacePtr {
         }
     }
 
+    // // the defect_vertices here are local vertices
+    // pub fn load_ptr(&self, syndrome_pattern: Arc<SyndromePattern>, dual_module_ptr: &) {
+    //     // self.write().decoding_graph.set_syndrome(syndrome_pattern.clone());
+    //     for vertex_idx in syndrome_pattern.defect_vertices.iter() {
+    //         self.create_defect_node(*vertex_idx, dual_module_impl);
+    //     }
+    // }
+
     pub fn sum_dual_variables(&self) -> Rational {
         let interface = self.read_recursive();
         let mut sum = Rational::zero();

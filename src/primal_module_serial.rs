@@ -26,11 +26,15 @@ use crate::itertools::Itertools;
 use parking_lot::Mutex;
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
+use std::ops::DerefMut;
 
 #[cfg(feature = "pq")]
 use crate::dual_module_pq::{EdgeWeak, VertexWeak, EdgePtr, VertexPtr};
 #[cfg(feature = "non-pq")]
 use crate::dual_module_serial::{EdgeWeak, VertexWeak, EdgePtr, VertexPtr};
+
+use crate::dual_module_parallel::*;
+use crate::dual_module_pq::*;
 
 pub struct PrimalModuleSerial {
     /// growing strategy, default to single-tree approach for easier debugging and better locality
@@ -760,6 +764,8 @@ impl PrimalModuleSerial {
                             let vertex = vertex_ptr.read_recursive();
                             // let incident_edges = &vertex.edges;
                             let incident_edges = &vertex_ptr.get_edge_neighbors();
+                            println!("vertex {:?}, fusion_done: {:?}, is_mirror: {:?}, incident_edges: {:?}", vertex_ptr.read_recursive().vertex_index,
+                            vertex_ptr.read_recursive().fusion_done, vertex_ptr.read_recursive().is_mirror, incident_edges);
                             let parity = vertex.is_defect;
                             
                             cluster.matrix.add_constraint(vertex_weak.clone(), &incident_edges, parity);
@@ -991,6 +997,91 @@ impl PrimalModuleSerial {
         let all_conflicts = dual_module.get_conflicts_tune(optimizer_result, dual_node_deltas);
 
         (all_conflicts, all_solved)
+    }
+}
+
+
+impl PrimalModuleSerial {
+    // for parallel 
+    pub fn solve_step_callback_ptr<DualSerialModule: DualModuleImpl + Send + Sync, Queue, F>(
+        &mut self,
+        interface: &DualModuleInterfacePtr,
+        syndrome_pattern: Arc<SyndromePattern>,
+        dual_module_ptr: &mut DualModuleParallelUnitPtr<DualSerialModule, Queue>,
+        callback: F,
+    ) where
+        F: FnMut(&DualModuleInterfacePtr, &DualModuleParallelUnit<DualSerialModule, Queue>, &mut Self, &GroupMaxUpdateLength),
+        Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug + Send + Sync + Clone,
+    {
+        let mut dual_module = dual_module_ptr.write();
+        interface.load(syndrome_pattern, dual_module.deref_mut());
+        self.load(interface, dual_module.deref_mut());
+        drop(dual_module);
+        self.solve_step_callback_interface_loaded_ptr(interface, dual_module_ptr, callback);
+    }
+
+    
+    pub fn solve_step_callback_interface_loaded_ptr<DualSerialModule: DualModuleImpl + Send + Sync, Queue, F>(
+        &mut self,
+        interface: &DualModuleInterfacePtr,
+        dual_module_ptr: &mut DualModuleParallelUnitPtr<DualSerialModule, Queue>,
+        mut callback: F,
+    ) where
+        F: FnMut(&DualModuleInterfacePtr, &DualModuleParallelUnit<DualSerialModule, Queue>, &mut Self, &GroupMaxUpdateLength),
+        Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug + Send + Sync + Clone,
+    {
+        // println!(" in solve step callback interface loaded");
+        // Search, this part is unchanged
+        let mut group_max_update_length = dual_module_ptr.compute_maximum_update_length();
+        // println!("first group max update length: {:?}", group_max_update_length);
+
+        while !group_max_update_length.is_unbounded() {
+            callback(interface, &dual_module_ptr.read_recursive(), self, &group_max_update_length);
+            match group_max_update_length.get_valid_growth() {
+                Some(length) => dual_module_ptr.grow(length),
+                None => {
+                    self.resolve(group_max_update_length, interface, dual_module_ptr.write().deref_mut());
+                }
+            }
+            group_max_update_length = dual_module_ptr.compute_maximum_update_length();
+            // println!("group max update length: {:?}", group_max_update_length);
+        }
+
+        // from here, all states should be syncronized
+        let mut start = true;
+
+        // starting with unbounded state here: All edges and nodes are not growing as of now
+        // Tune
+        let mut dual_module = dual_module_ptr.write();
+        while self.has_more_plugins() {
+            // Note: intersting, seems these aren't needed... But just kept here in case of future need, as well as correctness related failures
+            if start {
+                start = false;
+                dual_module.advance_mode();
+                #[cfg(feature = "incr_lp")]
+                self.calculate_edges_free_weight_clusters(dual_module);
+            }
+            self.update_sorted_clusters_aff(dual_module.deref_mut());
+            let cluster_affs = self.get_sorted_clusters_aff();
+
+            for cluster_affinity in cluster_affs.into_iter() {
+                let cluster_index = cluster_affinity.cluster_index;
+                let mut dual_node_deltas = BTreeMap::new();
+                let (mut resolved, optimizer_result) =
+                self.resolve_cluster_tune(cluster_index, interface, dual_module.deref_mut(), &mut dual_node_deltas);
+
+                let mut conflicts = dual_module.get_conflicts_tune(optimizer_result, dual_node_deltas);
+                while !resolved {
+                    let (_conflicts, _resolved) = self.resolve_tune(conflicts, interface, dual_module.deref_mut());
+                    if _resolved {
+                        break;
+                    }
+                    conflicts = _conflicts;
+                    resolved = _resolved;
+                }
+            }
+        }
+        drop(dual_module);
     }
 }
 

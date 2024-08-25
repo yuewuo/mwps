@@ -6,7 +6,7 @@
 
 
 use super::dual_module::*;
-use super::dual_module_parallel::*;
+use crate::dual_module_parallel::*;
 use crate::dual_module_pq::EdgeWeak;
 use crate::dual_module_pq::{FutureQueueMethods, Obstacle};
 use super::pointers::*;
@@ -15,9 +15,7 @@ use super::primal_module_serial::*;
 use super::util::*;
 use std::cmp::Ordering;
 use super::visualize::*;
-use crate::model_hypergraph::ModelHyperGraph;
 use crate::rayon::prelude::*;
-use rand::rngs::adapter;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::ops::DerefMut;
@@ -26,6 +24,7 @@ use std::time::{Duration, Instant};
 use crate::num_traits::FromPrimitive;
 use crate::plugin::*;
 use crate::num_traits::One;
+use crate::pointers;
 
 
 pub struct PrimalModuleParallel {
@@ -202,23 +201,24 @@ impl PrimalModuleParallelUnitPtr {
         ),
         Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug + Send + Sync + Clone,
     {
+        println!("individual_solve");
         let mut primal_unit = self.write();
         let unit_index = primal_unit.unit_index;
-        println!("unit index: {}", primal_unit.unit_index);
-        let dual_module_ptr = &parallel_dual_module.units[unit_index];
-        let mut dual_unit = dual_module_ptr.write();
+        // println!("unit index: {}", primal_unit.unit_index);
+        let mut dual_module_ptr = &parallel_dual_module.units[unit_index];
+        // let mut dual_unit = dual_module_ptr.write();
         let partition_unit_info = &primal_unit.partition_info.units[unit_index];
         let (owned_defect_range, _) = partitioned_syndrome_pattern.partition(partition_unit_info);
         let interface_ptr = primal_unit.interface_ptr.clone();
 
-        // solve the individual unit first 
-        if !primal_unit.is_solved {
+       // solve the individual unit first 
+       if !primal_unit.is_solved {
             // we solve the individual unit first
             let syndrome_pattern = Arc::new(owned_defect_range.expand());
-            primal_unit.serial_module.solve_step_callback(
+            primal_unit.serial_module.solve_step_callback_ptr(
                 &interface_ptr,
                 syndrome_pattern,
-                dual_unit.deref_mut(),
+                &mut dual_module_ptr.clone(),
                 |interface, dual_module, primal_module, group_max_update_length| {
                     if let Some(callback) = callback.as_mut() {
                         callback(interface, dual_module, primal_module, Some(group_max_update_length));
@@ -227,11 +227,10 @@ impl PrimalModuleParallelUnitPtr {
             );
             primal_unit.is_solved = true;
             if let Some(callback) = callback.as_mut() {
-                callback(&primal_unit.interface_ptr, &dual_unit, &primal_unit.serial_module, None);
+                callback(&primal_unit.interface_ptr, &dual_module_ptr.write().deref_mut(), &primal_unit.serial_module, None);
             }
         }
         drop(primal_unit);
-        drop(dual_unit);
     }
 
     /// call this only if children is guaranteed to be ready and solved
@@ -251,6 +250,7 @@ impl PrimalModuleParallelUnitPtr {
         ),
         Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug + Send + Sync + Clone,
     {
+        println!("fuse_and_solve for unit: {:?}", self.read_recursive().unit_index);
         assert!(self.read_recursive().is_solved, "this unit must have been solved before we fuse it with its neighbors");
         
         // this unit has been solved, we can fuse it with its adjacent units
@@ -263,14 +263,14 @@ impl PrimalModuleParallelUnitPtr {
 
         // now we have finished fusing self with all adjacent units, we run solve again
 
-        let mut dual_unit = self_dual_ptr.write();
+        // let mut dual_unit = self_dual_ptr.write();
         // let partition_unit_info = &primal_unit.partition_info.units[unit_index];
         // let (owned_defect_range, _) = partitioned_syndrome_pattern.partition(partition_unit_info);
         let interface_ptr = primal_unit.interface_ptr.clone();
 
-        primal_unit.serial_module.solve_step_callback_interface_loaded(
+        primal_unit.serial_module.solve_step_callback_interface_loaded_ptr(
             &interface_ptr,
-            dual_unit.deref_mut(),
+            &mut self_dual_ptr.clone(),
             |interface, dual_module, primal_module, group_max_update_length| {
                 if let Some(callback) = callback.as_mut() {
                     callback(interface, dual_module, primal_module, Some(group_max_update_length));
@@ -278,7 +278,7 @@ impl PrimalModuleParallelUnitPtr {
             },
         );
         if let Some(callback) = callback.as_mut() {
-            callback(&primal_unit.interface_ptr, &dual_unit, &primal_unit.serial_module, None);
+            callback(&primal_unit.interface_ptr, &self_dual_ptr.write().deref_mut(), &primal_unit.serial_module, None);
         }
     }
 
@@ -308,15 +308,21 @@ impl PrimalModuleParallelUnitPtr {
                 let mut adjacent_dual_unit = adjacent_dual_unit_ptr.write();
                 adjacent_dual_unit.adjacent_parallel_units.push(self_dual_ptr.clone());
                 
-                // we also need to change the `is_fusion` of all vertices to true. 
+                // we also need to change the `is_fusion` of all vertices of adjacent_dual_unit to true. 
                 for vertex_ptr in adjacent_dual_unit.serial_module.vertices.iter() {
                     let mut vertex = vertex_ptr.write();
                     vertex.fusion_done = true;
+                }
+                println!("adjacent_unit: {:?}", adjacent_unit.unit_index);
+                println!("adjacent_unit.adjacent_parallel_units: {:?}", adjacent_dual_unit.adjacent_parallel_units);
+                for vertex_ptr in adjacent_dual_unit.serial_module.vertices.iter() {
+                    println!("vertex {:?} is fusion: {:?}", vertex_ptr.read_recursive().vertex_index, vertex_ptr.read_recursive().fusion_done);
                 }
                 drop(adjacent_unit);
             }
 
         }
+
     }
 }
 
@@ -340,6 +346,16 @@ impl PrimalModuleParallelUnit {
                 let adjacent_dual_unit_ptr = &parallel_dual_module.units[adjacent_unit_ptr.read_recursive().unit_index];
                 self_dual_unit.adjacent_parallel_units.push(adjacent_dual_unit_ptr.clone());
             }
+        }
+        // we also need to change the `is_fusion` of all vertices of self_dual_unit to true. 
+        for vertex_ptr in self_dual_unit.serial_module.vertices.iter() {
+            let mut vertex = vertex_ptr.write();
+            vertex.fusion_done = true;
+        }
+        println!("self_dual_unit: {:?}", self_dual_unit.unit_index);
+        println!("self_dual_unit.adjacent_parallel_units: {:?}", self_dual_unit.adjacent_parallel_units);
+        for vertex_ptr in self_dual_unit.serial_module.vertices.iter() {
+            println!("vertex {:?} is fusion: {:?}", vertex_ptr.read_recursive().vertex_index, vertex_ptr.read_recursive().fusion_done);
         }
         drop(self_dual_unit);
     }
@@ -396,13 +412,13 @@ impl PrimalModuleParallel {
                     
                 },
             );
-            let last_unit = self.units.last().unwrap().read_recursive();
-            visualizer
-                .snapshot_combined(
-                    "solved".to_string(),
-                    vec![&last_unit.interface_ptr, parallel_dual_module, self],
-                )
-                .unwrap();
+            // let last_unit = self.units.last().unwrap().read_recursive();
+            // visualizer
+            //     .snapshot_combined(
+            //         "solved".to_string(),
+            //         vec![&last_unit.interface_ptr, parallel_dual_module, self],
+            //     )
+            //     .unwrap();
         } else {
             self.parallel_solve(syndrome_pattern, parallel_dual_module);
         }
@@ -510,7 +526,7 @@ impl PrimalModuleImpl for PrimalModuleParallel {
     fn subgraph(&mut self, interface: &DualModuleInterfacePtr, seed: u64)
         -> Subgraph 
     {
-        // implementation using rayon, however, this didnt work for since I need to update the trait of dual_module input in primal_module
+        // implementation using rayon
         self.thread_pool.scope(|_| {
             let results: Vec<_> = 
                 self.units.par_iter().filter_map(| unit_ptr| {
@@ -720,17 +736,17 @@ pub mod tests {
             visualizer.as_mut(),
         );
 
-
-        // let (subgraph, weight_range) = primal_module.subgraph_range(&interface_ptr, 0);
-        // if let Some(visualizer) = visualizer.as_mut() {
-        //     let last_interface_ptr = &primal_module.units.last().unwrap().read_recursive().interface_ptr;
-        //     visualizer
-        //         .snapshot_combined(
-        //             "subgraph".to_string(),
-        //             vec![last_interface_ptr, &dual_module, &subgraph, &weight_range],
-        //         )
-        //         .unwrap();
-        // }
+        let interface_ptr = DualModuleInterfacePtr::new();
+        let (subgraph, weight_range) = primal_module.subgraph_range(&interface_ptr, 0);
+        if let Some(visualizer) = visualizer.as_mut() {
+            let last_interface_ptr = &primal_module.units.last().unwrap().read_recursive().interface_ptr;
+            visualizer
+                .snapshot_combined(
+                    "subgraph".to_string(),
+                    vec![last_interface_ptr, &dual_module, &subgraph, &weight_range],
+                )
+                .unwrap();
+        }
         // assert!(
         //     decoding_graph
         //         .model_graph
@@ -756,7 +772,7 @@ pub mod tests {
         // RUST_BACKTRACE=1 cargo test primal_module_parallel_tentative_test_1 -- --nocapture
         let weight = 1; // do not change, the data is hard-coded
         let code = CodeCapacityPlanarCode::new(7, 0.1, weight);
-        let defect_vertices = vec![19, 35];
+        let defect_vertices = vec![14, 28];
 
         let visualize_filename = "primal_module_parallel_tentative_test_1.json".to_string();
         primal_module_parallel_basic_standard_syndrome(
