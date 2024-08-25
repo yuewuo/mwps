@@ -260,8 +260,7 @@ impl PrimalModuleImpl for PrimalModuleSerial {
 
     fn subgraph(
         &mut self,
-        _interface: &DualModuleInterfacePtr,
-        _dual_module: &mut impl DualModuleImpl,
+        interface: &DualModuleInterfacePtr,
         seed: u64,
     ) -> Subgraph {
         let mut subgraph = vec![];
@@ -1019,7 +1018,7 @@ pub mod tests {
         final_dual: Weight,
         plugins: PluginVec,
         growing_strategy: GrowingStrategy,
-        mut dual_module: impl DualModuleImpl + MWPSVisualizer,
+        mut dual_module: impl DualModuleImpl + MWPSVisualizer + Send + Sync,
         model_graph: Arc<crate::model_hypergraph::ModelHyperGraph>,
         mut visualizer: Option<Visualizer>,
     ) -> (
@@ -1042,7 +1041,7 @@ pub mod tests {
             visualizer.as_mut(),
         );
 
-        let (subgraph, weight_range) = primal_module.subgraph_range(&interface_ptr, &mut dual_module, 0);
+        let (subgraph, weight_range) = primal_module.subgraph_range(&interface_ptr, 0);
         if let Some(visualizer) = visualizer.as_mut() {
             visualizer
                 .snapshot_combined(

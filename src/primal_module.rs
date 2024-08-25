@@ -193,16 +193,15 @@ pub trait PrimalModuleImpl {
         }
     }
 
-    fn subgraph(&mut self, interface: &DualModuleInterfacePtr, dual_module: &mut impl DualModuleImpl, seed: u64)
+    fn subgraph(&mut self, interface: &DualModuleInterfacePtr, seed: u64)
         -> Subgraph;
 
     fn subgraph_range(
         &mut self,
         interface: &DualModuleInterfacePtr,
-        dual_module: &mut impl DualModuleImpl,
         seed: u64,
     ) -> (Subgraph, WeightRange) {
-        let subgraph = self.subgraph(interface, dual_module, seed);
+        let subgraph = self.subgraph(interface, seed);
         // let weight_range = WeightRange::new(
         //     interface.sum_dual_variables(),
         //     interface

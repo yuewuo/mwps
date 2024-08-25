@@ -1376,7 +1376,7 @@ pub mod tests {
             visualizer.as_mut(),
         );
 
-        let (subgraph, weight_range) = primal_module.subgraph_range(&interface_ptr, &mut dual_module, 0);
+        let (subgraph, weight_range) = primal_module.subgraph_range(&interface_ptr, 0);
         let end_time = std::time::Instant::now();
         let resolve_time = begin_time - end_time;
         println!("resolve time: {:?}", resolve_time);

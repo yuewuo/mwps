@@ -157,7 +157,7 @@ impl PrimalDualSolver for SolverSerialPlugins {
     fn subgraph_range_visualizer(&mut self, visualizer: Option<&mut Visualizer>, seed: u64) -> (Subgraph, WeightRange) {
         let (subgraph, weight_range) = self
             .primal_module
-            .subgraph_range(&self.interface_ptr, &mut self.dual_module, seed);
+            .subgraph_range(&self.interface_ptr, seed);
         if let Some(visualizer) = visualizer {
             visualizer
                 .snapshot_combined(
