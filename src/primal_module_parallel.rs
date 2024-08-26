@@ -201,14 +201,15 @@ impl PrimalModuleParallelUnitPtr {
         ),
         Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug + Send + Sync + Clone,
     {
-        println!("individual_solve");
+        
         let mut primal_unit = self.write();
         let unit_index = primal_unit.unit_index;
+        println!("individual_solve for unit: {:?}", unit_index);
         // println!("unit index: {}", primal_unit.unit_index);
         let mut dual_module_ptr = &parallel_dual_module.units[unit_index];
         // let mut dual_unit = dual_module_ptr.write();
         let partition_unit_info = &primal_unit.partition_info.units[unit_index];
-        let (owned_defect_range, _) = partitioned_syndrome_pattern.partition(partition_unit_info);
+        let owned_defect_range = partitioned_syndrome_pattern.partition(partition_unit_info);
         let interface_ptr = primal_unit.interface_ptr.clone();
 
        // solve the individual unit first 
@@ -226,6 +227,7 @@ impl PrimalModuleParallelUnitPtr {
                 },
             );
             primal_unit.is_solved = true;
+            println!("unit: {:?}, is_solved: {:?}", unit_index, primal_unit.is_solved);
             // if let Some(callback) = callback.as_mut() {
             //     callback(&primal_unit.interface_ptr, &dual_module_ptr.write().deref_mut(), &primal_unit.serial_module, None);
             // }
@@ -265,7 +267,7 @@ impl PrimalModuleParallelUnitPtr {
 
         // let mut dual_unit = self_dual_ptr.write();
         let partition_unit_info = &primal_unit.partition_info.units[primal_unit.unit_index];
-        let (owned_defect_range, _) = partitioned_syndrome_pattern.partition(partition_unit_info);
+        let owned_defect_range = partitioned_syndrome_pattern.partition(partition_unit_info);
         let interface_ptr = primal_unit.interface_ptr.clone();
 
         if primal_unit.is_solved {
@@ -284,6 +286,7 @@ impl PrimalModuleParallelUnitPtr {
         } else {
             // we solve the individual unit first
             let syndrome_pattern = Arc::new(owned_defect_range.expand());
+            println!("unit: {:?}, owned_defect_range: {:?}", primal_unit.unit_index, syndrome_pattern);
             primal_unit.serial_module.solve_step_callback_ptr(
                 &interface_ptr,
                 syndrome_pattern,
@@ -295,9 +298,9 @@ impl PrimalModuleParallelUnitPtr {
                 },
             );
             primal_unit.is_solved = true;
-            // if let Some(callback) = callback.as_mut() {
-            //     callback(&primal_unit.interface_ptr, &self_dual_ptr.write().deref_mut(), &primal_unit.serial_module, None);
-            // }
+            if let Some(callback) = callback.as_mut() {
+                callback(&primal_unit.interface_ptr, &self_dual_ptr.write().deref_mut(), &primal_unit.serial_module, None);
+            }
         }
         
     }
@@ -459,7 +462,7 @@ impl PrimalModuleParallel {
         Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug + Send + Sync + Clone,
     {
         // let thread_pool = Arc::clone(&self.thread_pool);
-        for unit_index in 0..self.partition_info.config.fusions.len(){
+        for unit_index in 0..self.partition_info.config.partitions.len(){
             let unit_ptr = self.units[unit_index].clone();
             unit_ptr.individual_solve::<DualSerialModule, Queue, F>(
                 self, 
@@ -469,7 +472,7 @@ impl PrimalModuleParallel {
             );
         }
 
-        for unit_index in 0..self.partition_info.units.len() {
+        for unit_index in self.partition_info.config.partitions.len()..self.partition_info.units.len() {
             let unit_ptr = self.units[unit_index].clone();
             unit_ptr.fuse_and_solve::<DualSerialModule, Queue, F>(
                 self, 
@@ -546,7 +549,21 @@ impl PrimalModuleImpl for PrimalModuleParallel {
     fn subgraph(&mut self, _interface: &DualModuleInterfacePtr, seed: u64)
         -> Subgraph 
     {
-        // implementation using rayon
+        // let unit_ptr0 = self.units.last().unwrap();
+        // let mut unit = unit_ptr0.write();
+        // let interface_ptr = unit.interface_ptr.clone();
+        // unit.subgraph(&interface_ptr, seed)
+        // sequential implementation for debugging purposes
+        // let mut subgraph = vec![];
+        // for unit_ptr in self.units.iter() {
+        //     let mut unit = unit_ptr.write();
+        //     println!("unit: {:?}", unit.unit_index);
+        //     let interface_ptr = unit.interface_ptr.clone();
+        //     subgraph.extend(unit.subgraph(&interface_ptr, seed))
+        // }
+        // subgraph
+
+        // // implementation using rayon
         self.thread_pool.scope(|_| {
             let results: Vec<_> = 
                 self.units.par_iter().filter_map(| unit_ptr| {
@@ -760,15 +777,15 @@ pub mod tests {
 
         let useless_interface_ptr = DualModuleInterfacePtr::new();
         let (subgraph, weight_range) = primal_module.subgraph_range(&useless_interface_ptr, 0);
-        // if let Some(visualizer) = visualizer.as_mut() {
-        //     let last_interface_ptr = &primal_module.units.last().unwrap().read_recursive().interface_ptr;
-        //     visualizer
-        //         .snapshot_combined(
-        //             "subgraph".to_string(),
-        //             vec![last_interface_ptr, &dual_module, &subgraph, &weight_range],
-        //         )
-        //         .unwrap();
-        // }
+        if let Some(visualizer) = visualizer.as_mut() {
+            let last_interface_ptr = &primal_module.units.last().unwrap().read_recursive().interface_ptr;
+            visualizer
+                .snapshot_combined(
+                    "subgraph".to_string(),
+                    vec![last_interface_ptr, &dual_module, &subgraph, &weight_range],
+                )
+                .unwrap();
+        }
         // assert!(
         //     decoding_graph
         //         .model_graph
@@ -794,7 +811,7 @@ pub mod tests {
         // RUST_BACKTRACE=1 cargo test primal_module_parallel_tentative_test_1 -- --nocapture
         let weight = 1; // do not change, the data is hard-coded
         let code = CodeCapacityPlanarCode::new(7, 0.1, weight);
-        let defect_vertices = vec![14, 28];
+        let defect_vertices = vec![16, 28];
 
         let visualize_filename = "primal_module_parallel_tentative_test_1.json".to_string();
         primal_module_parallel_basic_standard_syndrome(

@@ -394,7 +394,7 @@ pub trait DualModuleImpl {
         &self,
         optimizer_result: OptimizerResult,
         // dual_node_deltas: BTreeMap<OrderedDualNodePtr, Rational>,
-        dual_node_deltas: BTreeMap<OrderedDualNodePtr, (Rational, NodeIndex)>,
+        dual_node_deltas: BTreeMap<OrderedDualNodePtr, (Rational, PrimalClusterPtr)>,
     ) -> BTreeSet<MaxUpdateLength> {
         let mut conflicts: BTreeSet<MaxUpdateLength> = BTreeSet::new();
         match optimizer_result {

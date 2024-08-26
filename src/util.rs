@@ -615,7 +615,7 @@ pub struct PartitionedSyndromePattern<'a> {
     /// the original syndrome pattern to be partitioned
     pub syndrome_pattern: &'a SyndromePattern,
     /// the defect range of this partition: it must be continuous if the defect vertices are ordered
-    pub whole_defect_range: DefectRange,
+    pub owned_defect_range: DefectRange,
 }
 
 impl<'a> PartitionedSyndromePattern<'a> {
@@ -628,7 +628,7 @@ impl<'a> PartitionedSyndromePattern<'a> {
         );
         Self {
             syndrome_pattern,
-            whole_defect_range: DefectRange::new(0, syndrome_pattern.defect_vertices.len() as DefectIndex),
+            owned_defect_range: DefectRange::new(0, syndrome_pattern.defect_vertices.len() as DefectIndex),
         }
     }
 }
@@ -1024,11 +1024,11 @@ pub struct PartitionInfo {
 impl<'a> PartitionedSyndromePattern<'a> {
     /// partition the syndrome pattern into 2 partitioned syndrome pattern and my whole range
     #[allow(clippy::unnecessary_cast)]
-    pub fn partition(&self, partition_unit_info: &PartitionUnitInfo) -> (Self, (Self, Self)) {
+    pub fn partition(&self, partition_unit_info: &PartitionUnitInfo) -> Self {
         // first binary search the start of owning defect vertices
         let owning_start_index = {
-            let mut left_index = self.whole_defect_range.start();
-            let mut right_index = self.whole_defect_range.end();
+            let mut left_index = self.owned_defect_range.start(); // since owned_defect_range is initialized to the length of all defect vertices
+            let mut right_index = self.owned_defect_range.end();
             while left_index != right_index {
                 let mid_index = (left_index + right_index) / 2;
                 let mid_defect_vertex = self.syndrome_pattern.defect_vertices[mid_index as usize];
@@ -1040,11 +1040,11 @@ impl<'a> PartitionedSyndromePattern<'a> {
             }
             left_index
         };
-        println!("start of owning defect vertice: {owning_start_index:?}");
+        // println!("start of owning defect vertice: {owning_start_index:?}");
         // second binary search the end of owning defect vertices
         let owning_end_index = {
-            let mut left_index = self.whole_defect_range.start();
-            let mut right_index = self.whole_defect_range.end();
+            let mut left_index = self.owned_defect_range.start();
+            let mut right_index = self.owned_defect_range.end();
             while left_index != right_index {
                 let mid_index = (left_index + right_index) / 2;
                 let mid_defect_vertex = self.syndrome_pattern.defect_vertices[mid_index as usize];
@@ -1056,30 +1056,35 @@ impl<'a> PartitionedSyndromePattern<'a> {
             }
             left_index
         };
-        println!("end of owning defect vertice: {owning_end_index:?}");
+        // println!("end of owning defect vertice: {owning_end_index:?}");
 
-        (
-            Self {
-                syndrome_pattern: self.syndrome_pattern,
-                whole_defect_range: DefectRange::new(owning_start_index, owning_end_index),
-            },
-            (
-                Self {
-                    syndrome_pattern: self.syndrome_pattern,
-                    whole_defect_range: DefectRange::new(self.whole_defect_range.start(), owning_start_index),
-                },
-                Self {
-                    syndrome_pattern: self.syndrome_pattern,
-                    whole_defect_range: DefectRange::new(owning_end_index, self.whole_defect_range.end()),
-                },
-            ),
-        )
+        Self {
+            syndrome_pattern: self.syndrome_pattern,
+            owned_defect_range: DefectRange::new(owning_start_index, owning_end_index),
+        }
+
+        // (
+        //     Self {
+        //         syndrome_pattern: self.syndrome_pattern,
+        //         whole_defect_range: DefectRange::new(owning_start_index, owning_end_index),
+        //     },
+        //     (
+        //         Self {
+        //             syndrome_pattern: self.syndrome_pattern,
+        //             whole_defect_range: DefectRange::new(self.whole_defect_range.start(), owning_start_index),
+        //         },
+        //         Self {
+        //             syndrome_pattern: self.syndrome_pattern,
+        //             whole_defect_range: DefectRange::new(owning_end_index, self.whole_defect_range.end()),
+        //         },
+        //     ),
+        // )
     }
 
     #[allow(clippy::unnecessary_cast)]
     pub fn expand(&self) -> SyndromePattern {
-        let mut defect_vertices = Vec::with_capacity(self.whole_defect_range.len());
-        for defect_index in self.whole_defect_range.iter() {
+        let mut defect_vertices = Vec::with_capacity(self.owned_defect_range.len());
+        for defect_index in self.owned_defect_range.iter() {
             defect_vertices.push(self.syndrome_pattern.defect_vertices[defect_index as usize]);
         }
         SyndromePattern::new(defect_vertices, vec![])

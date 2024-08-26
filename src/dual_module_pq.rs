@@ -361,7 +361,7 @@ impl VertexPtr {
             for mirrored_vertex in vertex.mirrored_vertices.iter() {
                 edges.extend(mirrored_vertex.upgrade_force().read_recursive().edges.clone());
             }
-            println!("incident edges of vertex {:?} are: {:?}", vertex.vertex_index, edges);
+            // println!("incident edges of vertex {:?} are: {:?}", vertex.vertex_index, edges);
             edges
         } else {
             vertex.edges.clone()
