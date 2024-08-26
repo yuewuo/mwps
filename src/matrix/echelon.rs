@@ -322,6 +322,7 @@ pub mod tests {
                     growth_at_last_updated_time: Rational::zero(),
                     grow_rate: Rational::zero(),
                     unit_index: None,
+                    connected_to_boundary_vertex: false,
                     #[cfg(feature = "incr_lp")]
                     cluster_weights: hashbrown::HashMap::new(),
                 })
@@ -445,6 +446,7 @@ pub mod tests {
                     growth_at_last_updated_time: Rational::zero(),
                     grow_rate: Rational::zero(),
                     unit_index: None,
+                    connected_to_boundary_vertex: false,
                     #[cfg(feature = "incr_lp")]
                     cluster_weights: hashbrown::HashMap::new(),
                 })
@@ -490,6 +492,7 @@ pub mod tests {
                     growth_at_last_updated_time: Rational::zero(),
                     grow_rate: Rational::zero(),
                     unit_index: None,
+                    connected_to_boundary_vertex: false,
                     #[cfg(feature = "incr_lp")]
                     cluster_weights: hashbrown::HashMap::new(),
                 })
@@ -531,6 +534,7 @@ pub mod tests {
                     growth_at_last_updated_time: Rational::zero(),
                     grow_rate: Rational::zero(),
                     unit_index: None,
+                    connected_to_boundary_vertex: false,
                     #[cfg(feature = "incr_lp")]
                     cluster_weights: hashbrown::HashMap::new(),
                 })
@@ -596,6 +600,7 @@ pub mod tests {
                     growth_at_last_updated_time: Rational::zero(),
                     grow_rate: Rational::zero(),
                     unit_index: None,
+                    connected_to_boundary_vertex: false,
                     #[cfg(feature = "incr_lp")]
                     cluster_weights: hashbrown::HashMap::new(),
                 })
@@ -640,6 +645,7 @@ pub mod tests {
                      growth_at_last_updated_time: Rational::zero(),
                      grow_rate: Rational::zero(),
                      unit_index: None,
+                     connected_to_boundary_vertex: false,
                      #[cfg(feature = "incr_lp")]
                      cluster_weights: hashbrown::HashMap::new(),
                  })
@@ -706,6 +712,7 @@ pub mod tests {
                     growth_at_last_updated_time: Rational::zero(),
                     grow_rate: Rational::zero(),
                     unit_index: None,
+                    connected_to_boundary_vertex: false,
                     #[cfg(feature = "incr_lp")]
                     cluster_weights: hashbrown::HashMap::new(),
                 })
@@ -762,6 +769,7 @@ pub mod tests {
                      growth_at_last_updated_time: Rational::zero(),
                      grow_rate: Rational::zero(),
                      unit_index: None,
+                     connected_to_boundary_vertex: false,
                      #[cfg(feature = "incr_lp")]
                      cluster_weights: hashbrown::HashMap::new(),
                  })
@@ -820,6 +828,7 @@ pub mod tests {
                     growth_at_last_updated_time: Rational::zero(),
                     grow_rate: Rational::zero(),
                     unit_index: None,
+                    connected_to_boundary_vertex: false,
                     #[cfg(feature = "incr_lp")]
                     cluster_weights: hashbrown::HashMap::new(),
                 })
@@ -882,6 +891,7 @@ pub mod tests {
                     growth_at_last_updated_time: Rational::zero(),
                     grow_rate: Rational::zero(),
                     unit_index: None,
+                    connected_to_boundary_vertex: false,
                     #[cfg(feature = "incr_lp")]
                     cluster_weights: hashbrown::HashMap::new(),
                 })
@@ -1115,6 +1125,7 @@ pub mod tests {
                     growth_at_last_updated_time: Rational::zero(),
                     grow_rate: Rational::zero(),
                     unit_index: None,
+                    connected_to_boundary_vertex: false,
                     #[cfg(feature = "incr_lp")]
                     cluster_weights: hashbrown::HashMap::new(),
                 })
@@ -1161,6 +1172,7 @@ pub mod tests {
                                 growth_at_last_updated_time: Rational::zero(),
                                 grow_rate: Rational::zero(),
                                 unit_index: None,
+                                connected_to_boundary_vertex: false,
                                 #[cfg(feature = "incr_lp")]
                                 cluster_weights: hashbrown::HashMap::new(),
                             })
@@ -1239,6 +1251,7 @@ pub mod tests {
                         growth_at_last_updated_time: Rational::zero(),
                         grow_rate: Rational::zero(),
                         unit_index: None,
+                        connected_to_boundary_vertex: false,
                         #[cfg(feature = "incr_lp")]
                         cluster_weights: hashbrown::HashMap::new(),
                     })
@@ -1295,6 +1308,7 @@ pub mod tests {
                         growth_at_last_updated_time: Rational::zero(),
                         grow_rate: Rational::zero(),
                         unit_index: None,
+                        connected_to_boundary_vertex: false,
                         #[cfg(feature = "incr_lp")]
                         cluster_weights: hashbrown::HashMap::new(),
                     })

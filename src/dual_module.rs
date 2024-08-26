@@ -737,10 +737,12 @@ impl DualModuleInterfacePtr {
         let cloned_node_ptr = node_ptr.clone();
         drop(interface);
         let mut interface = self.write();
-        interface.nodes.push(node_ptr);
+        interface.nodes.push(node_ptr.clone());
         interface.hashmap.insert(invalid_subgraph, node_index);
         drop(interface);
+        println!("node created in `create_defect_node`: {:?}", node_ptr.clone());
         dual_module.add_defect_node(&cloned_node_ptr);
+        
         cloned_node_ptr
     }
 

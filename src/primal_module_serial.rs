@@ -3,6 +3,7 @@
 //! This implementation targets to be an exact MWPF solver, although it's not yet sure whether it is actually one.
 //!
 
+use color_print::cprintln;
 use crate::decoding_hypergraph::*;
 use crate::dual_module::*;
 use crate::invalid_subgraph::*;
@@ -325,8 +326,8 @@ impl PrimalModuleImpl for PrimalModuleSerial {
             if cluster.nodes.is_empty() {
                 continue;
             }
-            println!("cluster.subgraph: {:?}", cluster.subgraph);
-            println!("cluster: {:?}", cluster_ptr);
+            // println!("cluster.subgraph: {:?}", cluster.subgraph);
+            // println!("cluster: {:?}", cluster_ptr);
         
             subgraph.extend(
                 cluster
@@ -337,6 +338,7 @@ impl PrimalModuleImpl for PrimalModuleSerial {
     
            
         }
+        // println!("subgraph: {:?}", subgraph);
         subgraph
     }
 
@@ -372,6 +374,9 @@ impl PrimalModuleImpl for PrimalModuleSerial {
         interface_ptr: &DualModuleInterfacePtr,
         dual_module: &mut impl DualModuleImpl,
     ) -> bool {
+        cprintln!("<red>resolver cluster</red>");
+        // cprintln!("This a <green,bold>green and bold text</green,bold>.");
+
         // let cluster_ptr = self.clusters[cluster_index as usize].clone();
         let mut cluster = cluster_ptr.write();
         if cluster.nodes.is_empty() {
@@ -384,7 +389,7 @@ impl PrimalModuleImpl for PrimalModuleSerial {
         }
         // update the matrix with new tight edges
         let cluster = &mut *cluster;
-        for (i, edge_weak) in cluster.edges.iter().enumerate() {
+        for edge_weak in cluster.edges.iter() {
             // println!("{:?} cluster edge: {:?}", i, edge_weak.read_recursive().edge_index);
             cluster
                 .matrix
@@ -799,11 +804,12 @@ impl PrimalModuleSerial {
         debug_assert!(!group_max_update_length.is_unbounded() && group_max_update_length.get_valid_growth().is_none());
         let mut active_clusters = BTreeSet::<PrimalClusterPtr>::new();
         let interface = interface_ptr.read_recursive();
-        println!("in resolve core");
+        // println!("in resolve core");
         while let Some(conflict) = group_max_update_length.pop() {
             match conflict {
                 MaxUpdateLength::Conflicting(edge_ptr) => {
                     // union all the dual nodes in the edge index and create new dual node by adding this edge to `internal_edges`
+                    // println!("conflict edge_ptr: {:?}", edge_ptr);
                     let dual_nodes = dual_module.get_edge_nodes(edge_ptr.clone());
                     debug_assert!(
                         !dual_nodes.is_empty(),
@@ -822,7 +828,6 @@ impl PrimalModuleSerial {
                     //     .upgrade_force();
                     let mut cluster = cluster_ptr.write();
                     // then add new constraints because these edges may touch new vertices
-                    // let incident_vertices = &edge_ptr.read_recursive().vertices;
                     let incident_vertices = &edge_ptr.get_vertex_neighbors();
                     // println!("incidenet_vertices: {:?}", incident_vertices);
                     // println!("cluster matrix before add constraint: {:?}", cluster.matrix.printstd());
@@ -832,7 +837,6 @@ impl PrimalModuleSerial {
                             cluster.vertices.insert(vertex_weak.upgrade_force());
                             let vertex_ptr = vertex_weak.upgrade_force();
                             let vertex = vertex_ptr.read_recursive();
-                            // let incident_edges = &vertex.edges;
                             let incident_edges = &vertex_ptr.get_edge_neighbors();
                             // println!("vertex {:?}, fusion_done: {:?}, is_mirror: {:?}, incident_edges: {:?}", vertex_ptr.read_recursive().vertex_index,
                             // vertex_ptr.read_recursive().fusion_done, vertex_ptr.read_recursive().is_mirror, incident_edges);
@@ -866,8 +870,9 @@ impl PrimalModuleSerial {
             *self.plugin_count.write() = 0; // force only the first plugin
         }
         let mut all_solved = true;
-        for cluster_index in active_clusters.iter() {
-            let solved = self.resolve_cluster(cluster_index, interface_ptr, dual_module);
+        for cluster_ptr in active_clusters.iter() {
+            // println!("active cluster index: {:?}", cluster_ptr.read_recursive().cluster_index);
+            let solved = self.resolve_cluster(cluster_ptr, interface_ptr, dual_module);
             all_solved &= solved;
         }
         if !all_solved {
@@ -1060,9 +1065,9 @@ impl PrimalModuleSerial {
         let mut all_solved = true;
         let mut dual_node_deltas = BTreeMap::new();
         let mut optimizer_result = OptimizerResult::default();
-        for cluster_index in active_clusters.iter() {
+        for cluster_ptr in active_clusters.iter() {
             let (solved, other) =
-                self.resolve_cluster_tune(cluster_index, interface_ptr, dual_module, &mut dual_node_deltas);
+                self.resolve_cluster_tune(cluster_ptr, interface_ptr, dual_module, &mut dual_node_deltas);
             if !solved {
                 // todo: investigate more
                 return (dual_module.get_conflicts_tune(other, dual_node_deltas), false);
@@ -1322,12 +1327,12 @@ pub mod tests {
         // let code = CodeCapacityTailoredCode::new(7, 0., 0.01, 1);
         let weight = 1;
         let code = CodeCapacityPlanarCode::new(7, 0.1, weight);
-        let defect_vertices = vec![16, 28];
+        let defect_vertices = vec![22, 28];
         primal_module_serial_basic_standard_syndrome(
             code,
             visualize_filename,
             defect_vertices,
-            2,
+            1,
             vec![],
             GrowingStrategy::ModeBased,
         );

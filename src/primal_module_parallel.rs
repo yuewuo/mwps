@@ -4,7 +4,7 @@
 //! 
 //! 
 
-
+use color_print::cprintln;
 use super::dual_module::*;
 use crate::dual_module_parallel::*;
 use crate::dual_module_pq::EdgeWeak;
@@ -21,6 +21,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::ops::DerefMut;
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
+use crate::num_traits::Zero;
 use crate::num_traits::FromPrimitive;
 use crate::plugin::*;
 use crate::num_traits::One;
@@ -204,7 +205,7 @@ impl PrimalModuleParallelUnitPtr {
         
         let mut primal_unit = self.write();
         let unit_index = primal_unit.unit_index;
-        println!("individual_solve for unit: {:?}", unit_index);
+        cprintln!("<green>individual_solve for unit: {:?}</green>", unit_index);
         // println!("unit index: {}", primal_unit.unit_index);
         let mut dual_module_ptr = &parallel_dual_module.units[unit_index];
         // let mut dual_unit = dual_module_ptr.write();
@@ -216,6 +217,7 @@ impl PrimalModuleParallelUnitPtr {
        if !primal_unit.is_solved {
             // we solve the individual unit first
             let syndrome_pattern = Arc::new(owned_defect_range.expand());
+            println!("defect vertices in unit: {:?} are {:?}", unit_index, syndrome_pattern.defect_vertices);
             primal_unit.serial_module.solve_step_callback_ptr(
                 &interface_ptr,
                 syndrome_pattern,
@@ -228,9 +230,9 @@ impl PrimalModuleParallelUnitPtr {
             );
             primal_unit.is_solved = true;
             println!("unit: {:?}, is_solved: {:?}", unit_index, primal_unit.is_solved);
-            // if let Some(callback) = callback.as_mut() {
-            //     callback(&primal_unit.interface_ptr, &dual_module_ptr.write().deref_mut(), &primal_unit.serial_module, None);
-            // }
+            if let Some(callback) = callback.as_mut() {
+                callback(&primal_unit.interface_ptr, &dual_module_ptr.write().deref_mut(), &primal_unit.serial_module, None);
+            }
         }
         drop(primal_unit);
     }
@@ -252,7 +254,7 @@ impl PrimalModuleParallelUnitPtr {
         ),
         Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug + Send + Sync + Clone,
     {
-        println!("fuse_and_solve for unit: {:?}", self.read_recursive().unit_index);
+        cprintln!("<green>fuse_and_solve for unit: {:?}</green>", self.read_recursive().unit_index);
         // assert!(self.read_recursive().is_solved, "this unit must have been solved before we fuse it with its neighbors");
         
         // this unit has been solved, we can fuse it with its adjacent units
@@ -262,6 +264,10 @@ impl PrimalModuleParallelUnitPtr {
 
         let mut primal_unit = self.write();
         primal_unit.fuse_operation_on_self(self_dual_ptr, parallel_dual_module);
+
+        if let Some(callback) = callback.as_mut() {
+            callback(&primal_unit.interface_ptr, &self_dual_ptr.write().deref_mut(), &primal_unit.serial_module, None);
+        }
 
         // now we have finished fusing self with all adjacent units, we run solve again
 
@@ -332,10 +338,26 @@ impl PrimalModuleParallelUnitPtr {
                 adjacent_dual_unit.adjacent_parallel_units.push(self_dual_ptr.clone());
                 
                 // we also need to change the `is_fusion` of all vertices of adjacent_dual_unit to true. 
-                for vertex_ptr in adjacent_dual_unit.serial_module.vertices.iter() {
+                // println!("all mirrored vertices len: {:?}", adjacent_dual_unit.serial_module.all_mirrored_vertices.len());
+                for vertex_ptr in adjacent_dual_unit.serial_module.all_mirrored_vertices.iter() {
                     let mut vertex = vertex_ptr.write();
                     vertex.fusion_done = true;
+
+                    // we also need to reset the growth of all edges connecting adjacent_unit with self_unit, this is to allow dual nodes from two units interact with each other
+                    // so that Conflict can be reported 
+
+                    for edge_weak in vertex.edges.iter() {
+                        let edge_ptr = edge_weak.upgrade_force();
+                        let mut edge = edge_ptr.write();
+                        // println!("edge weak of mirrored vertex");
+                        if edge.connected_to_boundary_vertex {
+                            // println!("edge weak of mirrored vertex is connected to boundary vertex");
+                            edge.growth_at_last_updated_time = Rational::zero();
+                        }
+                    }
                 }
+
+                
                 // println!("adjacent_unit: {:?}", adjacent_unit.unit_index);
                 // println!("adjacent_unit.adjacent_parallel_units: {:?}", adjacent_dual_unit.adjacent_parallel_units);
                 // for vertex_ptr in adjacent_dual_unit.serial_module.vertices.iter() {
@@ -371,9 +393,21 @@ impl PrimalModuleParallelUnit {
             }
         }
         // we also need to change the `is_fusion` of all vertices of self_dual_unit to true. 
+        println!("self dual unit all mirroed vertices len: {:?}", self_dual_unit.serial_module.vertices.len());
         for vertex_ptr in self_dual_unit.serial_module.vertices.iter() {
             let mut vertex = vertex_ptr.write();
             vertex.fusion_done = true;
+
+            // // we also need to reset the growth of all edges connecting adjacent_unit with self_unit, this is to allow dual nodes from two units interact with each other
+            // // so that Conflict can be reported 
+            // for edge_weak in vertex.edges.iter() {
+            //     let edge_ptr = edge_weak.upgrade_force();
+            //     let mut edge = edge_ptr.write();
+            //     if edge.connected_to_boundary_vertex {
+            //         println!("set growth rate to 0");
+            //         edge.growth_at_last_updated_time = Rational::zero();
+            //     }
+            // }
         }
         // println!("self_dual_unit: {:?}", self_dual_unit.unit_index);
         // println!("self_dual_unit.adjacent_parallel_units: {:?}", self_dual_unit.adjacent_parallel_units);
@@ -554,29 +588,58 @@ impl PrimalModuleImpl for PrimalModuleParallel {
         // let interface_ptr = unit.interface_ptr.clone();
         // unit.subgraph(&interface_ptr, seed)
         // sequential implementation for debugging purposes
-        // let mut subgraph = vec![];
-        // for unit_ptr in self.units.iter() {
-        //     let mut unit = unit_ptr.write();
-        //     println!("unit: {:?}", unit.unit_index);
-        //     let interface_ptr = unit.interface_ptr.clone();
-        //     subgraph.extend(unit.subgraph(&interface_ptr, seed))
-        // }
-        // subgraph
+        let mut subgraph = vec![];
+        for unit_ptr in self.units.iter() {
+            let mut unit = unit_ptr.write();
+            println!("unit: {:?}", unit.unit_index);
+            let interface_ptr = unit.interface_ptr.clone();
+            subgraph.extend(unit.subgraph(&interface_ptr, seed))
+        }
+        subgraph
 
-        // // implementation using rayon
-        self.thread_pool.scope(|_| {
-            let results: Vec<_> = 
-                self.units.par_iter().filter_map(| unit_ptr| {
-                    let mut unit = unit_ptr.write();
-                    let interface_ptr = unit.interface_ptr.clone();
-                    Some(unit.subgraph(&interface_ptr, seed))
-                }).collect();
-            let mut final_subgraph: Vec<EdgeWeak> = vec![];
-            for local_subgraph in results.into_iter() {
-                final_subgraph.extend(local_subgraph);
-            }
-            final_subgraph
-        })
+        // // // implementation using rayon
+        // self.thread_pool.scope(|_| {
+        //     let results: Vec<_> = 
+        //         self.units.par_iter().filter_map(| unit_ptr| {
+        //             let mut unit = unit_ptr.write();
+        //             let interface_ptr = unit.interface_ptr.clone();
+        //             Some(unit.subgraph(&interface_ptr, seed))
+        //         }).collect();
+        //     let mut final_subgraph: Vec<EdgeWeak> = vec![];
+        //     for local_subgraph in results.into_iter() {
+        //         final_subgraph.extend(local_subgraph);
+        //     }
+        //     final_subgraph
+        // })
+    }
+
+    fn subgraph_range(
+        &mut self,
+        interface: &DualModuleInterfacePtr,
+        seed: u64,
+    ) -> (Subgraph, WeightRange) {
+        let subgraph = self.subgraph(interface, seed);
+        let mut upper = Rational::zero();
+        for edge_weak in subgraph.iter() {
+            // weight += self.weighted_edges[edge_index as usize].weight;
+            // println!("{:?} edge in subgraph: {:?}, weight: {:?}", i, edge_weak.upgrade_force().read_recursive().edge_index, edge_weak.upgrade_force().read_recursive().weight);
+            upper += edge_weak.upgrade_force().read_recursive().weight;
+        }
+
+        // let lower = self.units.last().unwrap().read_recursive().interface_ptr.sum_dual_variables();
+
+        let mut lower = Rational::zero();
+        for unit_ptr in self.units.iter() {
+            let unit = unit_ptr.read_recursive();
+            lower += unit.interface_ptr.sum_dual_variables();
+        }
+
+        let weight_range = WeightRange::new(
+            lower,
+            upper
+        );
+
+        (subgraph, weight_range)
     }
 }
 
@@ -626,7 +689,7 @@ impl PrimalModuleImpl for PrimalModuleParallelUnit {
     fn subgraph(&mut self, interface: &DualModuleInterfacePtr, seed: u64)
         -> Subgraph 
     {
-        println!("\nfn subgraph for unit: {:?}", self.unit_index);
+        // println!("\nfn subgraph for unit: {:?}", self.unit_index);
         self.serial_module.subgraph(interface, seed)
     }
 
@@ -681,6 +744,7 @@ pub mod tests {
     use crate::plugin::PluginVec;
     use crate::dual_module_serial::*;
     use crate::dual_module_pq::*;
+    use std::usize::MAX;
     
     pub fn primal_module_parallel_basic_standard_syndrome(
         code: impl ExampleCode,
@@ -786,22 +850,22 @@ pub mod tests {
                 )
                 .unwrap();
         }
-        // assert!(
-        //     decoding_graph
-        //         .model_graph
-        //         .matches_subgraph_syndrome(&subgraph, &defect_vertices),
-        //     "the result subgraph is invalid"
-        // );
-        // assert_eq!(
-        //     Rational::from_usize(final_dual).unwrap(),
-        //     weight_range.upper,
-        //     "unmatched sum dual variables"
-        // );
-        // assert_eq!(
-        //     Rational::from_usize(final_dual).unwrap(),
-        //     weight_range.lower,
-        //     "unexpected final dual variable sum"
-        // );
+        assert!(
+            decoding_graph
+                .model_graph
+                .matches_subgraph_syndrome(&subgraph, &defect_vertices),
+            "the result subgraph is invalid"
+        );
+        assert_eq!(
+            Rational::from_usize(final_dual).unwrap(),
+            weight_range.upper,
+            "unmatched sum dual variables"
+        );
+        assert_eq!(
+            Rational::from_usize(final_dual).unwrap(),
+            weight_range.lower,
+            "unexpected final dual variable sum"
+        );
         (primal_module, dual_module)
     }
 
@@ -811,9 +875,28 @@ pub mod tests {
         // RUST_BACKTRACE=1 cargo test primal_module_parallel_tentative_test_1 -- --nocapture
         let weight = 1; // do not change, the data is hard-coded
         let code = CodeCapacityPlanarCode::new(7, 0.1, weight);
-        let defect_vertices = vec![16, 28];
+        let defect_vertices = vec![22, 28];
 
         let visualize_filename = "primal_module_parallel_tentative_test_1.json".to_string();
+        primal_module_parallel_basic_standard_syndrome(
+            code,
+            visualize_filename,
+            defect_vertices,
+            1,
+            vec![],
+            GrowingStrategy::SingleCluster,
+        );
+    }
+
+    /// test a simple case
+    #[test]
+    fn primal_module_parallel_tentative_test_2() {
+        // RUST_BACKTRACE=1 cargo test primal_module_parallel_tentative_test_2 -- --nocapture
+        let weight = 1; // do not change, the data is hard-coded
+        let code = CodeCapacityPlanarCode::new(7, 0.1, weight);
+        let defect_vertices = vec![7, 21, 28];
+
+        let visualize_filename = "primal_module_parallel_tentative_test_2.json".to_string();
         primal_module_parallel_basic_standard_syndrome(
             code,
             visualize_filename,
@@ -821,6 +904,332 @@ pub mod tests {
             4,
             vec![],
             GrowingStrategy::SingleCluster,
+        );
+    }
+
+    /// test a simple case, split into 2, no defect vertex in boundary-unit, clusters do not grow into other units
+    #[test]
+    fn primal_module_parallel_tentative_test_3() {
+        // RUST_BACKTRACE=1 cargo test primal_module_parallel_tentative_test_3 -- --nocapture
+        let weight = 1; // do not change, the data is hard-coded
+        let code = CodeCapacityPlanarCode::new(7, 0.1, weight);
+        let defect_vertices = vec![2, 35];
+
+        let visualize_filename = "primal_module_parallel_tentative_test_3.json".to_string();
+        primal_module_parallel_basic_standard_syndrome(
+            code,
+            visualize_filename,
+            defect_vertices,
+            4,
+            vec![],
+            GrowingStrategy::SingleCluster,
+        );
+    }
+
+    // test a simple case, split into 2, a defect vertex in boundary-unit, clusters do grow into other units
+    #[test]
+    fn primal_module_parallel_tentative_test_4() {
+        // RUST_BACKTRACE=1 cargo test primal_module_parallel_tentative_test_4 -- --nocapture
+        let weight = 1; // do not change, the data is hard-coded
+        let code = CodeCapacityPlanarCode::new(7, 0.1, weight);
+        let defect_vertices = vec![19, 35];
+
+        let visualize_filename = "primal_module_parallel_tentative_test_4.json".to_string();
+        primal_module_parallel_basic_standard_syndrome(
+            code,
+            visualize_filename,
+            defect_vertices,
+            3,
+            vec![],
+            GrowingStrategy::SingleCluster,
+        );
+    }
+
+    #[test]
+    fn primal_module_parallel_tentative_test_5() {
+        // RUST_BACKTRACE=1 cargo test primal_module_parallel_tentative_test_5 -- --nocapture
+        let weight = 1; // do not change, the data is hard-coded
+        let code = CodeCapacityPlanarCode::new(7, 0.1, weight);
+        let defect_vertices = vec![16, 19, 29];
+
+        let visualize_filename = "primal_module_parallel_tentative_test_5.json".to_string();
+        primal_module_parallel_basic_standard_syndrome(
+            code,
+            visualize_filename,
+            defect_vertices,
+            5,
+            vec![],
+            GrowingStrategy::SingleCluster,
+        );
+    }
+
+    #[test]
+    fn primal_module_parallel_tentative_test_6() {
+        // RUST_BACKTRACE=1 cargo test primal_module_parallel_tentative_test_6 -- --nocapture
+        let weight = 1; // do not change, the data is hard-coded
+        let code = CodeCapacityPlanarCode::new(7, 0.1, weight);
+        let defect_vertices = vec![16, 19, 29, 32, 39];
+
+        let visualize_filename = "primal_module_parallel_tentative_test_6.json".to_string();
+        primal_module_parallel_basic_standard_syndrome(
+            code,
+            visualize_filename,
+            defect_vertices,
+            5,
+            vec![],
+            GrowingStrategy::SingleCluster,
+        );
+    }
+
+    pub fn primal_module_parallel_basic_standard_syndrome_split_into_4(
+        code: impl ExampleCode,
+        visualize_filename: String,
+        defect_vertices: Vec<VertexIndex>,
+        final_dual: Weight,
+        plugins: PluginVec,
+        growing_strategy: GrowingStrategy,
+    ) -> (
+        PrimalModuleParallel,
+        impl DualModuleImpl + MWPSVisualizer,
+    ) {
+        println!("{defect_vertices:?}");
+        let visualizer = {
+            let visualizer = Visualizer::new(
+                Some(visualize_data_folder() + visualize_filename.as_str()),
+                code.get_positions(),
+                true,
+            )
+            .unwrap();
+            print_visualize_link(visualize_filename.clone());
+            visualizer
+        };
+
+        // create model graph 
+        let model_graph = code.get_model_graph();
+        let initializer = &model_graph.initializer;
+        let mut partition_config = PartitionConfig::new(initializer.vertex_num);
+        partition_config.partitions = vec![
+            VertexRange::new(0, 6),   // unit 0
+            VertexRange::new(12, 18), // unit 1
+            VertexRange::new(24, 30), // unit 2
+            VertexRange::new(36, 42), // unit 3
+        ];
+        partition_config.fusions = vec![
+                    (0, 1), // unit 4, by fusing 0 and 1
+                    (1, 2), // unit 5, 
+                    (2, 3), // unit 6
+                ];
+        let a = partition_config.dag_partition_units.add_node(());
+        let b = partition_config.dag_partition_units.add_node(());
+        let c = partition_config.dag_partition_units.add_node(());
+        let d = partition_config.dag_partition_units.add_node(());
+        partition_config.dag_partition_units.add_edge(a, b, false);
+        partition_config.dag_partition_units.add_edge(b, c, false);
+        partition_config.dag_partition_units.add_edge(c, d, false);
+        
+        partition_config.defect_vertices = BTreeSet::from_iter(defect_vertices.clone());
+
+        let partition_info = partition_config.info();
+
+        let mut dual_module_parallel_config = DualModuleParallelConfig::default();
+        // dual_module_parallel_config.enable_parallel_execution = true;
+        let mut dual_module: DualModuleParallel<DualModulePQ<FutureObstacleQueue<Rational>>, FutureObstacleQueue<Rational>> =
+            DualModuleParallel::new_config(&initializer, &partition_info, dual_module_parallel_config);
+
+        // create primal module
+        let primal_config = PrimalModuleParallelConfig {..Default::default()};
+        let primal_module = PrimalModuleParallel::new_config(&model_graph.initializer, &partition_info, primal_config.clone());
+        // primal_module.growing_strategy = growing_strategy;
+        // primal_module.plugins = Arc::new(plugins);
+        // primal_module.config = serde_json::from_value(json!({"timeout":1})).unwrap();
+
+        primal_module_parallel_basic_standard_syndrome_optional_viz(
+            code,
+            defect_vertices,
+            final_dual,
+            plugins,
+            growing_strategy,
+            dual_module,
+            primal_module,
+            model_graph,
+            Some(visualizer),
+        )
+    }
+
+    /// test a simple case, split into 4, a defect vertex in boundary-unit, clusters grow into other units
+    #[test]
+    fn primal_module_parallel_tentative_test_7() {
+        // RUST_BACKTRACE=1 cargo test primal_module_parallel_tentative_test_7 -- --nocapture
+        let weight = 1; // do not change, the data is hard-coded
+        let code = CodeCapacityPlanarCode::new(7, 0.1, weight);
+        let defect_vertices = vec![16, 19, 28];
+
+        let visualize_filename = "primal_module_parallel_tentative_test_7.json".to_string();
+        primal_module_parallel_basic_standard_syndrome_split_into_4(
+            code,
+            visualize_filename,
+            defect_vertices,
+            6,
+            vec![],
+            GrowingStrategy::SingleCluster,
+        );
+    }
+
+
+    /// test for time partition
+    #[allow(clippy::unnecessary_cast)]
+    pub fn graph_time_partition(initializer: &SolverInitializer, positions: &Vec<VisualizePosition>, defect_vertices: &Vec<VertexIndex>, split_num: usize) -> PartitionConfig  {
+        assert!(positions.len() > 0, "positive number of positions");
+        let mut partition_config = PartitionConfig::new(initializer.vertex_num);
+        let mut last_t = positions[0].t;
+        let mut t_list: Vec<f64> = vec![];
+        t_list.push(last_t);
+        for position in positions {
+            assert!(position.t >= last_t, "t not monotonically increasing, vertex reordering must be performed before calling this");
+            if position.t != last_t {
+                t_list.push(position.t);
+            }
+            last_t = position.t;
+        }
+
+        // pick the t value in the middle to split it
+        let mut t_split_vec: Vec<f64> = vec![0.0; split_num - 1];
+        for i in 0..(split_num - 1) {
+            let index: usize = t_list.len()/split_num * (i + 1);
+            t_split_vec[i] = t_list[index];
+        }
+        // find the vertices indices
+        let mut split_start_index_vec = vec![MAX; split_num - 1];
+        let mut split_end_index_vec = vec![MAX; split_num - 1];
+        let mut start_index = 0;
+        let mut end_index = 0;
+        for (vertex_index, position) in positions.iter().enumerate() {
+            if start_index < split_num - 1 {
+                if split_start_index_vec[start_index] == MAX && position.t == t_split_vec[start_index] {
+                    split_start_index_vec[start_index] = vertex_index;
+                    if start_index != 0 {
+                        end_index += 1;
+                    }
+                    start_index += 1;
+                }
+            }
+            
+            if end_index < split_num - 1 {
+                if position.t == t_split_vec[end_index] {
+                    split_end_index_vec[end_index] = vertex_index + 1;
+                    // end_index += 1;
+                }
+            }
+        }
+
+        assert!(split_start_index_vec.iter().all(|&x| x != MAX), "Some elements in split_start_index_vec are equal to MAX");
+        
+        // partitions are found
+        let mut graph_nodes = vec![];
+        let mut partitions_vec = vec![];
+        for i in 0..split_num  {
+            if i == 0 {
+                partitions_vec.push(VertexRange::new(0, split_start_index_vec[0]));
+            } else if i == split_num - 1 {
+                partitions_vec.push(VertexRange::new(split_end_index_vec[i - 1], positions.len()));
+            } else {
+                partitions_vec.push(VertexRange::new(split_end_index_vec[i - 1], split_start_index_vec[i]));
+            }
+
+            if i < split_num - 1 {
+                partition_config.fusions.push((i, i+1));
+            }
+            
+            let a = partition_config.dag_partition_units.add_node(());
+            graph_nodes.push(a.clone());
+        }
+        partition_config.partitions = partitions_vec;
+
+        for i in 0..split_num {
+            if i < split_num - 1 {
+                partition_config.dag_partition_units.add_edge(graph_nodes[i], graph_nodes[i+1], false);
+            }
+        }
+        partition_config.defect_vertices = BTreeSet::from_iter(defect_vertices.clone());
+
+        partition_config
+    }
+
+    pub fn primal_module_parallel_evaluation_qec_playground_helper(
+        code: impl ExampleCode,
+        visualize_filename: String,
+        defect_vertices: Vec<VertexIndex>,
+        final_dual: Weight,
+        plugins: PluginVec,
+        growing_strategy: GrowingStrategy,
+        split_num: usize,
+    ) -> (
+        PrimalModuleParallel,
+        impl DualModuleImpl + MWPSVisualizer,
+    ) {
+        println!("{defect_vertices:?}");
+        let visualizer = {
+            let visualizer = Visualizer::new(
+                Some(visualize_data_folder() + visualize_filename.as_str()),
+                code.get_positions(),
+                true,
+            )
+            .unwrap();
+            print_visualize_link(visualize_filename.clone());
+            visualizer
+        };
+
+        // create dual module
+        let model_graph = code.get_model_graph();
+        let initializer = &model_graph.initializer;
+        let partition_config = graph_time_partition(&initializer, &code.get_positions(), &defect_vertices, split_num);
+        let partition_info = partition_config.info();
+
+
+        // create dual module
+        // let decoding_graph = DecodingHyperGraph::new_defects(model_graph.clone(), vec![3, 29, 30]);
+        let mut dual_module_parallel_config = DualModuleParallelConfig::default();
+        dual_module_parallel_config.enable_parallel_execution = true;
+        let mut dual_module: DualModuleParallel<DualModulePQ<FutureObstacleQueue<Rational>>, FutureObstacleQueue<Rational>> =
+            DualModuleParallel::new_config(&initializer, &partition_info, dual_module_parallel_config);
+        dual_module.static_fuse_all();
+
+        // create primal module
+        let primal_config = PrimalModuleParallelConfig {..Default::default()};
+        let primal_module = PrimalModuleParallel::new_config(&model_graph.initializer, &partition_info, primal_config.clone());
+
+        primal_module_parallel_basic_standard_syndrome_optional_viz(
+            code,
+            defect_vertices,
+            final_dual,
+            plugins,
+            growing_strategy,
+            dual_module,
+            primal_module,
+            model_graph,
+            Some(visualizer),
+        )
+    }
+
+    #[test]
+    fn primal_module_parallel_circuit_level_noise_qec_playground_1() {
+        // cargo test primal_module_parallel_circuit_level_noise_qec_playground_1 -- --nocapture
+        let config = json!({
+            "code_type": qecp::code_builder::CodeType::RotatedPlanarCode
+        });
+        
+        let code = QECPlaygroundCode::new(3, 0.1, config);
+        let defect_vertices = vec![3, 25, 27];
+
+        let visualize_filename = "primal_module_parallel_circuit_level_noise_qec_playground_1.json".to_string();
+        primal_module_parallel_evaluation_qec_playground_helper(
+            code,
+            visualize_filename,
+            defect_vertices,
+            1661019,
+            vec![],
+            GrowingStrategy::ModeBased,
+            2,
         );
     }
 }

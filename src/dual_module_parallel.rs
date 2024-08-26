@@ -273,7 +273,7 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
                 partitioned_initializers[*unit_index].weighted_edges.push((hyper_edge.clone(), edge_index));
             } else {
                 let first_vertex_unit_index = *vertices_unit_indices.keys().next().unwrap();
-                let all_vertex_from_same_unit = vertices_unit_indices.len() == 1;
+                let all_vertex_from_same_unit = vertices_unit_indices.len() == 1; // whether the rest (exluding boundary vertices) are from the same unit
                 if !exist_boundary_vertex {
                     // all within owning range of one unit (since for the vertices to span multiple units, one of them has to be the boundary vertex)
                     // we assume that for vertices of a hyperedge, if there aren't any boundary vertices among them, they must belong to the same partition unit 
@@ -281,10 +281,13 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
                     // since all vertices this hyperedge connects to belong to the same unit, we can assign this hyperedge to that partition unit
                     partitioned_initializers[first_vertex_unit_index].weighted_edges.push((hyper_edge.clone(), edge_index));
                 } else {
-                    // the vertices span multiple units
+                    // there exist boundary vertex (among the vertices this hyper_edge connects to), the rest vertices span multiple units
+                    // println!("vertices span multiple units");
                     if all_vertex_from_same_unit {
-                        // for sanity check, should not be triggered
-                        partitioned_initializers[first_vertex_unit_index].weighted_edges.push((hyper_edge.clone(), edge_index));
+                        // println!("edge_index: {:?}, unit_index: {:?}", edge_index, first_vertex_unit_index);
+                        let mut hyper_edge_clone = hyper_edge.clone();
+                        hyper_edge_clone.connected_to_boundary_vertex = true;
+                        partitioned_initializers[first_vertex_unit_index].weighted_edges.push((hyper_edge_clone, edge_index));
                     } else {
                         // println!("exist boundary vertices, vertices unit indices {vertices_unit_indices:?}");
                         // if the vertices of this hyperedge (excluding the boundary vertices) belong to 2 different partition unit
@@ -304,9 +307,9 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
                   
                         // now we add the boundary vertices in
                         for (unit_index, vertices) in vertices_unit_indices.iter() {
-                            partitioned_initializers[*unit_index].weighted_edges.push(
-                                (HyperEdge::new(vertices.clone(), hyper_edge.weight), edge_index)
-                            );
+                            let mut hyper_edge_new = HyperEdge::new(vertices.clone(), hyper_edge.weight);
+                            hyper_edge_new.connected_to_boundary_vertex = true;
+                            partitioned_initializers[*unit_index].weighted_edges.push((hyper_edge_new, edge_index));
                         }
                     }
                 }
@@ -1888,7 +1891,7 @@ pub mod tests {
         let weight = 1; // do not change, the data is hard-coded
         // let pxy = 0.0602828812732227;
         let code = CodeCapacityPlanarCode::new(7, 0.1, weight);
-        let defect_vertices = vec![16, 19, 29];
+        let defect_vertices = vec![16, 19, 29, 32, 39];
 
         // create model graph 
         let model_graph = code.get_model_graph();

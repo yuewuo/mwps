@@ -73,6 +73,8 @@ pub struct HyperEdge {
     /// the weight of the hyperedge
     #[cfg_attr(feature = "python_binding", pyo3(get, set))]
     pub weight: Weight,
+    /// whether this hyperedge is connected to any boundary vertex, used for parallel implementation
+    pub connected_to_boundary_vertex: bool,
 }
 
 #[cfg_attr(feature = "python_binding", cfg_eval)]
@@ -80,7 +82,7 @@ pub struct HyperEdge {
 impl HyperEdge {
     #[cfg_attr(feature = "python_binding", new)]
     pub fn new(vertices: Vec<VertexIndex>, weight: Weight) -> Self {
-        Self { vertices, weight }
+        Self { vertices, weight , connected_to_boundary_vertex: false}
     }
 
     #[cfg(feature = "python_binding")]
@@ -209,7 +211,7 @@ impl MWPSVisualizer for SolverInitializer {
         for _ in 0..self.vertex_num {
             vertices.push(json!({}));
         }
-        for HyperEdge { vertices, weight } in self.weighted_edges.iter() {
+        for HyperEdge { vertices, weight , connected_to_boundary_vertex: _} in self.weighted_edges.iter() {
             edges.push(json!({
                 if abbrev { "w" } else { "weight" }: weight,
                 if abbrev { "v" } else { "vertices" }: vertices,

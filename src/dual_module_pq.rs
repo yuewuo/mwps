@@ -393,6 +393,9 @@ pub struct Edge {
     /// the partition unit this edge belongs to. For non-parallel implementation, this value is set to None.
     pub unit_index: Option<usize>,
 
+    /// whether this edge is connected to a boundary vertex, (this edges must belong to non-boundary unit)
+    pub connected_to_boundary_vertex: bool, 
+
     #[cfg(feature = "incr_lp")]
     /// storing the weights of the clusters that are currently contributing to this edge
     cluster_weights: hashbrown::HashMap<usize, Rational>,
@@ -522,6 +525,8 @@ where
     pub vertex_num: VertexNum, 
     /// the number of all edges (including those partitioned into other seiral module)
     pub edge_num: usize,
+    /// all mirrored vertices of this unit, mainly for parallel implementation
+    pub all_mirrored_vertices: Vec<VertexPtr>,
 }
 
 impl<Queue> DualModulePQ<Queue>
@@ -629,6 +634,7 @@ where
                 growth_at_last_updated_time: Rational::zero(),
                 grow_rate: Rational::zero(),
                 unit_index: None,
+                connected_to_boundary_vertex: false,
                 #[cfg(feature = "incr_lp")]
                 cluster_weights: hashbrown::HashMap::new(),
             });
@@ -645,6 +651,7 @@ where
             mode: DualModuleMode::default(),
             vertex_num: initializer.vertex_num,
             edge_num: initializer.weighted_edges.len(),
+            all_mirrored_vertices: vec![],
         }
     }
 
@@ -1128,35 +1135,34 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
                 is_defect: false,
                 edges: Vec::new(),
                 is_mirror: if partitioned_initializer.is_boundary_unit {true} else {false}, // all the vertices on the boundary are mirror vertices
-                fusion_done: false, // initialized to false
+                fusion_done: if partitioned_initializer.is_boundary_unit {false} else {true}, // initialized to false
                 mirrored_vertices: vec![], // initialized to empty, to be filled in `new_config()` in parallel implementation
             })
         }).collect();
 
         // now we want to add the boundary vertices into the vertices for this partition (if this partition is non-boundary unit)
         let mut total_boundary_vertices = HashMap::<VertexIndex, VertexIndex>::new(); // all boundary vertices mapping to the specific local partition index
-        let mut mirrored_vertices = HashMap::<VertexIndex, VertexIndex>::new(); // all mirrored vertices mapping to their local indices
+        let mut all_mirrored_vertices = vec![];
         if !partitioned_initializer.is_boundary_unit {
             // only the index_range matters here, the units of the adjacent partitions do not matter here
             for adjacent_index_range in partitioned_initializer.boundary_vertices.iter(){
                 for vertex_index in adjacent_index_range.range[0]..adjacent_index_range.range[1] {
                     if !partitioned_initializer.owning_range.contains(vertex_index) {
                         total_boundary_vertices.insert(vertex_index, vertices.len() as VertexIndex);
-                        mirrored_vertices.insert(vertex_index, vertices.len() as VertexIndex);
-                        vertices.push(VertexPtr::new_value(Vertex {
+                        let vertex_ptr0 = VertexPtr::new_value(Vertex {
                             vertex_index: vertex_index,
                             is_defect: if partitioned_initializer.defect_vertices.contains(&vertex_index) {true} else {false},
                             edges: Vec::new(),
                             is_mirror: true,
                             fusion_done: false, // initialized to false
                             mirrored_vertices: vec![], // set to empty, to be filled in `new_config()` in parallel implementation
-                        }))
-                    }else{
-                        mirrored_vertices.insert(vertex_index, vertices.len() as VertexIndex);
+                        });
+                        vertices.push(vertex_ptr0.clone());
+                        all_mirrored_vertices.push(vertex_ptr0);
                     }
                 }
             }
-        }
+        } 
         
         // set edges 
         let mut edges = Vec::<EdgePtr>::new();
@@ -1183,6 +1189,7 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
                 growth_at_last_updated_time: Rational::zero(),
                 grow_rate: Rational::zero(),
                 unit_index: Some(partitioned_initializer.unit_index),
+                connected_to_boundary_vertex: hyper_edge.connected_to_boundary_vertex,
             });
 
             // we also need to update the vertices of this hyper_edge
@@ -1211,6 +1218,7 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
             mode: DualModuleMode::default(),
             vertex_num: partitioned_initializer.vertex_num,
             edge_num: partitioned_initializer.edge_num,
+            all_mirrored_vertices,
         }
     }
 
