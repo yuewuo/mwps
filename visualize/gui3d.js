@@ -144,7 +144,9 @@ if (!is_mock) {
 
 export function animate() {
     requestAnimationFrame(animate)
-    orbit_control.value.update()
+    if (orbit_control.value.enabled) {
+        orbit_control.value.update()
+    }
     renderer.render(scene, camera.value)
     if (stats) stats.update()
 }
@@ -476,17 +478,6 @@ export async function refresh_snapshot_data() {
         }
         edge_caches = []  // clear cache
         for (let [i, edge] of snapshot.edges.entries()) {
-            if (edge == null) {
-                continue;
-            }
-            // calculate the center point of all vertices
-            let sum_position = new THREE.Vector3(0, 0, 0)
-            for (let j = 0; j < edge.v.length; ++j) {
-                const vertex_index = edge.v[j]
-                const vertex_position = mwpf_data.positions[vertex_index]
-                sum_position = sum_position.add(compute_vector3(vertex_position))
-            }
-            const center_position = sum_position.multiplyScalar(1 / edge.v.length)
             let local_edge_cache = []
             edge_caches.push(local_edge_cache)
             while (edge_vec_meshes.length <= i) {
@@ -497,11 +488,22 @@ export async function refresh_snapshot_data() {
                 scene.remove(edge_vec_mesh[j])
             }
             edge_vec_mesh.splice(0, edge_vec_mesh.length) // clear
+            if (edge == null) {
+                continue
+            }
+            // calculate the center point of all vertices
+            let sum_position = new THREE.Vector3(0, 0, 0)
+            for (let j = 0; j < edge.v.length; ++j) {
+                const vertex_index = edge.v[j]
+                const vertex_position = mwpf_data.positions[vertex_index]
+                sum_position = sum_position.add(compute_vector3(vertex_position))
+            }
+            const center_position = sum_position.multiplyScalar(1 / edge.v.length)
             const edge_material = get_edge_material(edge.g, edge.w)
             const segmented_dual_indices = []
             if (segmented.value && snapshot.dual_nodes != null) {  // check the non-zero contributing dual variables
                 for (let node_index of edge_to_dual_indices.value[i]) {
-                    if (snapshot.dual_nodes[node_index].d != 0) {
+                    if (node_index < snapshot.dual_nodes.length && snapshot.dual_nodes[node_index].d != 0) {
                         segmented_dual_indices.push(node_index)
                     }
                 }
