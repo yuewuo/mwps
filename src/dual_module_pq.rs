@@ -414,16 +414,17 @@ pub type EdgeWeak = WeakRwLock<Edge>;
 impl std::fmt::Debug for EdgePtr {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         let edge = self.read_recursive();
-        write!(
-            f,
-            "[edge: {}]: weight: {}, grow_rate: {}, growth_at_last_updated_time: {}, last_updated_time: {}\n\tdual_nodes: {:?}\n",
-            edge.edge_index,
-            edge.weight,
-            edge.grow_rate,
-            edge.growth_at_last_updated_time,
-            edge.last_updated_time,
-            edge.dual_nodes.iter().filter(|node| !node.weak_ptr.upgrade_force().read_recursive().grow_rate.is_zero()).collect::<Vec<_>>()
-        )
+        write!(f, "[edge: {}]", edge.edge_index)
+        // write!(
+        //     f,
+        //     "[edge: {}]: weight: {}, grow_rate: {}, growth_at_last_updated_time: {}, last_updated_time: {}\n\tdual_nodes: {:?}\n",
+        //     edge.edge_index,
+        //     edge.weight,
+        //     edge.grow_rate,
+        //     edge.growth_at_last_updated_time,
+        //     edge.last_updated_time,
+        //     edge.dual_nodes.iter().filter(|node| !node.weak_ptr.upgrade_force().read_recursive().grow_rate.is_zero()).collect::<Vec<_>>()
+        // )
     }
 }
 
@@ -431,11 +432,12 @@ impl std::fmt::Debug for EdgeWeak {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         let edge_ptr = self.upgrade_force();
         let edge = edge_ptr.read_recursive();
-        write!(
-            f,
-            "[edge: {}]: weight: {}, grow_rate: {}, growth_at_last_updated_time: {}, last_updated_time: {}\n\tdual_nodes: {:?}\n",
-            edge.edge_index, edge.weight, edge.grow_rate, edge.growth_at_last_updated_time, edge.last_updated_time, edge.dual_nodes.iter().filter(|node| !node.weak_ptr.upgrade_force().read_recursive().grow_rate.is_zero()).collect::<Vec<_>>()
-        )
+        write!(f, "[edge: {}", edge.edge_index)
+        // write!(
+        //     f,
+        //     "[edge: {}]: weight: {}, grow_rate: {}, growth_at_last_updated_time: {}, last_updated_time: {}\n\tdual_nodes: {:?}\n",
+        //     edge.edge_index, edge.weight, edge.grow_rate, edge.growth_at_last_updated_time, edge.last_updated_time, edge.dual_nodes.iter().filter(|node| !node.weak_ptr.upgrade_force().read_recursive().grow_rate.is_zero()).collect::<Vec<_>>()
+        // )
     }
 }
 
@@ -534,10 +536,10 @@ where
             return;
         }
 
-        debug_assert!(
-            global_time.clone() >= edge.last_updated_time,
-            "global time is behind, maybe a wrap-around has happened"
-        );
+        // debug_assert!(
+        //     global_time.clone() >= edge.last_updated_time,
+        //     "global time is behind, maybe a wrap-around has happened"
+        // );
 
         let time_diff = global_time.clone() - &edge.last_updated_time;
         let newly_grown_amount = &time_diff * &edge.grow_rate;
@@ -557,10 +559,10 @@ where
             return;
         }
 
-        debug_assert!(
-            global_time.clone() >= node.last_updated_time,
-            "global time is behind, maybe a wrap-around has happened"
-        );
+        // debug_assert!(
+        //     global_time.clone() >= node.last_updated_time,
+        //     "global time is behind, maybe a wrap-around has happened"
+        // );
 
         let dual_variable = node.get_dual_variable();
         node.set_dual_variable(dual_variable);

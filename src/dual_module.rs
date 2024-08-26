@@ -12,7 +12,7 @@ use crate::num_traits::{FromPrimitive, One, Signed, ToPrimitive, Zero};
 use crate::ordered_float::OrderedFloat;
 use crate::pointers::*;
 use crate::primal_module::Affinity;
-use crate::primal_module_serial::PrimalClusterPtr;
+use crate::primal_module_serial::{PrimalClusterPtr, PrimalModuleSerialNodeWeak};
 use crate::relaxer_optimizer::OptimizerResult;
 use crate::util::*;
 use crate::visualize::*;
@@ -88,6 +88,8 @@ pub struct DualNode {
     pub last_updated_time: Rational,
     /// dual variable's value at the last updated time
     pub dual_variable_at_last_updated_time: Rational,
+    /// the corresponding PrimalModuleSerialNode
+    pub primal_module_serial_node: Option<PrimalModuleSerialNodeWeak>,
 }
 
 impl DualNode {
@@ -729,6 +731,7 @@ impl DualModuleInterfacePtr {
             dual_variable_at_last_updated_time: Rational::zero(),
             global_time: None,
             last_updated_time: Rational::zero(),
+            primal_module_serial_node: None, // to be filled in when initializing a primalnode
         });
 
         let cloned_node_ptr = node_ptr.clone();
@@ -766,6 +769,7 @@ impl DualModuleInterfacePtr {
             dual_variable_at_last_updated_time: Rational::zero(),
             global_time: None,
             last_updated_time: Rational::zero(),
+            primal_module_serial_node: None, // to be filled in when initializing a primalnode
         });
         interface.nodes.push(node_ptr.clone());
         drop(interface);
@@ -794,6 +798,7 @@ impl DualModuleInterfacePtr {
             dual_variable_at_last_updated_time: Rational::zero(),
             global_time: None,
             last_updated_time: Rational::zero(),
+            primal_module_serial_node: None, // to be filled in when initializing a primalnode
         });
         interface.nodes.push(node_ptr.clone());
         drop(interface);

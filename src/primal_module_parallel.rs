@@ -226,9 +226,9 @@ impl PrimalModuleParallelUnitPtr {
                 },
             );
             primal_unit.is_solved = true;
-            if let Some(callback) = callback.as_mut() {
-                callback(&primal_unit.interface_ptr, &dual_module_ptr.write().deref_mut(), &primal_unit.serial_module, None);
-            }
+            // if let Some(callback) = callback.as_mut() {
+            //     callback(&primal_unit.interface_ptr, &dual_module_ptr.write().deref_mut(), &primal_unit.serial_module, None);
+            // }
         }
         drop(primal_unit);
     }
@@ -251,7 +251,7 @@ impl PrimalModuleParallelUnitPtr {
         Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug + Send + Sync + Clone,
     {
         println!("fuse_and_solve for unit: {:?}", self.read_recursive().unit_index);
-        assert!(self.read_recursive().is_solved, "this unit must have been solved before we fuse it with its neighbors");
+        // assert!(self.read_recursive().is_solved, "this unit must have been solved before we fuse it with its neighbors");
         
         // this unit has been solved, we can fuse it with its adjacent units
         // we iterate through the dag_partition_unit to fuse units together 
@@ -264,22 +264,42 @@ impl PrimalModuleParallelUnitPtr {
         // now we have finished fusing self with all adjacent units, we run solve again
 
         // let mut dual_unit = self_dual_ptr.write();
-        // let partition_unit_info = &primal_unit.partition_info.units[unit_index];
-        // let (owned_defect_range, _) = partitioned_syndrome_pattern.partition(partition_unit_info);
+        let partition_unit_info = &primal_unit.partition_info.units[primal_unit.unit_index];
+        let (owned_defect_range, _) = partitioned_syndrome_pattern.partition(partition_unit_info);
         let interface_ptr = primal_unit.interface_ptr.clone();
 
-        primal_unit.serial_module.solve_step_callback_interface_loaded_ptr(
-            &interface_ptr,
-            &mut self_dual_ptr.clone(),
-            |interface, dual_module, primal_module, group_max_update_length| {
-                if let Some(callback) = callback.as_mut() {
-                    callback(interface, dual_module, primal_module, Some(group_max_update_length));
-                }
-            },
-        );
-        if let Some(callback) = callback.as_mut() {
-            callback(&primal_unit.interface_ptr, &self_dual_ptr.write().deref_mut(), &primal_unit.serial_module, None);
+        if primal_unit.is_solved {
+            primal_unit.serial_module.solve_step_callback_interface_loaded_ptr(
+                &interface_ptr,
+                &mut self_dual_ptr.clone(),
+                |interface, dual_module, primal_module, group_max_update_length| {
+                    if let Some(callback) = callback.as_mut() {
+                        callback(interface, dual_module, primal_module, Some(group_max_update_length));
+                    }
+                },
+            );
+            if let Some(callback) = callback.as_mut() {
+                callback(&primal_unit.interface_ptr, &self_dual_ptr.write().deref_mut(), &primal_unit.serial_module, None);
+            }
+        } else {
+            // we solve the individual unit first
+            let syndrome_pattern = Arc::new(owned_defect_range.expand());
+            primal_unit.serial_module.solve_step_callback_ptr(
+                &interface_ptr,
+                syndrome_pattern,
+                &mut self_dual_ptr.clone(),
+                |interface, dual_module, primal_module, group_max_update_length| {
+                    if let Some(callback) = callback.as_mut() {
+                        callback(interface, dual_module, primal_module, Some(group_max_update_length));
+                    }
+                },
+            );
+            primal_unit.is_solved = true;
+            // if let Some(callback) = callback.as_mut() {
+            //     callback(&primal_unit.interface_ptr, &self_dual_ptr.write().deref_mut(), &primal_unit.serial_module, None);
+            // }
         }
+        
     }
 
     fn fuse_operation_on_adjacent_units<DualSerialModule: DualModuleImpl + Send + Sync, Queue>
@@ -313,11 +333,11 @@ impl PrimalModuleParallelUnitPtr {
                     let mut vertex = vertex_ptr.write();
                     vertex.fusion_done = true;
                 }
-                println!("adjacent_unit: {:?}", adjacent_unit.unit_index);
-                println!("adjacent_unit.adjacent_parallel_units: {:?}", adjacent_dual_unit.adjacent_parallel_units);
-                for vertex_ptr in adjacent_dual_unit.serial_module.vertices.iter() {
-                    println!("vertex {:?} is fusion: {:?}", vertex_ptr.read_recursive().vertex_index, vertex_ptr.read_recursive().fusion_done);
-                }
+                // println!("adjacent_unit: {:?}", adjacent_unit.unit_index);
+                // println!("adjacent_unit.adjacent_parallel_units: {:?}", adjacent_dual_unit.adjacent_parallel_units);
+                // for vertex_ptr in adjacent_dual_unit.serial_module.vertices.iter() {
+                //     println!("vertex {:?} is fusion: {:?}", vertex_ptr.read_recursive().vertex_index, vertex_ptr.read_recursive().fusion_done);
+                // }
                 drop(adjacent_unit);
             }
 
@@ -352,11 +372,11 @@ impl PrimalModuleParallelUnit {
             let mut vertex = vertex_ptr.write();
             vertex.fusion_done = true;
         }
-        println!("self_dual_unit: {:?}", self_dual_unit.unit_index);
-        println!("self_dual_unit.adjacent_parallel_units: {:?}", self_dual_unit.adjacent_parallel_units);
-        for vertex_ptr in self_dual_unit.serial_module.vertices.iter() {
-            println!("vertex {:?} is fusion: {:?}", vertex_ptr.read_recursive().vertex_index, vertex_ptr.read_recursive().fusion_done);
-        }
+        // println!("self_dual_unit: {:?}", self_dual_unit.unit_index);
+        // println!("self_dual_unit.adjacent_parallel_units: {:?}", self_dual_unit.adjacent_parallel_units);
+        // for vertex_ptr in self_dual_unit.serial_module.vertices.iter() {
+        //     println!("vertex {:?} is fusion: {:?}", vertex_ptr.read_recursive().vertex_index, vertex_ptr.read_recursive().fusion_done);
+        // }
         drop(self_dual_unit);
     }
 }
@@ -439,7 +459,7 @@ impl PrimalModuleParallel {
         Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug + Send + Sync + Clone,
     {
         // let thread_pool = Arc::clone(&self.thread_pool);
-        for unit_index in 0..self.partition_info.units.len() {
+        for unit_index in 0..self.partition_info.config.fusions.len(){
             let unit_ptr = self.units[unit_index].clone();
             unit_ptr.individual_solve::<DualSerialModule, Queue, F>(
                 self, 
@@ -523,7 +543,7 @@ impl PrimalModuleImpl for PrimalModuleParallel {
         self.solve_step_callback(interface, syndrome_pattern, dual_module, |_, _, _, _| {})
     }
 
-    fn subgraph(&mut self, interface: &DualModuleInterfacePtr, seed: u64)
+    fn subgraph(&mut self, _interface: &DualModuleInterfacePtr, seed: u64)
         -> Subgraph 
     {
         // implementation using rayon
@@ -531,7 +551,8 @@ impl PrimalModuleImpl for PrimalModuleParallel {
             let results: Vec<_> = 
                 self.units.par_iter().filter_map(| unit_ptr| {
                     let mut unit = unit_ptr.write();
-                    Some(unit.subgraph(interface, seed))
+                    let interface_ptr = unit.interface_ptr.clone();
+                    Some(unit.subgraph(&interface_ptr, seed))
                 }).collect();
             let mut final_subgraph: Vec<EdgeWeak> = vec![];
             for local_subgraph in results.into_iter() {
@@ -588,6 +609,7 @@ impl PrimalModuleImpl for PrimalModuleParallelUnit {
     fn subgraph(&mut self, interface: &DualModuleInterfacePtr, seed: u64)
         -> Subgraph 
     {
+        println!("\nfn subgraph for unit: {:?}", self.unit_index);
         self.serial_module.subgraph(interface, seed)
     }
 
@@ -736,17 +758,17 @@ pub mod tests {
             visualizer.as_mut(),
         );
 
-        let interface_ptr = DualModuleInterfacePtr::new();
-        let (subgraph, weight_range) = primal_module.subgraph_range(&interface_ptr, 0);
-        if let Some(visualizer) = visualizer.as_mut() {
-            let last_interface_ptr = &primal_module.units.last().unwrap().read_recursive().interface_ptr;
-            visualizer
-                .snapshot_combined(
-                    "subgraph".to_string(),
-                    vec![last_interface_ptr, &dual_module, &subgraph, &weight_range],
-                )
-                .unwrap();
-        }
+        let useless_interface_ptr = DualModuleInterfacePtr::new();
+        let (subgraph, weight_range) = primal_module.subgraph_range(&useless_interface_ptr, 0);
+        // if let Some(visualizer) = visualizer.as_mut() {
+        //     let last_interface_ptr = &primal_module.units.last().unwrap().read_recursive().interface_ptr;
+        //     visualizer
+        //         .snapshot_combined(
+        //             "subgraph".to_string(),
+        //             vec![last_interface_ptr, &dual_module, &subgraph, &weight_range],
+        //         )
+        //         .unwrap();
+        // }
         // assert!(
         //     decoding_graph
         //         .model_graph

@@ -125,6 +125,18 @@ pub struct PrimalModuleSerialNode {
 pub type PrimalModuleSerialNodePtr = ArcRwLock<PrimalModuleSerialNode>;
 pub type PrimalModuleSerialNodeWeak = WeakRwLock<PrimalModuleSerialNode>;
 
+impl std::fmt::Debug for PrimalModuleSerialNodePtr {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let primal_node = self.read_recursive(); // reading index is consistent
+        write!(
+            f,
+            "dual_node_ptr: {:?}\ncluster_index: {:?}",
+            primal_node.dual_node_ptr,
+            primal_node.cluster_weak.upgrade_force().read_recursive().cluster_index,
+        )
+    }
+}
+
 pub struct PrimalCluster {
     /// the index in the cluster
     pub cluster_index: NodeIndex,
@@ -212,7 +224,11 @@ impl PrimalModuleImpl for PrimalModuleSerial {
                 dual_node_ptr: dual_node_ptr.clone(),
                 cluster_weak: primal_cluster_ptr.downgrade(),
             });
+            drop(node);
             primal_cluster_ptr.write().nodes.push(primal_node_ptr.clone());
+            // fill in the primal_module_serial_node in the corresponding dual node
+            dual_node_ptr.write().primal_module_serial_node = Some(primal_node_ptr.clone().downgrade());
+            
             // add to self
             self.nodes.push(primal_node_ptr);
             self.clusters.push(primal_cluster_ptr);
@@ -264,15 +280,17 @@ impl PrimalModuleImpl for PrimalModuleSerial {
 
     fn subgraph(
         &mut self,
-        interface: &DualModuleInterfacePtr,
+        _interface: &DualModuleInterfacePtr,
         seed: u64,
     ) -> Subgraph {
+        
         let mut subgraph = vec![];
         for cluster_ptr in self.clusters.iter() {
             let cluster = cluster_ptr.read_recursive();
             if cluster.nodes.is_empty() {
                 continue;
             }
+            println!("cluster.nodes: {:?}", cluster.nodes);
             subgraph.extend(
                 cluster
                     .subgraph
@@ -358,7 +376,8 @@ impl PrimalModuleImpl for PrimalModuleSerial {
                         cluster_weak: cluster_ptr.downgrade(),
                     });
                     cluster.nodes.push(primal_node_ptr.clone());
-                    self.nodes.push(primal_node_ptr);
+                    self.nodes.push(primal_node_ptr.clone());
+                    dual_node_ptr.write().primal_module_serial_node = Some(primal_node_ptr.downgrade());
                 }
 
                 dual_module.set_grow_rate(&dual_node_ptr, grow_rate.clone());
@@ -582,7 +601,8 @@ impl PrimalModuleImpl for PrimalModuleSerial {
                         cluster_weak: cluster_ptr.downgrade(),
                     });
                     cluster.nodes.push(primal_node_ptr.clone());
-                    self.nodes.push(primal_node_ptr);
+                    self.nodes.push(primal_node_ptr.clone());
+                    dual_node_ptr.write().primal_module_serial_node = Some(primal_node_ptr.downgrade());
                 }
 
                 // Document the desired deltas
@@ -660,10 +680,16 @@ impl PrimalModuleSerial {
     ) {
         // cluster_1 will become the union of cluster_1 and cluster_2
         // and cluster_2 will be outdated
-        let node_index_1 = dual_node_ptr_1.read_recursive().index;
-        let node_index_2 = dual_node_ptr_2.read_recursive().index;
-        let primal_node_1 = self.nodes[node_index_1 as usize].read_recursive();
-        let primal_node_2 = self.nodes[node_index_2 as usize].read_recursive();
+        // let node_index_1 = dual_node_ptr_1.read_recursive().index;
+        // let node_index_2 = dual_node_ptr_2.read_recursive().index;
+        // let primal_node_1 = self.nodes[node_index_1 as usize].read_recursive();
+        // let primal_node_2 = self.nodes[node_index_2 as usize].read_recursive();
+        let primal_node_1_weak = dual_node_ptr_1.read_recursive().primal_module_serial_node.clone().unwrap();
+        let primal_node_2_weak = dual_node_ptr_2.read_recursive().primal_module_serial_node.clone().unwrap();
+        let primal_node_1_ptr = primal_node_1_weak.upgrade_force();
+        let primal_node_2_ptr = primal_node_2_weak.upgrade_force();
+        let primal_node_1 = primal_node_1_ptr.read_recursive();
+        let primal_node_2 = primal_node_2_ptr.read_recursive();
         if primal_node_1.cluster_weak.ptr_eq(&primal_node_2.cluster_weak) {
             return; // already in the same cluster
         }
@@ -732,6 +758,7 @@ impl PrimalModuleSerial {
         debug_assert!(!group_max_update_length.is_unbounded() && group_max_update_length.get_valid_growth().is_none());
         let mut active_clusters = BTreeSet::<NodeIndex>::new();
         let interface = interface_ptr.read_recursive();
+        println!("in resolve core");
         while let Some(conflict) = group_max_update_length.pop() {
             match conflict {
                 MaxUpdateLength::Conflicting(edge_ptr) => {
@@ -746,10 +773,12 @@ impl PrimalModuleSerial {
                     for dual_node_ptr in dual_nodes.iter().skip(1) {
                         self.union(dual_node_ptr_0, dual_node_ptr,  dual_module);
                     }
-                    let cluster_ptr = self.nodes[dual_node_ptr_0.read_recursive().index as usize]
-                        .read_recursive()
-                        .cluster_weak
-                        .upgrade_force();
+                    let primal_node_weak = dual_node_ptr_0.read_recursive().primal_module_serial_node.clone().unwrap();
+                    let cluster_ptr = primal_node_weak.upgrade_force().read_recursive().cluster_weak.upgrade_force();
+                    // let cluster_ptr = self.nodes[dual_node_ptr_0.read_recursive().index as usize]
+                    //     .read_recursive()
+                    //     .cluster_weak
+                    //     .upgrade_force();
                     let mut cluster = cluster_ptr.write();
                     // then add new constraints because these edges may touch new vertices
                     // let incident_vertices = &edge_ptr.read_recursive().vertices;
@@ -777,10 +806,12 @@ impl PrimalModuleSerial {
                     active_clusters.insert(cluster.cluster_index);
                 }
                 MaxUpdateLength::ShrinkProhibited(dual_node_ptr) => {
-                    let cluster_ptr = self.nodes[dual_node_ptr.index as usize]
-                        .read_recursive()
-                        .cluster_weak
-                        .upgrade_force();
+                    let primal_node_weak = dual_node_ptr.ptr.read_recursive().primal_module_serial_node.clone().unwrap();
+                    let cluster_ptr = primal_node_weak.upgrade_force().read_recursive().cluster_weak.upgrade_force();
+                    // let cluster_ptr = self.nodes[dual_node_ptr.index as usize]
+                    //     .read_recursive()
+                    //     .cluster_weak
+                    //     .upgrade_force();
                     let cluster_index = cluster_ptr.read_recursive().cluster_index;
                     active_clusters.insert(cluster_index);
                 }
@@ -938,10 +969,12 @@ impl PrimalModuleSerial {
                         // self.union(dual_node_ptr_0, dual_node_ptr, &interface.decoding_graph);
                         self.union(dual_node_ptr_0, dual_node_ptr, dual_module);
                     }
-                    let cluster_ptr = self.nodes[dual_node_ptr_0.read_recursive().index as usize]
-                        .read_recursive()
-                        .cluster_weak
-                        .upgrade_force();
+                    let primal_node_weak = dual_node_ptr_0.read_recursive().primal_module_serial_node.clone().unwrap();
+                    let cluster_ptr = primal_node_weak.upgrade_force().read_recursive().cluster_weak.upgrade_force();
+                    // let cluster_ptr = self.nodes[dual_node_ptr_0.read_recursive().index as usize]
+                    //     .read_recursive()
+                    //     .cluster_weak
+                    //     .upgrade_force();
                     let mut cluster = cluster_ptr.write();
                     // then add new constraints because these edges may touch new vertices
                     // let incident_vertices = &edge_ptr.read_recursive().vertices;
@@ -964,10 +997,12 @@ impl PrimalModuleSerial {
                     active_clusters.insert(cluster.cluster_index);
                 }
                 MaxUpdateLength::ShrinkProhibited(dual_node_ptr) => {
-                    let cluster_ptr = self.nodes[dual_node_ptr.index as usize]
-                        .read_recursive()
-                        .cluster_weak
-                        .upgrade_force();
+                    let primal_node_weak = dual_node_ptr.ptr.read_recursive().primal_module_serial_node.clone().unwrap();
+                    let cluster_ptr = primal_node_weak.upgrade_force().read_recursive().cluster_weak.upgrade_force();
+                    // let cluster_ptr = self.nodes[dual_node_ptr.index as usize]
+                    //     .read_recursive()
+                    //     .cluster_weak
+                    //     .upgrade_force();
                     let cluster_index = cluster_ptr.read_recursive().cluster_index;
                     active_clusters.insert(cluster_index);
                 }
@@ -1030,10 +1065,10 @@ impl PrimalModuleSerial {
         F: FnMut(&DualModuleInterfacePtr, &DualModuleParallelUnit<DualSerialModule, Queue>, &mut Self, &GroupMaxUpdateLength),
         Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug + Send + Sync + Clone,
     {
-        // println!(" in solve step callback interface loaded");
+        println!(" in solve step callback interface loaded ptr");
         // Search, this part is unchanged
         let mut group_max_update_length = dual_module_ptr.compute_maximum_update_length();
-        // println!("first group max update length: {:?}", group_max_update_length);
+        println!("first group max update length: {:?}", group_max_update_length);
 
         while !group_max_update_length.is_unbounded() {
             callback(interface, &dual_module_ptr.read_recursive(), self, &group_max_update_length);
@@ -1054,6 +1089,7 @@ impl PrimalModuleSerial {
         // Tune
         let mut dual_module = dual_module_ptr.write();
         while self.has_more_plugins() {
+            println!("self.has more plugins");
             // Note: intersting, seems these aren't needed... But just kept here in case of future need, as well as correctness related failures
             if start {
                 start = false;

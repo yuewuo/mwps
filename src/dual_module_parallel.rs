@@ -1519,6 +1519,7 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
                 let temp = frontier.pop_front().unwrap();
                 // println!("frontier len: {:?}", frontier.len());
                 let serial_module_group_max_update_length = temp.write().serial_module.compute_maximum_update_length();
+                // println!("serial_module_group_max_update_length: {:?}", serial_module_group_max_update_length);
                 group_max_update_length.extend(serial_module_group_max_update_length);
                 visited.insert(temp.clone());
                 // println!("temp pointer: {:?}",  Arc::as_ptr(temp.ptr()));
