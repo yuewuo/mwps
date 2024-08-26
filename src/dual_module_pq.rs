@@ -396,6 +396,9 @@ pub struct Edge {
     /// whether this edge is connected to a boundary vertex, (this edges must belong to non-boundary unit)
     pub connected_to_boundary_vertex: bool, 
 
+    /// pointer to the global time of its corresponding unit, for parallelization purpose
+    pub global_time: ArcRwLock<Rational>,
+
     #[cfg(feature = "incr_lp")]
     /// storing the weights of the clusters that are currently contributing to this edge
     cluster_weights: hashbrown::HashMap<usize, Rational>,
@@ -618,6 +621,8 @@ where
                 })
             })
             .collect();
+        // set global time 
+        let global_time = ArcRwLock::new_value(Rational::zero());
         // set edges
         let mut edges = Vec::<EdgePtr>::new();
         for hyperedge in initializer.weighted_edges.iter() {
@@ -635,6 +640,7 @@ where
                 grow_rate: Rational::zero(),
                 unit_index: None,
                 connected_to_boundary_vertex: false,
+                global_time: global_time.clone(),
                 #[cfg(feature = "incr_lp")]
                 cluster_weights: hashbrown::HashMap::new(),
             });
@@ -647,7 +653,7 @@ where
             vertices,
             edges,
             obstacle_queue: Queue::default(),
-            global_time: ArcRwLock::new_value(Rational::zero()),
+            global_time: global_time.clone(),
             mode: DualModuleMode::default(),
             vertex_num: initializer.vertex_num,
             edge_num: initializer.weighted_edges.len(),
@@ -1163,6 +1169,9 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
                 }
             }
         } 
+
+        // initialize global time 
+        let global_time = ArcRwLock::new_value(Rational::zero());
         
         // set edges 
         let mut edges = Vec::<EdgePtr>::new();
@@ -1190,6 +1199,7 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
                 grow_rate: Rational::zero(),
                 unit_index: Some(partitioned_initializer.unit_index),
                 connected_to_boundary_vertex: hyper_edge.connected_to_boundary_vertex,
+                global_time: global_time.clone(),
             });
 
             // we also need to update the vertices of this hyper_edge
@@ -1214,7 +1224,7 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
             vertices,
             edges,
             obstacle_queue: Queue::default(),
-            global_time: ArcRwLock::new_value(Rational::zero()),
+            global_time: global_time.clone(),
             mode: DualModuleMode::default(),
             vertex_num: partitioned_initializer.vertex_num,
             edge_num: partitioned_initializer.edge_num,

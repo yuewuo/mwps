@@ -882,7 +882,7 @@ pub mod tests {
             code,
             visualize_filename,
             defect_vertices,
-            1,
+            2,
             vec![],
             GrowingStrategy::SingleCluster,
         );

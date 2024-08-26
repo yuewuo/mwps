@@ -142,6 +142,8 @@ pub mod tests {
             })
             .collect();
 
+        let global_time = ArcRwLock::new_value(Rational::zero());
+
         // create edges
         let edges: Vec<EdgePtr> = vec![1, 4, 12, 345].into_iter()
             .map(|edge_index| {
@@ -155,6 +157,7 @@ pub mod tests {
                     grow_rate: Rational::zero(),
                     unit_index: None,
                     connected_to_boundary_vertex: false,
+                    global_time: global_time.clone(),
                     #[cfg(feature = "incr_lp")]
                     cluster_weights: hashbrown::HashMap::new(),
                 })
@@ -222,6 +225,7 @@ pub mod tests {
                 })
             })
             .collect();
+        let global_time = ArcRwLock::new_value(Rational::zero());
 
         // create edges
         let edges: Vec<EdgePtr> = vec![1, 4, 8].into_iter()
@@ -236,6 +240,7 @@ pub mod tests {
                     grow_rate: Rational::zero(),
                     unit_index: None,
                     connected_to_boundary_vertex: false,
+                    global_time: global_time.clone(),
                     #[cfg(feature = "incr_lp")]
                     cluster_weights: hashbrown::HashMap::new(),
                 })
@@ -282,6 +287,9 @@ pub mod tests {
                 })
             })
             .collect();
+            
+        let global_time = ArcRwLock::new_value(Rational::zero());
+
 
         // create edges
         let edges: Vec<EdgePtr> = vec![1, 4, 6, 9].into_iter()
@@ -296,6 +304,7 @@ pub mod tests {
                     grow_rate: Rational::zero(),
                     unit_index: None,
                     connected_to_boundary_vertex: false,
+                    global_time: global_time.clone(),
                     #[cfg(feature = "incr_lp")]
                     cluster_weights: hashbrown::HashMap::new(),
                 })
@@ -377,6 +386,8 @@ pub mod tests {
                 })
             })
             .collect();
+    
+        let global_time = ArcRwLock::new_value(Rational::zero());
 
         // create edges
         let edges: Vec<EdgePtr> = vec![1, 4, 6, 9].into_iter()
@@ -391,6 +402,7 @@ pub mod tests {
                     grow_rate: Rational::zero(),
                     unit_index: None,
                     connected_to_boundary_vertex: false,
+                    global_time: global_time.clone(),
                     #[cfg(feature = "incr_lp")]
                     cluster_weights: hashbrown::HashMap::new(),
                 })
@@ -449,6 +461,8 @@ pub mod tests {
             })
             .collect();
 
+        let global_time = ArcRwLock::new_value(Rational::zero());
+
         // create edges
         let edges: Vec<EdgePtr> = vec![1, 4, 6, 9].into_iter()
             .map(|edge_index| {
@@ -462,6 +476,7 @@ pub mod tests {
                     grow_rate: Rational::zero(),
                     unit_index: None,
                     connected_to_boundary_vertex: false,
+                    global_time: global_time.clone(),
                     #[cfg(feature = "incr_lp")]
                     cluster_weights: hashbrown::HashMap::new(),
                 })
@@ -479,6 +494,7 @@ pub mod tests {
                     grow_rate: Rational::zero(),
                     unit_index: None,
                     connected_to_boundary_vertex: false,
+                    global_time: global_time.clone(),
                     #[cfg(feature = "incr_lp")]
                     cluster_weights: hashbrown::HashMap::new(),
                 })
@@ -530,6 +546,8 @@ pub mod tests {
             })
             .collect();
 
+        let global_time = ArcRwLock::new_value(Rational::zero());
+
         // create edges
         let edges: Vec<EdgePtr> = vec![1, 4, 6, 9].into_iter()
             .map(|edge_index| {
@@ -543,6 +561,7 @@ pub mod tests {
                     grow_rate: Rational::zero(),
                     unit_index: None,
                     connected_to_boundary_vertex: false,
+                    global_time: global_time.clone(),
                     #[cfg(feature = "incr_lp")]
                     cluster_weights: hashbrown::HashMap::new(),
                 })
@@ -565,6 +584,7 @@ pub mod tests {
             grow_rate: Rational::zero(),
             unit_index: None,
             connected_to_boundary_vertex: false,
+            global_time: global_time.clone(),
             #[cfg(feature = "incr_lp")]
             cluster_weights: hashbrown::HashMap::new(),
         });

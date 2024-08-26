@@ -4,6 +4,7 @@ type BaseFloat = f64;
 type BaseFloat = f32; // there's actually no point in using this, as HIGHs don't support f32
 
 use num_traits::Zero;
+use crate::pointers::ArcRwLock;
 
 const EPSILON: BaseFloat = 1e-4; // note: it would be interesting to play around with this.
 
@@ -308,6 +309,22 @@ impl PartialOrd<OrderedFloat> for &OrderedFloat {
         } else {
             self.0.partial_cmp(&other.0)
         }
+    }
+}
+
+impl std::fmt::Debug for ArcRwLock<OrderedFloat> {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "[ordered_float: {}]", self.read_recursive().0)
+        // write!(
+        //     f,
+        //     "[edge: {}]: weight: {}, grow_rate: {}, growth_at_last_updated_time: {}, last_updated_time: {}\n\tdual_nodes: {:?}\n",
+        //     edge.edge_index,
+        //     edge.weight,
+        //     edge.grow_rate,
+        //     edge.growth_at_last_updated_time,
+        //     edge.last_updated_time,
+        //     edge.dual_nodes.iter().filter(|node| !node.weak_ptr.upgrade_force().read_recursive().grow_rate.is_zero()).collect::<Vec<_>>()
+        // )
     }
 }
 

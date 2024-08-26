@@ -288,6 +288,8 @@ pub mod tests {
         vertices[7].write().is_defect = true;
         vertices[1].write().is_defect = true;
 
+        let global_time = ArcRwLock::new_value(Rational::zero());
+
         // set edges
         let mut edges = Vec::<EdgePtr>::new();
         for hyperedge in initializer.weighted_edges.iter() {
@@ -305,6 +307,8 @@ pub mod tests {
                 grow_rate: Rational::zero(),
                 unit_index: None,
                 connected_to_boundary_vertex: false,
+                global_time: global_time.clone(),
+
                 #[cfg(feature = "incr_lp")]
                 cluster_weights: hashbrown::HashMap::new(),
             });
