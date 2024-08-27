@@ -514,15 +514,45 @@ impl PrimalModuleParallel {
             (self.partition_info.config.partitions.len()..self.partition_info.units.len())
             .into_par_iter()
             .for_each( |unit_index| {
+                if (unit_index - self.partition_info.config.partitions.len()) % 2 == 0 {
+                    let unit_ptr = self.units[unit_index].clone();
+                    unit_ptr.fuse_and_solve::<DualSerialModule, Queue, F>(
+                        self, 
+                        PartitionedSyndromePattern::new(&syndrome_pattern), 
+                        parallel_dual_module, 
+                        &mut None,
+                    );
+                }
+            })
+        });
+
+        for unit_index in self.partition_info.config.partitions.len()..self.partition_info.units.len() {
+            if (unit_index - self.partition_info.config.partitions.len()) % 2 == 1 {
                 let unit_ptr = self.units[unit_index].clone();
                 unit_ptr.fuse_and_solve::<DualSerialModule, Queue, F>(
                     self, 
                     PartitionedSyndromePattern::new(&syndrome_pattern), 
                     parallel_dual_module, 
-                    &mut None,
+                    &mut Some(&mut callback),
                 );
-            })
-        });
+            }
+        }
+
+        // thread_pool.scope(|_| {
+        //     (self.partition_info.config.partitions.len()..self.partition_info.units.len())
+        //     .into_par_iter()
+        //     .for_each( |unit_index| {
+        //         if (unit_index - self.partition_info.config.partitions.len()) % 2 == 1 {
+        //             let unit_ptr = self.units[unit_index].clone();
+        //             unit_ptr.fuse_and_solve::<DualSerialModule, Queue, F>(
+        //                 self, 
+        //                 PartitionedSyndromePattern::new(&syndrome_pattern), 
+        //                 parallel_dual_module, 
+        //                 &mut None,
+        //             );
+        //         }
+        //     })
+        // });
 
 
         // // sequential implementation
@@ -1286,6 +1316,53 @@ pub mod tests {
             vec![],
             GrowingStrategy::ModeBased,
             2,
+        );
+    }
+
+    /// test solver on circuit level noise with random errors, split into 4
+    #[test]
+    fn primal_module_parallel_circuit_level_noise_qec_playground_3() {
+        // cargo test primal_module_parallel_circuit_level_noise_qec_playground_3 -- --nocapture
+        let config = json!({
+            "code_type": qecp::code_builder::CodeType::RotatedPlanarCode
+        });
+        
+        let mut code = QECPlaygroundCode::new(7, 0.005, config);
+        let defect_vertices = code.generate_random_errors(132).0.defect_vertices;
+
+        let visualize_filename = "primal_module_parallel_circuit_level_noise_qec_playground_3.json".to_string();
+        primal_module_parallel_evaluation_qec_playground_helper(
+            code,
+            visualize_filename,
+            defect_vertices.clone(),
+            2424788,
+            vec![],
+            GrowingStrategy::ModeBased,
+            4,
+        );
+    }
+
+    /// test solver on circuit level noise with random errors, split into 8
+    #[test]
+    fn primal_module_parallel_circuit_level_noise_qec_playground_4() {
+        // cargo test primal_module_parallel_circuit_level_noise_qec_playground_4 -- --nocapture
+        let config = json!({
+            "code_type": qecp::code_builder::CodeType::RotatedPlanarCode,
+            "nm": 16,
+        });
+        
+        let mut code = QECPlaygroundCode::new(7, 0.005, config);
+        let defect_vertices = code.generate_random_errors(132).0.defect_vertices;
+
+        let visualize_filename = "primal_module_parallel_circuit_level_noise_qec_playground_4.json".to_string();
+        primal_module_parallel_evaluation_qec_playground_helper(
+            code,
+            visualize_filename,
+            defect_vertices.clone(),
+            2424788,
+            vec![],
+            GrowingStrategy::ModeBased,
+            8,
         );
     }
 }
