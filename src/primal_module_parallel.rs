@@ -205,7 +205,7 @@ impl PrimalModuleParallelUnitPtr {
         
         let mut primal_unit = self.write();
         let unit_index = primal_unit.unit_index;
-        cprintln!("<green>individual_solve for unit: {:?}</green>", unit_index);
+        // cprintln!("<green>individual_solve for unit: {:?}</green>", unit_index);
         // println!("unit index: {}", primal_unit.unit_index);
         let dual_module_ptr = &parallel_dual_module.units[unit_index];
         // let mut dual_unit = dual_module_ptr.write();
@@ -217,7 +217,7 @@ impl PrimalModuleParallelUnitPtr {
        if !primal_unit.is_solved {
             // we solve the individual unit first
             let syndrome_pattern = Arc::new(owned_defect_range.expand());
-            println!("defect vertices in unit: {:?} are {:?}", unit_index, syndrome_pattern.defect_vertices);
+            // println!("defect vertices in unit: {:?} are {:?}", unit_index, syndrome_pattern.defect_vertices);
             primal_unit.serial_module.solve_step_callback_ptr(
                 &interface_ptr,
                 syndrome_pattern,
@@ -229,7 +229,7 @@ impl PrimalModuleParallelUnitPtr {
                 },
             );
             primal_unit.is_solved = true;
-            println!("unit: {:?}, is_solved: {:?}", unit_index, primal_unit.is_solved);
+            // println!("unit: {:?}, is_solved: {:?}", unit_index, primal_unit.is_solved);
             if let Some(callback) = callback.as_mut() {
                 callback(&primal_unit.interface_ptr, &dual_module_ptr.write().deref_mut(), &primal_unit.serial_module, None);
             }
@@ -254,7 +254,7 @@ impl PrimalModuleParallelUnitPtr {
         ),
         Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug + Send + Sync + Clone,
     {
-        cprintln!("<green>fuse_and_solve for unit: {:?}</green>", self.read_recursive().unit_index);
+        // cprintln!("<green>fuse_and_solve for unit: {:?}</green>", self.read_recursive().unit_index);
         // assert!(self.read_recursive().is_solved, "this unit must have been solved before we fuse it with its neighbors");
         
         // this unit has been solved, we can fuse it with its adjacent units
@@ -292,7 +292,7 @@ impl PrimalModuleParallelUnitPtr {
         } else {
             // we solve the individual unit first
             let syndrome_pattern = Arc::new(owned_defect_range.expand());
-            println!("unit: {:?}, owned_defect_range: {:?}", primal_unit.unit_index, syndrome_pattern);
+            // println!("unit: {:?}, owned_defect_range: {:?}", primal_unit.unit_index, syndrome_pattern);
             primal_unit.serial_module.solve_step_callback_ptr(
                 &interface_ptr,
                 syndrome_pattern,
@@ -393,7 +393,6 @@ impl PrimalModuleParallelUnit {
             }
         }
         // we also need to change the `is_fusion` of all vertices of self_dual_unit to true. 
-        println!("self dual unit all mirroed vertices len: {:?}", self_dual_unit.serial_module.vertices.len());
         for vertex_ptr in self_dual_unit.serial_module.vertices.iter() {
             let mut vertex = vertex_ptr.write();
             vertex.fusion_done = true;
@@ -442,7 +441,7 @@ impl PrimalModuleParallel {
                 |interface, dual_module, primal_module, group_max_update_length| {
                     if let Some(group_max_update_length) = group_max_update_length {
                         if cfg!(debug_assertions) {
-                            println!("group_max_update_length: {:?}", group_max_update_length);
+                            // println!("group_max_update_length: {:?}", group_max_update_length);
                         }
                         if group_max_update_length.is_unbounded() {
                             visualizer
@@ -496,6 +495,8 @@ impl PrimalModuleParallel {
         Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug + Send + Sync + Clone,
     {
         // let thread_pool = Arc::clone(&self.thread_pool);
+        
+
         for unit_index in 0..self.partition_info.config.partitions.len(){
             let unit_ptr = self.units[unit_index].clone();
             unit_ptr.individual_solve::<DualSerialModule, Queue, F>(
@@ -595,7 +596,7 @@ impl PrimalModuleImpl for PrimalModuleParallel {
         let mut subgraph = vec![];
         for unit_ptr in self.units.iter() {
             let mut unit = unit_ptr.write();
-            println!("unit: {:?}", unit.unit_index);
+            // println!("unit: {:?}", unit.unit_index);
             let interface_ptr = unit.interface_ptr.clone();
             subgraph.extend(unit.subgraph(&interface_ptr, seed))
         }
@@ -879,16 +880,16 @@ pub mod tests {
         // RUST_BACKTRACE=1 cargo test primal_module_parallel_tentative_test_1 -- --nocapture
         let weight = 1; // do not change, the data is hard-coded
         let code = CodeCapacityPlanarCode::new(7, 0.1, weight);
-        let defect_vertices = vec![29, 39];
+        let defect_vertices = vec![13, 20, 29, 32, 39];
 
         let visualize_filename = "primal_module_parallel_tentative_test_1.json".to_string();
         primal_module_parallel_basic_standard_syndrome(
             code,
             visualize_filename,
             defect_vertices,
-            2,
+            4,
             vec![],
-            GrowingStrategy::SingleCluster,
+            GrowingStrategy::ModeBased,
         );
     }
 
@@ -905,7 +906,7 @@ pub mod tests {
             code,
             visualize_filename,
             defect_vertices,
-            4,
+            6,
             vec![],
             GrowingStrategy::SingleCluster,
         );
@@ -1066,7 +1067,7 @@ pub mod tests {
         // RUST_BACKTRACE=1 cargo test primal_module_parallel_tentative_test_7 -- --nocapture
         let weight = 1; // do not change, the data is hard-coded
         let code = CodeCapacityPlanarCode::new(7, 0.1, weight);
-        let defect_vertices = vec![16, 19, 28];
+        let defect_vertices = vec![13, 20, 29, 32, 39];
 
         let visualize_filename = "primal_module_parallel_tentative_test_7.json".to_string();
         primal_module_parallel_basic_standard_syndrome_split_into_4(
@@ -1223,7 +1224,7 @@ pub mod tests {
         });
         
         let code = QECPlaygroundCode::new(3, 0.1, config);
-        let defect_vertices = vec![3, 25, 27];
+        let defect_vertices = vec![3, 10, 18, 19, 31];
 
         let visualize_filename = "primal_module_parallel_circuit_level_noise_qec_playground_1.json".to_string();
         primal_module_parallel_evaluation_qec_playground_helper(
@@ -1231,6 +1232,29 @@ pub mod tests {
             visualize_filename,
             defect_vertices,
             1661019,
+            vec![],
+            GrowingStrategy::ModeBased,
+            2,
+        );
+    }
+
+    /// test solver on circuit level noise with random errors, split into 2
+    #[test]
+    fn primal_module_parallel_circuit_level_noise_qec_playground_2() {
+        // cargo test primal_module_parallel_circuit_level_noise_qec_playground_2 -- --nocapture
+        let config = json!({
+            "code_type": qecp::code_builder::CodeType::RotatedPlanarCode
+        });
+        
+        let mut code = QECPlaygroundCode::new(7, 0.005, config);
+        let defect_vertices = code.generate_random_errors(132).0.defect_vertices;
+
+        let visualize_filename = "primal_module_parallel_circuit_level_noise_qec_playground_2.json".to_string();
+        primal_module_parallel_evaluation_qec_playground_helper(
+            code,
+            visualize_filename,
+            defect_vertices.clone(),
+            2424788,
             vec![],
             GrowingStrategy::ModeBased,
             2,

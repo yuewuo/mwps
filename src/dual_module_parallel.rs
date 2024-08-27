@@ -739,7 +739,7 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
     /// grow a specific length globally, length must be positive.
     /// note that a negative growth should be implemented by reversing the speed of each dual node
     pub fn grow(&mut self, length: Rational) {
-        println!("grow by length: {:?}", length);
+        // println!("grow by length: {:?}", length);
         self.bfs_grow(length.clone());
     }
 

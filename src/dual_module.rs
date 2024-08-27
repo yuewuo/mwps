@@ -7,6 +7,9 @@
 use color_print::cprint;
 use color_print::cprintln;
 
+use crate::dual_module_parallel::*;
+use crate::dual_module_pq::{FutureQueueMethods, Obstacle};
+use std::ops::DerefMut;
 use crate::decoding_hypergraph::*;
 use crate::derivative::Derivative;
 use crate::invalid_subgraph::*;
@@ -684,10 +687,15 @@ impl DualModuleInterfacePtr {
     }
 
     // // the defect_vertices here are local vertices
-    // pub fn load_ptr(&self, syndrome_pattern: Arc<SyndromePattern>, dual_module_ptr: &) {
+    // pub fn load_ptr<DualSerialModule: DualModuleImpl + Send + Sync, Queue>(
+    //     &self, 
+    //     syndrome_pattern: Arc<SyndromePattern>, 
+    //     dual_module_ptr: &mut DualModuleParallelUnitPtr<DualSerialModule, Queue>,)
+    // where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug + Send + Sync + Clone,
+    // {
     //     // self.write().decoding_graph.set_syndrome(syndrome_pattern.clone());
     //     for vertex_idx in syndrome_pattern.defect_vertices.iter() {
-    //         self.create_defect_node(*vertex_idx, dual_module_impl);
+    //         self.create_defect_node(*vertex_idx, dual_module_ptr.write().deref_mut());
     //     }
     // }
 
@@ -743,7 +751,7 @@ impl DualModuleInterfacePtr {
         interface.nodes.push(node_ptr.clone());
         interface.hashmap.insert(invalid_subgraph, node_index);
         drop(interface);
-        println!("node created in `create_defect_node`: {:?}", node_ptr.clone());
+        // println!("node created in `create_defect_node`: {:?}", node_ptr.clone());
         dual_module.add_defect_node(&cloned_node_ptr);
         
         cloned_node_ptr
@@ -760,7 +768,7 @@ impl DualModuleInterfacePtr {
     }
 
     pub fn create_node(&self, invalid_subgraph: Arc<InvalidSubgraph>, dual_module: &mut impl DualModuleImpl) -> DualNodePtr {
-        cprintln!("<yellow>create_node</yellow>");
+        // cprintln!("<yellow>create_node</yellow>");
         debug_assert!(
             self.find_node(&invalid_subgraph).is_none(),
             "do not create the same node twice"

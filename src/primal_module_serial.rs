@@ -225,7 +225,7 @@ impl PrimalModuleImpl for PrimalModuleSerial {
     #[allow(clippy::unnecessary_cast)]
     fn load<D: DualModuleImpl>(&mut self, interface_ptr: &DualModuleInterfacePtr, dual_module: &mut D) {
         let interface = interface_ptr.read_recursive();
-        println!("interface.nodes len: {:?}", interface.nodes.len());
+        // println!("interface.nodes len: {:?}", interface.nodes.len());
         for index in 0..interface.nodes.len() as NodeIndex {
             let dual_node_ptr = &interface.nodes[index as usize];
             let node = dual_node_ptr.read_recursive();
@@ -276,6 +276,7 @@ impl PrimalModuleImpl for PrimalModuleSerial {
                 self.pending_nodes.push_back(primal_node_ptr.downgrade());
             }
         }
+
     }
 
     fn resolve(
@@ -374,7 +375,7 @@ impl PrimalModuleImpl for PrimalModuleSerial {
         interface_ptr: &DualModuleInterfacePtr,
         dual_module: &mut impl DualModuleImpl,
     ) -> bool {
-        cprintln!("<red>resolver cluster</red>");
+        // cprintln!("<red>resolver cluster</red>");
         // cprintln!("This a <green,bold>green and bold text</green,bold>.");
 
         // let cluster_ptr = self.clusters[cluster_index as usize].clone();
@@ -804,12 +805,12 @@ impl PrimalModuleSerial {
         debug_assert!(!group_max_update_length.is_unbounded() && group_max_update_length.get_valid_growth().is_none());
         let mut active_clusters = BTreeSet::<PrimalClusterPtr>::new();
         let interface = interface_ptr.read_recursive();
-        println!("in resolve core");
+        // println!("in resolve core");
         while let Some(conflict) = group_max_update_length.pop() {
             match conflict {
                 MaxUpdateLength::Conflicting(edge_ptr) => {
                     // union all the dual nodes in the edge index and create new dual node by adding this edge to `internal_edges`
-                    println!("conflict edge_ptr: {:?}", edge_ptr);
+                    // println!("conflict edge_ptr: {:?}", edge_ptr);
                     let dual_nodes = dual_module.get_edge_nodes(edge_ptr.clone());
                     debug_assert!(
                         !dual_nodes.is_empty(),
@@ -1084,6 +1085,68 @@ impl PrimalModuleSerial {
 
 
 impl PrimalModuleSerial {
+    // // for parallel
+    // #[allow(clippy::unnecessary_cast)]
+    // fn load_ptr<DualSerialModule: DualModuleImpl + Send + Sync, Queue>(
+    //     &mut self, 
+    //     interface_ptr: &DualModuleInterfacePtr, 
+    //     dual_module_ptr: &mut DualModuleParallelUnitPtr<DualSerialModule, Queue>,
+    // ) where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug + Send + Sync + Clone,
+    // {
+    //     let interface = interface_ptr.read_recursive();
+    //     println!("interface.nodes len: {:?}", interface.nodes.len());
+    //     for index in 0..interface.nodes.len() as NodeIndex {
+    //         let dual_node_ptr = &interface.nodes[index as usize];
+    //         let node = dual_node_ptr.read_recursive();
+    //         debug_assert!(
+    //             node.invalid_subgraph.edges.is_empty(),
+    //             "must load a fresh dual module interface, found a complex node"
+    //         );
+    //         debug_assert!(
+    //             node.invalid_subgraph.vertices.len() == 1,
+    //             "must load a fresh dual module interface, found invalid defect node"
+    //         );
+    //         debug_assert_eq!(
+    //             node.index, index,
+    //             "must load a fresh dual module interface, found index out of order"
+    //         );
+    //         assert_eq!(node.index as usize, self.nodes.len(), "must load defect nodes in order");
+    //         // construct cluster and its parity matrix (will be reused over all iterations)
+    //         let primal_cluster_ptr = PrimalClusterPtr::new_value(PrimalCluster {
+    //             cluster_index: self.clusters.len() as NodeIndex,
+    //             nodes: vec![],
+    //             edges: node.invalid_subgraph.hair.clone(),
+    //             vertices: node.invalid_subgraph.vertices.clone(),
+    //             matrix: node.invalid_subgraph.generate_matrix(),
+    //             subgraph: None,
+    //             plugin_manager: PluginManager::new(self.plugins.clone(), self.plugin_count.clone()),
+    //             relaxer_optimizer: RelaxerOptimizer::new(),
+    //             #[cfg(all(feature = "incr_lp", feature = "highs"))]
+    //             incr_solution: None,
+    //         });
+    //         // create the primal node of this defect node and insert into cluster
+    //         let primal_node_ptr = PrimalModuleSerialNodePtr::new_value(PrimalModuleSerialNode {
+    //             dual_node_ptr: dual_node_ptr.clone(),
+    //             cluster_weak: primal_cluster_ptr.downgrade(),
+    //         });
+    //         drop(node);
+    //         primal_cluster_ptr.write().nodes.push(primal_node_ptr.clone());
+    //         // fill in the primal_module_serial_node in the corresponding dual node
+    //         dual_node_ptr.write().primal_module_serial_node = Some(primal_node_ptr.clone().downgrade());
+            
+    //         // add to self
+    //         self.nodes.push(primal_node_ptr);
+    //         self.clusters.push(primal_cluster_ptr);
+    //     }
+    //     if matches!(self.growing_strategy, GrowingStrategy::SingleCluster) {
+    //         for primal_node_ptr in self.nodes.iter().skip(1) {
+    //             let dual_node_ptr = primal_node_ptr.read_recursive().dual_node_ptr.clone();
+    //             dual_module_ptr.write().set_grow_rate(&dual_node_ptr, Rational::zero());
+    //             self.pending_nodes.push_back(primal_node_ptr.downgrade());
+    //         }
+    //     }
+    // }
+
     // for parallel 
     pub fn solve_step_callback_ptr<DualSerialModule: DualModuleImpl + Send + Sync, Queue, F>(
         &mut self,
@@ -1095,10 +1158,11 @@ impl PrimalModuleSerial {
         F: FnMut(&DualModuleInterfacePtr, &DualModuleParallelUnit<DualSerialModule, Queue>, &mut Self, &GroupMaxUpdateLength),
         Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug + Send + Sync + Clone,
     {
-        let mut dual_module = dual_module_ptr.write();
-        interface.load(syndrome_pattern, dual_module.deref_mut());
-        self.load(interface, dual_module.deref_mut());
-        drop(dual_module);
+        // let mut dual_module = dual_module_ptr.write();
+        // interface.load_ptr(syndrome_pattern, dual_module_ptr);
+        interface.load(syndrome_pattern, dual_module_ptr.write().deref_mut());
+        self.load(interface, dual_module_ptr.write().deref_mut());
+        // drop(dual_module);
         self.solve_step_callback_interface_loaded_ptr(interface, dual_module_ptr, callback);
     }
 
@@ -1112,10 +1176,10 @@ impl PrimalModuleSerial {
         F: FnMut(&DualModuleInterfacePtr, &DualModuleParallelUnit<DualSerialModule, Queue>, &mut Self, &GroupMaxUpdateLength),
         Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug + Send + Sync + Clone,
     {
-        println!(" in solve step callback interface loaded ptr");
+        // println!(" in solve step callback interface loaded ptr");
         // Search, this part is unchanged
         let mut group_max_update_length = dual_module_ptr.compute_maximum_update_length();
-        println!("first group max update length: {:?}", group_max_update_length);
+        // println!("first group max update length: {:?}", group_max_update_length);
 
         while !group_max_update_length.is_unbounded() {
             callback(interface, &dual_module_ptr.read_recursive(), self, &group_max_update_length);
@@ -1327,7 +1391,7 @@ pub mod tests {
         // let code = CodeCapacityTailoredCode::new(7, 0., 0.01, 1);
         let weight = 1;
         let code = CodeCapacityPlanarCode::new(7, 0.1, weight);
-        let defect_vertices = vec![10, 14, 21, 29, 39];
+        let defect_vertices = vec![13, 20, 29, 32, 39];
         primal_module_serial_basic_standard_syndrome(
             code,
             visualize_filename,

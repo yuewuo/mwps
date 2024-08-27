@@ -141,7 +141,7 @@ pub trait PrimalModuleImpl {
     ) where
         F: FnMut(&DualModuleInterfacePtr, &mut D, &mut Self, &GroupMaxUpdateLength),
     {
-        println!(" in solve step callback interface loaded");
+        // println!(" in solve step callback interface loaded");
         // Search, this part is unchanged
         let mut group_max_update_length = dual_module.compute_maximum_update_length();
         // println!("first group max update length: {:?}", group_max_update_length);
