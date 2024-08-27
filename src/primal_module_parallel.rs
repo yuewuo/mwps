@@ -494,28 +494,57 @@ impl PrimalModuleParallel {
         ),
         Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug + Send + Sync + Clone,
     {
-        // let thread_pool = Arc::clone(&self.thread_pool);
-        
+        let thread_pool = Arc::clone(&self.thread_pool);
+        thread_pool.scope(|_| {
+            (0..self.partition_info.config.partitions.len())
+            .into_par_iter()
+            .for_each( |unit_index| {
+                let unit_ptr = self.units[unit_index].clone();
+                unit_ptr.individual_solve::<DualSerialModule, Queue, F>(
+                    self, 
+                    PartitionedSyndromePattern::new(&syndrome_pattern), 
+                    parallel_dual_module, 
+                    &mut None,
+                );
+            })
+        });
 
-        for unit_index in 0..self.partition_info.config.partitions.len(){
-            let unit_ptr = self.units[unit_index].clone();
-            unit_ptr.individual_solve::<DualSerialModule, Queue, F>(
-                self, 
-                PartitionedSyndromePattern::new(&syndrome_pattern), 
-                parallel_dual_module, 
-                &mut Some(&mut callback),
-            );
-        }
 
-        for unit_index in self.partition_info.config.partitions.len()..self.partition_info.units.len() {
-            let unit_ptr = self.units[unit_index].clone();
-            unit_ptr.fuse_and_solve::<DualSerialModule, Queue, F>(
-                self, 
-                PartitionedSyndromePattern::new(&syndrome_pattern), 
-                parallel_dual_module, 
-                &mut Some(&mut callback),
-            );
-        }
+        thread_pool.scope(|_| {
+            (self.partition_info.config.partitions.len()..self.partition_info.units.len())
+            .into_par_iter()
+            .for_each( |unit_index| {
+                let unit_ptr = self.units[unit_index].clone();
+                unit_ptr.fuse_and_solve::<DualSerialModule, Queue, F>(
+                    self, 
+                    PartitionedSyndromePattern::new(&syndrome_pattern), 
+                    parallel_dual_module, 
+                    &mut None,
+                );
+            })
+        });
+
+
+        // // sequential implementation
+        // for unit_index in 0..self.partition_info.config.partitions.len(){
+        //     let unit_ptr = self.units[unit_index].clone();
+        //     unit_ptr.individual_solve::<DualSerialModule, Queue, F>(
+        //         self, 
+        //         PartitionedSyndromePattern::new(&syndrome_pattern), 
+        //         parallel_dual_module, 
+        //         &mut Some(&mut callback),
+        //     );
+        // }
+
+        // for unit_index in self.partition_info.config.partitions.len()..self.partition_info.units.len() {
+        //     let unit_ptr = self.units[unit_index].clone();
+        //     unit_ptr.fuse_and_solve::<DualSerialModule, Queue, F>(
+        //         self, 
+        //         PartitionedSyndromePattern::new(&syndrome_pattern), 
+        //         parallel_dual_module, 
+        //         &mut Some(&mut callback),
+        //     );
+        // }
     }
 
 
@@ -1197,7 +1226,6 @@ pub mod tests {
         dual_module_parallel_config.enable_parallel_execution = true;
         let mut dual_module: DualModuleParallel<DualModulePQ<FutureObstacleQueue<Rational>>, FutureObstacleQueue<Rational>> =
             DualModuleParallel::new_config(&initializer, &partition_info, dual_module_parallel_config);
-        // dual_module.static_fuse_all();
 
         // create primal module
         let primal_config = PrimalModuleParallelConfig {..Default::default()};
