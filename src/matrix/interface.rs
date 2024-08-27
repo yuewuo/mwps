@@ -24,7 +24,6 @@ use derivative::Derivative;
 // use num_rational::Ratio;
 use slp::BigInt;
 use num_traits::{One, Zero};
-use weak_table::PtrWeakHashSet;
 use std::collections::BTreeSet;
 
 #[cfg(feature = "pq")]

@@ -26,7 +26,7 @@ pub struct DecodingHyperGraph {
 
 impl DecodingHyperGraph {
     pub fn new(model_graph: Arc<ModelHyperGraph>, syndrome_pattern: Arc<SyndromePattern>) -> Self {
-        let mut decoding_graph = Self {
+        let decoding_graph = Self {
             model_graph,
             syndrome_pattern: syndrome_pattern.clone(),
             defect_vertices_hashset: HashSet::new(),

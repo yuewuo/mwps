@@ -804,12 +804,12 @@ impl PrimalModuleSerial {
         debug_assert!(!group_max_update_length.is_unbounded() && group_max_update_length.get_valid_growth().is_none());
         let mut active_clusters = BTreeSet::<PrimalClusterPtr>::new();
         let interface = interface_ptr.read_recursive();
-        // println!("in resolve core");
+        println!("in resolve core");
         while let Some(conflict) = group_max_update_length.pop() {
             match conflict {
                 MaxUpdateLength::Conflicting(edge_ptr) => {
                     // union all the dual nodes in the edge index and create new dual node by adding this edge to `internal_edges`
-                    // println!("conflict edge_ptr: {:?}", edge_ptr);
+                    println!("conflict edge_ptr: {:?}", edge_ptr);
                     let dual_nodes = dual_module.get_edge_nodes(edge_ptr.clone());
                     debug_assert!(
                         !dual_nodes.is_empty(),
@@ -818,7 +818,7 @@ impl PrimalModuleSerial {
                     let dual_node_ptr_0 = &dual_nodes[0];
                     // first union all the dual nodes
                     for dual_node_ptr in dual_nodes.iter().skip(1) {
-                        self.union(dual_node_ptr_0, dual_node_ptr,  dual_module);
+                        self.union(dual_node_ptr_0, dual_node_ptr, dual_module);
                     }
                     let primal_node_weak = dual_node_ptr_0.read_recursive().primal_module_serial_node.clone().unwrap();
                     let cluster_ptr = primal_node_weak.upgrade_force().read_recursive().cluster_weak.upgrade_force();
@@ -1327,12 +1327,12 @@ pub mod tests {
         // let code = CodeCapacityTailoredCode::new(7, 0., 0.01, 1);
         let weight = 1;
         let code = CodeCapacityPlanarCode::new(7, 0.1, weight);
-        let defect_vertices = vec![22, 28];
+        let defect_vertices = vec![10, 14, 21, 29, 39];
         primal_module_serial_basic_standard_syndrome(
             code,
             visualize_filename,
             defect_vertices,
-            1,
+            4,
             vec![],
             GrowingStrategy::ModeBased,
         );

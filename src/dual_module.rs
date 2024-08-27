@@ -4,6 +4,9 @@
 //!
 
 
+use color_print::cprint;
+use color_print::cprintln;
+
 use crate::decoding_hypergraph::*;
 use crate::derivative::Derivative;
 use crate::invalid_subgraph::*;
@@ -83,7 +86,7 @@ pub struct DualNode {
     /// the pointer to the global time
     /// Note: may employ some unsafe features while being sound in performance-critical cases
     ///       and can remove option when removing dual_module_serial
-    global_time: Option<ArcRwLock<Rational>>,
+    pub global_time: Option<ArcRwLock<Rational>>,
     /// the last time this dual_node is synced/updated with the global time
     pub last_updated_time: Rational,
     /// dual variable's value at the last updated time
@@ -757,6 +760,7 @@ impl DualModuleInterfacePtr {
     }
 
     pub fn create_node(&self, invalid_subgraph: Arc<InvalidSubgraph>, dual_module: &mut impl DualModuleImpl) -> DualNodePtr {
+        cprintln!("<yellow>create_node</yellow>");
         debug_assert!(
             self.find_node(&invalid_subgraph).is_none(),
             "do not create the same node twice"

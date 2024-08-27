@@ -7,7 +7,6 @@ use super::interface::*;
 use super::visualize::*;
 use crate::util::*;
 use prettytable::*;
-use weak_table::PtrWeakHashSet;
 use std::collections::*;
 #[cfg(feature = "pq")]
 use crate::dual_module_pq::{EdgeWeak, VertexWeak, EdgePtr, VertexPtr};

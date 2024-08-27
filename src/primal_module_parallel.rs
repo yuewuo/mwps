@@ -6,8 +6,7 @@
 
 use color_print::cprintln;
 use super::dual_module::*;
-use crate::dual_module_parallel::*;
-use crate::dual_module_pq::EdgeWeak;
+use crate::{dual_module_parallel::*, plugin};
 use crate::dual_module_pq::{FutureQueueMethods, Obstacle};
 use super::pointers::*;
 use super::primal_module::*;
@@ -22,10 +21,7 @@ use std::ops::DerefMut;
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 use crate::num_traits::Zero;
-use crate::num_traits::FromPrimitive;
 use crate::plugin::*;
-use crate::num_traits::One;
-use crate::pointers;
 
 
 pub struct PrimalModuleParallel {
@@ -121,6 +117,8 @@ impl PrimalModuleParallel {
         initializer: &SolverInitializer,
         partition_info: &PartitionInfo,
         config: PrimalModuleParallelConfig,
+        growing_strategy: GrowingStrategy,
+        plugins: Arc<PluginVec>,
     ) -> Self {
         let partition_info = Arc::new(partition_info.clone());
         let mut thread_pool_builder = rayon::ThreadPoolBuilder::new();
@@ -146,7 +144,9 @@ impl PrimalModuleParallel {
                 .into_par_iter()
                 .map(|unit_index| {
                     // println!("unit_index: {unit_index}");
-                    let primal_module = PrimalModuleSerial::new_empty(initializer);
+                    let mut primal_module = PrimalModuleSerial::new_empty(initializer);
+                    primal_module.growing_strategy = growing_strategy;
+                    primal_module.plugins = plugins.clone();
                     let interface_ptr = DualModuleInterfacePtr::new();
 
                     PrimalModuleParallelUnitPtr::new_value(PrimalModuleParallelUnit {
@@ -189,7 +189,7 @@ impl PrimalModuleParallelUnitPtr {
     // syndrome pattern is created in this function. This function could not be used for dynamic fusion
     fn individual_solve<DualSerialModule: DualModuleImpl + Send + Sync, Queue, F: Send + Sync>(
         &self,
-        primal_module_parallel: &PrimalModuleParallel,
+        _primal_module_parallel: &PrimalModuleParallel,
         partitioned_syndrome_pattern: PartitionedSyndromePattern,
         parallel_dual_module: &DualModuleParallel<DualSerialModule, Queue>,
         callback: &mut Option<&mut F>,
@@ -207,7 +207,7 @@ impl PrimalModuleParallelUnitPtr {
         let unit_index = primal_unit.unit_index;
         cprintln!("<green>individual_solve for unit: {:?}</green>", unit_index);
         // println!("unit index: {}", primal_unit.unit_index);
-        let mut dual_module_ptr = &parallel_dual_module.units[unit_index];
+        let dual_module_ptr = &parallel_dual_module.units[unit_index];
         // let mut dual_unit = dual_module_ptr.write();
         let partition_unit_info = &primal_unit.partition_info.units[unit_index];
         let owned_defect_range = partitioned_syndrome_pattern.partition(partition_unit_info);
@@ -241,7 +241,7 @@ impl PrimalModuleParallelUnitPtr {
     #[allow(clippy::unnecessary_cast)]
     fn fuse_and_solve<DualSerialModule: DualModuleImpl + Send + Sync, Queue, F: Send + Sync>(
         &self,
-        primal_module_parallel: &PrimalModuleParallel,
+        _primal_module_parallel: &PrimalModuleParallel,
         partitioned_syndrome_pattern: PartitionedSyndromePattern,
         parallel_dual_module: &DualModuleParallel<DualSerialModule, Queue>,
         callback: &mut Option<&mut F>,
@@ -522,18 +522,22 @@ impl PrimalModuleParallel {
 
 impl PrimalModuleImpl for PrimalModuleParallel {
     /// create a primal module given the dual module
-    fn new_empty(solver_initializer: &SolverInitializer) -> Self {
-        Self::new_config(
-            solver_initializer,
-            &PartitionConfig::new(solver_initializer.vertex_num).info(),
-            PrimalModuleParallelConfig::default(),
-        )
+    fn new_empty(_solver_initializer: &SolverInitializer) -> Self {
+        // use new_config directly instead
+        unimplemented!()
+        // Self::new_config(
+        //     solver_initializer,
+        //     &PartitionConfig::new(solver_initializer.vertex_num).info(),
+        //     PrimalModuleParallelConfig::default(),
+        //     growing_strategy,
+        //     plugins,
+        // )
     }
 
     /// clear all states; however this method is not necessarily called when load a new decoding problem, so you need to call it yourself
     fn clear(&mut self) {
         self.thread_pool.scope(|_| {
-            self.units.par_iter().enumerate().for_each(|(unit_idx, unit_ptr)| {
+            self.units.par_iter().enumerate().for_each(|(_unit_idx, unit_ptr)| {
                 let mut unit = unit_ptr.write();
                 unit.clear();
             });
@@ -542,7 +546,7 @@ impl PrimalModuleImpl for PrimalModuleParallel {
 
     /// load a new decoding problem given dual interface: note that all nodes MUST be defect node
     /// this function needs to be written to allow dynamic fusion
-    fn load<D: DualModuleImpl>(&mut self, interface_ptr: &DualModuleInterfacePtr, dual_module: &mut D) {
+    fn load<D: DualModuleImpl>(&mut self, _interface_ptr: &DualModuleInterfacePtr, _dual_module: &mut D) {
         panic!("load interface directly into the parallel primal module is forbidden, use `individual_solve` instead");
     }
 
@@ -554,9 +558,9 @@ impl PrimalModuleImpl for PrimalModuleParallel {
     /// note: this is only ran in the "search" mode
     fn resolve(
         &mut self,
-        group_max_update_length: GroupMaxUpdateLength,
-        interface: &DualModuleInterfacePtr,
-        dual_module: &mut impl DualModuleImpl,
+        _group_max_update_length: GroupMaxUpdateLength,
+        _interface: &DualModuleInterfacePtr,
+        _dual_module: &mut impl DualModuleImpl,
     ) -> bool {
         panic!("parallel primal module cannot handle global resolve requests, use `individual_solve` instead");
     }
@@ -646,7 +650,7 @@ impl PrimalModuleImpl for PrimalModuleParallel {
 impl PrimalModuleImpl for PrimalModuleParallelUnit {
     /// create a primal module given the dual module
     /// this function needs to be implemented for dynamic fusion
-    fn new_empty(solver_initializer: &SolverInitializer) -> Self {
+    fn new_empty(_solver_initializer: &SolverInitializer) -> Self {
         panic!("creating parallel unit directly from initializer is forbidden, use `PrimalModuleParallel::new` instead");
     }
 
@@ -790,12 +794,12 @@ pub mod tests {
 
         let mut dual_module_parallel_config = DualModuleParallelConfig::default();
         // dual_module_parallel_config.enable_parallel_execution = true;
-        let mut dual_module: DualModuleParallel<DualModulePQ<FutureObstacleQueue<Rational>>, FutureObstacleQueue<Rational>> =
+        let dual_module: DualModuleParallel<DualModulePQ<FutureObstacleQueue<Rational>>, FutureObstacleQueue<Rational>> =
             DualModuleParallel::new_config(&initializer, &partition_info, dual_module_parallel_config);
 
         // create primal module
         let primal_config = PrimalModuleParallelConfig {..Default::default()};
-        let primal_module = PrimalModuleParallel::new_config(&model_graph.initializer, &partition_info, primal_config.clone());
+        let primal_module = PrimalModuleParallel::new_config(&model_graph.initializer, &partition_info, primal_config.clone(), growing_strategy, Arc::new(plugins.clone()));
         // primal_module.growing_strategy = growing_strategy;
         // primal_module.plugins = Arc::new(plugins);
         // primal_module.config = serde_json::from_value(json!({"timeout":1})).unwrap();
@@ -819,8 +823,8 @@ pub mod tests {
         _code: impl ExampleCode,
         defect_vertices: Vec<VertexIndex>,
         final_dual: Weight,
-        plugins: PluginVec,
-        growing_strategy: GrowingStrategy,
+        _plugins: PluginVec,
+        _growing_strategy: GrowingStrategy,
         mut dual_module: DualModuleParallel<DualModulePQ<Queue>, Queue>,
         mut primal_module: PrimalModuleParallel,
         model_graph: Arc<crate::model_hypergraph::ModelHyperGraph>,
@@ -875,7 +879,7 @@ pub mod tests {
         // RUST_BACKTRACE=1 cargo test primal_module_parallel_tentative_test_1 -- --nocapture
         let weight = 1; // do not change, the data is hard-coded
         let code = CodeCapacityPlanarCode::new(7, 0.1, weight);
-        let defect_vertices = vec![22, 28];
+        let defect_vertices = vec![29, 39];
 
         let visualize_filename = "primal_module_parallel_tentative_test_1.json".to_string();
         primal_module_parallel_basic_standard_syndrome(
@@ -950,7 +954,7 @@ pub mod tests {
         // RUST_BACKTRACE=1 cargo test primal_module_parallel_tentative_test_5 -- --nocapture
         let weight = 1; // do not change, the data is hard-coded
         let code = CodeCapacityPlanarCode::new(7, 0.1, weight);
-        let defect_vertices = vec![16, 19, 29];
+        let defect_vertices = vec![16, 19, 29, 39];
 
         let visualize_filename = "primal_module_parallel_tentative_test_5.json".to_string();
         primal_module_parallel_basic_standard_syndrome(
@@ -1033,12 +1037,12 @@ pub mod tests {
 
         let mut dual_module_parallel_config = DualModuleParallelConfig::default();
         // dual_module_parallel_config.enable_parallel_execution = true;
-        let mut dual_module: DualModuleParallel<DualModulePQ<FutureObstacleQueue<Rational>>, FutureObstacleQueue<Rational>> =
+        let dual_module: DualModuleParallel<DualModulePQ<FutureObstacleQueue<Rational>>, FutureObstacleQueue<Rational>> =
             DualModuleParallel::new_config(&initializer, &partition_info, dual_module_parallel_config);
 
         // create primal module
         let primal_config = PrimalModuleParallelConfig {..Default::default()};
-        let primal_module = PrimalModuleParallel::new_config(&model_graph.initializer, &partition_info, primal_config.clone());
+        let primal_module = PrimalModuleParallel::new_config(&model_graph.initializer, &partition_info, primal_config.clone(), growing_strategy, Arc::new(plugins.clone()));
         // primal_module.growing_strategy = growing_strategy;
         // primal_module.plugins = Arc::new(plugins);
         // primal_module.config = serde_json::from_value(json!({"timeout":1})).unwrap();
@@ -1196,7 +1200,7 @@ pub mod tests {
 
         // create primal module
         let primal_config = PrimalModuleParallelConfig {..Default::default()};
-        let primal_module = PrimalModuleParallel::new_config(&model_graph.initializer, &partition_info, primal_config.clone());
+        let primal_module = PrimalModuleParallel::new_config(&model_graph.initializer, &partition_info, primal_config.clone(), growing_strategy, Arc::new(plugins.clone()));
 
         primal_module_parallel_basic_standard_syndrome_optional_viz(
             code,

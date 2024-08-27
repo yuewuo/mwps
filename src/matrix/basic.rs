@@ -3,8 +3,6 @@ use super::row::*;
 use super::visualize::*;
 use crate::util::*;
 use derivative::Derivative;
-use weak_table::PtrWeakHashSet;
-use weak_table::PtrWeakKeyHashMap;
 use std::collections::{BTreeMap, BTreeSet};
 
 #[cfg(feature = "pq")]

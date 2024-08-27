@@ -14,7 +14,6 @@ use crate::plugin_union_find::*;
 use crate::relaxer::*;
 use crate::util::*;
 use num_traits::One;
-use weak_table::PtrWeakHashSet;
 use std::collections::BTreeSet;
 use std::sync::Arc;
 

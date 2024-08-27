@@ -288,7 +288,7 @@ pub mod tests {
 
         // create dual module
         let model_graph = code.get_model_graph();
-        let mut dual_module: DualModulePQ<FutureObstacleQueue<Rational>> = DualModulePQ::new_empty(&model_graph.initializer);
+        let dual_module: DualModulePQ<FutureObstacleQueue<Rational>> = DualModulePQ::new_empty(&model_graph.initializer);
 
         primal_module_union_find_basic_standard_syndrome_optional_viz(
             code,

@@ -5,6 +5,7 @@
 //! Only debug tests are failing, which aligns with the dual_module_serial behavior
 //!
 
+use color_print::cprintln;
 use crate::num_traits::{ToPrimitive, Zero};
 use crate::ordered_float::OrderedFloat;
 use crate::pointers::*;
@@ -537,8 +538,13 @@ where
     Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug + Clone,
 {
     /// helper function to bring an edge update to speed with current time if needed
-    fn update_edge_if_necessary(&self, edge: &mut RwLockWriteGuard<RawRwLock, Edge>) {
+    fn update_edge_if_necessary(&self, edge_ptr: &EdgePtr) {
         let global_time = self.global_time.read_recursive();
+        // let global_time_ptr = &edge.global_time;
+        // let global_time = global_time_ptr.read_recursive();
+        let mut edge = edge_ptr.write();
+        // let global_time_ptr = edge.global_time.clone();
+        // let global_time = global_time_ptr.read_recursive();
         if edge.last_updated_time == global_time.clone() {
             // the edge is not behind
             return;
@@ -557,11 +563,15 @@ where
             edge.growth_at_last_updated_time <= edge.weight,
             "growth larger than weight: check if events are 1) inserted and 2) handled correctly"
         );
+        drop(edge);
     }
 
     /// helper function to bring a dual node update to speed with current time if needed
-    fn update_dual_node_if_necessary(&mut self, node: &mut RwLockWriteGuard<RawRwLock, DualNode>) {
+    fn update_dual_node_if_necessary(&mut self, node_ptr: &DualNodePtr) {
         let global_time = self.global_time.read_recursive();
+        let mut node = node_ptr.write();
+        // let global_time_ptr = node.global_time.clone().unwrap();
+        // let global_time = global_time_ptr.read_recursive();
         if node.last_updated_time == global_time.clone() {
             // the edge is not behind
             return;
@@ -585,14 +595,14 @@ where
     #[allow(dead_code)]
     fn debug_update_all(&mut self, dual_node_ptrs: &[DualNodePtr]) {
         // updating all edges
-        for edge in self.edges.iter() {
-            let mut edge = edge.write();
-            self.update_edge_if_necessary(&mut edge);
+        for edge_ptr in self.edges.iter() {
+            // let mut edge = edge.write();
+            self.update_edge_if_necessary(&edge_ptr);
         }
         // updating all dual nodes
         for dual_node_ptr in dual_node_ptrs.iter() {
-            let mut dual_node = dual_node_ptr.write();
-            self.update_dual_node_if_necessary(&mut dual_node);
+            // let mut dual_node = dual_node_ptr.write();
+            self.update_dual_node_if_necessary(&dual_node_ptr);
         }
     }
 }
@@ -693,7 +703,7 @@ where
     #[allow(clippy::unnecessary_cast)]
     /// Mostly invoked by `add_defect_node`, triggering a pq update, and edges updates
     fn add_dual_node(&mut self, dual_node_ptr: &DualNodePtr) {
-        dual_node_ptr.write().init_time(self.global_time.clone());
+        dual_node_ptr.write().init_time(self.global_time.clone()); // should be okay because a dual node will only be added in its own unit
         let global_time = self.global_time.read_recursive();
         let dual_node_weak = dual_node_ptr.downgrade();
         let dual_node = dual_node_ptr.read_recursive();
@@ -707,17 +717,21 @@ where
                 },
             );
         }
-
+        // drop(global_time);
         for edge_ptr in dual_node.invalid_subgraph.hair.iter() {
             // let mut edge = self.edges[edge_index as usize].write();
-            let mut edge = edge_ptr.write();
+            // let mut edge = edge_ptr.write();
 
             // should make sure the edge is up-to-speed before making its variables change
-            self.update_edge_if_necessary(&mut edge);
+            self.update_edge_if_necessary(&edge_ptr);
 
+            let mut edge = edge_ptr.write();
             edge.grow_rate += &dual_node.grow_rate;
             edge.dual_nodes
                 .push(OrderedDualNodeWeak::new(dual_node.index, dual_node_weak.clone()));
+
+            let global_time_ptr = edge.global_time.clone();
+            let global_time = global_time_ptr.read_recursive();
 
             if edge.grow_rate.is_positive() {
                 self.obstacle_queue.will_happen(
@@ -747,11 +761,14 @@ where
 
     #[allow(clippy::unnecessary_cast)]
     fn set_grow_rate(&mut self, dual_node_ptr: &DualNodePtr, grow_rate: Rational) {
-        let mut dual_node = dual_node_ptr.write();
+        // let mut dual_node = dual_node_ptr.write();
         // println!("set_grow_rate invoked on {:?}, to be {:?}", dual_node.index, grow_rate);
-        self.update_dual_node_if_necessary(&mut dual_node);
+        self.update_dual_node_if_necessary(&dual_node_ptr);
+        let mut dual_node = dual_node_ptr.write();
+        let global_time_ptr = dual_node.global_time.clone().unwrap();
+        let global_time = global_time_ptr.read_recursive();
 
-        let global_time = self.global_time.read_recursive();
+        // let global_time = self.global_time.read_recursive();
         let grow_rate_diff = &grow_rate - &dual_node.grow_rate;
 
         dual_node.grow_rate = grow_rate.clone();
@@ -765,14 +782,19 @@ where
             );
         }
         drop(dual_node);
+        // drop(global_time);
 
         let dual_node = dual_node_ptr.read_recursive();
         for edge_ptr in dual_node.invalid_subgraph.hair.iter() {
             // let mut edge = self.edges[edge_index as usize].write();
-            let mut edge = edge_ptr.write();
-            self.update_edge_if_necessary(&mut edge);
+            // let mut edge = edge_ptr.write();
+            self.update_edge_if_necessary(&edge_ptr);
+            
 
+            let mut edge = edge_ptr.write();
             edge.grow_rate += &grow_rate_diff;
+            let global_time_ptr = edge.global_time.clone();
+            let global_time = global_time_ptr.read_recursive();
             if edge.grow_rate.is_positive() {
                 self.obstacle_queue.will_happen(
                     // it is okay to use global_time now, as this must be up-to-speed
@@ -805,10 +827,13 @@ where
         let global_time = self.global_time.read_recursive();
         // getting rid of all the invalid events
         while let Some((time, event)) = self.obstacle_queue.peek_event() {
+            cprintln!("<blue> event found: {:?}<blue>", event);
             // found a valid event
             if event.is_valid(self, time) {
+                cprintln!("<blue, bold>valid event: {:?}</blue, bold>", event);
                 // valid grow
                 if time != &global_time.clone() {
+                    cprintln!("<blue, bold>group max update length within fn: {:?}</blue, bold>", GroupMaxUpdateLength::ValidGrow(time - global_time.clone()));
                     return GroupMaxUpdateLength::ValidGrow(time - global_time.clone());
                 }
                 // goto else
@@ -837,10 +862,10 @@ where
             while let Some((time, _)) = self.obstacle_queue.peek_event() {
                 if &global_time.clone() == time {
                     let (time, event) = self.obstacle_queue.pop_event().unwrap();
+                    cprintln!("<blue> event found: {:?}<blue>", event);
                     if !event.is_valid(self, &time) {
                         continue;
                     }
-                    // add
                     group_max_update_length.add(match event {
                         Obstacle::Conflict { edge_ptr } => MaxUpdateLength::Conflicting(edge_ptr),
                         Obstacle::ShrinkToZero { dual_node_ptr } => {
@@ -863,7 +888,7 @@ where
             //         }
             //     }
             // }
-            // println!("group max update length within fn: {:?}", group_max_update_length);
+            cprintln!("<blue, bold>group max update length within fn: {:?}</blue, bold>", group_max_update_length);
             return group_max_update_length;
         }
 
@@ -897,8 +922,9 @@ where
     fn get_edge_slack(&self, edge_ptr: EdgePtr) -> Rational {
         // let edge = self.edges[edge_index as usize].read_recursive();
         let edge = edge_ptr.read_recursive();
+        let global_time = edge.global_time.read_recursive();
         edge.weight.clone()
-            - (self.global_time.read_recursive().clone() - edge.last_updated_time.clone()) * edge.grow_rate.clone()
+            - (global_time.clone() - edge.last_updated_time.clone()) * edge.grow_rate.clone()
             - edge.growth_at_last_updated_time.clone()
     }
 
@@ -949,7 +975,9 @@ where
             let mut edge = edges.write();
 
             // update if necessary
-            let global_time = self.global_time.read_recursive();
+            // let global_time = self.global_time.read_recursive();
+            let global_time_ptr = edge.global_time.clone();
+            let global_time = global_time_ptr.read_recursive();
             if edge.last_updated_time != global_time.clone() {
                 // the edge is behind
                 debug_assert!(
@@ -976,7 +1004,9 @@ where
                 nodes_touched.insert(node.index);
 
                 // update if necessary
-                let global_time = self.global_time.read_recursive();
+                // let global_time = self.global_time.read_recursive();
+                let global_time_ptr = node.global_time.clone().unwrap();
+                let global_time = global_time_ptr.read_recursive();
                 if node.last_updated_time != global_time.clone() {
                     // the node is behind
                     debug_assert!(
@@ -1038,7 +1068,6 @@ where
 
         let mut weight = Rational::zero();
         for edge_ptr in cluster.edges.iter() {
-            // let edge_ptr = self.edges[edge_index].read_recursive();
             let edge = edge_ptr.read_recursive();
             weight += &edge.weight - &edge.growth_at_last_updated_time;
         }
@@ -1058,7 +1087,6 @@ where
         edge_ptr: EdgePtr,
         participating_dual_variables: &hashbrown::HashSet<usize>,
     ) -> Rational {
-        // let edge = self.edges[edge_index as usize].read_recursive();
         let edge = edge_ptr.read_recursive();
         let mut free_weight = edge.weight.clone();
         for dual_node in edge.dual_nodes.iter() {

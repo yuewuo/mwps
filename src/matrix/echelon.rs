@@ -11,7 +11,6 @@ use crate::dual_module_pq::{EdgeWeak, VertexWeak, EdgePtr, VertexPtr};
 #[cfg(feature = "non-pq")]
 use crate::dual_module_serial::{EdgeWeak, VertexWeak, EdgePtr, VertexPtr};
 
-use weak_table::PtrWeakHashSet;
 
 #[derive(Clone, Derivative)]
 #[derivative(Default(new = "true"))]

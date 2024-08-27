@@ -5,7 +5,7 @@
 //! A plugin must implement Clone trait, because it will be cloned multiple times for each cluster
 //!
 
-use crate::decoding_hypergraph::*;
+// use crate::decoding_hypergraph::*;
 use crate::derivative::Derivative;
 use crate::dual_module::*;
 use crate::matrix::*;
@@ -64,6 +64,7 @@ pub enum RepeatStrategy {
 }
 
 /// describes what plugins to enable and also the recursive strategy
+#[derive(Clone)]
 pub struct PluginEntry {
     /// the implementation of a plugin
     pub plugin: Arc<dyn PluginImpl + Send + Sync>,

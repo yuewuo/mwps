@@ -21,6 +21,7 @@ use std::time::Instant;
 use petgraph::Graph;
 use petgraph::Undirected;
 use std::sync::Arc;
+use crate::itertools::Itertools;
 
 #[cfg(feature = "pq")]
 use crate::dual_module_pq::{EdgeWeak, VertexWeak, EdgePtr, VertexPtr};
@@ -129,10 +130,10 @@ impl SolverInitializer {
     }
 
     pub fn matches_subgraph_syndrome(&self, subgraph: &Subgraph, defect_vertices: &[VertexIndex]) -> bool {
-        let subgraph_defect_vertices: Vec<_> = self.get_subgraph_syndrome(subgraph).into_iter().collect();
-        let subgraph_vertices: std::collections::HashSet<_> = subgraph_defect_vertices.clone().into_iter().map(|v| v.read_recursive().vertex_index).collect();
+        let subgraph_defect_vertices:std::collections::HashSet<_> = self.get_subgraph_syndrome(subgraph).into_iter().collect();
+        // let subgraph_vertices: std::collections::HashSet<_> = subgraph_defect_vertices.clone().into_iter().map(|v| v.read_recursive().vertex_index).collect();
         let defect_vertices_hash: std::collections::HashSet<_> = defect_vertices.to_vec().into_iter().collect();
-        if subgraph_vertices == defect_vertices_hash {
+        if subgraph_defect_vertices == defect_vertices_hash {
             return true;
         } else {
             println!(
@@ -182,21 +183,22 @@ impl SolverInitializer {
     }
 
     #[allow(clippy::unnecessary_cast)]
-    pub fn get_subgraph_syndrome(&self, subgraph: &Subgraph) -> BTreeSet<VertexPtr> {
+    pub fn get_subgraph_syndrome(&self, subgraph: &Subgraph) -> BTreeSet<usize> {
         let mut defect_vertices = BTreeSet::new();
         for edge_weak in subgraph.iter() {
-            // println!("edge in subgraph: {:?}", edge_weak.upgrade_force().read_recursive().edge_index);
+            println!("edge in subgraph: {:?}", edge_weak.upgrade_force().read_recursive().edge_index);
             // let HyperEdge { vertices, .. } = &self.weighted_edges[edge_index as usize];
             let edge_ptr = edge_weak.upgrade_force();
             // let edge = edge_ptr.read_recursive();
             // let vertices = &edge.vertices;
             let vertices = &edge_ptr.get_vertex_neighbors();
-            for vertex_weak in vertices.iter() {
-                let vertex_ptr = vertex_weak.upgrade_force();
-                if defect_vertices.contains(&vertex_ptr) {
-                    defect_vertices.remove(&vertex_ptr);
+            let unique_vertices = vertices.into_iter().map(|v| v.upgrade_force().read_recursive().vertex_index).unique().collect::<Vec<_>>();
+            for vertex_index in unique_vertices.iter() {
+                println!("vertex: {:?}", vertex_index);
+                if defect_vertices.contains(vertex_index) {
+                    defect_vertices.remove(vertex_index);
                 } else {
-                    defect_vertices.insert(vertex_ptr);
+                    defect_vertices.insert(*vertex_index);
                 }
             }
         }

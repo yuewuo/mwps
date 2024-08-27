@@ -5,7 +5,6 @@
 //! sure there is a feasible MINLP solution.
 //!
 
-use weak_table::PtrWeakHashSet;
 
 use crate::decoding_hypergraph::*;
 use crate::dual_module::*;

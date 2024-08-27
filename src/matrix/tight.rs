@@ -3,7 +3,6 @@ use super::visualize::*;
 use crate::util::*;
 use derivative::Derivative;
 use std::collections::BTreeSet;
-use weak_table::PtrWeakHashSet;
 
 #[cfg(feature = "pq")]
 use crate::dual_module_pq::{EdgeWeak, VertexWeak, EdgePtr, VertexPtr};
@@ -557,20 +556,20 @@ pub mod tests {
                 })
             }).collect();
 
-        let another_edge = EdgePtr::new_value(Edge {
-            edge_index: 3,
-            weight: Rational::zero(),
-            dual_nodes: vec![],
-            vertices: vec![],
-            last_updated_time: Rational::zero(),
-            growth_at_last_updated_time: Rational::zero(),
-            grow_rate: Rational::zero(),
-            unit_index: None,
-            connected_to_boundary_vertex: false,
-            global_time: global_time.clone(),
-            #[cfg(feature = "incr_lp")]
-            cluster_weights: hashbrown::HashMap::new(),
-        });
+        // let another_edge = EdgePtr::new_value(Edge {
+        //     edge_index: 3,
+        //     weight: Rational::zero(),
+        //     dual_nodes: vec![],
+        //     vertices: vec![],
+        //     last_updated_time: Rational::zero(),
+        //     growth_at_last_updated_time: Rational::zero(),
+        //     grow_rate: Rational::zero(),
+        //     unit_index: None,
+        //     connected_to_boundary_vertex: false,
+        //     global_time: global_time.clone(),
+        //     #[cfg(feature = "incr_lp")]
+        //     cluster_weights: hashbrown::HashMap::new(),
+        // });
         matrix.add_constraint(vertices[0].downgrade(), &[edges[0].downgrade(), edges[1].downgrade(), edges[2].downgrade()], true);
         matrix.update_edge_tightness(edges[0].downgrade(), true);
         // even though there is indeed such a column, we forbid such dangerous calls
