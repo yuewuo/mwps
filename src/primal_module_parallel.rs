@@ -230,9 +230,9 @@ impl PrimalModuleParallelUnitPtr {
             );
             primal_unit.is_solved = true;
             // println!("unit: {:?}, is_solved: {:?}", unit_index, primal_unit.is_solved);
-            if let Some(callback) = callback.as_mut() {
-                callback(&primal_unit.interface_ptr, &dual_module_ptr.write().deref_mut(), &primal_unit.serial_module, None);
-            }
+            // if let Some(callback) = callback.as_mut() {
+            //     callback(&primal_unit.interface_ptr, &dual_module_ptr.write().deref_mut(), &primal_unit.serial_module, None);
+            // }
         }
         drop(primal_unit);
     }
@@ -265,9 +265,9 @@ impl PrimalModuleParallelUnitPtr {
         let mut primal_unit = self.write();
         primal_unit.fuse_operation_on_self(self_dual_ptr, parallel_dual_module);
 
-        if let Some(callback) = callback.as_mut() {
-            callback(&primal_unit.interface_ptr, &self_dual_ptr.write().deref_mut(), &primal_unit.serial_module, None);
-        }
+        // if let Some(callback) = callback.as_mut() {
+        //     callback(&primal_unit.interface_ptr, &self_dual_ptr.write().deref_mut(), &primal_unit.serial_module, None);
+        // }
 
         // now we have finished fusing self with all adjacent units, we run solve again
 
@@ -286,9 +286,9 @@ impl PrimalModuleParallelUnitPtr {
                     }
                 },
             );
-            if let Some(callback) = callback.as_mut() {
-                callback(&primal_unit.interface_ptr, &self_dual_ptr.write().deref_mut(), &primal_unit.serial_module, None);
-            }
+            // if let Some(callback) = callback.as_mut() {
+            //     callback(&primal_unit.interface_ptr, &self_dual_ptr.write().deref_mut(), &primal_unit.serial_module, None);
+            // }
         } else {
             // we solve the individual unit first
             let syndrome_pattern = Arc::new(owned_defect_range.expand());
@@ -304,9 +304,9 @@ impl PrimalModuleParallelUnitPtr {
                 },
             );
             primal_unit.is_solved = true;
-            if let Some(callback) = callback.as_mut() {
-                callback(&primal_unit.interface_ptr, &self_dual_ptr.write().deref_mut(), &primal_unit.serial_module, None);
-            }
+            // if let Some(callback) = callback.as_mut() {
+            //     callback(&primal_unit.interface_ptr, &self_dual_ptr.write().deref_mut(), &primal_unit.serial_module, None);
+            // }
         }
         
     }
@@ -1197,7 +1197,7 @@ pub mod tests {
         dual_module_parallel_config.enable_parallel_execution = true;
         let mut dual_module: DualModuleParallel<DualModulePQ<FutureObstacleQueue<Rational>>, FutureObstacleQueue<Rational>> =
             DualModuleParallel::new_config(&initializer, &partition_info, dual_module_parallel_config);
-        dual_module.static_fuse_all();
+        // dual_module.static_fuse_all();
 
         // create primal module
         let primal_config = PrimalModuleParallelConfig {..Default::default()};
