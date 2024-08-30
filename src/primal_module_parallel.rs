@@ -230,9 +230,9 @@ impl PrimalModuleParallelUnitPtr {
             );
             primal_unit.is_solved = true;
             // println!("unit: {:?}, is_solved: {:?}", unit_index, primal_unit.is_solved);
-            // if let Some(callback) = callback.as_mut() {
-            //     callback(&primal_unit.interface_ptr, &dual_module_ptr.write().deref_mut(), &primal_unit.serial_module, None);
-            // }
+            if let Some(callback) = callback.as_mut() {
+                callback(&primal_unit.interface_ptr, &dual_module_ptr.write().deref_mut(), &primal_unit.serial_module, None);
+            }
         }
         drop(primal_unit);
     }
@@ -265,9 +265,9 @@ impl PrimalModuleParallelUnitPtr {
         let mut primal_unit = self.write();
         primal_unit.fuse_operation_on_self(self_dual_ptr, parallel_dual_module);
 
-        // if let Some(callback) = callback.as_mut() {
-        //     callback(&primal_unit.interface_ptr, &self_dual_ptr.write().deref_mut(), &primal_unit.serial_module, None);
-        // }
+        if let Some(callback) = callback.as_mut() {
+            callback(&primal_unit.interface_ptr, &self_dual_ptr.write().deref_mut(), &primal_unit.serial_module, None);
+        }
 
         // now we have finished fusing self with all adjacent units, we run solve again
 
@@ -286,9 +286,9 @@ impl PrimalModuleParallelUnitPtr {
                     }
                 },
             );
-            // if let Some(callback) = callback.as_mut() {
-            //     callback(&primal_unit.interface_ptr, &self_dual_ptr.write().deref_mut(), &primal_unit.serial_module, None);
-            // }
+            if let Some(callback) = callback.as_mut() {
+                callback(&primal_unit.interface_ptr, &self_dual_ptr.write().deref_mut(), &primal_unit.serial_module, None);
+            }
         } else {
             // we solve the individual unit first
             let syndrome_pattern = Arc::new(owned_defect_range.expand());
@@ -304,9 +304,9 @@ impl PrimalModuleParallelUnitPtr {
                 },
             );
             primal_unit.is_solved = true;
-            // if let Some(callback) = callback.as_mut() {
-            //     callback(&primal_unit.interface_ptr, &self_dual_ptr.write().deref_mut(), &primal_unit.serial_module, None);
-            // }
+            if let Some(callback) = callback.as_mut() {
+                callback(&primal_unit.interface_ptr, &self_dual_ptr.write().deref_mut(), &primal_unit.serial_module, None);
+            }
         }
         
     }
@@ -494,6 +494,7 @@ impl PrimalModuleParallel {
         ),
         Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug + Send + Sync + Clone,
     {
+        // parallel implementation using rayon
         let thread_pool = Arc::clone(&self.thread_pool);
         thread_pool.scope(|_| {
             (0..self.partition_info.config.partitions.len())
@@ -533,7 +534,7 @@ impl PrimalModuleParallel {
                     self, 
                     PartitionedSyndromePattern::new(&syndrome_pattern), 
                     parallel_dual_module, 
-                    &mut Some(&mut callback),
+                    &mut None,
                 );
             }
         }
@@ -562,7 +563,7 @@ impl PrimalModuleParallel {
         //         self, 
         //         PartitionedSyndromePattern::new(&syndrome_pattern), 
         //         parallel_dual_module, 
-        //         &mut Some(&mut callback),
+        //         &mut None,
         //     );
         // }
 
@@ -572,7 +573,7 @@ impl PrimalModuleParallel {
         //         self, 
         //         PartitionedSyndromePattern::new(&syndrome_pattern), 
         //         parallel_dual_module, 
-        //         &mut Some(&mut callback),
+        //         &mut None,
         //     );
         // }
     }
@@ -1258,7 +1259,8 @@ pub mod tests {
             DualModuleParallel::new_config(&initializer, &partition_info, dual_module_parallel_config);
 
         // create primal module
-        let primal_config = PrimalModuleParallelConfig {..Default::default()};
+        let mut primal_config = PrimalModuleParallelConfig {..Default::default()};
+        primal_config.thread_pool_size = 4;
         let primal_module = PrimalModuleParallel::new_config(&model_graph.initializer, &partition_info, primal_config.clone(), growing_strategy, Arc::new(plugins.clone()));
 
         primal_module_parallel_basic_standard_syndrome_optional_viz(
@@ -1348,7 +1350,7 @@ pub mod tests {
         // cargo test primal_module_parallel_circuit_level_noise_qec_playground_4 -- --nocapture
         let config = json!({
             "code_type": qecp::code_builder::CodeType::RotatedPlanarCode,
-            "nm": 16,
+            "nm": 18,
         });
         
         let mut code = QECPlaygroundCode::new(7, 0.005, config);

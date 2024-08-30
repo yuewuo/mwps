@@ -1993,11 +1993,14 @@ pub mod tests {
         }
 
         // pick the t value in the middle to split it
+        println!("t_list first: {:?}, t_list last: {:?}", t_list[0], t_list.last().unwrap());
         let mut t_split_vec: Vec<f64> = vec![0.0; split_num - 1];
         for i in 0..(split_num - 1) {
             let index: usize = t_list.len()/split_num * (i + 1);
             t_split_vec[i] = t_list[index];
         }
+        println!("t_split_vec: {:?}", t_split_vec);
+
         // find the vertices indices
         let mut split_start_index_vec = vec![MAX; split_num - 1];
         let mut split_end_index_vec = vec![MAX; split_num - 1];
@@ -2022,6 +2025,8 @@ pub mod tests {
             }
         }
 
+        println!("split_start_index_vec: {:?}", split_start_index_vec);
+        println!("split_end_index_vec: {:?}", split_end_index_vec);
         assert!(split_start_index_vec.iter().all(|&x| x != MAX), "Some elements in split_start_index_vec are equal to MAX");
         
         // partitions are found
@@ -2111,7 +2116,8 @@ pub mod tests {
     fn dual_module_parallel_circuit_level_noise_qec_playground_1() {
         // cargo test dual_module_parallel_circuit_level_noise_qec_playground_1 -- --nocapture
         let config = json!({
-            "code_type": qecp::code_builder::CodeType::RotatedPlanarCode
+            "code_type": qecp::code_builder::CodeType::RotatedPlanarCode,
+            "nm": 18,
         });
         
         let code = QECPlaygroundCode::new(3, 0.1, config);
@@ -2157,7 +2163,8 @@ pub mod tests {
     fn dual_module_parallel_circuit_level_noise_qec_playground_3() {
         // cargo test dual_module_parallel_circuit_level_noise_qec_playground_3 -- --nocapture
         let config = json!({
-            "code_type": qecp::code_builder::CodeType::RotatedPlanarCode
+            "code_type": qecp::code_builder::CodeType::RotatedPlanarCode,
+            "nm": 18,
         });
         
         let mut code = QECPlaygroundCode::new(7, 0.005, config);
@@ -2171,7 +2178,7 @@ pub mod tests {
             2424788,
             vec![],
             GrowingStrategy::ModeBased,
-            4,
+            8,
         );
     }
 }
