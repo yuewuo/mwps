@@ -416,8 +416,8 @@ pub struct Edge {
     /// whether this edge is connected to a boundary vertex, (this edges must belong to non-boundary unit)
     pub connected_to_boundary_vertex: bool, 
 
-    /// pointer to the global time of its corresponding unit, for parallelization purpose
-    pub global_time: ArcRwLock<Rational>,
+    // /// pointer to the global time of its corresponding unit, for parallelization purpose
+    // pub global_time: ArcRwLock<Rational>,
 
     #[cfg(feature = "incr_lp")]
     /// storing the weights of the clusters that are currently contributing to this edge
@@ -669,7 +669,6 @@ where
                 grow_rate: Rational::zero(),
                 unit_index: None,
                 connected_to_boundary_vertex: false,
-                global_time: global_time.clone(),
                 #[cfg(feature = "incr_lp")]
                 cluster_weights: hashbrown::HashMap::new(),
             });
@@ -964,9 +963,8 @@ where
     fn get_edge_slack(&self, edge_ptr: EdgePtr) -> Rational {
         // let edge = self.edges[edge_index as usize].read_recursive();
         let edge = edge_ptr.read_recursive();
-        let global_time = edge.global_time.read_recursive();
         edge.weight.clone()
-            - (global_time.clone() - edge.last_updated_time.clone()) * edge.grow_rate.clone()
+            - (self.global_time.read_recursive().clone() - edge.last_updated_time.clone()) * edge.grow_rate.clone()
             - edge.growth_at_last_updated_time.clone()
     }
 
@@ -1269,7 +1267,6 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
                 grow_rate: Rational::zero(),
                 unit_index: Some(partitioned_initializer.unit_index),
                 connected_to_boundary_vertex: hyper_edge.connected_to_boundary_vertex,
-                global_time: global_time.clone(),
             });
 
             // we also need to update the vertices of this hyper_edge

@@ -1735,6 +1735,30 @@ pub mod tests {
         );
     }
 
+    #[test]
+    fn primal_module_serial_circuit_level_noise_1() {
+        // cargo test primal_module_serial_circuit_level_noise_1 -- --nocapture
+        let config = json!({
+            "code_type": qecp::code_builder::CodeType::RotatedPlanarCode,
+        });
+        
+        let mut code = QECPlaygroundCode::new(3, 0.005, config);
+
+        
+        // let defect_vertices = code.clone().generate_random_errors(seed).0.defect_vertices;
+        let defect_vertices = vec![3, 10, 12, 18, 19, 20, 31];
+
+        let visualize_filename = "primal_module_serial_circuit_level_noise_1.json".to_string();
+        primal_module_serial_basic_standard_syndrome_with_dual_pq_impl(
+            code,
+            visualize_filename,
+            defect_vertices.clone(),
+            5914274,
+            vec![],
+            GrowingStrategy::ModeBased,
+        );
+    }
+
     // /// feasible but non-optimal solution
     // #[test]
     // fn primal_module_serial_test_for_seed_131() {

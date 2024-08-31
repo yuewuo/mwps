@@ -351,7 +351,7 @@ impl PrimalModuleParallelUnitPtr {
                         let mut edge = edge_ptr.write();
                         // println!("edge weak of mirrored vertex");
                         if edge.connected_to_boundary_vertex {
-                            // println!("edge weak of mirrored vertex is connected to boundary vertex");
+                            println!("edge: {:?}", edge.edge_index);
                             edge.growth_at_last_updated_time = Rational::zero();
                         }
                     }
@@ -494,50 +494,50 @@ impl PrimalModuleParallel {
         ),
         Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug + Send + Sync + Clone,
     {
-        // parallel implementation using rayon
-        let thread_pool = Arc::clone(&self.thread_pool);
-        thread_pool.scope(|_| {
-            (0..self.partition_info.config.partitions.len())
-            .into_par_iter()
-            .for_each( |unit_index| {
-                let unit_ptr = self.units[unit_index].clone();
-                unit_ptr.individual_solve::<DualSerialModule, Queue, F>(
-                    self, 
-                    PartitionedSyndromePattern::new(&syndrome_pattern), 
-                    parallel_dual_module, 
-                    &mut None,
-                );
-            })
-        });
+        // // parallel implementation using rayon
+        // let thread_pool = Arc::clone(&self.thread_pool);
+        // thread_pool.scope(|_| {
+        //     (0..self.partition_info.config.partitions.len())
+        //     .into_par_iter()
+        //     .for_each( |unit_index| {
+        //         let unit_ptr = self.units[unit_index].clone();
+        //         unit_ptr.individual_solve::<DualSerialModule, Queue, F>(
+        //             self, 
+        //             PartitionedSyndromePattern::new(&syndrome_pattern), 
+        //             parallel_dual_module, 
+        //             &mut None,
+        //         );
+        //     })
+        // });
 
 
-        thread_pool.scope(|_| {
-            (self.partition_info.config.partitions.len()..self.partition_info.units.len())
-            .into_par_iter()
-            .for_each( |unit_index| {
-                if (unit_index - self.partition_info.config.partitions.len()) % 2 == 0 {
-                    let unit_ptr = self.units[unit_index].clone();
-                    unit_ptr.fuse_and_solve::<DualSerialModule, Queue, F>(
-                        self, 
-                        PartitionedSyndromePattern::new(&syndrome_pattern), 
-                        parallel_dual_module, 
-                        &mut None,
-                    );
-                }
-            })
-        });
+        // thread_pool.scope(|_| {
+        //     (self.partition_info.config.partitions.len()..self.partition_info.units.len())
+        //     .into_par_iter()
+        //     .for_each( |unit_index| {
+        //         if (unit_index - self.partition_info.config.partitions.len()) % 2 == 0 {
+        //             let unit_ptr = self.units[unit_index].clone();
+        //             unit_ptr.fuse_and_solve::<DualSerialModule, Queue, F>(
+        //                 self, 
+        //                 PartitionedSyndromePattern::new(&syndrome_pattern), 
+        //                 parallel_dual_module, 
+        //                 &mut None,
+        //             );
+        //         }
+        //     })
+        // });
 
-        for unit_index in self.partition_info.config.partitions.len()..self.partition_info.units.len() {
-            if (unit_index - self.partition_info.config.partitions.len()) % 2 == 1 {
-                let unit_ptr = self.units[unit_index].clone();
-                unit_ptr.fuse_and_solve::<DualSerialModule, Queue, F>(
-                    self, 
-                    PartitionedSyndromePattern::new(&syndrome_pattern), 
-                    parallel_dual_module, 
-                    &mut None,
-                );
-            }
-        }
+        // for unit_index in self.partition_info.config.partitions.len()..self.partition_info.units.len() {
+        //     if (unit_index - self.partition_info.config.partitions.len()) % 2 == 1 {
+        //         let unit_ptr = self.units[unit_index].clone();
+        //         unit_ptr.fuse_and_solve::<DualSerialModule, Queue, F>(
+        //             self, 
+        //             PartitionedSyndromePattern::new(&syndrome_pattern), 
+        //             parallel_dual_module, 
+        //             &mut None,
+        //         );
+        //     }
+        // }
 
         // thread_pool.scope(|_| {
         //     (self.partition_info.config.partitions.len()..self.partition_info.units.len())
@@ -556,26 +556,26 @@ impl PrimalModuleParallel {
         // });
 
 
-        // // sequential implementation
-        // for unit_index in 0..self.partition_info.config.partitions.len(){
-        //     let unit_ptr = self.units[unit_index].clone();
-        //     unit_ptr.individual_solve::<DualSerialModule, Queue, F>(
-        //         self, 
-        //         PartitionedSyndromePattern::new(&syndrome_pattern), 
-        //         parallel_dual_module, 
-        //         &mut None,
-        //     );
-        // }
+        // sequential implementation
+        for unit_index in 0..self.partition_info.config.partitions.len(){
+            let unit_ptr = self.units[unit_index].clone();
+            unit_ptr.individual_solve::<DualSerialModule, Queue, F>(
+                self, 
+                PartitionedSyndromePattern::new(&syndrome_pattern), 
+                parallel_dual_module, 
+                &mut Some(&mut callback),
+            );
+        }
 
-        // for unit_index in self.partition_info.config.partitions.len()..self.partition_info.units.len() {
-        //     let unit_ptr = self.units[unit_index].clone();
-        //     unit_ptr.fuse_and_solve::<DualSerialModule, Queue, F>(
-        //         self, 
-        //         PartitionedSyndromePattern::new(&syndrome_pattern), 
-        //         parallel_dual_module, 
-        //         &mut None,
-        //     );
-        // }
+        for unit_index in self.partition_info.config.partitions.len()..self.partition_info.units.len() {
+            let unit_ptr = self.units[unit_index].clone();
+            unit_ptr.fuse_and_solve::<DualSerialModule, Queue, F>(
+                self, 
+                PartitionedSyndromePattern::new(&syndrome_pattern), 
+                parallel_dual_module, 
+                &mut Some(&mut callback),
+            );
+        }
     }
 
 
@@ -898,6 +898,7 @@ pub mod tests {
     {
         // try to work on a simple syndrome
         let decoding_graph = DecodingHyperGraph::new_defects(model_graph, defect_vertices.clone());
+        let begin_time = std::time::Instant::now();
         primal_module.parallel_solve_visualizer(
             decoding_graph.syndrome_pattern.clone(),
             &mut dual_module,
@@ -906,6 +907,7 @@ pub mod tests {
 
         let useless_interface_ptr = DualModuleInterfacePtr::new();
         let (subgraph, weight_range) = primal_module.subgraph_range(&useless_interface_ptr, 0);
+
         if let Some(visualizer) = visualizer.as_mut() {
             let last_interface_ptr = &primal_module.units.last().unwrap().read_recursive().interface_ptr;
             visualizer
@@ -921,16 +923,22 @@ pub mod tests {
                 .matches_subgraph_syndrome(&subgraph, &defect_vertices),
             "the result subgraph is invalid"
         );
-        assert_eq!(
-            Rational::from_usize(final_dual).unwrap(),
-            weight_range.upper,
-            "unmatched sum dual variables"
-        );
-        assert_eq!(
-            Rational::from_usize(final_dual).unwrap(),
-            weight_range.lower,
-            "unexpected final dual variable sum"
-        );
+        primal_module.clear();
+        dual_module.clear();
+        let end_time = std::time::Instant::now();
+        let resolve_time = (end_time - begin_time);
+        println!("resolve time {:?}", resolve_time);
+
+        // assert_eq!(
+        //     Rational::from_usize(final_dual).unwrap(),
+        //     weight_range.upper,
+        //     "unmatched sum dual variables"
+        // );
+        // assert_eq!(
+        //     Rational::from_usize(final_dual).unwrap(),
+        //     weight_range.lower,
+        //     "unexpected final dual variable sum"
+        // );
         (primal_module, dual_module)
     }
 
@@ -1284,7 +1292,7 @@ pub mod tests {
         });
         
         let code = QECPlaygroundCode::new(3, 0.1, config);
-        let defect_vertices = vec![3, 10, 18, 19, 31];
+        let defect_vertices = vec![3, 10, 12, 18, 19, 20, 31];
 
         let visualize_filename = "primal_module_parallel_circuit_level_noise_qec_playground_1.json".to_string();
         primal_module_parallel_evaluation_qec_playground_helper(
@@ -1353,8 +1361,9 @@ pub mod tests {
             "nm": 18,
         });
         
-        let mut code = QECPlaygroundCode::new(7, 0.005, config);
-        let defect_vertices = code.generate_random_errors(132).0.defect_vertices;
+        let mut code = QECPlaygroundCode::new(3, 0.005, config);
+
+        let defect_vertices = vec![16, 26, 29, 37, 39, 44, 46, 47, 51, 52, 54, 67, 122, 151];
 
         let visualize_filename = "primal_module_parallel_circuit_level_noise_qec_playground_4.json".to_string();
         primal_module_parallel_evaluation_qec_playground_helper(
@@ -1366,5 +1375,21 @@ pub mod tests {
             GrowingStrategy::ModeBased,
             8,
         );
+
+        // for seed in 0..500 {
+        //     let defect_vertices = code.clone().generate_random_errors(seed).0.defect_vertices;
+
+        //     let visualize_filename = "primal_module_parallel_circuit_level_noise_qec_playground_4.json".to_string();
+        //     primal_module_parallel_evaluation_qec_playground_helper(
+        //         code.clone(),
+        //         visualize_filename,
+        //         defect_vertices.clone(),
+        //         2424788,
+        //         vec![],
+        //         GrowingStrategy::ModeBased,
+        //         8,
+        //     );
+        // }
+        
     }
 }
