@@ -550,6 +550,9 @@ where
     pub edge_num: usize,
     /// all mirrored vertices of this unit, mainly for parallel implementation
     pub all_mirrored_vertices: Vec<VertexPtr>,
+
+    /// all defect vertices (including those mirrored vertices) in this unit
+    pub all_defect_vertices: Vec<usize>,
 }
 
 impl<Queue> DualModulePQ<Queue>
@@ -686,6 +689,7 @@ where
             vertex_num: initializer.vertex_num,
             edge_num: initializer.weighted_edges.len(),
             all_mirrored_vertices: vec![],
+            all_defect_vertices: vec![], // used only for parallel implementation
         }
     }
 
@@ -1202,11 +1206,12 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
         // println!("///////////////////////////////////////////////////////////////////////////////");
         /// debug printing
 
+        let mut all_defect_vertices = vec![];
         // create vertices 
         let mut vertices: Vec<VertexPtr> = partitioned_initializer.owning_range.iter().map(|vertex_index| {
             VertexPtr::new_value(Vertex {
                 vertex_index,
-                is_defect: false,
+                is_defect: if partitioned_initializer.defect_vertices.contains(&vertex_index) {all_defect_vertices.push(vertex_index); true} else {false},
                 edges: Vec::new(),
                 is_mirror: if partitioned_initializer.is_boundary_unit {true} else {false}, // all the vertices on the boundary are mirror vertices
                 fusion_done: if partitioned_initializer.is_boundary_unit {false} else {true}, // initialized to false
@@ -1225,7 +1230,7 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
                         total_boundary_vertices.insert(vertex_index, vertices.len() as VertexIndex);
                         let vertex_ptr0 = VertexPtr::new_value(Vertex {
                             vertex_index: vertex_index,
-                            is_defect: if partitioned_initializer.defect_vertices.contains(&vertex_index) {true} else {false},
+                            is_defect: if partitioned_initializer.defect_vertices.contains(&vertex_index) {all_defect_vertices.push(vertex_index); true} else {false},
                             edges: Vec::new(),
                             is_mirror: true,
                             fusion_done: false, // initialized to false
@@ -1249,6 +1254,7 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
             // then, we can create EdgePtr 
             let mut local_hyper_edge_vertices = Vec::<WeakRwLock<Vertex>>::new();
             for vertex_index in hyper_edge.vertices.iter() {
+                // println!("vertex_index: {:?}", vertex_index);
                 let local_index = if partitioned_initializer.owning_range.contains(*vertex_index) {
                     vertex_index - partitioned_initializer.owning_range.start()
                 } else {
@@ -1296,6 +1302,7 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
             vertex_num: partitioned_initializer.vertex_num,
             edge_num: partitioned_initializer.edge_num,
             all_mirrored_vertices,
+            all_defect_vertices,
         }
     }
 

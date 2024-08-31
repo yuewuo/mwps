@@ -238,11 +238,13 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
             let mut vertices_unit_indices: HashMap<usize, Vec<usize>> = HashMap::new();
             let mut boundary_vertices_adjacent_units_index: HashMap<usize, Vec<usize>> = HashMap::new(); // key: unit_index; value: all vertex indices belong to this unit
             let mut exist_boundary_vertex = false;
+            let mut exist_boundary_unit_index = 0;
             for vertex_index in hyper_edge.vertices.iter() {
                 let unit_index = partition_info.vertex_to_owning_unit.get(vertex_index).unwrap();
                 let unit = &partition_info.units[*unit_index];
                 if unit.is_boundary_unit {
                     exist_boundary_vertex = true;
+                    exist_boundary_unit_index = unit.unit_index;
                     if let Some(x) = boundary_vertices_adjacent_units_index.get_mut(unit_index) {
                         x.push(*vertex_index);
                     } else {
@@ -284,10 +286,22 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
                     // there exist boundary vertex (among the vertices this hyper_edge connects to), the rest vertices span multiple units
                     // println!("vertices span multiple units");
                     if all_vertex_from_same_unit {
-                        // println!("edge_index: {:?}, unit_index: {:?}", edge_index, first_vertex_unit_index);
                         let mut hyper_edge_clone = hyper_edge.clone();
                         hyper_edge_clone.connected_to_boundary_vertex = true;
                         partitioned_initializers[first_vertex_unit_index].weighted_edges.push((hyper_edge_clone, edge_index));
+
+                        // if vertices_unit_indices.get(&first_vertex_unit_index).unwrap().len() == 1 {
+                        //     // insert this edge to the non-boundary unit
+                        //     // println!("edge_index: {:?}, unit_index: {:?}", edge_index, first_vertex_unit_index);
+                        //     let mut hyper_edge_clone = hyper_edge.clone();
+                        //     hyper_edge_clone.connected_to_boundary_vertex = true;
+                        //     partitioned_initializers[first_vertex_unit_index].weighted_edges.push((hyper_edge_clone, edge_index));
+                        // } else if vertices_unit_indices.get(&first_vertex_unit_index).unwrap().len() > 1 {
+                        //     // insert this edge to the boundary unit
+                        //     partitioned_initializers[exist_boundary_unit_index].weighted_edges.push((hyper_edge.clone(), edge_index));
+                        // } else {
+                        //     panic!("cannot find the corresponding vertices in unit");
+                        // }
                     } else {
                         // println!("exist boundary vertices, vertices unit indices {vertices_unit_indices:?}");
                         // if the vertices of this hyperedge (excluding the boundary vertices) belong to 2 different partition unit

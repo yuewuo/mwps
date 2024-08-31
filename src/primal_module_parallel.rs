@@ -217,7 +217,8 @@ impl PrimalModuleParallelUnitPtr {
        if !primal_unit.is_solved {
             // we solve the individual unit first
             let syndrome_pattern = Arc::new(owned_defect_range.expand());
-            // println!("defect vertices in unit: {:?} are {:?}", unit_index, syndrome_pattern.defect_vertices);
+            // let syndrome_pattern = Arc::new(SyndromePattern::new(dual_module_ptr.read_recursive().serial_module.all_defect_vertices.clone(), vec![]));
+            println!("defect vertices in unit: {:?} are {:?}", unit_index, syndrome_pattern.defect_vertices);
             primal_unit.serial_module.solve_step_callback_ptr(
                 &interface_ptr,
                 syndrome_pattern,
@@ -292,7 +293,7 @@ impl PrimalModuleParallelUnitPtr {
         } else {
             // we solve the individual unit first
             let syndrome_pattern = Arc::new(owned_defect_range.expand());
-            // println!("unit: {:?}, owned_defect_range: {:?}", primal_unit.unit_index, syndrome_pattern);
+            println!("unit: {:?}, owned_defect_range: {:?}", primal_unit.unit_index, syndrome_pattern);
             primal_unit.serial_module.solve_step_callback_ptr(
                 &interface_ptr,
                 syndrome_pattern,
@@ -342,16 +343,18 @@ impl PrimalModuleParallelUnitPtr {
                 for vertex_ptr in adjacent_dual_unit.serial_module.all_mirrored_vertices.iter() {
                     let mut vertex = vertex_ptr.write();
                     vertex.fusion_done = true;
+                }
 
-                    // we also need to reset the growth of all edges connecting adjacent_unit with self_unit, this is to allow dual nodes from two units interact with each other
+                for vertex_ptr in adjacent_dual_unit.serial_module.all_mirrored_vertices.iter() {
+                     // we also need to reset the growth of all edges connecting adjacent_unit with self_unit, this is to allow dual nodes from two units interact with each other
                     // so that Conflict can be reported 
 
-                    for edge_weak in vertex.edges.iter() {
+                    for edge_weak in vertex_ptr.read_recursive().edges.iter() {
                         let edge_ptr = edge_weak.upgrade_force();
                         let mut edge = edge_ptr.write();
                         // println!("edge weak of mirrored vertex");
                         if edge.connected_to_boundary_vertex {
-                            println!("edge: {:?}", edge.edge_index);
+                            // println!("edge: {:?}", edge.edge_index);
                             edge.growth_at_last_updated_time = Rational::zero();
                         }
                     }
@@ -395,19 +398,23 @@ impl PrimalModuleParallelUnit {
         // we also need to change the `is_fusion` of all vertices of self_dual_unit to true. 
         for vertex_ptr in self_dual_unit.serial_module.vertices.iter() {
             let mut vertex = vertex_ptr.write();
-            vertex.fusion_done = true;
-
-            // // we also need to reset the growth of all edges connecting adjacent_unit with self_unit, this is to allow dual nodes from two units interact with each other
-            // // so that Conflict can be reported 
-            // for edge_weak in vertex.edges.iter() {
-            //     let edge_ptr = edge_weak.upgrade_force();
-            //     let mut edge = edge_ptr.write();
-            //     if edge.connected_to_boundary_vertex {
-            //         println!("set growth rate to 0");
-            //         edge.growth_at_last_updated_time = Rational::zero();
-            //     }
-            // }
+            vertex.fusion_done = true; 
         }
+
+        // for vertex_ptr in self_dual_unit.serial_module.vertices.iter() {
+
+        //     // we also need to reset the growth of all edges connecting adjacent_unit with self_unit, this is to allow dual nodes from two units interact with each other
+        //     // so that Conflict can be reported 
+        //     for edge_weak in vertex_ptr.get_edge_neighbors().iter() {
+        //         // println!("incident edge to vertex_ptr in boundary unit is {:?}, with growth: {:?}", edge_weak.upgrade_force().read_recursive().edge_index, edge_weak.upgrade_force().read_recursive().growth_at_last_updated_time);
+        //         // let edge_ptr = edge_weak.upgrade_force();
+        //         // let mut edge = edge_ptr.write();
+        //         // if edge.connected_to_boundary_vertex {
+        //         //     println!("edge self: {:?}", edge.edge_index);
+        //         //     edge.growth_at_last_updated_time = Rational::zero();
+        //         // }
+        //     }
+        // }
         // println!("self_dual_unit: {:?}", self_dual_unit.unit_index);
         // println!("self_dual_unit.adjacent_parallel_units: {:?}", self_dual_unit.adjacent_parallel_units);
         // for vertex_ptr in self_dual_unit.serial_module.vertices.iter() {
@@ -1292,7 +1299,7 @@ pub mod tests {
         });
         
         let code = QECPlaygroundCode::new(3, 0.1, config);
-        let defect_vertices = vec![3, 10, 12, 18, 19, 20, 31];
+        let defect_vertices = vec![12, 19, 20];
 
         let visualize_filename = "primal_module_parallel_circuit_level_noise_qec_playground_1.json".to_string();
         primal_module_parallel_evaluation_qec_playground_helper(

@@ -1179,7 +1179,7 @@ impl PrimalModuleSerial {
         // println!(" in solve step callback interface loaded ptr");
         // Search, this part is unchanged
         let mut group_max_update_length = dual_module_ptr.compute_maximum_update_length();
-        // println!("first group max update length: {:?}", group_max_update_length);
+        println!("first group max update length: {:?}", group_max_update_length);
 
         while !group_max_update_length.is_unbounded() {
             callback(interface, &dual_module_ptr.read_recursive(), self, &group_max_update_length);
@@ -1190,7 +1190,7 @@ impl PrimalModuleSerial {
                 }
             }
             group_max_update_length = dual_module_ptr.compute_maximum_update_length();
-            // println!("group max update length: {:?}", group_max_update_length);
+            println!("group max update length: {:?}", group_max_update_length);
         }
 
         // from here, all states should be syncronized
@@ -1746,7 +1746,7 @@ pub mod tests {
 
         
         // let defect_vertices = code.clone().generate_random_errors(seed).0.defect_vertices;
-        let defect_vertices = vec![3, 10, 12, 18, 19, 20, 31];
+        let defect_vertices = vec![11, 12, 19];
 
         let visualize_filename = "primal_module_serial_circuit_level_noise_1.json".to_string();
         primal_module_serial_basic_standard_syndrome_with_dual_pq_impl(
