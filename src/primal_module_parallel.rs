@@ -267,7 +267,10 @@ impl PrimalModuleParallelUnitPtr {
         let mut primal_unit = self.write();
         primal_unit.fuse_operation_on_self(self_dual_ptr, parallel_dual_module);
 
-        primal_unit.combine_all_mirrored_vertices(self_dual_ptr, parallel_dual_module);
+        primal_unit.combine_all_mirrored_vertices_first_time(self_dual_ptr);
+
+        // primal_unit.seperate_all_mirrored_vertices(self_dual_ptr);
+        // primal_unit.combine_all_mirrored_vertices_again(self_dual_ptr);
 
         if let Some(callback) = callback.as_mut() {
             callback(&primal_unit.interface_ptr, &self_dual_ptr.write().deref_mut(), &primal_unit.serial_module, None);
@@ -378,10 +381,9 @@ impl PrimalModuleParallelUnitPtr {
 }
 
 impl PrimalModuleParallelUnit {
-    fn combine_all_mirrored_vertices<DualSerialModule: DualModuleImpl + Send + Sync, Queue>
+    fn combine_all_mirrored_vertices_first_time<DualSerialModule: DualModuleImpl + Send + Sync, Queue>
     (&mut self, 
     self_dual_ptr: &DualModuleParallelUnitPtr<DualSerialModule, Queue>,
-    parallel_dual_module: &DualModuleParallel<DualSerialModule, Queue>,
     ) 
         where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug + Send + Sync + Clone,
     {
@@ -403,9 +405,69 @@ impl PrimalModuleParallelUnit {
                     }
                 }
                 edges_to_add.extend(corresponding_mirrored_vertex.upgrade_force().read_recursive().edges.clone());
-                // *corresponding_mirrored_vertex.upgrade_force().write() = (*vertex.read_recursive()).clone();
             }
             vertex.write().edges.extend(edges_to_add);
+        }
+    }
+
+    fn combine_all_mirrored_vertices_again<DualSerialModule: DualModuleImpl + Send + Sync, Queue>
+    (&mut self, 
+    self_dual_ptr: &DualModuleParallelUnitPtr<DualSerialModule, Queue>,
+    ) 
+        where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug + Send + Sync + Clone,
+    {
+        let self_dual_unit = self_dual_ptr.read_recursive();
+
+        // we need to add the edges connected to mirrored vertices in non-boundary unit to the vertices in boundary unit 
+        for i in 0..self_dual_unit.serial_module.vertices.len() {
+            let vertex = &self_dual_unit.serial_module.vertices[i];
+            // let mut edges_to_add = Vec::new();
+            for corresponding_mirrored_vertex in vertex.read_recursive().mirrored_vertices.iter() {
+
+                for edge_weak in corresponding_mirrored_vertex.upgrade_force().read_recursive().edges.iter() {
+                    let edge_ptr = edge_weak.upgrade_force();
+                    let mut edge = edge_ptr.write();
+                    for local_vertex in edge.vertices.iter_mut() {
+                        if local_vertex.ptr_eq(&corresponding_mirrored_vertex) {
+                            *local_vertex = vertex.downgrade();
+                        }
+                    }
+                }
+                // edges_to_add.extend(corresponding_mirrored_vertex.upgrade_force().read_recursive().edges.clone());
+            }
+            // vertex.write().edges.extend(edges_to_add);
+        }
+    }
+
+    // change the edges in the non-boundary units to connect to mirrored vertices (instead of vertices in boundary unit) again
+    fn seperate_all_mirrored_vertices<DualSerialModule: DualModuleImpl + Send + Sync, Queue>
+    (&mut self, 
+    self_dual_ptr: &DualModuleParallelUnitPtr<DualSerialModule, Queue>,
+    ) 
+        where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug + Send + Sync + Clone,
+    {
+        let self_dual_unit = self_dual_ptr.read_recursive();
+
+        // we need to add the edges connected to mirrored vertices in non-boundary unit to the vertices in boundary unit 
+        for i in 0..self_dual_unit.serial_module.vertices.len() {
+            let vertex = &self_dual_unit.serial_module.vertices[i];
+            // let mut edges_to_add = Vec::new();
+            for corresponding_mirrored_vertex in vertex.read_recursive().mirrored_vertices.iter() {
+
+                for edge_weak in corresponding_mirrored_vertex.upgrade_force().read_recursive().edges.iter() {
+                    let edge_ptr = edge_weak.upgrade_force();
+                    let mut edge = edge_ptr.write();
+                    for local_vertex in edge.vertices.iter_mut() {
+                        if local_vertex.ptr_eq(&vertex.downgrade()) {
+                            *local_vertex = corresponding_mirrored_vertex.clone();
+                        }
+                    }
+                }
+                // edges_to_add.extend(corresponding_mirrored_vertex.upgrade_force().read_recursive().edges.clone());
+            }
+            // we do not need to remove the added_edges from `combine_all_mirrored_vertices`, since the only time boundary-unit is called
+            // is during fusion, and we need to add those edges back again if we do remove them
+            // vertex.write().edges.extend(edges_to_add);
         }
     }
 
