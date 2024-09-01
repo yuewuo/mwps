@@ -312,7 +312,7 @@ impl<T: Ord + PartialEq + Eq + std::fmt::Debug, E: std::fmt::Debug> FutureQueueM
 }
 
 /* Vertices and Edges */
-#[derive(Derivative)]
+#[derive(Derivative, Clone)]
 #[derivative(Debug)]
 pub struct Vertex {
     /// the index of this vertex in the decoding graph, not necessary the index in [`DualModuleSerial::vertices`] if it's partitioned
@@ -322,10 +322,6 @@ pub struct Vertex {
     /// all neighbor edges, in surface code this should be constant number of edges
     // #[derivative(Debug = "ignore")]
     pub edges: Vec<EdgeWeak>,
-    /// whether this vertex is a mirrored vertex. Note that all the vertices on the boundary (including those in boundary-unit) are mirrored vertices
-    pub is_mirror: bool,
-    /// whether fusion is completed. This relies on the assumption that all units that have this vertex have been fused together
-    pub fusion_done: bool,
     /// if this vertex is in boundary unit, find its corresponding mirror vertices in the other units. If this vertex is in non-boundary unit but a mirrored vertex, 
     /// find its other mirrored vertices in other units (both boundary and non-boundary units)
     pub mirrored_vertices: Vec<VertexWeak>,
@@ -372,22 +368,22 @@ impl PartialOrd for VertexPtr {
     }
 }
 
-impl VertexPtr {
-    pub fn get_edge_neighbors(&self) -> Vec<EdgeWeak> {
-        let vertex = self.read_recursive();
-        if vertex.fusion_done && vertex.is_mirror {
-            let mut edges: Vec<EdgeWeak> = vec![];
-            edges.extend(vertex.edges.clone());
-            for mirrored_vertex in vertex.mirrored_vertices.iter() {
-                edges.extend(mirrored_vertex.upgrade_force().read_recursive().edges.clone());
-            }
-            // println!("incident edges of vertex {:?} are: {:?}", vertex.vertex_index, edges);
-            edges
-        } else {
-            vertex.edges.clone()
-        }
-    }
-}
+// impl VertexPtr {
+//     pub fn get_edge_neighbors(&self) -> Vec<EdgeWeak> {
+//         let vertex = self.read_recursive();
+//         if vertex.fusion_done && vertex.is_mirror {
+//             let mut edges: Vec<EdgeWeak> = vec![];
+//             edges.extend(vertex.edges.clone());
+//             for mirrored_vertex in vertex.mirrored_vertices.iter() {
+//                 edges.extend(mirrored_vertex.upgrade_force().read_recursive().edges.clone());
+//             }
+//             // println!("incident edges of vertex {:?} are: {:?}", vertex.vertex_index, edges);
+//             edges
+//         } else {
+//             vertex.edges.clone()
+//         }
+//     }
+// }
 
 #[derive(Derivative)]
 #[derivative(Debug)]
@@ -508,21 +504,21 @@ impl PartialOrd for EdgeWeak {
     }
 }
 
-impl EdgePtr {
-    pub fn get_vertex_neighbors(&self) -> Vec<VertexWeak> {
-        let edge = self.read_recursive();
-        let mut incident_vertices: Vec<VertexWeak> = vec![];
-        for vertex_weak in edge.vertices.iter() {
-            let vertex_ptr = vertex_weak.upgrade_force();
-            let vertex = vertex_ptr.read_recursive();
-            incident_vertices.push(vertex_weak.clone());
-            if vertex.is_mirror && vertex.fusion_done {
-                incident_vertices.extend(vertex.mirrored_vertices.clone());
-            } 
-        }
-        return incident_vertices;
-    }
-}
+// impl EdgePtr {
+//     pub fn get_vertex_neighbors(&self) -> Vec<VertexWeak> {
+//         let edge = self.read_recursive();
+//         let mut incident_vertices: Vec<VertexWeak> = vec![];
+//         for vertex_weak in edge.vertices.iter() {
+//             let vertex_ptr = vertex_weak.upgrade_force();
+//             let vertex = vertex_ptr.read_recursive();
+//             incident_vertices.push(vertex_weak.clone());
+//             if vertex.is_mirror && vertex.fusion_done {
+//                 incident_vertices.extend(vertex.mirrored_vertices.clone());
+//             } 
+//         }
+//         return incident_vertices;
+//     }
+// }
 
 /* the actual dual module */
 #[derive(Clone)]
@@ -647,8 +643,6 @@ where
                     vertex_index,
                     is_defect: false,
                     edges: vec![],
-                    is_mirror: false, // set to false for non-parallel implementation
-                    fusion_done: false, // set to false for non-parallel implementation
                     mirrored_vertices: vec![], // set to empty for non-parallel implementation
                 })
             })
@@ -1213,8 +1207,6 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
                 vertex_index,
                 is_defect: if partitioned_initializer.defect_vertices.contains(&vertex_index) {all_defect_vertices.push(vertex_index); true} else {false},
                 edges: Vec::new(),
-                is_mirror: if partitioned_initializer.is_boundary_unit {true} else {false}, // all the vertices on the boundary are mirror vertices
-                fusion_done: if partitioned_initializer.is_boundary_unit {false} else {true}, // initialized to false
                 mirrored_vertices: vec![], // initialized to empty, to be filled in `new_config()` in parallel implementation
             })
         }).collect();
@@ -1232,8 +1224,6 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
                             vertex_index: vertex_index,
                             is_defect: if partitioned_initializer.defect_vertices.contains(&vertex_index) {all_defect_vertices.push(vertex_index); true} else {false},
                             edges: Vec::new(),
-                            is_mirror: true,
-                            fusion_done: false, // initialized to false
                             mirrored_vertices: vec![], // set to empty, to be filled in `new_config()` in parallel implementation
                         });
                         vertices.push(vertex_ptr0.clone());
@@ -1287,8 +1277,8 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
             // for &vertex_index in hyper_edge.vertices.iter() {
             //     vertices[vertex_index as usize].write().edges.push(edge_ptr.downgrade());
             // }
-            edges.push(edge_ptr);
-
+            edges.push(edge_ptr.clone());
+            // println!("edge: {:?}, edge_weight: {:?}", edge_ptr.clone().read_recursive().edge_index, edge_ptr.read_recursive().weight);
         }
 
         

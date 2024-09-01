@@ -75,18 +75,18 @@ impl InvalidSubgraph {
     #[allow(clippy::unnecessary_cast)]
     pub fn new(edges: &BTreeSet<EdgePtr>) -> Self {
         // println!("edges input: {:?}", edges);
-        let mut vertices: BTreeSet<VertexPtr> = BTreeSet::new();
-        for edge_ptr in edges.iter() {
-            for vertex_ptr in edge_ptr.get_vertex_neighbors().iter() {
-                vertices.insert(vertex_ptr.upgrade_force().clone());
-            }
-        }
         // let mut vertices: BTreeSet<VertexPtr> = BTreeSet::new();
         // for edge_ptr in edges.iter() {
-        //     for vertex_ptr in edge_ptr.read_recursive().vertices.iter() {
+        //     for vertex_ptr in edge_ptr.get_vertex_neighbors().iter() {
         //         vertices.insert(vertex_ptr.upgrade_force().clone());
         //     }
         // }
+        let mut vertices: BTreeSet<VertexPtr> = BTreeSet::new();
+        for edge_ptr in edges.iter() {
+            for vertex_ptr in edge_ptr.read_recursive().vertices.iter() {
+                vertices.insert(vertex_ptr.upgrade_force().clone());
+            }
+        }
         Self::new_complete(&vertices, edges)
     }
 
@@ -96,28 +96,12 @@ impl InvalidSubgraph {
         vertices: &BTreeSet<VertexPtr>,
         edges: &BTreeSet<EdgePtr>
     ) -> Self {
-        // current implementation with using helper function 
-        // println!("input vertex to new_complete: {:?}", vertices);
-        let mut hair: BTreeSet<EdgePtr> = BTreeSet::new();
-        for vertex_ptr in vertices.iter() {
-            // println!("vertex index in new_complete: {:?}", vertex_ptr.read_recursive().vertex_index);
-            for edge_ptr in vertex_ptr.get_edge_neighbors().iter() {
-                // println!("edges near vertex {:?}", edge_ptr.upgrade_force().read_recursive().edge_index);
-                if !edges.contains(&edge_ptr.upgrade_force()) {
-                    hair.insert(edge_ptr.upgrade_force());
-                }
-            }
-        }
-        let invalid_subgraph = Self::new_raw(vertices, edges, &hair);
-        // debug_assert_eq!(invalid_subgraph.sanity_check(decoding_graph), Ok(()));
-        invalid_subgraph
-
-        // previous implementation with directly finding the incident edges of a vertex
+        // // current implementation with using helper function 
         // // println!("input vertex to new_complete: {:?}", vertices);
         // let mut hair: BTreeSet<EdgePtr> = BTreeSet::new();
         // for vertex_ptr in vertices.iter() {
         //     // println!("vertex index in new_complete: {:?}", vertex_ptr.read_recursive().vertex_index);
-        //     for edge_ptr in vertex_ptr.read_recursive().edges.iter() {
+        //     for edge_ptr in vertex_ptr.get_edge_neighbors().iter() {
         //         // println!("edges near vertex {:?}", edge_ptr.upgrade_force().read_recursive().edge_index);
         //         if !edges.contains(&edge_ptr.upgrade_force()) {
         //             hair.insert(edge_ptr.upgrade_force());
@@ -127,6 +111,22 @@ impl InvalidSubgraph {
         // let invalid_subgraph = Self::new_raw(vertices, edges, &hair);
         // // debug_assert_eq!(invalid_subgraph.sanity_check(decoding_graph), Ok(()));
         // invalid_subgraph
+
+        // previous implementation with directly finding the incident edges of a vertex
+        // // println!("input vertex to new_complete: {:?}", vertices);
+        let mut hair: BTreeSet<EdgePtr> = BTreeSet::new();
+        for vertex_ptr in vertices.iter() {
+            // println!("vertex index in new_complete: {:?}", vertex_ptr.read_recursive().vertex_index);
+            for edge_ptr in vertex_ptr.read_recursive().edges.iter() {
+                // println!("edges near vertex {:?}", edge_ptr.upgrade_force().read_recursive().edge_index);
+                if !edges.contains(&edge_ptr.upgrade_force()) {
+                    hair.insert(edge_ptr.upgrade_force());
+                }
+            }
+        }
+        let invalid_subgraph = Self::new_raw(vertices, edges, &hair);
+        // debug_assert_eq!(invalid_subgraph.sanity_check(decoding_graph), Ok(()));
+        invalid_subgraph
     }
 
     /// create $S = (V_S, E_S)$ and $\delta(S)$ directly, without any checks
@@ -213,8 +213,8 @@ impl InvalidSubgraph {
         }
         for vertex_ptr in self.vertices.iter() {
             let vertex = vertex_ptr.read_recursive();
-            // let incident_edges = &vertex.edges;
-            let incident_edges = &vertex_ptr.get_edge_neighbors();
+            let incident_edges = &vertex.edges;
+            // let incident_edges = &vertex_ptr.get_edge_neighbors();
             let parity = vertex.is_defect;
             matrix.add_constraint(vertex_ptr.downgrade(), &incident_edges, parity);
         }
@@ -278,8 +278,6 @@ pub mod tests {
                     vertex_index,
                     is_defect: false,
                     edges: vec![],
-                    is_mirror: false,
-                    fusion_done: false,
                     mirrored_vertices: vec![],
                 })
             })

@@ -783,10 +783,9 @@ impl PrimalModuleSerial {
         for vertex_ptr in cluster_2.vertices.iter() {
             if !cluster_1.vertices.contains(&vertex_ptr.clone()) {
                 cluster_1.vertices.insert(vertex_ptr.clone());
-                // let incident_edges = decoding_graph.get_vertex_neighbors(vertex_index);
                 // let parity = decoding_graph.is_vertex_defect(vertex_index);
-                // let incident_edges = &vertex_ptr.read_recursive().edges;
-                let incident_edges = &vertex_ptr.get_edge_neighbors();
+                let incident_edges = &vertex_ptr.read_recursive().edges;
+                // let incident_edges = &vertex_ptr.get_edge_neighbors();
                 let parity = vertex_ptr.read_recursive().is_defect;
                 cluster_1.matrix.add_constraint(vertex_ptr.downgrade(), incident_edges, parity);
             }
@@ -829,7 +828,8 @@ impl PrimalModuleSerial {
                     //     .upgrade_force();
                     let mut cluster = cluster_ptr.write();
                     // then add new constraints because these edges may touch new vertices
-                    let incident_vertices = &edge_ptr.get_vertex_neighbors();
+                    // let incident_vertices = &edge_ptr.get_vertex_neighbors();
+                    let incident_vertices = &edge_ptr.read_recursive().vertices;
                     // println!("incidenet_vertices: {:?}", incident_vertices);
                     // println!("cluster matrix before add constraint: {:?}", cluster.matrix.printstd());
                     for vertex_weak in incident_vertices.iter() {
@@ -838,7 +838,8 @@ impl PrimalModuleSerial {
                             cluster.vertices.insert(vertex_weak.upgrade_force());
                             let vertex_ptr = vertex_weak.upgrade_force();
                             let vertex = vertex_ptr.read_recursive();
-                            let incident_edges = &vertex_ptr.get_edge_neighbors();
+                            let incident_edges = &vertex.edges;
+                            // let incident_edges = &vertex_ptr.get_edge_neighbors();
                             // println!("vertex {:?}, fusion_done: {:?}, is_mirror: {:?}, incident_edges: {:?}", vertex_ptr.read_recursive().vertex_index,
                             // vertex_ptr.read_recursive().fusion_done, vertex_ptr.read_recursive().is_mirror, incident_edges);
                             let parity = vertex.is_defect;
@@ -921,7 +922,6 @@ impl PrimalModuleSerial {
                     for vertex_weak in incident_vertices.iter() {
                         if !cluster.vertices.contains(&vertex_weak.upgrade_force()) {
                             cluster.vertices.insert(vertex_weak.upgrade_force());
-                            // let incident_edges = decoding_graph.get_vertex_neighbors(vertex_index);
                             // let parity = decoding_graph.is_vertex_defect(vertex_index);
                             let vertex_ptr = vertex_weak.upgrade_force();
                             let vertex = vertex_ptr.read_recursive();
@@ -1025,17 +1025,16 @@ impl PrimalModuleSerial {
                     //     .upgrade_force();
                     let mut cluster = cluster_ptr.write();
                     // then add new constraints because these edges may touch new vertices
-                    // let incident_vertices = &edge_ptr.read_recursive().vertices;
-                    let incident_vertices = &edge_ptr.get_vertex_neighbors();
+                    let incident_vertices = &edge_ptr.read_recursive().vertices;
+                    // let incident_vertices = &edge_ptr.get_vertex_neighbors();
                     for vertex_weak in incident_vertices.iter() {
                         if !cluster.vertices.contains(&vertex_weak.upgrade_force()) {
                             cluster.vertices.insert(vertex_weak.upgrade_force());
-                            // let incident_edges = decoding_graph.get_vertex_neighbors(vertex_index);
                             // let parity = decoding_graph.is_vertex_defect(vertex_index);
                             let vertex_ptr = vertex_weak.upgrade_force();
                             let vertex = vertex_ptr.read_recursive();
-                            // let incident_edges = &vertex.edges;
-                            let incident_edges = &vertex_ptr.get_edge_neighbors();
+                            let incident_edges = &vertex.edges;
+                            // let incident_edges = &vertex_ptr.get_edge_neighbors();
                             let parity = vertex.is_defect;
                             cluster.matrix.add_constraint(vertex_weak.clone(), incident_edges, parity);
                         }
@@ -1179,7 +1178,7 @@ impl PrimalModuleSerial {
         // println!(" in solve step callback interface loaded ptr");
         // Search, this part is unchanged
         let mut group_max_update_length = dual_module_ptr.compute_maximum_update_length();
-        println!("first group max update length: {:?}", group_max_update_length);
+        // println!("first group max update length: {:?}", group_max_update_length);
 
         while !group_max_update_length.is_unbounded() {
             callback(interface, &dual_module_ptr.read_recursive(), self, &group_max_update_length);
@@ -1190,7 +1189,7 @@ impl PrimalModuleSerial {
                 }
             }
             group_max_update_length = dual_module_ptr.compute_maximum_update_length();
-            println!("group max update length: {:?}", group_max_update_length);
+            // println!("group max update length: {:?}", group_max_update_length);
         }
 
         // from here, all states should be syncronized
@@ -1200,7 +1199,7 @@ impl PrimalModuleSerial {
         // Tune
         let mut dual_module = dual_module_ptr.write();
         while self.has_more_plugins() {
-            println!("self.has more plugins");
+            // println!("self.has more plugins");
             // Note: intersting, seems these aren't needed... But just kept here in case of future need, as well as correctness related failures
             if start {
                 start = false;
@@ -1391,7 +1390,7 @@ pub mod tests {
         // let code = CodeCapacityTailoredCode::new(7, 0., 0.01, 1);
         let weight = 1;
         let code = CodeCapacityPlanarCode::new(7, 0.1, weight);
-        let defect_vertices = vec![13, 20, 29, 32, 39];
+        let defect_vertices = vec![16, 19, 29, 39];
         primal_module_serial_basic_standard_syndrome(
             code,
             visualize_filename,

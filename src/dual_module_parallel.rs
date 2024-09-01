@@ -463,15 +463,15 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
             }
         }
 
-        // we also need to change the is_fusion of all vertices to true. There might be a faster way to do this, e.g. have this unit store the info
-        // instead of each individual vertex
-        for unit_index in 0..self.units.len() {
-            let unit = self.units[unit_index].read_recursive();
-            for vertex_ptr in unit.serial_module.vertices.iter() {
-                let mut vertex = vertex_ptr.write();
-                vertex.fusion_done = true;
-            }
-        }
+        // // we also need to change the is_fusion of all vertices to true. There might be a faster way to do this, e.g. have this unit store the info
+        // // instead of each individual vertex
+        // for unit_index in 0..self.units.len() {
+        //     let unit = self.units[unit_index].read_recursive();
+        //     for vertex_ptr in unit.serial_module.vertices.iter() {
+        //         let mut vertex = vertex_ptr.write();
+        //         vertex.fusion_done = true;
+        //     }
+        // }
 
 
     }

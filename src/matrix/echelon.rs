@@ -302,8 +302,6 @@ pub mod tests {
                     vertex_index,
                     is_defect: false,
                     edges: vec![],
-                    is_mirror: false,
-                    fusion_done: false,
                     mirrored_vertices: vec![],
                 })
             })
@@ -428,8 +426,6 @@ pub mod tests {
                     vertex_index,
                     is_defect: false,
                     edges: vec![],
-                    is_mirror: false,
-                    fusion_done: false,
                 mirrored_vertices: vec![],
                 })
             })
@@ -476,8 +472,6 @@ pub mod tests {
                 vertex_index,
                 is_defect: false,
                 edges: vec![],
-                is_mirror: false,
-                fusion_done: false,
                 mirrored_vertices: vec![],
             })
         })
@@ -520,8 +514,6 @@ pub mod tests {
                 vertex_index,
                 is_defect: false,
                 edges: vec![],
-                is_mirror: false,
-                fusion_done: false,
                 mirrored_vertices: vec![],
             })
         })
@@ -588,8 +580,6 @@ pub mod tests {
                 vertex_index,
                 is_defect: false,
                 edges: vec![],
-                is_mirror: false,
-                fusion_done: false,
                 mirrored_vertices: vec![],
             })
         })
@@ -635,8 +625,6 @@ pub mod tests {
                 vertex_index,
                 is_defect: false,
                 edges: vec![],
-                is_mirror: false,
-                fusion_done: false,
                 mirrored_vertices: vec![],
             })
         })
@@ -704,8 +692,6 @@ pub mod tests {
                 vertex_index,
                 is_defect: false,
                 edges: vec![],
-                is_mirror: false,
-                fusion_done: false,
                 mirrored_vertices: vec![],
             })
         })
@@ -763,8 +749,6 @@ pub mod tests {
                  vertex_index,
                  is_defect: false,
                  edges: vec![],
-                 is_mirror: false,
-                 fusion_done: false,
                  mirrored_vertices: vec![],
              })
          })
@@ -824,8 +808,6 @@ pub mod tests {
                 vertex_index,
                 is_defect: false,
                 edges: vec![],
-                is_mirror: false,
-                fusion_done: false,
                 mirrored_vertices: vec![],
             })
         })
@@ -889,8 +871,6 @@ pub mod tests {
                 vertex_index,
                 is_defect: false,
                 edges: vec![],
-                is_mirror: false,
-                fusion_done: false,
                 mirrored_vertices: vec![],
             })
         })
@@ -1125,14 +1105,10 @@ pub mod tests {
                 vertex_index,
                 is_defect: false,
                 edges: vec![],
-                is_mirror: false,
-                fusion_done: false,
                 mirrored_vertices: vec![],
             })
         })
         .collect();
-
-        let global_time = ArcRwLock::new_value(Rational::zero());
 
         // create edges
         let edges: Vec<EdgePtr> = vec![0, 1, 2, 3, 4, 5, 6].into_iter()
@@ -1176,7 +1152,6 @@ pub mod tests {
         // cargo test --release echelon_matrix_another_random_tests -- --nocapture
         let mut rng = DeterministicRng::seed_from_u64(123);
         let repeat = 50;
-        let global_time = ArcRwLock::new_value(Rational::zero());
 
         for variable_count in 0..31 {
             for constraint_count in 0..31 {
@@ -1213,8 +1188,6 @@ pub mod tests {
                                 vertex_index,
                                 is_defect: false,
                                 edges: vec![],
-                                is_mirror: false,
-                                fusion_done: false,
                                 mirrored_vertices: vec![],
                             })
                         })
@@ -1262,7 +1235,6 @@ pub mod tests {
         // cargo test --features=colorful echelon_matrix_debug_1 -- --nocapture
         let parity_checks = vec![(vec![0], true), (vec![0, 1], true), (vec![], true)];
         let variable_count = 2;
-        let global_time = ArcRwLock::new_value(Rational::zero());
 
         // create edges
         let edges: Vec<EdgePtr> = (0..variable_count)
@@ -1289,8 +1261,6 @@ pub mod tests {
                     vertex_index,
                     is_defect: false,
                     edges: vec![],
-                    is_mirror: false,
-                    fusion_done: false,
                     mirrored_vertices: vec![],
                 })
             })
@@ -1321,7 +1291,6 @@ pub mod tests {
         // cargo test --features=colorful echelon_matrix_debug_2 -- --nocapture
         let parity_checks = vec![];
         let variable_count = 1;
-        let global_time = ArcRwLock::new_value(Rational::zero());
 
         // create edges
         let edges: Vec<EdgePtr> = (0..variable_count)
@@ -1348,8 +1317,6 @@ pub mod tests {
                     vertex_index,
                     is_defect: false,
                     edges: vec![],
-                    is_mirror: false,
-                    fusion_done: false,
                     mirrored_vertices: vec![],
                 })
             })

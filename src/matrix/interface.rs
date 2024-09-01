@@ -335,14 +335,10 @@ pub mod tests {
                     vertex_index,
                     is_defect: false,
                     edges: vec![],
-                    is_mirror: false,
-                    fusion_done: false,
                     mirrored_vertices: vec![],
                 })
             })
             .collect();
-
-        let global_time = ArcRwLock::new_value(Rational::zero());
 
         // create edges
         let edges: Vec<EdgePtr> = vec![233, 14, 68, 75, 666].into_iter()
@@ -454,14 +450,10 @@ pub mod tests {
                     vertex_index,
                     is_defect: false,
                     edges: vec![],
-                    is_mirror: false,
-                    fusion_done: false,
                     mirrored_vertices: vec![],
                 })
             })
             .collect();
-        let global_time = ArcRwLock::new_value(Rational::zero());
-
 
         // create edges
         let edges: Vec<EdgePtr> = (0..11)
@@ -512,14 +504,10 @@ pub mod tests {
                     vertex_index,
                     is_defect: false,
                     edges: vec![],
-                    is_mirror: false,
-                    fusion_done: false,
                     mirrored_vertices: vec![],
                 })
             })
             .collect();
-
-        let global_time = ArcRwLock::new_value(Rational::zero());
 
         // create edges
         let edges: Vec<EdgePtr> = (0..2)

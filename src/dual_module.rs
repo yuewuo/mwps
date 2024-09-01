@@ -704,7 +704,7 @@ impl DualModuleInterfacePtr {
         let mut sum = Rational::zero();
         for dual_node_ptr in interface.nodes.iter() {
             let dual_node = dual_node_ptr.read_recursive();
-            sum += dual_node.get_dual_variable();
+            sum += dual_node.get_dual_variable().floor();
         }
         sum
     }
@@ -852,7 +852,8 @@ impl DualModuleInterfacePtr {
     pub fn find_valid_subgraph_auto_vertices(&self, edges: &BTreeSet<EdgePtr>) -> Option<Subgraph> {
         let mut vertices: BTreeSet<VertexPtr> = BTreeSet::new();
         for edge_ptr in edges.iter() {
-            let local_vertices = &edge_ptr.get_vertex_neighbors();
+            // let local_vertices = &edge_ptr.get_vertex_neighbors();
+            let local_vertices = &edge_ptr.read_recursive().vertices;
             for vertex in local_vertices {
                 vertices.insert(vertex.upgrade_force());
             }

@@ -77,12 +77,12 @@ impl PluginImpl for PluginSingleHair {
                     }
                     for edge_weak in unnecessary_edges.iter() {
                         edges.insert(edge_weak.upgrade_force());
-                        for vertex in edge_weak.upgrade_force().get_vertex_neighbors().iter() {
-                            vertices.insert(vertex.upgrade_force());
-                        }
-                        // for vertex in edge_index.upgrade_force().read_recursive().vertices.iter() {
+                        // for vertex in edge_weak.upgrade_force().get_vertex_neighbors().iter() {
                         //     vertices.insert(vertex.upgrade_force());
                         // }
+                        for vertex in edge_weak.upgrade_force().read_recursive().vertices.iter() {
+                            vertices.insert(vertex.upgrade_force());
+                        }
                     }
                     let invalid_subgraph = Arc::new(InvalidSubgraph::new_complete(&vertices, &edges));
                     let relaxer = Relaxer::new(

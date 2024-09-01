@@ -133,8 +133,6 @@ pub mod tests {
                     vertex_index,
                     is_defect: false,
                     edges: vec![],
-                    is_mirror: false,
-                    fusion_done: false,
                     mirrored_vertices: vec![],
                 })
             })
@@ -216,8 +214,6 @@ pub mod tests {
                     vertex_index,
                     is_defect: false,
                     edges: vec![],
-                    is_mirror: false,
-                    fusion_done: false,
                     mirrored_vertices: vec![],
                 })
             })
@@ -277,8 +273,6 @@ pub mod tests {
                     vertex_index,
                     is_defect: false,
                     edges: vec![],
-                    is_mirror: false,
-                    fusion_done: false,
                     mirrored_vertices: vec![],
                 })
             })
@@ -375,8 +369,6 @@ pub mod tests {
                     vertex_index,
                     is_defect: false,
                     edges: vec![],
-                    is_mirror: false,
-                    fusion_done: false,
                     mirrored_vertices: vec![],
                 })
             })
@@ -448,8 +440,6 @@ pub mod tests {
                     vertex_index,
                     is_defect: false,
                     edges: vec![],
-                    is_mirror: false,
-                    fusion_done: false,
                     mirrored_vertices: vec![],
                 })
             })
@@ -531,8 +521,6 @@ pub mod tests {
                     vertex_index,
                     is_defect: false,
                     edges: vec![],
-                    is_mirror: false,
-                    fusion_done: false,
                     mirrored_vertices: vec![],
                 })
             })
