@@ -130,15 +130,16 @@ impl SolverInitializer {
     }
 
     pub fn matches_subgraph_syndrome(&self, subgraph: &Subgraph, defect_vertices: &[VertexIndex]) -> bool {
-        let subgraph_defect_vertices:std::collections::HashSet<_> = self.get_subgraph_syndrome(subgraph).into_iter().collect();
+        let subgraph_defect_vertices: BTreeSet<usize> = self.get_subgraph_syndrome(subgraph);
         // let subgraph_vertices: std::collections::HashSet<_> = subgraph_defect_vertices.clone().into_iter().map(|v| v.read_recursive().vertex_index).collect();
-        let defect_vertices_hash: std::collections::HashSet<_> = defect_vertices.to_vec().into_iter().collect();
-        if subgraph_defect_vertices == defect_vertices_hash {
+        let defect_vertices_hash:BTreeSet<usize> = BTreeSet::from_iter(defect_vertices.to_vec());
+        let difference: Vec<usize> = subgraph_defect_vertices.difference(&defect_vertices_hash).cloned().collect();
+        if difference.is_empty() {
             return true;
         } else {
             println!(
-                "defect vertices: {:?}\nsubgraph_defect_vertices: {:?}",
-                defect_vertices, subgraph_defect_vertices
+                "defect vertices: {:?}\nsubgraph_defect_vertices: {:?}\ndifference: {:?}",
+                defect_vertices, subgraph_defect_vertices, difference
             );
             return false;
         }

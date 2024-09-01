@@ -21,6 +21,7 @@ use std::ops::DerefMut;
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 use crate::num_traits::Zero;
+use crate::num_traits::FromPrimitive;
 use crate::plugin::*;
 
 
@@ -218,7 +219,7 @@ impl PrimalModuleParallelUnitPtr {
             // we solve the individual unit first
             let syndrome_pattern = Arc::new(owned_defect_range.expand());
             // let syndrome_pattern = Arc::new(SyndromePattern::new(dual_module_ptr.read_recursive().serial_module.all_defect_vertices.clone(), vec![]));
-            println!("defect vertices in unit: {:?} are {:?}", unit_index, syndrome_pattern.defect_vertices);
+            // println!("defect vertices in unit: {:?} are {:?}", unit_index, syndrome_pattern.defect_vertices);
             primal_unit.serial_module.solve_step_callback_ptr(
                 &interface_ptr,
                 syndrome_pattern,
@@ -293,7 +294,7 @@ impl PrimalModuleParallelUnitPtr {
         } else {
             // we solve the individual unit first
             let syndrome_pattern = Arc::new(owned_defect_range.expand());
-            println!("unit: {:?}, owned_defect_range: {:?}", primal_unit.unit_index, syndrome_pattern);
+            // println!("unit: {:?}, owned_defect_range: {:?}", primal_unit.unit_index, syndrome_pattern);
             primal_unit.serial_module.solve_step_callback_ptr(
                 &interface_ptr,
                 syndrome_pattern,
@@ -355,7 +356,7 @@ impl PrimalModuleParallelUnitPtr {
                         // println!("edge weak of mirrored vertex");
                         if edge.connected_to_boundary_vertex {
                             // println!("edge: {:?}", edge.edge_index);
-                            edge.growth_at_last_updated_time = Rational::zero();
+                            edge.growth_at_last_updated_time /= Rational::from_usize(2).unwrap();
                         }
                     }
                 }
@@ -983,7 +984,7 @@ pub mod tests {
             defect_vertices,
             6,
             vec![],
-            GrowingStrategy::SingleCluster,
+            GrowingStrategy::ModeBased,
         );
     }
 
@@ -1002,7 +1003,7 @@ pub mod tests {
             defect_vertices,
             4,
             vec![],
-            GrowingStrategy::SingleCluster,
+            GrowingStrategy::ModeBased,
         );
     }
 
@@ -1021,7 +1022,7 @@ pub mod tests {
             defect_vertices,
             3,
             vec![],
-            GrowingStrategy::SingleCluster,
+            GrowingStrategy::ModeBased,
         );
     }
 
@@ -1039,7 +1040,7 @@ pub mod tests {
             defect_vertices,
             5,
             vec![],
-            GrowingStrategy::SingleCluster,
+            GrowingStrategy::ModeBased,
         );
     }
 
@@ -1057,7 +1058,7 @@ pub mod tests {
             defect_vertices,
             5,
             vec![],
-            GrowingStrategy::SingleCluster,
+            GrowingStrategy::ModeBased,
         );
     }
 
@@ -1151,7 +1152,7 @@ pub mod tests {
             defect_vertices,
             6,
             vec![],
-            GrowingStrategy::SingleCluster,
+            GrowingStrategy::ModeBased,
         );
     }
 

@@ -1179,7 +1179,7 @@ impl PrimalModuleSerial {
         // println!(" in solve step callback interface loaded ptr");
         // Search, this part is unchanged
         let mut group_max_update_length = dual_module_ptr.compute_maximum_update_length();
-        println!("first group max update length: {:?}", group_max_update_length);
+        // println!("first group max update length: {:?}", group_max_update_length);
 
         while !group_max_update_length.is_unbounded() {
             callback(interface, &dual_module_ptr.read_recursive(), self, &group_max_update_length);
@@ -1190,7 +1190,7 @@ impl PrimalModuleSerial {
                 }
             }
             group_max_update_length = dual_module_ptr.compute_maximum_update_length();
-            println!("group max update length: {:?}", group_max_update_length);
+            // println!("group max update length: {:?}", group_max_update_length);
         }
 
         // from here, all states should be syncronized
@@ -1200,7 +1200,7 @@ impl PrimalModuleSerial {
         // Tune
         let mut dual_module = dual_module_ptr.write();
         while self.has_more_plugins() {
-            println!("self.has more plugins");
+            // println!("self.has more plugins");
             // Note: intersting, seems these aren't needed... But just kept here in case of future need, as well as correctness related failures
             if start {
                 start = false;
