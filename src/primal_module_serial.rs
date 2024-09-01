@@ -1271,6 +1271,8 @@ pub mod tests {
         // try to work on a simple syndrome
         let decoding_graph = DecodingHyperGraph::new_defects(model_graph, defect_vertices.clone());
         let interface_ptr = DualModuleInterfacePtr::new();
+
+        let begin_time = std::time::Instant::now();
         primal_module.solve_visualizer(
             &interface_ptr,
             decoding_graph.syndrome_pattern.clone(),
@@ -1279,20 +1281,22 @@ pub mod tests {
         );
 
         let (subgraph, weight_range) = primal_module.subgraph_range(&interface_ptr, 0);
-        if let Some(visualizer) = visualizer.as_mut() {
-            visualizer
-                .snapshot_combined(
-                    "subgraph".to_string(),
-                    vec![&interface_ptr, &dual_module, &subgraph, &weight_range],
-                )
-                .unwrap();
-        }
+        // if let Some(visualizer) = visualizer.as_mut() {
+        //     visualizer
+        //         .snapshot_combined(
+        //             "subgraph".to_string(),
+        //             vec![&interface_ptr, &dual_module, &subgraph, &weight_range],
+        //         )
+        //         .unwrap();
+        // }
         assert!(
             decoding_graph
                 .model_graph
                 .matches_subgraph_syndrome(&subgraph, &defect_vertices),
             "the result subgraph is invalid"
         );
+        let end_time = std::time::Instant::now();
+        println!("resolve_time: {:?}", end_time - begin_time);
         assert_eq!(
             Rational::from_usize(final_dual).unwrap(),
             weight_range.upper,
@@ -1741,11 +1745,8 @@ pub mod tests {
             "code_type": qecp::code_builder::CodeType::RotatedPlanarCode,
         });
         
-        let mut code = QECPlaygroundCode::new(3, 0.005, config);
-
-        
-        // let defect_vertices = code.clone().generate_random_errors(seed).0.defect_vertices;
-        let defect_vertices = vec![11, 12, 19];
+        let mut code = QECPlaygroundCode::new(7, 0.005, config);
+        let defect_vertices = code.clone().generate_random_errors(132).0.defect_vertices;
 
         let visualize_filename = "primal_module_serial_circuit_level_noise_1.json".to_string();
         primal_module_serial_basic_standard_syndrome_with_dual_pq_impl(
