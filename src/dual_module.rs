@@ -704,7 +704,7 @@ impl DualModuleInterfacePtr {
         let mut sum = Rational::zero();
         for dual_node_ptr in interface.nodes.iter() {
             let dual_node = dual_node_ptr.read_recursive();
-            sum += dual_node.get_dual_variable().floor();
+            sum += dual_node.get_dual_variable();
         }
         sum
     }

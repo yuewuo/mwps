@@ -1006,21 +1006,21 @@ pub mod tests {
         primal_module.parallel_solve_visualizer(
             decoding_graph.syndrome_pattern.clone(),
             &mut dual_module,
-            visualizer.as_mut(),
+            None,
         );
 
         let useless_interface_ptr = DualModuleInterfacePtr::new();
         let (subgraph, weight_range) = primal_module.subgraph_range(&useless_interface_ptr, 0);
 
-        if let Some(visualizer) = visualizer.as_mut() {
-            let last_interface_ptr = &primal_module.units.last().unwrap().read_recursive().interface_ptr;
-            visualizer
-                .snapshot_combined(
-                    "subgraph".to_string(),
-                    vec![last_interface_ptr, &dual_module, &subgraph, &weight_range],
-                )
-                .unwrap();
-        }
+        // if let Some(visualizer) = visualizer.as_mut() {
+        //     let last_interface_ptr = &primal_module.units.last().unwrap().read_recursive().interface_ptr;
+        //     visualizer
+        //         .snapshot_combined(
+        //             "subgraph".to_string(),
+        //             vec![last_interface_ptr, &dual_module, &subgraph, &weight_range],
+        //         )
+        //         .unwrap();
+        // }
         assert!(
             decoding_graph
                 .model_graph

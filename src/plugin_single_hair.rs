@@ -5,7 +5,6 @@
 //! A plugin must implement Clone trait, because it will be cloned multiple times for each cluster
 //!
 
-use crate::decoding_hypergraph::*;
 use crate::dual_module::*;
 use crate::invalid_subgraph::InvalidSubgraph;
 use crate::matrix::*;
