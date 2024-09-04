@@ -5,6 +5,7 @@
 
 use crate::decoding_hypergraph::*;
 use crate::dual_module::*;
+use crate::invalid_subgraph;
 use crate::invalid_subgraph::*;
 use crate::matrix::*;
 use crate::num_traits::{One, Zero};
@@ -86,6 +87,12 @@ impl PartialOrd for ClusterAffinity {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
     }
+}
+
+pub enum Unionable {
+    Can,
+    DoesNotNeed,
+    Cannot,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -391,6 +398,7 @@ impl PrimalModuleImpl for PrimalModuleSerial {
         // dual_node_deltas: &mut BTreeMap<OrderedDualNodePtr, Rational>,
         dual_node_deltas: &mut BTreeMap<OrderedDualNodePtr, (Rational, NodeIndex)>,
     ) -> (bool, OptimizerResult) {
+        println!("invoked");
         let mut optimizer_result = OptimizerResult::default();
         #[cfg(feature = "incr_lp")]
         let mut cluster_ptr = self.clusters[cluster_index as usize].clone();
@@ -598,6 +606,26 @@ impl PrimalModuleImpl for PrimalModuleSerial {
                     optimizer_result = OptimizerResult::Optimized;
                 }
             }
+
+            // let mut count = 0;
+            // for (invalid_subgraph, grow_rate) in relaxer.get_direction() {
+            //     if interface_ptr.find_node(invalid_subgraph).is_none() {
+            //         count += 1;
+            //     }
+            // }
+            // println!("count: {}", count);
+
+            // #[cfg(feature = "cluster_size_limit")]
+            // if let Some(len_limit) = self.cluster_node_limit {
+            //     if count + cluster.nodes.len() >= len_limit {
+            //         println!("here");
+            //         cluster.relaxer_optimizer.insert(relaxer);
+
+            //         return (true, OptimizerResult::Init);
+            //     }
+            // } else {
+            //     println!("{:?}", count + cluster.nodes.len());
+            // }
 
             for (invalid_subgraph, grow_rate) in relaxer.get_direction() {
                 if let Some((existing, dual_node_ptr)) = interface_ptr.find_or_create_node_tune(
@@ -834,7 +862,7 @@ impl PrimalModuleSerial {
     }
 
     #[cfg(feature = "cluster_size_limit")]
-    fn can_union(&self, dual_nodes: &[ArcRwLock<DualNode>]) -> bool {
+    fn can_union(&self, dual_nodes: &[ArcRwLock<DualNode>]) -> Unionable {
         return match self.cluster_node_limit {
             Some(len_limit) => {
                 let dual_node_indexes = dual_nodes
@@ -845,7 +873,7 @@ impl PrimalModuleSerial {
 
                 // not going to union because the nodes all have the same index, only updates
                 if dual_node_indexes.len() == 1 {
-                    return false;
+                    return Unionable::DoesNotNeed;
                 }
 
                 let mut num_distinct_clusters = BTreeMap::new();
@@ -858,12 +886,16 @@ impl PrimalModuleSerial {
 
                 // not going to union because the nodes all belong to the same cluster, only updates
                 if num_distinct_clusters.len() == 1 {
-                    return false;
+                    return Unionable::DoesNotNeed;
                 }
 
-                num_distinct_clusters.values().sum::<usize>() <= len_limit
+                if num_distinct_clusters.values().sum::<usize>() <= len_limit {
+                    Unionable::Can
+                } else {
+                    Unionable::Cannot
+                }
             }
-            None => true,
+            None => Unionable::Can,
         };
     }
 
@@ -1056,6 +1088,9 @@ impl PrimalModuleSerial {
         let interface = interface_ptr.read_recursive();
         let decoding_graph = &interface.decoding_graph;
 
+        #[cfg(feature = "cluster_size_limit")]
+        let mut can_union;
+
         for conflict in group_max_update_length.into_iter() {
             match conflict {
                 MaxUpdateLength::Conflicting(edge_index) => {
@@ -1069,13 +1104,15 @@ impl PrimalModuleSerial {
                     let dual_node_ptr_0 = &dual_nodes[0];
                     #[cfg(feature = "cluster_size_limit")]
                     {
-                        let can_union = self.can_union(&dual_nodes);
-                        if can_union {
+                        can_union = self.can_union(&dual_nodes);
+                        if matches!(can_union, Unionable::Can) {
                             // first union all the dual nodes
                             for dual_node_ptr in dual_nodes.iter().skip(1) {
                                 // self.union(dual_node_ptr_0, dual_node_ptr, &interface.decoding_graph);
                                 self.union(dual_node_ptr_0, dual_node_ptr, &interface.decoding_graph, dual_module);
                             }
+                        } else {
+                            println!("triggered");
                         }
                     }
                     #[cfg(not(feature = "cluster_size_limit"))]
@@ -1104,6 +1141,15 @@ impl PrimalModuleSerial {
                     cluster.edges.insert(edge_index);
                     // add to active cluster so that it's processed later
                     active_clusters.insert(cluster.cluster_index);
+
+                    #[cfg(feature = "cluster_size_limit")]
+                    if matches!(can_union, Unionable::Cannot) {
+                        println!("broken");
+                        // cluster.edges.remove(&edge_index);
+                        active_clusters.remove(&cluster.cluster_index);
+                        break;
+                        // return (BTreeSet::default(), true);
+                    }
                 }
                 MaxUpdateLength::ShrinkProhibited(dual_node_ptr) => {
                     let cluster_ptr = self.nodes[dual_node_ptr.index as usize]
@@ -1140,6 +1186,53 @@ impl PrimalModuleSerial {
         let all_conflicts = dual_module.get_conflicts_tune(optimizer_result, dual_node_deltas);
 
         (all_conflicts, all_solved)
+    }
+
+    pub fn print_clusters(&self) {
+        let mut vertices = BTreeSet::new();
+        let mut edges = BTreeSet::new();
+        let mut invalid_subgraphs: BTreeSet<Arc<InvalidSubgraph>> = BTreeSet::new();
+        for cluster in self.clusters.iter() {
+            let cluster = cluster.read_recursive();
+            if cluster.nodes.is_empty() {
+                continue;
+            }
+            println!("cluster: {}", cluster.cluster_index);
+            println!(
+                "nodes: {:?}",
+                cluster
+                    .nodes
+                    .iter()
+                    .map(|node| node.read_recursive().dual_node_ptr.read_recursive().index)
+                    .collect::<Vec<_>>()
+            );
+            println!("vertices: {:?}", cluster.vertices);
+            if !vertices.is_disjoint(&cluster.vertices) {
+                println!("vertices overlap");
+                // print the overlapping vertices
+                println!("overlap: {:?}", vertices.intersection(&cluster.vertices).collect::<Vec<_>>());
+            }
+            vertices.extend(cluster.vertices.iter());
+            // print edge overlaps
+            if !edges.is_disjoint(&cluster.edges) {
+                println!("edges overlap");
+                println!("overlap: {:?}", edges.intersection(&cluster.edges).collect::<Vec<_>>());
+            }
+
+            // print the node and the invalid subgraph overlaps
+            for node in cluster.nodes.iter() {
+                let node = node.read_recursive();
+                if invalid_subgraphs.contains(&node.dual_node_ptr.read_recursive().invalid_subgraph) {
+                    println!("invalid subgraph overlap");
+                    println!("overlap: {:?}", node.dual_node_ptr.read_recursive().invalid_subgraph);
+                }
+                invalid_subgraphs.insert(node.dual_node_ptr.read_recursive().invalid_subgraph.clone());
+            }
+
+            edges.extend(cluster.edges.iter());
+            println!();
+            println!("invalid subgraphs: {:?}", invalid_subgraphs.len());
+        }
     }
 }
 

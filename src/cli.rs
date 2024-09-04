@@ -668,6 +668,8 @@ impl ResultVerifier for VerifierActualError {
             Rational::from_usize(self.initializer.get_subgraph_total_weight(error_pattern)).unwrap()
         };
         let (subgraph, weight_range) = primal_dual_solver.subgraph_range_visualizer(visualizer);
+
+        // primal_dual_solver.print_clusters();
         assert!(
             self.initializer
                 .matches_subgraph_syndrome(&subgraph, &syndrome_pattern.defect_vertices),

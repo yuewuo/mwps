@@ -42,6 +42,9 @@ pub trait PrimalDualSolver {
 
     fn get_tuning_time(&self) -> Option<f64>;
     fn clear_tuning_time(&mut self);
+    fn print_clusters(&self) {
+        panic!();
+    }
 }
 
 #[cfg(feature = "python_binding")]
@@ -193,6 +196,9 @@ impl PrimalDualSolver for SolverSerialPlugins {
     fn clear_tuning_time(&mut self) {
         self.dual_module.clear_tuning_time()
     }
+    fn print_clusters(&self) {
+        self.primal_module.print_clusters();
+    }
 }
 
 macro_rules! bind_primal_dual_solver_trait {
@@ -218,6 +224,9 @@ macro_rules! bind_primal_dual_solver_trait {
             }
             fn clear_tuning_time(&mut self) {
                 self.0.clear_tuning_time()
+            }
+            fn print_clusters(&self) {
+                self.0.print_clusters()
             }
         }
     };

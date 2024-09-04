@@ -155,6 +155,7 @@ impl SolverInitializer {
             for &vertex_index in vertices.iter() {
                 if defect_vertices.contains(&vertex_index) {
                     defect_vertices.remove(&vertex_index);
+                    // println!("duplicate defect vertex: {}", vertex_index);
                 } else {
                     defect_vertices.insert(vertex_index);
                 }
