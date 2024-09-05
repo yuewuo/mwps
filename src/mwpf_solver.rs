@@ -87,6 +87,7 @@ pub struct SolverSerialPluginsConfig {
     growing_strategy: GrowingStrategy,
     #[cfg(feature = "cluster_size_limit")]
     /// cluster size limit for the primal module in the tuning phase
+    /// this is the threshold for which LP will not be ran on a specific cluster to optimize the solution
     pub tuning_cluster_size_limit: Option<usize>,
 }
 
