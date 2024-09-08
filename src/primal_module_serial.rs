@@ -1277,7 +1277,7 @@ pub mod tests {
             &interface_ptr,
             decoding_graph.syndrome_pattern.clone(),
             &mut dual_module,
-            visualizer.as_mut(),
+            None,
         );
 
         let (subgraph, weight_range) = primal_module.subgraph_range(&interface_ptr, 0);
@@ -1344,7 +1344,7 @@ pub mod tests {
             growing_strategy,
             dual_module,
             model_graph,
-            Some(visualizer),
+            None,
         )
     }
 
