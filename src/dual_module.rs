@@ -91,7 +91,7 @@ pub struct DualNode {
     /// the pointer to the global time
     /// Note: may employ some unsafe features while being sound in performance-critical cases
     ///       and can remove option when removing dual_module_serial
-    pub global_time: Option<ArcRwLock<Rational>>,
+    pub global_time: Option<ArcManualSafeLock<Rational>>,
     /// the last time this dual_node is synced/updated with the global time
     pub last_updated_time: Rational,
     /// dual variable's value at the last updated time
@@ -126,7 +126,7 @@ impl DualNode {
     }
 
     /// initialize the global time pointer and the last_updated_time
-    pub fn init_time(&mut self, global_time_ptr: ArcRwLock<Rational>) {
+    pub fn init_time(&mut self, global_time_ptr: ArcManualSafeLock<Rational>) {
         self.last_updated_time = global_time_ptr.read_recursive().clone();
         self.global_time = Some(global_time_ptr);
     }
@@ -138,7 +138,7 @@ pub type DualNodeWeak = WeakManualSafeLock<DualNode>;
 impl std::fmt::Debug for DualNodePtr {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         let dual_node = self.read_recursive(); // reading index is consistent
-        let new = ArcRwLock::new_value(Rational::zero());
+        let new = ArcManualSafeLock::new_value(Rational::zero());
         let global_time = dual_node.global_time.as_ref().unwrap_or(&new).read_recursive();
         write!(
             f,

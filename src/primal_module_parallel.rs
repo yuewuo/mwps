@@ -1446,7 +1446,8 @@ pub mod tests {
     fn primal_module_parallel_circuit_level_noise_qec_playground_3() {
         // cargo test -r primal_module_parallel_circuit_level_noise_qec_playground_3 -- --nocapture
         let config = json!({
-            "code_type": qecp::code_builder::CodeType::RotatedPlanarCode
+            "code_type": qecp::code_builder::CodeType::RotatedPlanarCode,
+            "nm": 50,
         });
         
         let mut code = QECPlaygroundCode::new(7, 0.005, config);
@@ -1460,7 +1461,7 @@ pub mod tests {
             2424788,
             vec![],
             GrowingStrategy::ModeBased,
-            2,
+            8,
         );
     }
 

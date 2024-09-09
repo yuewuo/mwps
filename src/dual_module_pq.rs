@@ -537,7 +537,7 @@ where
     obstacle_queue: Queue,
     /// the global time of this dual module
     ///     Note: Wrap-around edge case is not currently considered
-    global_time: ArcRwLock<Rational>,
+    global_time: ArcManualSafeLock<Rational>,
 
     /// the current mode of the dual module
     ///     note: currently does not have too much functionality
@@ -650,7 +650,7 @@ where
             })
             .collect();
         // set global time 
-        let global_time = ArcRwLock::new_value(Rational::zero());
+        let global_time = ArcManualSafeLock::new_value(Rational::zero());
         // set edges
         let mut edges = Vec::<EdgePtr>::new();
         for hyperedge in initializer.weighted_edges.iter() {
@@ -1236,7 +1236,7 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
         } 
 
         // initialize global time 
-        let global_time = ArcRwLock::new_value(Rational::zero());
+        let global_time = ArcManualSafeLock::new_value(Rational::zero());
         
         // set edges 
         let mut edges = Vec::<EdgePtr>::new();
