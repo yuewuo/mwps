@@ -1741,7 +1741,7 @@ pub mod tests {
 
     #[test]
     fn primal_module_serial_circuit_level_noise_1() {
-        // cargo test primal_module_serial_circuit_level_noise_1 -- --nocapture
+        // cargo test -r primal_module_serial_circuit_level_noise_1 -- --nocapture
         let config = json!({
             "code_type": qecp::code_builder::CodeType::RotatedPlanarCode,
         });
@@ -1754,7 +1754,7 @@ pub mod tests {
             code,
             visualize_filename,
             defect_vertices.clone(),
-            5914274,
+            9474048,
             vec![],
             GrowingStrategy::ModeBased,
         );

@@ -1392,7 +1392,7 @@ pub mod tests {
             dual_module,
             primal_module,
             model_graph,
-            Some(visualizer),
+            None,
         )
     }
 
@@ -1460,7 +1460,7 @@ pub mod tests {
             2424788,
             vec![],
             GrowingStrategy::ModeBased,
-            4,
+            2,
         );
     }
 
