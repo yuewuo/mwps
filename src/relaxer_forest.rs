@@ -12,6 +12,8 @@ use weak_table::PtrWeakHashSet;
 use weak_table::PtrWeakKeyHashMap;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
+use crate::pointers::*;
+
 
 #[cfg(feature = "pq")]
 use crate::dual_module_pq::{EdgeWeak, VertexWeak, EdgePtr, VertexPtr};

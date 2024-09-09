@@ -5,6 +5,8 @@
 //! A plugin must implement Clone trait, because it will be cloned multiple times for each cluster
 //!
 
+#![cfg_attr(feature="unsafe_pointer", allow(dropping_references))]
+
 use crate::dual_module::*;
 use crate::invalid_subgraph::InvalidSubgraph;
 use crate::matrix::*;
@@ -15,6 +17,8 @@ use crate::util::*;
 use num_traits::One;
 use std::collections::BTreeSet;
 use std::sync::Arc;
+use crate::pointers::*;
+
 
 #[cfg(feature = "pq")]
 use crate::dual_module_pq::{EdgeWeak, VertexWeak, EdgePtr, VertexPtr};

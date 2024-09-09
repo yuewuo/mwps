@@ -1,6 +1,7 @@
 /// Parallel Implementation of Dual Module PQ
-/// 
 
+
+#[cfg_attr(feature="unsafe_pointer", allow(dropping_references))]
 
 
 use super::dual_module_pq::*;
@@ -11,20 +12,48 @@ use super::visualize::*;
 use crate::dual_module::DualModuleImpl;
 use crate::rayon::prelude::*;
 use crate::serde_json;
-use crate::weak_table::PtrWeakHashSet;
-use chrono::offset;
 use hashbrown::HashMap;
 use serde::{Serialize, Deserialize};
 use std::sync::{Arc, Mutex};
 use std::collections::BTreeSet;
-use std::collections::HashSet;
 use crate::primal_module::Affinity;
 use crate::primal_module_serial::PrimalClusterPtr;
 use crate::num_traits::{ToPrimitive, Zero};
 use crate::ordered_float::OrderedFloat;
 use std::collections::VecDeque;
 use std::cmp::Ordering;
+use std::marker::PhantomData;
 
+
+pub struct DualModuleParallel<SerialModule: DualModuleImpl + Send + Sync, Queue> 
+where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug + Send + Sync + Clone, 
+{
+    /// the set of all DualModuleParallelUnits, one for each partition
+    /// we set the read-write lock 
+    pub units: Vec<DualModuleParallelUnitPtr<SerialModule, Queue>>,
+    /// configuration such as thread_pool_size 
+    pub config: DualModuleParallelConfig,
+    /// partition information 
+    pub partition_info: Arc<PartitionInfo>,
+    /// thread pool used to execute async functions in parallel
+    pub thread_pool: Arc<rayon::ThreadPool>,
+    // /// an empty sync requests queue just to implement the trait
+    // pub empty_sync_request: Vec<SyncRequest>,
+
+    /// a dynamic (to-be-update) undirected graph (DAG) to keep track of the relationship between different partition units, assumed to be acylic if we partition
+    /// along the time axis, but could be cyclic depending on the partition and fusion strategy
+    pub dag_partition_units: BTreeSet<(usize, usize, bool)>, // (unit_index0, unit_index1, is_fused)
+    /// partitioned initializers, used in both primal and dual parallel modules
+    pub partitioned_initializers: Vec<PartitionedSolverInitializer>,
+
+    /// should think more about whether having this makes sense
+    /// the current mode of the dual module
+    ///     note: currently does not have too much functionality
+    mode: DualModuleMode,
+
+    /// PhantomData to account for the SerialModule parameter
+    _phantom: PhantomData<SerialModule>,
+}
 
 pub struct DualModuleParallelUnit<SerialModule: DualModuleImpl + Send + Sync, Queue> 
 where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug + Send + Sync + Clone, {
@@ -49,10 +78,12 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
     /// the current mode of the dual module
     ///     note: currently does not have too much functionality
     mode: DualModuleMode,
+    /// PhantomData to account for the SerialModule parameter
+    _phantom: PhantomData<SerialModule>,
 }
 
-pub type DualModuleParallelUnitPtr<SerialModule, Queue> = ArcRwLock<DualModuleParallelUnit<SerialModule, Queue>>;
-pub type DualModuleParallelUnitWeak<SerialModule, Queue> = WeakRwLock<DualModuleParallelUnit<SerialModule, Queue>>;
+pub type DualModuleParallelUnitPtr<SerialModule, Queue> = ArcManualSafeLock<DualModuleParallelUnit<SerialModule, Queue>>;
+pub type DualModuleParallelUnitWeak<SerialModule, Queue> = WeakManualSafeLock<DualModuleParallelUnit<SerialModule, Queue>>;
 
 impl<SerialModule: DualModuleImpl + Send + Sync, Queue> std::fmt::Debug for DualModuleParallelUnitPtr<SerialModule, Queue> 
 where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug + Send + Sync + Clone,
@@ -128,35 +159,9 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
             owning_range: self.owning_range.clone(),
             enable_parallel_execution: self.enable_parallel_execution.clone(),
             mode: self.mode.clone(),
+            _phantom: PhantomData,
         }
     }
-}
-
-pub struct DualModuleParallel<SerialModule: DualModuleImpl + Send + Sync, Queue> 
-where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug + Send + Sync + Clone, 
-{
-    /// the set of all DualModuleParallelUnits, one for each partition
-    /// we set the read-write lock 
-    pub units: Vec<DualModuleParallelUnitPtr<SerialModule, Queue>>,
-    /// configuration such as thread_pool_size 
-    pub config: DualModuleParallelConfig,
-    /// partition information 
-    pub partition_info: Arc<PartitionInfo>,
-    /// thread pool used to execute async functions in parallel
-    pub thread_pool: Arc<rayon::ThreadPool>,
-    // /// an empty sync requests queue just to implement the trait
-    // pub empty_sync_request: Vec<SyncRequest>,
-
-    /// a dynamic (to-be-update) undirected graph (DAG) to keep track of the relationship between different partition units, assumed to be acylic if we partition
-    /// along the time axis, but could be cyclic depending on the partition and fusion strategy
-    pub dag_partition_units: BTreeSet<(usize, usize, bool)>, // (unit_index0, unit_index1, is_fused)
-    /// partitioned initializers, used in both primal and dual parallel modules
-    pub partitioned_initializers: Vec<PartitionedSolverInitializer>,
-
-    /// should think more about whether having this makes sense
-    /// the current mode of the dual module
-    ///     note: currently does not have too much functionality
-    mode: DualModuleMode,
 }
 
 
@@ -349,6 +354,7 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
                         adjacent_parallel_units: vec![],
                         is_boundary_unit: partition_info.units[unit_index].is_boundary_unit,
                         mode: DualModuleMode::default(),
+                        _phantom: PhantomData,
                     })
                   
                 })
@@ -432,6 +438,7 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
             dag_partition_units,
             partitioned_initializers,
             mode: DualModuleMode::default(),
+            _phantom: PhantomData,
         }
     }
 

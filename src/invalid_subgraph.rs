@@ -1,3 +1,5 @@
+#![cfg_attr(feature="unsafe_pointer", allow(dropping_references))]
+
 use crate::decoding_hypergraph::*;
 use crate::derivative::Derivative;
 use crate::dual_module::DualModuleImpl;
@@ -9,6 +11,7 @@ use std::collections::hash_map::DefaultHasher;
 use std::collections::BTreeSet;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
+use crate::pointers::*;
 
 #[cfg(feature = "pq")]
 use crate::dual_module_pq::{EdgeWeak, VertexWeak, EdgePtr, VertexPtr};
@@ -199,8 +202,8 @@ impl InvalidSubgraph {
             return Err(format!(
                 "it's a valid subgraph because edges {:?} ⊆ {:?} can satisfy the parity requirement from vertices {:?}",
                 temp,
-                self.edges.iter().map(|e| e.upgradable_read().edge_index).collect::<Vec<_>>(),
-                self.vertices.iter().map(|e| e.upgradable_read().vertex_index).collect::<Vec<_>>(),
+                self.edges.iter().map(|e| e.read_recursive().edge_index).collect::<Vec<_>>(),
+                self.vertices.iter().map(|e| e.read_recursive().vertex_index).collect::<Vec<_>>(),
             ));
         }
         Ok(())

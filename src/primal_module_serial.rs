@@ -2,6 +2,7 @@
 //!
 //! This implementation targets to be an exact MWPF solver, although it's not yet sure whether it is actually one.
 //!
+#![cfg_attr(feature="unsafe_pointer", allow(dropping_references))]
 
 use color_print::cprintln;
 use crate::decoding_hypergraph::*;
@@ -124,8 +125,8 @@ pub struct PrimalModuleSerialNode {
     pub cluster_weak: PrimalClusterWeak,
 }
 
-pub type PrimalModuleSerialNodePtr = ArcRwLock<PrimalModuleSerialNode>;
-pub type PrimalModuleSerialNodeWeak = WeakRwLock<PrimalModuleSerialNode>;
+pub type PrimalModuleSerialNodePtr = ArcManualSafeLock<PrimalModuleSerialNode>;
+pub type PrimalModuleSerialNodeWeak = WeakManualSafeLock<PrimalModuleSerialNode>;
 
 impl std::fmt::Debug for PrimalModuleSerialNodePtr {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
@@ -161,8 +162,8 @@ pub struct PrimalCluster {
     pub incr_solution: Option<Arc<Mutex<IncrLPSolution>>>,
 }
 
-pub type PrimalClusterPtr = ArcRwLock<PrimalCluster>;
-pub type PrimalClusterWeak = WeakRwLock<PrimalCluster>;
+pub type PrimalClusterPtr = ArcManualSafeLock<PrimalCluster>;
+pub type PrimalClusterWeak = WeakManualSafeLock<PrimalCluster>;
 
 impl std::fmt::Debug for PrimalClusterPtr {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
@@ -737,7 +738,7 @@ impl PrimalModuleSerial {
         let primal_node_2_ptr = primal_node_2_weak.upgrade_force();
         let primal_node_1 = primal_node_1_ptr.read_recursive();
         let primal_node_2 = primal_node_2_ptr.read_recursive();
-        if primal_node_1.cluster_weak.ptr_eq(&primal_node_2.cluster_weak) {
+        if primal_node_1.cluster_weak.eq(&primal_node_2.cluster_weak) {
             return; // already in the same cluster
         }
         let cluster_ptr_1 = primal_node_1.cluster_weak.upgrade_force();
@@ -1381,7 +1382,7 @@ pub mod tests {
             growing_strategy,
             DualModulePQ::<FutureObstacleQueue<Rational>>::new_empty(&model_graph.initializer),
             model_graph,
-            Some(visualizer),
+            None,
         )
     }
 
@@ -1407,7 +1408,7 @@ pub mod tests {
 
     #[test]
     fn primal_module_serial_basic_1_with_dual_pq_impl_m() {
-        // cargo test primal_module_serial_basic_1_with_dual_pq_impl_m -- --nocapture
+        // cargo test -r primal_module_serial_basic_1_with_dual_pq_impl_m -- --nocapture
         let visualize_filename = "primal_module_serial_basic_1_with_dual_pq_impl_m.json".to_string();
         let defect_vertices = vec![23, 24, 29, 30];
         let code = CodeCapacityTailoredCode::new(7, 0., 0.01, 1);

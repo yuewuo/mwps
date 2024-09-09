@@ -36,7 +36,7 @@ debug = true
 
 [features]
 # to enable a feature, use `--features xxx`
-default = ["f64_weight", "cli", "qecp_integrate", "slp", "pq"] 
+default = ["f64_weight", "cli", "qecp_integrate", "slp", "pq", "unsafe_pointer"] 
 old_default = ["cli", "slp"]
 cli = ["pbr"]
 r64_weight = []                                   # use Rational64 instead of BigRational as weight type
@@ -51,6 +51,7 @@ float_lp = ["highs"]
 incr_lp = []
 pq = []                                           # use edge/vertex definitions in dual_module_pq 
 non-pq = []                                       # use edge/vertex definitions in dual_module_serial
+unsafe_pointer = []                               # use raw pointers to access data without lock when appropriate;
 
 [dependencies]
 pyo3 = { version = "0.19.2", features = [

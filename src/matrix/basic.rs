@@ -4,6 +4,8 @@ use super::visualize::*;
 use crate::util::*;
 use derivative::Derivative;
 use std::collections::{BTreeMap, BTreeSet};
+use crate::pointers::*;
+
 
 #[cfg(feature = "pq")]
 use crate::dual_module_pq::{EdgeWeak, VertexWeak, EdgePtr, VertexPtr};
@@ -205,7 +207,7 @@ pub mod tests {
 └─┴─┴─┴─┴─┴───┘
 "
         );
-        let matrix_vertices: HashSet<_> = matrix.get_vertices().into_iter().map(|v| v.upgradable_read().vertex_index).collect();
+        let matrix_vertices: HashSet<_> = matrix.get_vertices().into_iter().map(|v| v.read_recursive().vertex_index).collect();
         assert_eq!(matrix_vertices, [0, 1, 2].into());
         assert_eq!(matrix.get_view_edges().into_iter().map(|e| e.upgrade_force().read_recursive().edge_index).collect::<Vec<usize>>(), [1, 4, 12, 345]);
     }

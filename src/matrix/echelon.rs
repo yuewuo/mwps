@@ -5,6 +5,8 @@ use core::panic;
 use std::collections::BTreeSet;
 use derivative::Derivative;
 use prettytable::*;
+use crate::pointers::*;
+
 
 #[cfg(feature = "pq")]
 use crate::dual_module_pq::{EdgeWeak, VertexWeak, EdgePtr, VertexPtr};

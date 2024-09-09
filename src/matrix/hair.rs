@@ -8,6 +8,8 @@ use super::visualize::*;
 use crate::util::*;
 use prettytable::*;
 use std::collections::*;
+use crate::pointers::*;
+
 #[cfg(feature = "pq")]
 use crate::dual_module_pq::{EdgeWeak, VertexWeak, EdgePtr, VertexPtr};
 #[cfg(feature = "non-pq")]
@@ -321,7 +323,7 @@ pub mod tests {
         assert_eq!(hair_view.get_tail_edges_vec().iter().map(|e| e.upgrade_force().read_recursive().edge_index).collect::<Vec<_>>(), [1, 6]);
         assert!(hair_view.is_tight(edges[0].downgrade()));
         assert!(hair_view.get_echelon_satisfiable());
-        let matrix_vertices: HashSet<_> = hair_view.get_vertices().into_iter().map(|v| v.upgradable_read().vertex_index).collect();
+        let matrix_vertices: HashSet<_> = hair_view.get_vertices().into_iter().map(|v| v.read_recursive().vertex_index).collect();
         assert_eq!(matrix_vertices, [0, 1, 2].into());
         assert_eq!(hair_view.get_base_view_edges().iter().map(|e| e.upgrade_force().read_recursive().edge_index).collect::<Vec<_>>(), [4, 9, 1, 6]);
         drop(vertices);

@@ -3,6 +3,8 @@
 //! Generics for dual modules
 //!
 
+#![cfg_attr(feature="unsafe_pointer", allow(dropping_references))]
+
 
 use color_print::cprint;
 use color_print::cprintln;
@@ -130,8 +132,8 @@ impl DualNode {
     }
 }
 
-pub type DualNodePtr = ArcRwLock<DualNode>;
-pub type DualNodeWeak = WeakRwLock<DualNode>;
+pub type DualNodePtr = ArcManualSafeLock<DualNode>;
+pub type DualNodeWeak = WeakManualSafeLock<DualNode>;
 
 impl std::fmt::Debug for DualNodePtr {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
@@ -180,8 +182,8 @@ pub struct DualModuleInterface {
     // pub decoding_graph: DecodingHyperGraph,
 }
 
-pub type DualModuleInterfacePtr = ArcRwLock<DualModuleInterface>;
-pub type DualModuleInterfaceWeak = WeakRwLock<DualModuleInterface>;
+pub type DualModuleInterfacePtr = ArcManualSafeLock<DualModuleInterface>;
+pub type DualModuleInterfaceWeak = WeakManualSafeLock<DualModuleInterface>;
 
 impl std::fmt::Debug for DualModuleInterfacePtr {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
@@ -915,9 +917,9 @@ impl MWPSVisualizer for DualModuleInterfacePtr {
         let mut dual_nodes = Vec::<serde_json::Value>::new();
         for dual_node_ptr in interface.nodes.iter() {
             let dual_node = dual_node_ptr.read_recursive();
-            let edges: Vec<usize> = dual_node.invalid_subgraph.edges.iter().map(|e|e.upgradable_read().edge_index).collect();
-            let vertices: Vec<usize> = dual_node.invalid_subgraph.vertices.iter().map(|e|e.upgradable_read().vertex_index).collect();
-            let hair: Vec<usize>  = dual_node.invalid_subgraph.hair.iter().map(|e|e.upgradable_read().edge_index).collect();
+            let edges: Vec<usize> = dual_node.invalid_subgraph.edges.iter().map(|e|e.read_recursive().edge_index).collect();
+            let vertices: Vec<usize> = dual_node.invalid_subgraph.vertices.iter().map(|e|e.read_recursive().vertex_index).collect();
+            let hair: Vec<usize>  = dual_node.invalid_subgraph.hair.iter().map(|e|e.read_recursive().edge_index).collect();
             dual_nodes.push(json!({
                 if abbrev { "e" } else { "edges" }: edges,
                 if abbrev { "v" } else { "vertices" }: vertices,

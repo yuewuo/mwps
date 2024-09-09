@@ -15,6 +15,8 @@ use crate::relaxer_forest::*;
 use num_traits::Signed;
 use parking_lot::RwLock;
 use std::sync::Arc;
+use crate::pointers::*;
+
 
 pub type EchelonMatrix = Echelon<Tail<Tight<BasicMatrix>>>;
 

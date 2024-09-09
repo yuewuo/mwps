@@ -10,6 +10,8 @@
 use super::interface::*;
 use prettytable::format::TableFormat;
 use prettytable::*;
+use crate::pointers::*;
+
 
 #[derive(Clone)]
 pub struct VizTable {

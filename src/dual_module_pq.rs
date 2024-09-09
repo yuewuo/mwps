@@ -5,6 +5,8 @@
 //! Only debug tests are failing, which aligns with the dual_module_serial behavior
 //!
 
+#![cfg_attr(feature="unsafe_pointer", allow(dropping_references))]
+
 use color_print::cprintln;
 use crate::num_traits::{ToPrimitive, Zero};
 use crate::ordered_float::OrderedFloat;
@@ -333,8 +335,8 @@ impl Vertex {
     }
 }
 
-pub type VertexPtr = ArcRwLock<Vertex>;
-pub type VertexWeak = WeakRwLock<Vertex>;
+pub type VertexPtr = ArcManualSafeLock<Vertex>;
+pub type VertexWeak = WeakManualSafeLock<Vertex>;
 
 impl std::fmt::Debug for VertexPtr {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
@@ -430,8 +432,8 @@ impl Edge {
     }
 }
 
-pub type EdgePtr = ArcRwLock<Edge>;
-pub type EdgeWeak = WeakRwLock<Edge>;
+pub type EdgePtr = ArcManualSafeLock<Edge>;
+pub type EdgeWeak = WeakManualSafeLock<Edge>;
 
 impl std::fmt::Debug for EdgePtr {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
@@ -625,8 +627,8 @@ where
     }
 }
 
-pub type DualModulePQlPtr<Queue> = ArcRwLock<DualModulePQ<Queue>>;
-pub type DualModulePQWeak<Queue> = WeakRwLock<DualModulePQ<Queue>>;
+pub type DualModulePQlPtr<Queue> = ArcManualSafeLock<DualModulePQ<Queue>>;
+pub type DualModulePQWeak<Queue> = WeakManualSafeLock<DualModulePQ<Queue>>;
 
 impl<Queue> DualModuleImpl for DualModulePQ<Queue>
 where
@@ -1053,7 +1055,7 @@ where
                     );
 
                     drop(node);
-                    let mut node: RwLockWriteGuard<RawRwLock, DualNode> = _dual_node_ptr.ptr.write();
+                    let mut node = _dual_node_ptr.ptr.write();
 
                     let dual_variable = node.get_dual_variable();
                     node.set_dual_variable(dual_variable);
@@ -1242,7 +1244,7 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
             // above, we have created the vertices that follow its own numbering rule for the index
             // so we need to calculate the vertex indices of the hyper_edge to make it match the local index 
             // then, we can create EdgePtr 
-            let mut local_hyper_edge_vertices = Vec::<WeakRwLock<Vertex>>::new();
+            let mut local_hyper_edge_vertices = Vec::<VertexWeak>::new();
             for vertex_index in hyper_edge.vertices.iter() {
                 // println!("vertex_index: {:?}", vertex_index);
                 let local_index = if partitioned_initializer.owning_range.contains(*vertex_index) {

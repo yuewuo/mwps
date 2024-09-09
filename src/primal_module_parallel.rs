@@ -3,6 +3,7 @@
 //! A parallel implementation of the primal module, by calling functions provided by the serial primal module
 //! 
 //! 
+#![cfg_attr(feature="unsafe_pointer", allow(dropping_references))]
 
 use color_print::cprintln;
 use super::dual_module::*;
@@ -52,8 +53,8 @@ pub struct PrimalModuleParallelUnit {
 }
 
 
-pub type PrimalModuleParallelUnitPtr = ArcRwLock<PrimalModuleParallelUnit>;
-pub type PrimalModuleParallelUnitWeak = WeakRwLock<PrimalModuleParallelUnit>;
+pub type PrimalModuleParallelUnitPtr = ArcManualSafeLock<PrimalModuleParallelUnit>;
+pub type PrimalModuleParallelUnitWeak = WeakManualSafeLock<PrimalModuleParallelUnit>;
 
 impl std::fmt::Debug for PrimalModuleParallelUnitPtr {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
@@ -399,7 +400,7 @@ impl PrimalModuleParallelUnit {
                     let edge_ptr = edge_weak.upgrade_force();
                     let mut edge = edge_ptr.write();
                     for local_vertex in edge.vertices.iter_mut() {
-                        if local_vertex.ptr_eq(&corresponding_mirrored_vertex) {
+                        if local_vertex.eq(&corresponding_mirrored_vertex) {
                             *local_vertex = vertex.downgrade();
                         }
                     }
@@ -428,7 +429,7 @@ impl PrimalModuleParallelUnit {
                     let edge_ptr = edge_weak.upgrade_force();
                     let mut edge = edge_ptr.write();
                     for local_vertex in edge.vertices.iter_mut() {
-                        if local_vertex.ptr_eq(&corresponding_mirrored_vertex) {
+                        if local_vertex.eq(&corresponding_mirrored_vertex) {
                             *local_vertex = vertex.downgrade();
                         }
                     }
@@ -458,7 +459,7 @@ impl PrimalModuleParallelUnit {
                     let edge_ptr = edge_weak.upgrade_force();
                     let mut edge = edge_ptr.write();
                     for local_vertex in edge.vertices.iter_mut() {
-                        if local_vertex.ptr_eq(&vertex.downgrade()) {
+                        if *local_vertex == vertex.downgrade() {
                             *local_vertex = corresponding_mirrored_vertex.clone();
                         }
                     }
@@ -978,7 +979,7 @@ pub mod tests {
             dual_module,
             primal_module,
             model_graph,
-            Some(visualizer),
+            None,
         )
     }
 
@@ -1239,7 +1240,7 @@ pub mod tests {
     /// test a simple case, split into 4, a defect vertex in boundary-unit, clusters grow into other units
     #[test]
     fn primal_module_parallel_split_into_4_test_7() {
-        // RUST_BACKTRACE=1 cargo test primal_module_parallel_split_into_4_test_7 -- --nocapture
+        // RUST_BACKTRACE=1 cargo test -r primal_module_parallel_split_into_4_test_7 -- --nocapture
         let weight = 1; // do not change, the data is hard-coded
         for seed in 0..1000 {
             let mut code = CodeCapacityPlanarCode::new(7, 0.1, weight);
@@ -1443,7 +1444,7 @@ pub mod tests {
     /// test solver on circuit level noise with random errors, split into 4
     #[test]
     fn primal_module_parallel_circuit_level_noise_qec_playground_3() {
-        // cargo test primal_module_parallel_circuit_level_noise_qec_playground_3 -- --nocapture
+        // cargo test -r primal_module_parallel_circuit_level_noise_qec_playground_3 -- --nocapture
         let config = json!({
             "code_type": qecp::code_builder::CodeType::RotatedPlanarCode
         });

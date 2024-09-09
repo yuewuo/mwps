@@ -20,6 +20,7 @@ use std::io::prelude::*;
 use std::time::Instant;
 use petgraph::Graph;
 use petgraph::Undirected;
+use crate::pointers::*;
 use std::sync::Arc;
 use crate::itertools::Itertools;
 
@@ -52,7 +53,7 @@ cfg_if::cfg_if! {
 
 cfg_if::cfg_if! {
     if #[cfg(feature="unsafe_pointer")] {
-        pub type KnownSafeRefCell<T> = ; // missing implementation
+        pub type KnownSafeRefCell<T> = std::cell::UnsafeCell<T>; // missing implementation
     } else {
         pub type KnownSafeRefCell<T> = std::cell::RefCell<T>;
     }
