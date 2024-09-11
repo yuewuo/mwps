@@ -25,6 +25,7 @@ use std::fs::File;
 use std::io::prelude::*;
 use std::io::BufWriter;
 use std::sync::Arc;
+use crate::pointers::*;
 
 pub trait PrimalDualSolver {
     fn clear(&mut self);
