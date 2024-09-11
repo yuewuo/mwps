@@ -1,0 +1,9 @@
+model num col: 90, num row: 616
+model num col: 72, num row: 656
+model num col: 76, num row: 658
+model num col: 78, num row: 659
+model num col: 96, num row: 668
+model num col: 20, num row: 166
+model num col: 16, num row: 129
+model num col: 16, num row: 178
+model num col: 18, num row: 120

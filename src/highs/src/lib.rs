@@ -510,6 +510,16 @@ impl Model {
 
         Ok(Col(self.highs.num_cols()? - 1))
     }
+
+    /// Number of variables
+    pub fn num_cols(&self) -> usize {
+        self.highs.num_cols().expect("invalid number of columns")
+    }
+
+    /// Number of constraints
+    pub fn num_rows(&self) -> usize {
+        self.highs.num_rows().expect("invalid number of rows")
+    }
 }
 
 impl From<SolvedModel> for Model {

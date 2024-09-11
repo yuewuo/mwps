@@ -48,6 +48,7 @@ impl Ord for InvalidSubgraph {
             Ordering::Equal
         } else {
             // rare cases: same hash value but different state
+            println!("rare case same hash value but different state for invalid subgraph");
             (&self.vertices, &self.edges, &self.hair).cmp(&(&other.vertices, &other.edges, &other.hair))
             // // Compare vertices, then edges, then hair
             // let vertices_cmp = self.vertices.iter().cmp(other.vertices.iter());

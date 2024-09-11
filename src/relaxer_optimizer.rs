@@ -281,6 +281,7 @@ impl RelaxerOptimizer {
             model.add_row(..=slack.to_f64().unwrap(), row_entries);
         }
 
+        println!("model num col: {:?}, num row: {:?}", model.num_cols(), model.num_rows());
         let solved = model.solve();
 
         let mut direction: BTreeMap<Arc<InvalidSubgraph>, OrderedFloat> = BTreeMap::new();
@@ -330,6 +331,7 @@ impl RelaxerOptimizer {
 
         return match option_incr_lp_solution {
             Some(incr_lp_solution) => {
+                println!("incre_lp_solution");
                 let mut incr_lp_solution_ptr = incr_lp_solution.lock();
                 let mut model: highs::Model = incr_lp_solution_ptr.solution.take().unwrap().into();
 

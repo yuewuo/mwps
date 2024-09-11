@@ -471,7 +471,7 @@ impl Cli {
                         visualizer = Some(new_visualizer);
                     }
 
-                    let begin_time = std::time::Instant::now();
+                    // let begin_time = std::time::Instant::now();
                     primal_dual_solver.solve_visualizer(&syndrome_pattern, None, seed); // FIXME: for release, remove the seed that is passed in for debugging purposes
 
                     // solver load the defect vertices from their indices
@@ -483,9 +483,9 @@ impl Cli {
                         seed,
                     );
                     primal_dual_solver.clear(); // also count the clear operation
-                    let end_time = std::time::Instant::now();
-                    let resolve_time = (end_time - begin_time).as_secs_f64();
-                    println!("resolve time {:?}", resolve_time);
+                    // let end_time = std::time::Instant::now();
+                    // let resolve_time = (end_time - begin_time).as_secs_f64();
+                    // println!("resolve time {:?}", resolve_time);
 
                     return;
                 }
