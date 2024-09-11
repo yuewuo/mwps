@@ -6,6 +6,7 @@ use crate::visualize::*;
 use clap::builder::{StringValueParser, TypedValueParser, ValueParser};
 use clap::error::{ContextKind, ContextValue, ErrorKind};
 use clap::{Parser, Subcommand, ValueEnum};
+use itertools::partition;
 use more_asserts::assert_le;
 use num_traits::FromPrimitive;
 use pbr::ProgressBar;
@@ -15,6 +16,8 @@ use rand::{thread_rng, Rng, SeedableRng};
 use serde::Serialize;
 use serde_variant::to_variant_name;
 use std::env;
+use std::collections::BTreeSet;
+use std::usize::MAX;
 
 const TEST_EACH_ROUNDS: usize = 100;
 
@@ -107,6 +110,10 @@ pub struct BenchmarkParameters {
     /// single seed for debugging purposes
     #[clap(long, action)]
     single_seed: Option<u64>,
+    #[clap(long, value_enum, default_value_t = PartitionStrategy::None)]
+    pub partition_strategy: PartitionStrategy,
+    #[clap(long, default_value_t = 0)]
+    split_num: usize,
 }
 
 #[derive(Subcommand, Clone, Debug)]
@@ -157,6 +164,24 @@ pub enum ExampleCodeType {
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum, Serialize, Debug)]
+pub enum PartitionStrategy {
+    /// no partition
+    None,
+    /// partition a planar code into top half and bottom half
+    CodeCapacityPlanarCodeVerticalPartitionHalf,
+    /// partition a planar code into 4 pieces: top left and right, bottom left and right
+    CodeCapacityPlanarCodeVerticalPartitionFour,
+    /// partition a repetition code into left and right half
+    CodeCapacityRepetitionCodePartitionHalf,
+    /// partition a phenomenological (or circuit-level) planar code with time axis
+    PhenomenologicalPlanarCodeTimePartition,
+    /// partition a phenomenological (or circuit-level) rotated code with time axis
+    PhenomenologicalRotatedCodeTimePartition,
+}
+
+
+
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum, Serialize, Debug)]
 #[serde(rename_all = "kebab-case")]
 pub enum PrimalDualType {
     /// the solver from Union-Find decoder
@@ -167,6 +192,12 @@ pub enum PrimalDualType {
     JointSingleHair,
     /// log error into a file for later fetch
     ErrorPatternLogger,
+    /// parallel primal and parallel dual, Union-Find decoder
+    ParallelUnionFind,
+    /// parallel primal and parallel dual, single-hair decoder
+    ParallelSingleHair,
+    /// parallel primal and parallel dual, joint single-hair solver
+    ParallelJointSingleHair,
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum, Serialize, Debug)]
@@ -273,6 +304,85 @@ impl TypedValueParser for SerdeJsonParser {
 //     }
 // }
 
+/// test for time partition
+#[allow(clippy::unnecessary_cast)]
+pub fn graph_time_partition(initializer: &SolverInitializer, positions: &Vec<VisualizePosition>, defect_vertices: &Vec<VertexIndex>, split_num: usize) -> PartitionConfig  {
+    assert!(positions.len() > 0, "positive number of positions");
+    let mut partition_config = PartitionConfig::new(initializer.vertex_num);
+    let mut last_t = positions[0].t;
+    let mut t_list: Vec<f64> = vec![];
+    t_list.push(last_t);
+    for position in positions {
+        assert!(position.t >= last_t, "t not monotonically increasing, vertex reordering must be performed before calling this");
+        if position.t != last_t {
+            t_list.push(position.t);
+        }
+        last_t = position.t;
+    }
+
+    // pick the t value in the middle to split it
+    let mut t_split_vec: Vec<f64> = vec![0.0; split_num - 1];
+    for i in 0..(split_num - 1) {
+        let index: usize = t_list.len()/split_num * (i + 1);
+        t_split_vec[i] = t_list[index];
+    }
+    // find the vertices indices
+    let mut split_start_index_vec = vec![MAX; split_num - 1];
+    let mut split_end_index_vec = vec![MAX; split_num - 1];
+    let mut start_index = 0;
+    let mut end_index = 0;
+    for (vertex_index, position) in positions.iter().enumerate() {
+        if start_index < split_num - 1 {
+            if split_start_index_vec[start_index] == MAX && position.t == t_split_vec[start_index] {
+                split_start_index_vec[start_index] = vertex_index;
+                if start_index != 0 {
+                    end_index += 1;
+                }
+                start_index += 1;
+            }
+        }
+        
+        if end_index < split_num - 1 {
+            if position.t == t_split_vec[end_index] {
+                split_end_index_vec[end_index] = vertex_index + 1;
+                // end_index += 1;
+            }
+        }
+    }
+
+    assert!(split_start_index_vec.iter().all(|&x| x != MAX), "Some elements in split_start_index_vec are equal to MAX");
+    
+    // partitions are found
+    let mut graph_nodes = vec![];
+    let mut partitions_vec = vec![];
+    for i in 0..split_num  {
+        if i == 0 {
+            partitions_vec.push(VertexRange::new(0, split_start_index_vec[0]));
+        } else if i == split_num - 1 {
+            partitions_vec.push(VertexRange::new(split_end_index_vec[i - 1], positions.len()));
+        } else {
+            partitions_vec.push(VertexRange::new(split_end_index_vec[i - 1], split_start_index_vec[i]));
+        }
+
+        if i < split_num - 1 {
+            partition_config.fusions.push((i, i+1));
+        }
+        
+        let a = partition_config.dag_partition_units.add_node(());
+        graph_nodes.push(a.clone());
+    }
+    partition_config.partitions = partitions_vec;
+
+    for i in 0..split_num {
+        if i < split_num - 1 {
+            partition_config.dag_partition_units.add_edge(graph_nodes[i], graph_nodes[i+1], false);
+        }
+    }
+    partition_config.defect_vertices = BTreeSet::from_iter(defect_vertices.clone());
+
+    partition_config
+}
+
 impl Cli {
     pub fn run(self) {
         match self.command {
@@ -297,6 +407,8 @@ impl Cli {
                 print_error_pattern,
                 apply_deterministic_seed,
                 single_seed,
+                partition_strategy,
+                split_num,
             }) => {
                 // whether to disable progress bar, useful when running jobs in background
                 let disable_progress_bar = env::var("DISABLE_PROGRESS_BAR").is_ok();
@@ -310,8 +422,12 @@ impl Cli {
                 }
                 // create initializer and solver
                 let initializer = code.get_initializer();
-                let mut primal_dual_solver = primal_dual_type.build(&initializer, &*code, primal_dual_config);
-                let mut result_verifier = verifier.build(&initializer);
+
+                // let partition_config = graph_time_partition(&initializer, &code.get_positions(), &defect_vertices, split_num);
+                // let partition_info = partition_config.info();
+
+                // let mut primal_dual_solver = primal_dual_type.build(&initializer, &*code, primal_dual_config);
+                // let mut result_verifier = verifier.build(&initializer);
                 // prepare progress bar display
                 let mut pb = if !disable_progress_bar {
                     let mut pb = ProgressBar::on(std::io::stderr(), total_rounds as u64);
@@ -332,6 +448,17 @@ impl Cli {
                     if print_error_pattern {
                         println!("error_pattern: {:?}", error_pattern);
                     }
+
+                    let defect_vertices = code.generate_random_errors(seed).0.defect_vertices;
+                    let mut partition_config = PartitionConfig::new(initializer.vertex_num);
+                    let mut partition_info = partition_config.info();
+
+                    if split_num > 0 {
+                        partition_config = graph_time_partition(&initializer, &code.get_positions(), &defect_vertices, split_num);
+                        partition_info = partition_config.info();
+                    } 
+                    let mut primal_dual_solver = primal_dual_type.build(&initializer, &partition_info, &*code, primal_dual_config);
+                    let mut result_verifier = verifier.build(&initializer);
                     // create a new visualizer each round
                     let mut visualizer = None;
                     if enable_visualizer {
@@ -344,7 +471,7 @@ impl Cli {
                         visualizer = Some(new_visualizer);
                     }
 
-                    let begin_time = std::time::Instant::now();
+                    // let begin_time = std::time::Instant::now();
                     primal_dual_solver.solve_visualizer(&syndrome_pattern, visualizer.as_mut(), seed); // FIXME: for release, remove the seed that is passed in for debugging purposes
 
                     // solver load the defect vertices from their indices
@@ -356,9 +483,9 @@ impl Cli {
                         seed,
                     );
                     primal_dual_solver.clear(); // also count the clear operation
-                    let end_time = std::time::Instant::now();
-                    let resolve_time = (end_time - begin_time).as_millis();
-                    println!("resolve time {:?}", resolve_time);
+                    // let end_time = std::time::Instant::now();
+                    // let resolve_time = (end_time - begin_time).as_millis();
+                    // println!("resolve time {:?}", resolve_time);
 
                     return;
                 }
@@ -383,6 +510,18 @@ impl Cli {
                     if print_error_pattern {
                         println!("error_pattern: {:?}", error_pattern);
                     }
+
+                    let defect_vertices = code.generate_random_errors(seed).0.defect_vertices;
+                    let mut partition_config = PartitionConfig::new(initializer.vertex_num);
+                    let mut partition_info = partition_config.info();
+
+                    if split_num > 0 {
+                        partition_config = graph_time_partition(&initializer, &code.get_positions(), &defect_vertices, split_num);
+                        partition_info = partition_config.info();
+                    } 
+                    let mut primal_dual_solver = primal_dual_type.build(&initializer, &partition_info, &*code, primal_dual_config.clone());
+                    let mut result_verifier = verifier.build(&initializer);
+
                     // create a new visualizer each round
                     let mut visualizer = None;
                     if enable_visualizer {
@@ -597,10 +736,95 @@ impl ExampleCodeType {
     }
 }
 
+// implement this after printing/finalizing the poster
+// impl PartitionStrategy {
+//     pub fn build(
+//         &self,
+//         code: &mut dyn ExampleCode,
+//         d: VertexNum,
+//         noisy_measurements: VertexNum,
+//         mut partition_config: serde_json::Value,
+//     ) -> (SolverInitializer, PartitionConfig) {
+//         use example_partition::*;
+//         let partition_config = match self {
+//             Self::None => {
+//                 assert_eq!(partition_config, json!({}), "config not supported");
+//                 NoPartition::new().build_apply(code)
+//             }
+//             Self::CodeCapacityPlanarCodeVerticalPartitionHalf => {
+//                 assert_eq!(partition_config, json!({}), "config not supported");
+//                 CodeCapacityPlanarCodeVerticalPartitionHalf::new(d, d / 2).build_apply(code)
+//             }
+//             Self::CodeCapacityPlanarCodeVerticalPartitionFour => {
+//                 assert_eq!(partition_config, json!({}), "config not supported");
+//                 CodeCapacityPlanarCodeVerticalPartitionFour::new(d, d / 2, d / 2).build_apply(code)
+//             }
+//             Self::CodeCapacityRepetitionCodePartitionHalf => {
+//                 assert_eq!(partition_config, json!({}), "config not supported");
+//                 CodeCapacityRepetitionCodePartitionHalf::new(d, d / 2).build_apply(code)
+//             }
+//             Self::PhenomenologicalPlanarCodeTimePartition => {
+//                 let config = partition_config.as_object_mut().expect("config must be JSON object");
+//                 let mut partition_num = 10;
+//                 let mut enable_tree_fusion = false;
+//                 let mut maximum_tree_leaf_size = usize::MAX;
+//                 if let Some(value) = config.remove("partition_num") {
+//                     partition_num = value.as_u64().expect("partition_num: usize") as usize;
+//                 }
+//                 if let Some(value) = config.remove("enable_tree_fusion") {
+//                     enable_tree_fusion = value.as_bool().expect("enable_tree_fusion: bool");
+//                 }
+//                 if let Some(value) = config.remove("maximum_tree_leaf_size") {
+//                     maximum_tree_leaf_size = value.as_u64().expect("maximum_tree_leaf_size: usize") as usize;
+//                 }
+//                 if !config.is_empty() {
+//                     panic!("unknown config keys: {:?}", config.keys().collect::<Vec<&String>>());
+//                 }
+//                 PhenomenologicalPlanarCodeTimePartition::new_tree(
+//                     d,
+//                     noisy_measurements,
+//                     partition_num,
+//                     enable_tree_fusion,
+//                     maximum_tree_leaf_size,
+//                 )
+//                 .build_apply(code)
+//             }
+//             Self::PhenomenologicalRotatedCodeTimePartition => {
+//                 let config = partition_config.as_object_mut().expect("config must be JSON object");
+//                 let mut partition_num = 10;
+//                 let mut enable_tree_fusion = false;
+//                 let mut maximum_tree_leaf_size = usize::MAX;
+//                 if let Some(value) = config.remove("partition_num") {
+//                     partition_num = value.as_u64().expect("partition_num: usize") as usize;
+//                 }
+//                 if let Some(value) = config.remove("enable_tree_fusion") {
+//                     enable_tree_fusion = value.as_bool().expect("enable_tree_fusion: bool");
+//                 }
+//                 if let Some(value) = config.remove("maximum_tree_leaf_size") {
+//                     maximum_tree_leaf_size = value.as_u64().expect("maximum_tree_leaf_size: usize") as usize;
+//                 }
+//                 if !config.is_empty() {
+//                     panic!("unknown config keys: {:?}", config.keys().collect::<Vec<&String>>());
+//                 }
+//                 PhenomenologicalRotatedCodeTimePartition::new_tree(
+//                     d,
+//                     noisy_measurements,
+//                     partition_num,
+//                     enable_tree_fusion,
+//                     maximum_tree_leaf_size,
+//                 )
+//                 .build_apply(code)
+//             }
+//         };
+//         (code.get_initializer(), partition_config)
+//     }
+// }
+
 impl PrimalDualType {
     fn build(
         &self,
         initializer: &SolverInitializer,
+        partition_info: &PartitionInfo,
         code: &dyn ExampleCode,
         primal_dual_config: serde_json::Value,
     ) -> Box<dyn PrimalDualSolver> {
@@ -609,6 +833,9 @@ impl PrimalDualType {
             Self::SingleHair => Box::new(SolverSerialSingleHair::new(initializer, primal_dual_config)),
             Self::JointSingleHair => Box::new(SolverSerialJointSingleHair::new(initializer, primal_dual_config)),
             Self::ErrorPatternLogger => Box::new(SolverErrorPatternLogger::new(initializer, code, primal_dual_config)),
+            Self::ParallelUnionFind => Box::new(SolverParallelUnionFind::new(initializer, partition_info, primal_dual_config)),
+            Self::ParallelSingleHair => Box::new(SolverParallelSingleHair::new(initializer, partition_info, primal_dual_config)),
+            Self::ParallelJointSingleHair => Box::new(SolverParallelJointSingleHair::new(initializer, partition_info, primal_dual_config)),
         }
     }
 }

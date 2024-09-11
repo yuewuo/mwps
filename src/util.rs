@@ -894,102 +894,110 @@ impl PartitionConfig {
     #[allow(clippy::unnecessary_cast)]
     pub fn info(&self) -> PartitionInfo {
         assert!(!self.partitions.is_empty(), "at least one partition must exist");
-        let mut owning_ranges = vec![];
-        let unit_count = self.partitions.len() + self.fusions.len();
-        let partitions_len = self.partitions.len();
-
-        for &partition in self.partitions.iter() {
-            partition.sanity_check();
-            assert!(
-                partition.end() <= self.vertex_num as VertexIndex,
-                "invalid vertex index {} in partitions",
-                partition.end()
-            );
-            owning_ranges.push(partition);
-        }
-
-        // find boundary vertices
-        let mut interface_ranges = vec![];
-        let mut unit_index_to_adjacent_indices: HashMap<usize, Vec<usize>> = HashMap::new();
-        
-        for (boundary_unit_index, (left_index, right_index)) in self.fusions.iter().enumerate() {
-            let boundary_unit_index = boundary_unit_index + partitions_len;
-            // find the interface_range 
-            let (_whole_range, interface_range) = self.partitions[*left_index].fuse(&self.partitions[*right_index]);
-            interface_ranges.push(interface_range);
-            owning_ranges.push(interface_range);
-            if let Some(adjacent_indices) = unit_index_to_adjacent_indices.get_mut(left_index) {
-                adjacent_indices.push(boundary_unit_index);
-            } else {
-                let mut adjacent_indices = vec![];
-                adjacent_indices.push(boundary_unit_index);
-                unit_index_to_adjacent_indices.insert(*left_index, adjacent_indices.clone());
+        if self.fusions.is_empty() {
+            PartitionInfo {
+                config: self.clone(),
+                units: vec![],
+                vertex_to_owning_unit: HashMap::new(),
             }
+        } else {
+            let mut owning_ranges = vec![];
+            let unit_count = self.partitions.len() + self.fusions.len();
+            let partitions_len = self.partitions.len();
+    
+            for &partition in self.partitions.iter() {
+                partition.sanity_check();
+                assert!(
+                    partition.end() <= self.vertex_num as VertexIndex,
+                    "invalid vertex index {} in partitions",
+                    partition.end()
+                );
+                owning_ranges.push(partition);
+            }
+    
+            // find boundary vertices
+            let mut interface_ranges = vec![];
+            let mut unit_index_to_adjacent_indices: HashMap<usize, Vec<usize>> = HashMap::new();
             
-            if let Some(adjacent_indices) = unit_index_to_adjacent_indices.get_mut(right_index) {
-                adjacent_indices.push(boundary_unit_index);
-            } else {
-                let mut adjacent_indices = vec![];
-                adjacent_indices.push(boundary_unit_index);
-                unit_index_to_adjacent_indices.insert(*right_index, adjacent_indices.clone());
-            }
-            
-            // now we insert the key-value pair for boundary_unit_index and its adjacent 
-            if let Some(adjacent_indices) = unit_index_to_adjacent_indices.get_mut(&boundary_unit_index) {
-                adjacent_indices.push(*left_index);
-                adjacent_indices.push(*right_index);
-            } else {
-                let mut adjacent_indices = vec![];
-                adjacent_indices.push(*left_index);
-                adjacent_indices.push(*right_index);
-                unit_index_to_adjacent_indices.insert(boundary_unit_index, adjacent_indices.clone());
-            }
-        }
-       
-        let mut boundary_vertices: HashMap<usize, Vec<IndexRange>> = HashMap::new();
-        for (unit_index, adjacent_unit_indices) in unit_index_to_adjacent_indices.iter() {
-            if let Some(adjacent_vertices) = boundary_vertices.get_mut(&unit_index) {
-                for adjacent_unit_index in adjacent_unit_indices {
-                    adjacent_vertices.push(owning_ranges[*adjacent_unit_index]);
+            for (boundary_unit_index, (left_index, right_index)) in self.fusions.iter().enumerate() {
+                let boundary_unit_index = boundary_unit_index + partitions_len;
+                // find the interface_range 
+                let (_whole_range, interface_range) = self.partitions[*left_index].fuse(&self.partitions[*right_index]);
+                interface_ranges.push(interface_range);
+                owning_ranges.push(interface_range);
+                if let Some(adjacent_indices) = unit_index_to_adjacent_indices.get_mut(left_index) {
+                    adjacent_indices.push(boundary_unit_index);
+                } else {
+                    let mut adjacent_indices = vec![];
+                    adjacent_indices.push(boundary_unit_index);
+                    unit_index_to_adjacent_indices.insert(*left_index, adjacent_indices.clone());
                 }
-            } else {
-                let mut adjacent_vertices = vec![];
-                for adjacent_unit_index in adjacent_unit_indices {
-                    adjacent_vertices.push(owning_ranges[*adjacent_unit_index]);
+                
+                if let Some(adjacent_indices) = unit_index_to_adjacent_indices.get_mut(right_index) {
+                    adjacent_indices.push(boundary_unit_index);
+                } else {
+                    let mut adjacent_indices = vec![];
+                    adjacent_indices.push(boundary_unit_index);
+                    unit_index_to_adjacent_indices.insert(*right_index, adjacent_indices.clone());
                 }
-                boundary_vertices.insert(*unit_index, adjacent_vertices.clone());
+                
+                // now we insert the key-value pair for boundary_unit_index and its adjacent 
+                if let Some(adjacent_indices) = unit_index_to_adjacent_indices.get_mut(&boundary_unit_index) {
+                    adjacent_indices.push(*left_index);
+                    adjacent_indices.push(*right_index);
+                } else {
+                    let mut adjacent_indices = vec![];
+                    adjacent_indices.push(*left_index);
+                    adjacent_indices.push(*right_index);
+                    unit_index_to_adjacent_indices.insert(boundary_unit_index, adjacent_indices.clone());
+                }
             }
-        }
-
-        // construct partition info, assuming partition along the time axis
-        let partition_unit_info: Vec<_> = (0..unit_count)
-            .map(|i| PartitionUnitInfo {
-                // owning_range: if i == self.partitions.len() - 1 {
-                //     owning_ranges[i]
-                // }else {
-                //     IndexRange::new(owning_ranges[i].start(), interface_ranges[i].end())  // owning_ranges[i], 
-                // },
-                owning_range: owning_ranges[i],
-                unit_index: i,
-                is_boundary_unit: if i < partitions_len {false} else {true},
-                adjacent_parallel_units: unit_index_to_adjacent_indices.get(&i).unwrap().clone(),
-                boundary_vertices: boundary_vertices.get(&i).unwrap().clone(),
-            })
-            .collect();
-
-        // create vertex_to_owning_unit for owning_ranges
-        let mut vertex_to_owning_unit = HashMap::new();
-        for partition_unit in partition_unit_info.iter() {
+           
+            let mut boundary_vertices: HashMap<usize, Vec<IndexRange>> = HashMap::new();
+            for (unit_index, adjacent_unit_indices) in unit_index_to_adjacent_indices.iter() {
+                if let Some(adjacent_vertices) = boundary_vertices.get_mut(&unit_index) {
+                    for adjacent_unit_index in adjacent_unit_indices {
+                        adjacent_vertices.push(owning_ranges[*adjacent_unit_index]);
+                    }
+                } else {
+                    let mut adjacent_vertices = vec![];
+                    for adjacent_unit_index in adjacent_unit_indices {
+                        adjacent_vertices.push(owning_ranges[*adjacent_unit_index]);
+                    }
+                    boundary_vertices.insert(*unit_index, adjacent_vertices.clone());
+                }
+            }
+    
+            // construct partition info, assuming partition along the time axis
+            let partition_unit_info: Vec<_> = (0..unit_count)
+                .map(|i| PartitionUnitInfo {
+                    // owning_range: if i == self.partitions.len() - 1 {
+                    //     owning_ranges[i]
+                    // }else {
+                    //     IndexRange::new(owning_ranges[i].start(), interface_ranges[i].end())  // owning_ranges[i], 
+                    // },
+                    owning_range: owning_ranges[i],
+                    unit_index: i,
+                    is_boundary_unit: if i < partitions_len {false} else {true},
+                    adjacent_parallel_units: unit_index_to_adjacent_indices.get(&i).unwrap().clone(),
+                    boundary_vertices: boundary_vertices.get(&i).unwrap().clone(),
+                })
+                .collect();
+    
             // create vertex_to_owning_unit for owning_ranges
-            for vertex_index in partition_unit.owning_range.iter() {
-                vertex_to_owning_unit.insert(vertex_index, partition_unit.unit_index);
+            let mut vertex_to_owning_unit = HashMap::new();
+            for partition_unit in partition_unit_info.iter() {
+                // create vertex_to_owning_unit for owning_ranges
+                for vertex_index in partition_unit.owning_range.iter() {
+                    vertex_to_owning_unit.insert(vertex_index, partition_unit.unit_index);
+                }
             }
-        }
-
-        PartitionInfo {
-            config: self.clone(),
-            units: partition_unit_info,
-            vertex_to_owning_unit,
+    
+            PartitionInfo {
+                config: self.clone(),
+                units: partition_unit_info,
+                vertex_to_owning_unit,
+            }
         }
     }
 }

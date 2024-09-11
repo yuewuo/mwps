@@ -35,6 +35,8 @@ pub struct PrimalModuleParallel {
     pub partition_info: Arc<PartitionInfo>,
     /// thread pool used to execute async functions in parallel
     pub thread_pool: Arc<rayon::ThreadPool>,
+    /// the time of calling [`PrimalModuleParallel::parallel_solve_step_callback`] method
+    pub last_solve_start_time: ArcRwLock<Instant>,
 }
 
 pub struct PrimalModuleParallelUnit {
@@ -50,6 +52,8 @@ pub struct PrimalModuleParallelUnit {
     pub adjacent_parallel_units: BTreeMap<PrimalModuleParallelUnitPtr, bool>,
     /// whether this unit is solved 
     pub is_solved: bool,
+    /// record the time of events
+    pub event_time: Option<PrimalModuleParallelUnitEventTime>,
 }
 
 
@@ -86,6 +90,32 @@ impl PartialOrd for PrimalModuleParallelUnitPtr {
     }
 }
 
+/// the time of critical events, for profiling purposes
+#[derive(Debug, Clone, Serialize)]
+pub struct PrimalModuleParallelUnitEventTime {
+    /// unit starts executing
+    pub start: f64,
+    /// unit ends executing
+    pub end: f64,
+    /// thread index
+    pub thread_index: usize,
+}
+
+impl Default for PrimalModuleParallelUnitEventTime {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl PrimalModuleParallelUnitEventTime {
+    pub fn new() -> Self {
+        Self {
+            start: 0.,
+            end: 0.,
+            thread_index: rayon::current_thread_index().unwrap_or(0),
+        }
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -158,6 +188,7 @@ impl PrimalModuleParallel {
                         serial_module: primal_module,
                         adjacent_parallel_units: BTreeMap::new(),
                         is_solved: false,
+                        event_time: None,
                     })
                 })
                 .collect_into_vec(&mut units);
@@ -182,6 +213,7 @@ impl PrimalModuleParallel {
             config,
             partition_info,
             thread_pool: Arc::new(thread_pool),
+            last_solve_start_time: ArcRwLock::new_value(Instant::now()),
         }
     }
 }
@@ -191,7 +223,7 @@ impl PrimalModuleParallelUnitPtr {
     // syndrome pattern is created in this function. This function could not be used for dynamic fusion
     fn individual_solve<DualSerialModule: DualModuleImpl + Send + Sync, Queue, F: Send + Sync>(
         &self,
-        _primal_module_parallel: &PrimalModuleParallel,
+        primal_module_parallel: &PrimalModuleParallel,
         partitioned_syndrome_pattern: PartitionedSyndromePattern,
         parallel_dual_module: &DualModuleParallel<DualSerialModule, Queue>,
         callback: &mut Option<&mut F>,
@@ -204,7 +236,13 @@ impl PrimalModuleParallelUnitPtr {
         ),
         Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug + Send + Sync + Clone,
     {
-        
+        let mut event_time = PrimalModuleParallelUnitEventTime::new();
+        event_time.start = primal_module_parallel
+            .last_solve_start_time
+            .read_recursive()
+            .elapsed()
+            .as_secs_f64();
+
         let mut primal_unit = self.write();
         let unit_index = primal_unit.unit_index;
         // cprintln!("<green>individual_solve for unit: {:?}</green>", unit_index);
@@ -237,6 +275,12 @@ impl PrimalModuleParallelUnitPtr {
                 callback(&primal_unit.interface_ptr, &dual_module_ptr.write().deref_mut(), &primal_unit.serial_module, None);
             }
         }
+        event_time.end = primal_module_parallel
+            .last_solve_start_time
+            .read_recursive()
+            .elapsed()
+            .as_secs_f64();
+        primal_unit.event_time = Some(event_time);
         drop(primal_unit);
     }
 
@@ -244,7 +288,7 @@ impl PrimalModuleParallelUnitPtr {
     #[allow(clippy::unnecessary_cast)]
     fn fuse_and_solve<DualSerialModule: DualModuleImpl + Send + Sync, Queue, F: Send + Sync>(
         &self,
-        _primal_module_parallel: &PrimalModuleParallel,
+        primal_module_parallel: &PrimalModuleParallel,
         partitioned_syndrome_pattern: PartitionedSyndromePattern,
         parallel_dual_module: &DualModuleParallel<DualSerialModule, Queue>,
         callback: &mut Option<&mut F>,
@@ -259,6 +303,12 @@ impl PrimalModuleParallelUnitPtr {
     {
         // cprintln!("<green>fuse_and_solve for unit: {:?}</green>", self.read_recursive().unit_index);
         // assert!(self.read_recursive().is_solved, "this unit must have been solved before we fuse it with its neighbors");
+        let mut event_time = PrimalModuleParallelUnitEventTime::new();
+        event_time.start = primal_module_parallel
+            .last_solve_start_time
+            .read_recursive()
+            .elapsed()
+            .as_secs_f64();
         
         // this unit has been solved, we can fuse it with its adjacent units
         // we iterate through the dag_partition_unit to fuse units together 
@@ -316,7 +366,13 @@ impl PrimalModuleParallelUnitPtr {
                 callback(&primal_unit.interface_ptr, &self_dual_ptr.write().deref_mut(), &primal_unit.serial_module, None);
             }
         }
-        
+
+        event_time.end = primal_module_parallel
+            .last_solve_start_time
+            .read_recursive()
+            .elapsed()
+            .as_secs_f64();
+        primal_unit.event_time = Some(event_time);
     }
 
     fn fuse_operation_on_adjacent_units<DualSerialModule: DualModuleImpl + Send + Sync, Queue>
@@ -600,6 +656,7 @@ impl PrimalModuleParallel {
     {
         // parallel implementation using rayon
         let thread_pool = Arc::clone(&self.thread_pool);
+        *self.last_solve_start_time.write() = Instant::now();
         thread_pool.scope(|_| {
             (0..self.partition_info.config.partitions.len())
             .into_par_iter()
@@ -810,6 +867,14 @@ impl PrimalModuleImpl for PrimalModuleParallel {
         );
 
         (subgraph, weight_range)
+    }
+
+    /// performance profiler report
+    fn generate_profiler_report(&self) -> serde_json::Value {
+        let event_time_vec: Vec<_> = self.units.iter().map(|ptr| ptr.read_recursive().event_time.clone()).collect();
+        json!({
+            "event_time_vec": event_time_vec,
+        })
     }
 }
 
