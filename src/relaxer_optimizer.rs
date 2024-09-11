@@ -16,6 +16,7 @@ use std::sync::Arc;
 use derivative::Derivative;
 
 use num_traits::{Signed, Zero};
+use std::io::Write;
 use weak_table::PtrWeakKeyHashMap;
 
 #[cfg(feature = "pq")]
@@ -281,8 +282,18 @@ impl RelaxerOptimizer {
             model.add_row(..=slack.to_f64().unwrap(), row_entries);
         }
 
-        println!("model num col: {:?}, num row: {:?}", model.num_cols(), model.num_rows());
+        let mut data_file = std::fs::OpenOptions::new()
+            .append(true)
+            .open("model_pointer.txt")
+            .expect("cannot open file");
+
+        let data = format!("model num col: {:?}, num row: {:?}\n", model.num_cols(), model.num_rows());
+        data_file.write_all(data.as_bytes()).expect("write failure");
+        // writeln!("model_index.txt", "model num col: {:?}, num row: {:?}", model.num_cols(), model.num_rows());
         let solved = model.solve();
+
+        // println!("model num col: {:?}, num row: {:?}", model.num_cols(), model.num_rows());
+        // let solved = model.solve();
 
         let mut direction: BTreeMap<Arc<InvalidSubgraph>, OrderedFloat> = BTreeMap::new();
         if solved.status() == HighsModelStatus::Optimal {
