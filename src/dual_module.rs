@@ -28,7 +28,7 @@ use crate::matrix::*;
 
 use std::collections::BTreeMap;
 use std::collections::{BTreeSet, HashMap};
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 
 #[cfg(feature = "pq")]
 use crate::dual_module_pq::{EdgeWeak, VertexWeak, EdgePtr, VertexPtr};
@@ -270,8 +270,10 @@ impl Ord for OrderedDualNodeWeak {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         // the old version of cmp is to compare their indices only
         // compare the pointer address 
-        let ptr1 = Arc::as_ptr(self.weak_ptr.upgrade_force().ptr());
-        let ptr2 = Arc::as_ptr(other.weak_ptr.upgrade_force().ptr());
+        let ptr1 = Weak::as_ptr(self.weak_ptr.ptr());
+        let ptr2 = Weak::as_ptr(other.weak_ptr.ptr());
+        // let ptr1 = Arc::as_ptr(self.weak_ptr.upgrade_force().ptr());
+        // let ptr2 = Arc::as_ptr(other.weak_ptr.upgrade_force().ptr());
         // https://doc.rust-lang.org/reference/types/pointer.html
         // "When comparing raw pointers they are compared by their address, rather than by what they point to."
         ptr1.cmp(&ptr2)

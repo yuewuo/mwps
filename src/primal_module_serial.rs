@@ -354,7 +354,19 @@ impl PrimalModuleImpl for PrimalModuleSerial {
             // increment the plugin count
             *self.plugin_count.write() += 1;
             // self.plugin_pending_clusters = (0..self.clusters.len()).collect();
+            // println!("start printing self.clusters for has_more_plugin");
+            // println!("self.clusters.len: {:?}", self.clusters.len());
+            // for cluster in self.clusters.iter() {
+            //     println!("cluster {:?} in self.cluster", cluster.read_recursive().cluster_index);
+            // }
+            // println!("finish printing self.clusters for has_more_plugin");
+
             self.plugin_pending_clusters = self.clusters.iter().map(|c| c.downgrade()).collect();
+            // println!("start printing self.plugin_pending_clusters");
+            // for cluster in self.plugin_pending_clusters.iter() {
+            //     println!("cluster {:?} in self.plugin_pending_clusters", cluster.upgrade_force().read_recursive().cluster_index);
+            // }
+            // println!("finish printing self.plugin_pending_clusters");
             true
         } else {
             false
@@ -454,8 +466,18 @@ impl PrimalModuleImpl for PrimalModuleSerial {
     ) -> (bool, OptimizerResult) {
         let mut optimizer_result = OptimizerResult::default();
         // let cluster_ptr = self.clusters[cluster_index as usize].clone();
+        
         let mut cluster = cluster_ptr.write();
+        // println!(
+        //     "cluster_index: {:?}\tnodes: {:?}\tedges: {:?}\nvertices: {:?}\nsubgraph: {:?}",
+        //     cluster.cluster_index,
+        //     cluster.nodes,
+        //     cluster.edges,
+        //     cluster.vertices,
+        //     cluster.subgraph,
+        // );
         if cluster.nodes.is_empty() {
+            // println!("cluster.nodes.is_empty");
             return (true, optimizer_result); // no longer a cluster, no need to handle
         }
         // update the matrix with new tight edges
@@ -477,9 +499,11 @@ impl PrimalModuleImpl for PrimalModuleSerial {
             let cluster_mut = &mut *cluster; // must first get mutable reference
             let plugin_manager = &mut cluster_mut.plugin_manager;
             let matrix = &mut cluster_mut.matrix;
+            // matrix.printstd();
             plugin_manager.find_relaxer( matrix, &positive_dual_variables)
         };
 
+        // println!("relaxer: {:?}", relaxer);
         // if a relaxer is found, execute it and return
         if let Some(mut relaxer) = relaxer {
             #[cfg(feature = "float_lp")]
@@ -677,6 +701,13 @@ impl PrimalModuleImpl for PrimalModuleSerial {
     /// update the sorted clusters_aff, should be None to start with
     fn update_sorted_clusters_aff<D: DualModuleImpl>(&mut self, dual_module: &mut D) {
         let pending_clusters = self.pending_clusters();
+
+        // println!("print pending clusters");
+        // for cluster_weak in pending_clusters.iter() {
+        //     let cluster_ptr = cluster_weak.upgrade_force();
+        //     println!("cluster in pending clusters: {:?}", cluster_ptr.read_recursive().cluster_index);
+        // }
+        // println!("finished printing pending clusters");
         let mut sorted_clusters_aff = BTreeSet::default();
 
         for cluster_index in pending_clusters.iter() {
@@ -690,6 +721,13 @@ impl PrimalModuleImpl for PrimalModuleSerial {
                 });
             }
         }
+
+        // println!("print sorted clusters aff");
+        // for cluster_aff in sorted_clusters_aff.iter() {
+        //     println!("cluster in sorted cluster aff: {:?}", cluster_aff.cluster_ptr.read_recursive().cluster_index);
+        // }
+        // println!("finished printing sorted clusters aff");
+
         self.sorted_clusters_aff = Some(sorted_clusters_aff);
     }
 
@@ -807,6 +845,7 @@ impl PrimalModuleSerial {
         let interface = interface_ptr.read_recursive();
         // println!("in resolve core");
         while let Some(conflict) = group_max_update_length.pop() {
+            // println!("conflict in resolve_core: {:?}", conflict);
             match conflict {
                 MaxUpdateLength::Conflicting(edge_ptr) => {
                     // union all the dual nodes in the edge index and create new dual node by adding this edge to `internal_edges`
@@ -1004,6 +1043,7 @@ impl PrimalModuleSerial {
         let mut active_clusters = BTreeSet::<PrimalClusterPtr>::new();
         let interface = interface_ptr.read_recursive();
         for conflict in group_max_update_length.into_iter() {
+            // println!("conflict: {:?}", conflict);
             match conflict {
                 MaxUpdateLength::Conflicting(edge_ptr) => {
                     // union all the dual nodes in the edge index and create new dual node by adding this edge to `internal_edges`
@@ -1210,6 +1250,14 @@ impl PrimalModuleSerial {
             }
             self.update_sorted_clusters_aff(dual_module.deref_mut());
             let cluster_affs = self.get_sorted_clusters_aff();
+
+            // println!("start counting");
+            // for cluster_affinity in cluster_affs.iter() {
+            //     let cluster_ptr = &cluster_affinity.cluster_ptr;
+            //     println!("cluster {:?} in cluster_affinity", cluster_ptr.read_recursive().cluster_index);
+            // }
+            // println!("finished counting");
+            // println!("cluster_aff: {:?}")
 
             for cluster_affinity in cluster_affs.into_iter() {
                 let cluster_ptr = cluster_affinity.cluster_ptr;

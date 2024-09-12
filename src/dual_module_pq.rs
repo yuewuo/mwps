@@ -16,7 +16,7 @@ use crate::primal_module_serial::PrimalClusterPtr;
 use crate::util::*;
 use crate::visualize::*;
 use crate::{add_shared_methods, dual_module::*};
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 
 use std::{
     cmp::{Ordering, Reverse},
@@ -438,7 +438,7 @@ pub type EdgeWeak = WeakManualSafeLock<Edge>;
 impl std::fmt::Debug for EdgePtr {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         let edge = self.read_recursive();
-        write!(f, "[edge: {}, edge.grow_rate: {}]", edge.edge_index, edge.grow_rate)
+        write!(f, "edge: {}", edge.edge_index)
         // write!(
         //     f,
         //     "[edge: {}]: weight: {}, grow_rate: {}, growth_at_last_updated_time: {}, last_updated_time: {}\n\tdual_nodes: {:?}\n",
@@ -492,8 +492,10 @@ impl Ord for EdgeWeak {
         // edge_1.edge_index.cmp(&edge_2.edge_index)
         // self.upgrade_force().read_recursive().edge_index.cmp(&other.upgrade_force().read_recursive().edge_index)
         // compare the pointer address 
-        let ptr1 = Arc::as_ptr(self.upgrade_force().ptr());
-        let ptr2 = Arc::as_ptr(other.upgrade_force().ptr());
+        let ptr1 = Weak::as_ptr(self.ptr());
+        let ptr2 = Weak::as_ptr(other.ptr());
+        // let ptr1 = Arc::as_ptr(self.upgrade_force().ptr());
+        // let ptr2 = Arc::as_ptr(other.upgrade_force().ptr());
         // https://doc.rust-lang.org/reference/types/pointer.html
         // "When comparing raw pointers they are compared by their address, rather than by what they point to."
         ptr1.cmp(&ptr2)
@@ -726,9 +728,9 @@ where
         let dual_node_weak = dual_node_ptr.downgrade();
         let dual_node = dual_node_ptr.read_recursive();
 
-        // cprintln!("<green>`fn add_dual_node()`, dual_node_ptr: {:?}</green>", dual_node_ptr);
+        // println!("`fn add_dual_node()`, dual_node_ptr: {:?}", dual_node_ptr);
         if dual_node.grow_rate.is_negative() {
-            // cprintln!("<green>dual_node.grow_rate is negative</green>");
+            // println!("dual_node.grow_rate is negative");
             self.obstacle_queue.will_happen(
                 // it is okay to use global_time now, as this must be up-to-speed
                 dual_node.get_dual_variable().clone() / (-dual_node.grow_rate.clone()) + global_time.clone(),
@@ -741,6 +743,7 @@ where
         let dual_node_grow_rate = dual_node.grow_rate;
         // println!("dual_node_grow_rate: {:?}", dual_node_grow_rate);
         for edge_ptr in dual_node.invalid_subgraph.hair.iter() {
+            // println!("edge in dual_node.invalid_subgraph.hair: {:?}", edge_ptr.read_recursive().edge_index);
             // let mut edge = self.edges[edge_index as usize].write();
             // let mut edge = edge_ptr.write();
 
@@ -759,9 +762,9 @@ where
             // let global_time_ptr = edge.global_time.clone();
             // let global_time = global_time_ptr.read_recursive();
 
-            // cprintln!("<red>`fn add_dual_node()`, edge_index: {:?}</red>, edge.grow_rate {:?}", edge.edge_index, edge.grow_rate);
+            // println!("`fn add_dual_node()`, edge_index: {:?}, edge.grow_rate {:?}", edge.edge_index, edge.grow_rate);
             if edge.grow_rate.is_positive() {
-                // cprintln!("<red>edge.grow_Rate is positive</red>");
+                // println!("edge.grow_Rate is positive");
                 self.obstacle_queue.will_happen(
                     // it is okay to use global_time now, as this must be up-to-speed
                     (edge.weight.clone() - edge.growth_at_last_updated_time.clone()) / edge.grow_rate.clone()
@@ -944,6 +947,7 @@ where
         );
         let mut global_time_write = self.global_time.write();
         // println!("global time before grow: {:?}", global_time_write);
+        // println!("global time grow length: {:?}", length);
         *global_time_write = global_time_write.clone() + length;
         // println!("global time after grow: {:?}", global_time_write);
     }
@@ -1104,21 +1108,39 @@ where
     fn calculate_cluster_affinity(&mut self, cluster: PrimalClusterPtr) -> Option<Affinity> {
         let mut start = 0.0;
         let cluster = cluster.read_recursive();
+
+        // println!("start printing cluster edge for cluster {:?}", cluster.cluster_index);
+        // for edge_ptr in cluster.edges.iter() {
+        //     println!("edge {:?} in cluster {:?}: edge.weight: {:?}\tedge.growth_at_last_updated_time: {:?}", edge_ptr.read_recursive().edge_index, cluster.cluster_index, edge_ptr.read_recursive().weight, edge_ptr.read_recursive().growth_at_last_updated_time);
+        // }
+        // println!("finish printing cluster edge for cluster {:?}", cluster.cluster_index);
+
+        // println!("start printing cluster nodes for cluster {:?}", cluster.cluster_index);
+        // for node in cluster.nodes.iter() {
+        //     let dual_node = node.read_recursive().dual_node_ptr.clone();
+        //     println!("dual_node {:?} in cluster {:?}: dual_variable_at_last_updated_time: {:?}", dual_node.read_recursive().index, cluster.cluster_index, dual_node.read_recursive().dual_variable_at_last_updated_time);
+        // }
+        // println!("finish printing cluster nodes for cluster {:?}", cluster.cluster_index);
+
         start -= cluster.edges.len() as f64 + cluster.nodes.len() as f64;
+        // println!("start: {:?}", start);
 
         let mut weight = Rational::zero();
         for edge_ptr in cluster.edges.iter() {
             let edge = edge_ptr.read_recursive();
             weight += &edge.weight - &edge.growth_at_last_updated_time;
         }
+        // println!("weight after adding edges: {:?}", weight);
         for node in cluster.nodes.iter() {
             let dual_node = node.read_recursive().dual_node_ptr.clone();
             weight -= &dual_node.read_recursive().dual_variable_at_last_updated_time;
         }
+        // println!("weight after adding nodes: {:?}", weight);
         if weight.is_zero() {
             return None;
         }
         start += weight.to_f64().unwrap();
+        // println!("final start: {:?}", start);
         Some(OrderedFloat::from(start))
     }
 

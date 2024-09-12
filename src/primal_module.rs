@@ -149,6 +149,7 @@ pub trait PrimalModuleImpl {
 
         while !group_max_update_length.is_unbounded() {
             callback(interface, dual_module, self, &group_max_update_length);
+            // println!("group_max_update_length in solve_step_callback_interface_loaded: {:?}", group_max_update_length);
             match group_max_update_length.get_valid_growth() {
                 Some(length) => dual_module.grow(length),
                 None => {
@@ -174,6 +175,11 @@ pub trait PrimalModuleImpl {
             }
             self.update_sorted_clusters_aff(dual_module);
             let cluster_affs = self.get_sorted_clusters_aff();
+
+            // for cluster_affinity in cluster_affs.iter() {
+            //     let cluster_ptr = &cluster_affinity.cluster_ptr;
+            //     println!("cluster {:?} in cluster_affinity", cluster_ptr.read_recursive().cluster_index);
+            // }
 
             for cluster_affinity in cluster_affs.into_iter() {
                 let cluster_ptr = cluster_affinity.cluster_ptr;

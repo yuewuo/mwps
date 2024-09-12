@@ -236,6 +236,8 @@ impl RelaxerOptimizer {
 
         use crate::ordered_float::OrderedFloat;
 
+        // println!("optimize");
+
         for invalid_subgraph in relaxer.get_direction().keys() {
             if !dual_variables.contains_key(invalid_subgraph) {
                 dual_variables.insert(invalid_subgraph.clone(), OrderedFloat::zero());

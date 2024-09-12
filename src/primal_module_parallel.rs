@@ -126,6 +126,9 @@ pub struct PrimalModuleParallelConfig {
     /// pin threads to cores sequentially
     #[serde(default = "primal_module_parallel_default_configs::pin_threads_to_cores")]
     pub pin_threads_to_cores: bool,
+    /// timeout for each unit solving process
+    #[serde(default = "primal_module_parallel_default_configs::timeout")]
+    pub timeout: f64,
 }
 
 impl Default for PrimalModuleParallelConfig {
@@ -142,6 +145,9 @@ pub mod primal_module_parallel_default_configs {
     pub fn pin_threads_to_cores() -> bool {
         false
     } // pin threads to cores to achieve most stable results
+    pub fn timeout() -> f64 {
+        (10 * 60) as f64
+    }
 }
 
 impl PrimalModuleParallel {
@@ -179,6 +185,7 @@ impl PrimalModuleParallel {
                     let mut primal_module = PrimalModuleSerial::new_empty(initializer);
                     primal_module.growing_strategy = growing_strategy;
                     primal_module.plugins = plugins.clone();
+                    primal_module.config = PrimalModuleSerialConfig{ timeout: config.timeout};
                     let interface_ptr = DualModuleInterfacePtr::new();
 
                     PrimalModuleParallelUnitPtr::new_value(PrimalModuleParallelUnit {
@@ -1029,7 +1036,8 @@ pub mod tests {
             DualModuleParallel::new_config(&initializer, &partition_info, dual_module_parallel_config);
 
         // create primal module
-        let primal_config = PrimalModuleParallelConfig {..Default::default()};
+        let mut primal_config = PrimalModuleParallelConfig {..Default::default()};
+        primal_config.timeout = 7.0;
         let primal_module = PrimalModuleParallel::new_config(&model_graph.initializer, &partition_info, primal_config.clone(), growing_strategy, Arc::new(plugins.clone()));
         // primal_module.growing_strategy = growing_strategy;
         // primal_module.plugins = Arc::new(plugins);
@@ -1099,16 +1107,16 @@ pub mod tests {
         let resolve_time = (end_time - begin_time);
         println!("resolve time {:?}", resolve_time);
 
-        // assert_eq!(
-        //     Rational::from_usize(final_dual).unwrap(),
-        //     weight_range.upper,
-        //     "unmatched sum dual variables"
-        // );
-        // assert_eq!(
-        //     Rational::from_usize(final_dual).unwrap(),
-        //     weight_range.lower,
-        //     "unexpected final dual variable sum"
-        // );
+        assert_eq!(
+            Rational::from_usize(final_dual).unwrap(),
+            weight_range.upper,
+            "unmatched sum dual variables"
+        );
+        assert_eq!(
+            Rational::from_usize(final_dual).unwrap(),
+            weight_range.lower,
+            "unexpected final dual variable sum"
+        );
         (primal_module, dual_module)
     }
 
@@ -1202,7 +1210,7 @@ pub mod tests {
                 code,
                 visualize_filename,
                 defect_vertices,
-                9,
+                8,
                 vec![],
                 GrowingStrategy::ModeBased,
             );
@@ -1317,7 +1325,7 @@ pub mod tests {
                 code,
                 visualize_filename,
                 defect_vertices,
-                5,
+                9,
                 vec![],
                 GrowingStrategy::ModeBased,
             );
@@ -1486,9 +1494,10 @@ pub mod tests {
     /// test solver on circuit level noise with random errors, split into 2
     #[test]
     fn primal_module_parallel_circuit_level_noise_qec_playground_2() {
-        // cargo test primal_module_parallel_circuit_level_noise_qec_playground_2 -- --nocapture
+        // cargo test -r primal_module_parallel_circuit_level_noise_qec_playground_2 -- --nocapture
         let config = json!({
-            "code_type": qecp::code_builder::CodeType::RotatedPlanarCode
+            "code_type": qecp::code_builder::CodeType::RotatedPlanarCode,
+            "nm": 50,
         });
         
         let mut code = QECPlaygroundCode::new(7, 0.005, config);
@@ -1502,7 +1511,7 @@ pub mod tests {
             9844651,
             vec![],
             GrowingStrategy::ModeBased,
-            2,
+            4,
         );
     }
 
@@ -1512,10 +1521,10 @@ pub mod tests {
         // cargo test -r primal_module_parallel_circuit_level_noise_qec_playground_3 -- --nocapture
         let config = json!({
             "code_type": qecp::code_builder::CodeType::RotatedPlanarCode,
-            "nm": 50,
+            "nm": 1000,
         });
         
-        let mut code = QECPlaygroundCode::new(7, 0.005, config);
+        let mut code = QECPlaygroundCode::new(21, 0.005, config);
         let defect_vertices = code.generate_random_errors(132).0.defect_vertices;
 
         let visualize_filename = "primal_module_parallel_circuit_level_noise_qec_playground_3.json".to_string();
@@ -1526,7 +1535,7 @@ pub mod tests {
             2424788,
             vec![],
             GrowingStrategy::ModeBased,
-            8,
+            4,
         );
     }
 
