@@ -14,7 +14,7 @@ use crate::rayon::prelude::*;
 use crate::serde_json;
 use hashbrown::HashMap;
 use serde::{Serialize, Deserialize};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, Weak};
 use std::collections::BTreeSet;
 use crate::primal_module::Affinity;
 use crate::primal_module_serial::PrimalClusterPtr;
@@ -66,7 +66,7 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
     /// we should insert them based on their respective orientation in the time-space chunk block. 
     /// * For boundary unit, the initial state of this vector is the non-boundary unit it connects to.
     /// * When we fuse 2 DualModuleParallelUnit, we could only fuse a non-boundary unit with a boundary unit 
-    pub adjacent_parallel_units: Vec<DualModuleParallelUnitPtr<SerialModule, Queue>>,
+    pub adjacent_parallel_units: Vec<DualModuleParallelUnitWeak<SerialModule, Queue>>,
     /// Whether this unit is a boundary unit
     pub is_boundary_unit: bool,
     /// partition info
@@ -128,8 +128,8 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
 {
     fn cmp(&self, other: &Self) -> Ordering {
         // compare the pointer address 
-        let ptr1 = Arc::as_ptr(self.upgrade_force().ptr());
-        let ptr2 = Arc::as_ptr(other.upgrade_force().ptr());
+        let ptr1 = Weak::as_ptr(self.ptr());
+        let ptr2 = Weak::as_ptr(other.ptr());
         // https://doc.rust-lang.org/reference/types/pointer.html
         // "When comparing raw pointers they are compared by their address, rather than by what they point to."
         // println!("ptr1: {:?}", ptr1);
@@ -465,7 +465,7 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
             for adjacent_unit_index in &self.partition_info.units[unit_index].adjacent_parallel_units {
                 // println!("adjacent_parallel_unit: {:?}", adjacent_unit_index);
                 let pointer = &self.units[*adjacent_unit_index];
-                unit.adjacent_parallel_units.push(pointer.clone());
+                unit.adjacent_parallel_units.push(pointer.downgrade());
                 // println!("adjacent_parallel_unit ptr: {:?}", Arc::as_ptr(pointer.clone().ptr()));
             }
         }
@@ -1391,11 +1391,11 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
             let visited = Arc::new(Mutex::new(BTreeSet::new()));
 
             let mut visited_lock = visited.lock().unwrap();
-            visited_lock.insert(self.clone());
+            visited_lock.insert(self.downgrade());
             drop(visited_lock);
 
             let mut queue_lock = queue.lock().unwrap();
-            queue_lock.push_back(self.clone());
+            queue_lock.push_back(self.downgrade());
             drop(queue_lock);
             drop(dual_module_unit);
 
@@ -1403,15 +1403,16 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
                 let mut queue_lock = queue.lock().unwrap();
                 queue_lock.pop_front()
             } {
-                let neighbors = &node.read_recursive().adjacent_parallel_units;
+                let neighbors_ptr = &node.upgrade_force();
+                let neighbors = &neighbors_ptr.read_recursive().adjacent_parallel_units;
 
                 neighbors.par_iter().for_each(|neighbor| {
                     let mut visited_lock = visited.lock().unwrap();
                     let mut queue_lock = queue.lock().unwrap();
         
                     if !visited_lock.contains(&neighbor) {
-                        if *neighbor.read_recursive().serial_module.unit_active.read_recursive() {
-                            neighbor.write().serial_module.grow(length.clone());
+                        if *neighbor.upgrade_force().read_recursive().serial_module.unit_active.read_recursive() {
+                            neighbor.upgrade_force().write().serial_module.grow(length.clone());
                             queue_lock.push_back(neighbor.clone());
                         }
                         visited_lock.insert(neighbor.clone());
@@ -1429,7 +1430,7 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
             let mut visited = BTreeSet::new();
             // println!("index: {:?}", self.unit_index);
             // visited.insert(Arc::as_ptr(self.ptr()));
-            visited.insert(self.clone());
+            visited.insert(self.downgrade());
             // println!("self pointer: {:?}", Arc::as_ptr(self.ptr()));
 
             for neighbor in dual_module_unit.adjacent_parallel_units.iter() {
@@ -1443,30 +1444,27 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
                 let temp = frontier.pop_front().unwrap();
                 // println!("frontier len: {:?}", frontier.len());
                 
-                if *temp.read_recursive().serial_module.unit_active.read_recursive() {
-                    temp.write().serial_module.grow(length.clone());
-                    // visited.insert(Arc::as_ptr(temp.ptr()));
-                    visited.insert(temp.clone());
-                    // println!("temp pointer: {:?}",  Arc::as_ptr(temp.ptr()));
-                    // println!("temp index: {:?}", temp.unit_index);
-                    // println!("len: {:?}", temp.adjacent_parallel_units.len());
-
-                    for neighbor in temp.read_recursive().adjacent_parallel_units.iter() {
-                        // println!("hihi");
-                        // println!("neighbor pointer: {:?}", Arc::as_ptr(neighbor.ptr()));
-                        // if !visited.contains(&Arc::as_ptr(neighbor.ptr())) {
-                        //     frontier.push_back(neighbor.clone());
-                        // }
-                        if !visited.contains(neighbor) {
-                            frontier.push_back(neighbor.clone());
-                        }
-                        // println!("frontier len: {:?}", frontier.len());
-                    }
-                } else {
-                    visited.insert(temp.clone());
+                if *temp.upgrade_force().read_recursive().serial_module.unit_active.read_recursive() {
+                    temp.upgrade_force().write().serial_module.grow(length.clone());
                 }
                 
-                
+                // visited.insert(Arc::as_ptr(temp.ptr()));
+                visited.insert(temp.clone());
+                // println!("temp pointer: {:?}",  Arc::as_ptr(temp.ptr()));
+                // println!("temp index: {:?}", temp.unit_index);
+                // println!("len: {:?}", temp.adjacent_parallel_units.len());
+
+                for neighbor in temp.upgrade_force().read_recursive().adjacent_parallel_units.iter() {
+                    // println!("hihi");
+                    // println!("neighbor pointer: {:?}", Arc::as_ptr(neighbor.ptr()));
+                    // if !visited.contains(&Arc::as_ptr(neighbor.ptr())) {
+                    //     frontier.push_back(neighbor.clone());
+                    // }
+                    if !visited.contains(neighbor) {
+                        frontier.push_back(neighbor.clone());
+                    }
+                    // println!("frontier len: {:?}", frontier.len());
+                }
                 drop(temp);
                 // println!("after for loop");
             }
@@ -1489,11 +1487,11 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
             let visited = Arc::new(Mutex::new(BTreeSet::new()));
 
             let mut visited_lock = visited.lock().unwrap();
-            visited_lock.insert(self.clone());
+            visited_lock.insert(self.downgrade());
             drop(visited_lock);
 
             let mut queue_lock = queue.lock().unwrap();
-            queue_lock.push_back(self.clone());
+            queue_lock.push_back(self.downgrade());
             drop(queue_lock);
             drop(dual_module_unit);
 
@@ -1502,7 +1500,8 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
                 let mut queue_lock = queue.lock().unwrap();
                 queue_lock.pop_front()
             } {
-                let neighbors = &node.read_recursive().adjacent_parallel_units;
+                let neighbors_ptr = node.upgrade_force();
+                let neighbors = &neighbors_ptr.read_recursive().adjacent_parallel_units;
                 
 
                 neighbors.par_iter().for_each(|neighbor| {
@@ -1511,8 +1510,8 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
                     
 
                     if !visited_lock.contains(&neighbor) {
-                        if *neighbor.read_recursive().serial_module.unit_active.read_recursive() {
-                            let serial_module_group_max_update_length = neighbor.write().serial_module.compute_maximum_update_length();
+                        if *neighbor.upgrade_force().read_recursive().serial_module.unit_active.read_recursive() {
+                            let serial_module_group_max_update_length = neighbor.upgrade_force().write().serial_module.compute_maximum_update_length();
                             // group_max_update_length.extend(serial_module_group_max_update_length);
                             local_group_max_update_length.lock().unwrap().extend(serial_module_group_max_update_length);
                             queue_lock.push_back(neighbor.clone());
@@ -1523,6 +1522,8 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
                     }
                 });
             }
+
+            
             let final_local_group_max_update_length = local_group_max_update_length.lock().unwrap();
             group_max_update_length.extend(final_local_group_max_update_length.clone());
         } else {
@@ -1543,7 +1544,7 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
             // so we run a bfs, we could potentially use rayon to optimize it
             let mut frontier: VecDeque<_> = VecDeque::new();
             let mut visited = BTreeSet::new();
-            visited.insert(self.clone());
+            visited.insert(self.downgrade());
             // println!("self pointer: {:?}", Arc::as_ptr(self.ptr()));
 
             for neighbor in dual_module_unit.adjacent_parallel_units.iter() {
@@ -1555,12 +1556,12 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
                 // println!("frontier len: {:?}", frontier.len());
                 let temp = frontier.pop_front().unwrap();
                 // println!("frontier len: {:?}", frontier.len());
-                if *temp.read_recursive().serial_module.unit_active.read_recursive() {
-                    let serial_module_group_max_update_length = temp.write().serial_module.compute_maximum_update_length();
+                if *temp.upgrade_force().read_recursive().serial_module.unit_active.read_recursive() {
+                    let serial_module_group_max_update_length = temp.upgrade_force().write().serial_module.compute_maximum_update_length();
                     // println!("serial_module_group_max_update_length: {:?}", serial_module_group_max_update_length);
                     group_max_update_length.extend(serial_module_group_max_update_length);
                     visited.insert(temp.clone());
-                    for neighbor in temp.read_recursive().adjacent_parallel_units.iter() {       
+                    for neighbor in temp.upgrade_force().read_recursive().adjacent_parallel_units.iter() {       
                         // println!("hihi");
                         // println!("neighbor pointer: {:?}", Arc::as_ptr(neighbor.ptr()));         
                         if !visited.contains(neighbor) {

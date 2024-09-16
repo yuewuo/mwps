@@ -133,7 +133,7 @@ impl DualNode {
 
     // pub fn clear(&mut self) {
     //     self.invalid_subgraph.clear();
-
+        
     // }
 }
 

@@ -224,6 +224,12 @@ impl InvalidSubgraph {
         }
         matrix
     }
+
+    pub fn clear(&mut self) {
+        self.edges.clear();
+        self.vertices.clear();
+        self.hair.clear();
+    }
 }
 
 // shortcuts for easier code writing at debugging

@@ -19,7 +19,7 @@ use crate::rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::ops::DerefMut;
-use std::sync::{Arc, Condvar, Mutex};
+use std::sync::{Arc, Condvar, Mutex, Weak};
 use std::time::{Duration, Instant};
 use crate::num_traits::Zero;
 use crate::plugin::*;
@@ -49,7 +49,7 @@ pub struct PrimalModuleParallelUnit {
     /// the owned serial primal module
     pub serial_module: PrimalModuleSerial,
     /// adjacent parallel units of this unit, and whether they each are fused with this unit
-    pub adjacent_parallel_units: BTreeMap<PrimalModuleParallelUnitPtr, bool>,
+    pub adjacent_parallel_units: BTreeMap<PrimalModuleParallelUnitWeak, bool>,
     /// whether this unit is solved 
     pub is_solved: bool,
     /// record the time of events
@@ -85,6 +85,24 @@ impl Ord for PrimalModuleParallelUnitPtr {
 }
 
 impl PartialOrd for PrimalModuleParallelUnitPtr {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+
+impl Ord for PrimalModuleParallelUnitWeak {
+    fn cmp(&self, other: &Self) -> Ordering {
+        // compare the pointer address 
+        let ptr1 = Weak::as_ptr(self.ptr());
+        let ptr2 = Weak::as_ptr(other.ptr());
+        // https://doc.rust-lang.org/reference/types/pointer.html
+        // "When comparing raw pointers they are compared by their address, rather than by what they point to."
+        ptr1.cmp(&ptr2)
+    }
+}
+
+impl PartialOrd for PrimalModuleParallelUnitWeak {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
@@ -209,7 +227,7 @@ impl PrimalModuleParallel {
             for adjacent_unit_index in &partition_info.units[unit_index].adjacent_parallel_units {
                 // println!("adjacent_parallel_unit: {:?}", adjacent_unit_index);
                 let adjacnet_unit_pointer = &units[*adjacent_unit_index];
-                unit.adjacent_parallel_units.insert(adjacnet_unit_pointer.clone(), false); 
+                unit.adjacent_parallel_units.insert(adjacnet_unit_pointer.downgrade(), false); 
                 // println!("adjacent_parallel_unit ptr: {:?}", Arc::as_ptr(pointer.clone().ptr()));
             }
             drop(unit);
@@ -391,13 +409,14 @@ impl PrimalModuleParallelUnitPtr {
     {
         // we need to fuse this unit with all of its adjacent units
         // this is for the adjacent unit
-        for (adjacent_unit_ptr, is_fused) in self.read_recursive().adjacent_parallel_units.iter() {
+        for (adjacent_unit_weak, is_fused) in self.read_recursive().adjacent_parallel_units.iter() {
             if *is_fused {
                 // if already fused, then skip
                 continue;
             } else {
+                let adjacent_unit_ptr = adjacent_unit_weak.upgrade_force();
                 let mut adjacent_unit = adjacent_unit_ptr.write();
-                if let Some(is_fused_with_self) = adjacent_unit.adjacent_parallel_units.get_mut(self) {
+                if let Some(is_fused_with_self) = adjacent_unit.adjacent_parallel_units.get_mut(&self.downgrade()) {
                     *is_fused_with_self = true;
                 } else {
                     panic!("this adjacent unit does not have self as its adjacent unit, check new_config");
@@ -406,7 +425,7 @@ impl PrimalModuleParallelUnitPtr {
                 // after setting the bool in BTreeMap of PrimalModuleParallelUnit, we need to add the corresponding DualModuleParallelUnit 
                 let adjacent_dual_unit_ptr = &parallel_dual_module.units[adjacent_unit.unit_index];
                 let mut adjacent_dual_unit = adjacent_dual_unit_ptr.write();
-                adjacent_dual_unit.adjacent_parallel_units.push(self_dual_ptr.clone());
+                adjacent_dual_unit.adjacent_parallel_units.push(self_dual_ptr.downgrade());
                 
                 // // we also need to change the `is_fusion` of all vertices of adjacent_dual_unit to true. 
                 // // println!("all mirrored vertices len: {:?}", adjacent_dual_unit.serial_module.all_mirrored_vertices.len());
@@ -551,8 +570,8 @@ impl PrimalModuleParallelUnit {
                 *is_fused = true;
 
                 // we need to add the DualModuleParallelUnitPtr to the adjacent_parallel_units of self
-                let adjacent_dual_unit_ptr = &parallel_dual_module.units[adjacent_unit_ptr.read_recursive().unit_index];
-                self_dual_unit.adjacent_parallel_units.push(adjacent_dual_unit_ptr.clone());
+                let adjacent_dual_unit_ptr = &parallel_dual_module.units[adjacent_unit_ptr.upgrade_force().read_recursive().unit_index];
+                self_dual_unit.adjacent_parallel_units.push(adjacent_dual_unit_ptr.downgrade());
             }
         }
         // // we also need to change the `is_fusion` of all vertices of self_dual_unit to true. 
