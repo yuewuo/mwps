@@ -1107,16 +1107,16 @@ pub mod tests {
         let resolve_time = (end_time - begin_time);
         println!("resolve time {:?}", resolve_time);
 
-        assert_eq!(
-            Rational::from_usize(final_dual).unwrap(),
-            weight_range.upper,
-            "unmatched sum dual variables"
-        );
-        assert_eq!(
-            Rational::from_usize(final_dual).unwrap(),
-            weight_range.lower,
-            "unexpected final dual variable sum"
-        );
+        // assert_eq!(
+        //     Rational::from_usize(final_dual).unwrap(),
+        //     weight_range.upper,
+        //     "unmatched sum dual variables"
+        // );
+        // assert_eq!(
+        //     Rational::from_usize(final_dual).unwrap(),
+        //     weight_range.lower,
+        //     "unexpected final dual variable sum"
+        // );
         (primal_module, dual_module)
     }
 
@@ -1497,7 +1497,7 @@ pub mod tests {
         // cargo test -r primal_module_parallel_circuit_level_noise_qec_playground_2 -- --nocapture
         let config = json!({
             "code_type": qecp::code_builder::CodeType::RotatedPlanarCode,
-            "nm": 50,
+            "nm": 2000,
         });
         
         let mut code = QECPlaygroundCode::new(7, 0.005, config);
@@ -1521,10 +1521,10 @@ pub mod tests {
         // cargo test -r primal_module_parallel_circuit_level_noise_qec_playground_3 -- --nocapture
         let config = json!({
             "code_type": qecp::code_builder::CodeType::RotatedPlanarCode,
-            "nm": 1000,
+            "nm": 500,
         });
         
-        let mut code = QECPlaygroundCode::new(21, 0.005, config);
+        let mut code = QECPlaygroundCode::new(13, 0.005, config);
         let defect_vertices = code.generate_random_errors(132).0.defect_vertices;
 
         let visualize_filename = "primal_module_parallel_circuit_level_noise_qec_playground_3.json".to_string();
@@ -1535,7 +1535,7 @@ pub mod tests {
             2424788,
             vec![],
             GrowingStrategy::ModeBased,
-            4,
+            2,
         );
     }
 

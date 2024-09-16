@@ -1794,7 +1794,7 @@ pub mod tests {
         // cargo test -r primal_module_serial_circuit_level_noise_1 -- --nocapture
         let config = json!({
             "code_type": qecp::code_builder::CodeType::RotatedPlanarCode,
-            "nm": 50,
+            "nm": 2000,
         });
         
         let mut code = QECPlaygroundCode::new(7, 0.005, config);

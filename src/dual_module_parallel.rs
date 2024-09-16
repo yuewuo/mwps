@@ -1410,9 +1410,11 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
                     let mut queue_lock = queue.lock().unwrap();
         
                     if !visited_lock.contains(&neighbor) {
-                        neighbor.write().serial_module.grow(length.clone());
+                        if *neighbor.read_recursive().serial_module.unit_active.read_recursive() {
+                            neighbor.write().serial_module.grow(length.clone());
+                            queue_lock.push_back(neighbor.clone());
+                        }
                         visited_lock.insert(neighbor.clone());
-                        queue_lock.push_back(neighbor.clone());
                     }
                 });
             }
@@ -1440,25 +1442,31 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
                 // println!("frontier len: {:?}", frontier.len());
                 let temp = frontier.pop_front().unwrap();
                 // println!("frontier len: {:?}", frontier.len());
-                // let temp_ptr = temp_weak.upgrade_force();
-                temp.write().serial_module.grow(length.clone());
-                // visited.insert(Arc::as_ptr(temp.ptr()));
-                visited.insert(temp.clone());
-                // println!("temp pointer: {:?}",  Arc::as_ptr(temp.ptr()));
-                // println!("temp index: {:?}", temp.unit_index);
-                // println!("len: {:?}", temp.adjacent_parallel_units.len());
+                
+                if *temp.read_recursive().serial_module.unit_active.read_recursive() {
+                    temp.write().serial_module.grow(length.clone());
+                    // visited.insert(Arc::as_ptr(temp.ptr()));
+                    visited.insert(temp.clone());
+                    // println!("temp pointer: {:?}",  Arc::as_ptr(temp.ptr()));
+                    // println!("temp index: {:?}", temp.unit_index);
+                    // println!("len: {:?}", temp.adjacent_parallel_units.len());
 
-                for neighbor in temp.read_recursive().adjacent_parallel_units.iter() {
-                    // println!("hihi");
-                    // println!("neighbor pointer: {:?}", Arc::as_ptr(neighbor.ptr()));
-                    // if !visited.contains(&Arc::as_ptr(neighbor.ptr())) {
-                    //     frontier.push_back(neighbor.clone());
-                    // }
-                    if !visited.contains(neighbor) {
-                        frontier.push_back(neighbor.clone());
+                    for neighbor in temp.read_recursive().adjacent_parallel_units.iter() {
+                        // println!("hihi");
+                        // println!("neighbor pointer: {:?}", Arc::as_ptr(neighbor.ptr()));
+                        // if !visited.contains(&Arc::as_ptr(neighbor.ptr())) {
+                        //     frontier.push_back(neighbor.clone());
+                        // }
+                        if !visited.contains(neighbor) {
+                            frontier.push_back(neighbor.clone());
+                        }
+                        // println!("frontier len: {:?}", frontier.len());
                     }
-                    // println!("frontier len: {:?}", frontier.len());
+                } else {
+                    visited.insert(temp.clone());
                 }
+                
+                
                 drop(temp);
                 // println!("after for loop");
             }
@@ -1503,11 +1511,15 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
                     
 
                     if !visited_lock.contains(&neighbor) {
-                        let serial_module_group_max_update_length = neighbor.write().serial_module.compute_maximum_update_length();
-                        // group_max_update_length.extend(serial_module_group_max_update_length);
-                        local_group_max_update_length.lock().unwrap().extend(serial_module_group_max_update_length);
+                        if *neighbor.read_recursive().serial_module.unit_active.read_recursive() {
+                            let serial_module_group_max_update_length = neighbor.write().serial_module.compute_maximum_update_length();
+                            // group_max_update_length.extend(serial_module_group_max_update_length);
+                            local_group_max_update_length.lock().unwrap().extend(serial_module_group_max_update_length);
+                            queue_lock.push_back(neighbor.clone());
+                        }
+                        
                         visited_lock.insert(neighbor.clone());
-                        queue_lock.push_back(neighbor.clone());
+                        
                     }
                 });
             }
@@ -1519,7 +1531,7 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
             
             // println!("bfs_compute_max_update_length");
             
-
+        
             let serial_module_group_max_update_length = dual_module_unit.serial_module.compute_maximum_update_length();
             // println!("serial_module group max_update length: {:?}", serial_module_group_max_update_length);
             drop(dual_module_unit);
@@ -1543,21 +1555,26 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
                 // println!("frontier len: {:?}", frontier.len());
                 let temp = frontier.pop_front().unwrap();
                 // println!("frontier len: {:?}", frontier.len());
-                let serial_module_group_max_update_length = temp.write().serial_module.compute_maximum_update_length();
-                // println!("serial_module_group_max_update_length: {:?}", serial_module_group_max_update_length);
-                group_max_update_length.extend(serial_module_group_max_update_length);
-                visited.insert(temp.clone());
+                if *temp.read_recursive().serial_module.unit_active.read_recursive() {
+                    let serial_module_group_max_update_length = temp.write().serial_module.compute_maximum_update_length();
+                    // println!("serial_module_group_max_update_length: {:?}", serial_module_group_max_update_length);
+                    group_max_update_length.extend(serial_module_group_max_update_length);
+                    visited.insert(temp.clone());
+                    for neighbor in temp.read_recursive().adjacent_parallel_units.iter() {       
+                        // println!("hihi");
+                        // println!("neighbor pointer: {:?}", Arc::as_ptr(neighbor.ptr()));         
+                        if !visited.contains(neighbor) {
+                            frontier.push_back(neighbor.clone());
+                        }
+                        // println!("frontier len: {:?}", frontier.len());
+                    }
+                } else {
+                    visited.insert(temp.clone());
+                }
+                
                 // println!("temp pointer: {:?}",  Arc::as_ptr(temp.ptr()));
 
-                for neighbor in temp.read_recursive().adjacent_parallel_units.iter() {       
-                    // println!("hihi");
-                    // println!("neighbor pointer: {:?}", Arc::as_ptr(neighbor.ptr()));         
-                    if !visited.contains(neighbor) {
-                        frontier.push_back(neighbor.clone());
-                    }
-                    // println!("frontier len: {:?}", frontier.len());
-                    
-                }
+               
                 drop(temp);
                 // println!("after for loop");
             }

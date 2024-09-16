@@ -1,0 +1,491 @@
+<?xml version="1.0" standalone="no"?><!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd"><svg version="1.1" width="1200" height="502" onload="init(evt)" viewBox="0 0 1200 502" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xmlns:fg="http://github.com/jonhoo/inferno"><!--Flame graph stack visualization. See https://github.com/brendangregg/FlameGraph for latest version, and http://www.brendangregg.com/flamegraphs.html for examples.--><!--NOTES: --><defs><linearGradient id="background" y1="0" y2="1" x1="0" x2="0"><stop stop-color="#eeeeee" offset="5%"/><stop stop-color="#eeeeb0" offset="95%"/></linearGradient></defs><style type="text/css">
+text { font-family:monospace; font-size:12px }
+#title { text-anchor:middle; font-size:17px; }
+#matched { text-anchor:end; }
+#search { text-anchor:end; opacity:0.1; cursor:pointer; }
+#search:hover, #search.show { opacity:1; }
+#subtitle { text-anchor:middle; font-color:rgb(160,160,160); }
+#unzoom { cursor:pointer; }
+#frames > *:hover { stroke:black; stroke-width:0.5; cursor:pointer; }
+.hide { display:none; }
+.parent { opacity:0.5; }
+</style><script type="text/ecmascript"><![CDATA[
+        var nametype = 'Function:';
+        var fontsize = 12;
+        var fontwidth = 0.59;
+        var xpad = 10;
+        var inverted = false;
+        var searchcolor = 'rgb(230,0,230)';
+        var fluiddrawing = true;
+        var truncate_text_right = false;
+    ]]><![CDATA["use strict";
+var details, searchbtn, unzoombtn, matchedtxt, svg, searching, frames, known_font_width;
+function init(evt) {
+    details = document.getElementById("details").firstChild;
+    searchbtn = document.getElementById("search");
+    unzoombtn = document.getElementById("unzoom");
+    matchedtxt = document.getElementById("matched");
+    svg = document.getElementsByTagName("svg")[0];
+    frames = document.getElementById("frames");
+    known_font_width = get_monospace_width(frames);
+    total_samples = parseInt(frames.attributes.total_samples.value);
+    searching = 0;
+
+    // Use GET parameters to restore a flamegraph's state.
+    var restore_state = function() {
+        var params = get_params();
+        if (params.x && params.y)
+            zoom(find_group(document.querySelector('[*|x="' + params.x + '"][y="' + params.y + '"]')));
+        if (params.s)
+            search(params.s);
+    };
+
+    if (fluiddrawing) {
+        // Make width dynamic so the SVG fits its parent's width.
+        svg.removeAttribute("width");
+        // Edge requires us to have a viewBox that gets updated with size changes.
+        var isEdge = /Edge\/\d./i.test(navigator.userAgent);
+        if (!isEdge) {
+            svg.removeAttribute("viewBox");
+        }
+        var update_for_width_change = function() {
+            if (isEdge) {
+                svg.attributes.viewBox.value = "0 0 " + svg.width.baseVal.value + " " + svg.height.baseVal.value;
+            }
+
+            // Keep consistent padding on left and right of frames container.
+            frames.attributes.width.value = svg.width.baseVal.value - xpad * 2;
+
+            // Text truncation needs to be adjusted for the current width.
+            update_text_for_elements(frames.children);
+
+            // Keep search elements at a fixed distance from right edge.
+            var svgWidth = svg.width.baseVal.value;
+            searchbtn.attributes.x.value = svgWidth - xpad;
+            matchedtxt.attributes.x.value = svgWidth - xpad;
+        };
+        window.addEventListener('resize', function() {
+            update_for_width_change();
+        });
+        // This needs to be done asynchronously for Safari to work.
+        setTimeout(function() {
+            unzoom();
+            update_for_width_change();
+            restore_state();
+        }, 0);
+    } else {
+        restore_state();
+    }
+}
+// event listeners
+window.addEventListener("click", function(e) {
+    var target = find_group(e.target);
+    if (target) {
+        if (target.nodeName == "a") {
+            if (e.ctrlKey === false) return;
+            e.preventDefault();
+        }
+        if (target.classList.contains("parent")) unzoom();
+        zoom(target);
+
+        // set parameters for zoom state
+        var el = target.querySelector("rect");
+        if (el && el.attributes && el.attributes.y && el.attributes["fg:x"]) {
+            var params = get_params()
+            params.x = el.attributes["fg:x"].value;
+            params.y = el.attributes.y.value;
+            history.replaceState(null, null, parse_params(params));
+        }
+    }
+    else if (e.target.id == "unzoom") {
+        unzoom();
+
+        // remove zoom state
+        var params = get_params();
+        if (params.x) delete params.x;
+        if (params.y) delete params.y;
+        history.replaceState(null, null, parse_params(params));
+    }
+    else if (e.target.id == "search") search_prompt();
+}, false)
+// mouse-over for info
+// show
+window.addEventListener("mouseover", function(e) {
+    var target = find_group(e.target);
+    if (target) details.nodeValue = nametype + " " + g_to_text(target);
+}, false)
+// clear
+window.addEventListener("mouseout", function(e) {
+    var target = find_group(e.target);
+    if (target) details.nodeValue = ' ';
+}, false)
+// ctrl-F for search
+window.addEventListener("keydown",function (e) {
+    if (e.keyCode === 114 || (e.ctrlKey && e.keyCode === 70)) {
+        e.preventDefault();
+        search_prompt();
+    }
+}, false)
+// functions
+function get_params() {
+    var params = {};
+    var paramsarr = window.location.search.substr(1).split('&');
+    for (var i = 0; i < paramsarr.length; ++i) {
+        var tmp = paramsarr[i].split("=");
+        if (!tmp[0] || !tmp[1]) continue;
+        params[tmp[0]]  = decodeURIComponent(tmp[1]);
+    }
+    return params;
+}
+function parse_params(params) {
+    var uri = "?";
+    for (var key in params) {
+        uri += key + '=' + encodeURIComponent(params[key]) + '&';
+    }
+    if (uri.slice(-1) == "&")
+        uri = uri.substring(0, uri.length - 1);
+    if (uri == '?')
+        uri = window.location.href.split('?')[0];
+    return uri;
+}
+function find_child(node, selector) {
+    var children = node.querySelectorAll(selector);
+    if (children.length) return children[0];
+    return;
+}
+function find_group(node) {
+    var parent = node.parentElement;
+    if (!parent) return;
+    if (parent.id == "frames") return node;
+    return find_group(parent);
+}
+function orig_save(e, attr, val) {
+    if (e.attributes["fg:orig_" + attr] != undefined) return;
+    if (e.attributes[attr] == undefined) return;
+    if (val == undefined) val = e.attributes[attr].value;
+    e.setAttribute("fg:orig_" + attr, val);
+}
+function orig_load(e, attr) {
+    if (e.attributes["fg:orig_"+attr] == undefined) return;
+    e.attributes[attr].value = e.attributes["fg:orig_" + attr].value;
+    e.removeAttribute("fg:orig_" + attr);
+}
+function g_to_text(e) {
+    var text = find_child(e, "title").firstChild.nodeValue;
+    return (text)
+}
+function g_to_func(e) {
+    var func = g_to_text(e);
+    // if there's any manipulation we want to do to the function
+    // name before it's searched, do it here before returning.
+    return (func);
+}
+function get_monospace_width(frames) {
+    // Given the id="frames" element, return the width of text characters if
+    // this is a monospace font, otherwise return 0.
+    text = find_child(frames.children[0], "text");
+    originalContent = text.textContent;
+    text.textContent = "!";
+    bangWidth = text.getComputedTextLength();
+    text.textContent = "W";
+    wWidth = text.getComputedTextLength();
+    text.textContent = originalContent;
+    if (bangWidth === wWidth) {
+        return bangWidth;
+    } else {
+        return 0;
+    }
+}
+function update_text_for_elements(elements) {
+    // In order to render quickly in the browser, you want to do one pass of
+    // reading attributes, and one pass of mutating attributes. See
+    // https://web.dev/avoid-large-complex-layouts-and-layout-thrashing/ for details.
+
+    // Fall back to inefficient calculation, if we're variable-width font.
+    // TODO This should be optimized somehow too.
+    if (known_font_width === 0) {
+        for (var i = 0; i < elements.length; i++) {
+            update_text(elements[i]);
+        }
+        return;
+    }
+
+    var textElemNewAttributes = [];
+    for (var i = 0; i < elements.length; i++) {
+        var e = elements[i];
+        var r = find_child(e, "rect");
+        var t = find_child(e, "text");
+        var w = parseFloat(r.attributes.width.value) * frames.attributes.width.value / 100 - 3;
+        var txt = find_child(e, "title").textContent.replace(/\([^(]*\)$/,"");
+        var newX = format_percent((parseFloat(r.attributes.x.value) + (100 * 3 / frames.attributes.width.value)));
+
+        // Smaller than this size won't fit anything
+        if (w < 2 * known_font_width) {
+            textElemNewAttributes.push([newX, ""]);
+            continue;
+        }
+
+        // Fit in full text width
+        if (txt.length * known_font_width < w) {
+            textElemNewAttributes.push([newX, txt]);
+            continue;
+        }
+
+        var substringLength = Math.floor(w / known_font_width) - 2;
+        if (truncate_text_right) {
+            // Truncate the right side of the text.
+            textElemNewAttributes.push([newX, txt.substring(0, substringLength) + ".."]);
+            continue;
+        } else {
+            // Truncate the left side of the text.
+            textElemNewAttributes.push([newX, ".." + txt.substring(txt.length - substringLength, txt.length)]);
+            continue;
+        }
+    }
+
+    console.assert(textElemNewAttributes.length === elements.length, "Resize failed, please file a bug at https://github.com/jonhoo/inferno/");
+
+    // Now that we know new textContent, set it all in one go so we don't refresh a bazillion times.
+    for (var i = 0; i < elements.length; i++) {
+        var e = elements[i];
+        var values = textElemNewAttributes[i];
+        var t = find_child(e, "text");
+        t.attributes.x.value = values[0];
+        t.textContent = values[1];
+    }
+}
+
+function update_text(e) {
+    var r = find_child(e, "rect");
+    var t = find_child(e, "text");
+    var w = parseFloat(r.attributes.width.value) * frames.attributes.width.value / 100 - 3;
+    var txt = find_child(e, "title").textContent.replace(/\([^(]*\)$/,"");
+    t.attributes.x.value = format_percent((parseFloat(r.attributes.x.value) + (100 * 3 / frames.attributes.width.value)));
+
+    // Smaller than this size won't fit anything
+    if (w < 2 * fontsize * fontwidth) {
+        t.textContent = "";
+        return;
+    }
+    t.textContent = txt;
+    // Fit in full text width
+    if (t.getComputedTextLength() < w)
+        return;
+    if (truncate_text_right) {
+        // Truncate the right side of the text.
+        for (var x = txt.length - 2; x > 0; x--) {
+            if (t.getSubStringLength(0, x + 2) <= w) {
+                t.textContent = txt.substring(0, x) + "..";
+                return;
+            }
+        }
+    } else {
+        // Truncate the left side of the text.
+        for (var x = 2; x < txt.length; x++) {
+            if (t.getSubStringLength(x - 2, txt.length) <= w) {
+                t.textContent = ".." + txt.substring(x, txt.length);
+                return;
+            }
+        }
+    }
+    t.textContent = "";
+}
+// zoom
+function zoom_reset(e) {
+    if (e.tagName == "rect") {
+        e.attributes.x.value = format_percent(100 * parseInt(e.attributes["fg:x"].value) / total_samples);
+        e.attributes.width.value = format_percent(100 * parseInt(e.attributes["fg:w"].value) / total_samples);
+    }
+    if (e.childNodes == undefined) return;
+    for(var i = 0, c = e.childNodes; i < c.length; i++) {
+        zoom_reset(c[i]);
+    }
+}
+function zoom_child(e, x, zoomed_width_samples) {
+    if (e.tagName == "text") {
+        var parent_x = parseFloat(find_child(e.parentNode, "rect[x]").attributes.x.value);
+        e.attributes.x.value = format_percent(parent_x + (100 * 3 / frames.attributes.width.value));
+    } else if (e.tagName == "rect") {
+        e.attributes.x.value = format_percent(100 * (parseInt(e.attributes["fg:x"].value) - x) / zoomed_width_samples);
+        e.attributes.width.value = format_percent(100 * parseInt(e.attributes["fg:w"].value) / zoomed_width_samples);
+    }
+    if (e.childNodes == undefined) return;
+    for(var i = 0, c = e.childNodes; i < c.length; i++) {
+        zoom_child(c[i], x, zoomed_width_samples);
+    }
+}
+function zoom_parent(e) {
+    if (e.attributes) {
+        if (e.attributes.x != undefined) {
+            e.attributes.x.value = "0.0%";
+        }
+        if (e.attributes.width != undefined) {
+            e.attributes.width.value = "100.0%";
+        }
+    }
+    if (e.childNodes == undefined) return;
+    for(var i = 0, c = e.childNodes; i < c.length; i++) {
+        zoom_parent(c[i]);
+    }
+}
+function zoom(node) {
+    var attr = find_child(node, "rect").attributes;
+    var width = parseInt(attr["fg:w"].value);
+    var xmin = parseInt(attr["fg:x"].value);
+    var xmax = xmin + width;
+    var ymin = parseFloat(attr.y.value);
+    unzoombtn.classList.remove("hide");
+    var el = frames.children;
+    var to_update_text = [];
+    for (var i = 0; i < el.length; i++) {
+        var e = el[i];
+        var a = find_child(e, "rect").attributes;
+        var ex = parseInt(a["fg:x"].value);
+        var ew = parseInt(a["fg:w"].value);
+        // Is it an ancestor
+        if (!inverted) {
+            var upstack = parseFloat(a.y.value) > ymin;
+        } else {
+            var upstack = parseFloat(a.y.value) < ymin;
+        }
+        if (upstack) {
+            // Direct ancestor
+            if (ex <= xmin && (ex+ew) >= xmax) {
+                e.classList.add("parent");
+                zoom_parent(e);
+                to_update_text.push(e);
+            }
+            // not in current path
+            else
+                e.classList.add("hide");
+        }
+        // Children maybe
+        else {
+            // no common path
+            if (ex < xmin || ex >= xmax) {
+                e.classList.add("hide");
+            }
+            else {
+                zoom_child(e, xmin, width);
+                to_update_text.push(e);
+            }
+        }
+    }
+    update_text_for_elements(to_update_text);
+}
+function unzoom() {
+    unzoombtn.classList.add("hide");
+    var el = frames.children;
+    for(var i = 0; i < el.length; i++) {
+        el[i].classList.remove("parent");
+        el[i].classList.remove("hide");
+        zoom_reset(el[i]);
+    }
+    update_text_for_elements(el);
+}
+// search
+function reset_search() {
+    var el = document.querySelectorAll("#frames rect");
+    for (var i = 0; i < el.length; i++) {
+        orig_load(el[i], "fill")
+    }
+    var params = get_params();
+    delete params.s;
+    history.replaceState(null, null, parse_params(params));
+}
+function search_prompt() {
+    if (!searching) {
+        var term = prompt("Enter a search term (regexp " +
+            "allowed, eg: ^ext4_)", "");
+        if (term != null) {
+            search(term)
+        }
+    } else {
+        reset_search();
+        searching = 0;
+        searchbtn.classList.remove("show");
+        searchbtn.firstChild.nodeValue = "Search"
+        matchedtxt.classList.add("hide");
+        matchedtxt.firstChild.nodeValue = ""
+    }
+}
+function search(term) {
+    var re = new RegExp(term);
+    var el = frames.children;
+    var matches = new Object();
+    var maxwidth = 0;
+    for (var i = 0; i < el.length; i++) {
+        var e = el[i];
+        // Skip over frames which are either not visible, or below the zoomed-to frame
+        if (e.classList.contains("hide") || e.classList.contains("parent")) {
+            continue;
+        }
+        var func = g_to_func(e);
+        var rect = find_child(e, "rect");
+        if (func == null || rect == null)
+            continue;
+        // Save max width. Only works as we have a root frame
+        var w = parseInt(rect.attributes["fg:w"].value);
+        if (w > maxwidth)
+            maxwidth = w;
+        if (func.match(re)) {
+            // highlight
+            var x = parseInt(rect.attributes["fg:x"].value);
+            orig_save(rect, "fill");
+            rect.attributes.fill.value = searchcolor;
+            // remember matches
+            if (matches[x] == undefined) {
+                matches[x] = w;
+            } else {
+                if (w > matches[x]) {
+                    // overwrite with parent
+                    matches[x] = w;
+                }
+            }
+            searching = 1;
+        }
+    }
+    if (!searching)
+        return;
+    var params = get_params();
+    params.s = term;
+    history.replaceState(null, null, parse_params(params));
+
+    searchbtn.classList.add("show");
+    searchbtn.firstChild.nodeValue = "Reset Search";
+    // calculate percent matched, excluding vertical overlap
+    var count = 0;
+    var lastx = -1;
+    var lastw = 0;
+    var keys = Array();
+    for (k in matches) {
+        if (matches.hasOwnProperty(k))
+            keys.push(k);
+    }
+    // sort the matched frames by their x location
+    // ascending, then width descending
+    keys.sort(function(a, b){
+        return a - b;
+    });
+    // Step through frames saving only the biggest bottom-up frames
+    // thanks to the sort order. This relies on the tree property
+    // where children are always smaller than their parents.
+    for (var k in keys) {
+        var x = parseInt(keys[k]);
+        var w = matches[keys[k]];
+        if (x >= lastx + lastw) {
+            count += w;
+            lastx = x;
+            lastw = w;
+        }
+    }
+    // display matched percent
+    matchedtxt.classList.remove("hide");
+    var pct = 100 * count / maxwidth;
+    if (pct != 100) pct = pct.toFixed(1);
+    matchedtxt.firstChild.nodeValue = "Matched: " + pct + "%";
+}
+function format_percent(n) {
+    return n.toFixed(4) + "%";
+}
+]]></script><rect x="0" y="0" width="100%" height="502" fill="url(#background)"/><text id="title" fill="rgb(0,0,0)" x="50.0000%" y="24.00">Flame Graph</text><text id="details" fill="rgb(0,0,0)" x="10" y="485.00"> </text><text id="unzoom" class="hide" fill="rgb(0,0,0)" x="10" y="24.00">Reset Zoom</text><text id="search" fill="rgb(0,0,0)" x="1190" y="24.00">Search</text><text id="matched" fill="rgb(0,0,0)" x="1190" y="485.00"> </text><svg id="frames" x="10" width="1180" total_samples="916733"><g><title>libsystem_malloc.dylib`free_tiny (255 samples, 0.03%)</title><rect x="0.0761%" y="229" width="0.0278%" height="15" fill="rgb(227,0,7)" fg:x="698" fg:w="255"/><text x="0.3261%" y="239.50"></text></g><g><title>libsystem_malloc.dylib`tiny_free_no_lock (215 samples, 0.02%)</title><rect x="0.0805%" y="213" width="0.0235%" height="15" fill="rgb(217,0,24)" fg:x="738" fg:w="215"/><text x="0.3305%" y="223.50"></text></g><g><title>mwpf`&lt;alloc::vec::Vec&lt;T,A&gt; as core::ops::drop::Drop&gt;::drop (904 samples, 0.10%)</title><rect x="0.0347%" y="277" width="0.0986%" height="15" fill="rgb(221,193,54)" fg:x="318" fg:w="904"/><text x="0.2847%" y="287.50"></text></g><g><title>mwpf`core::ptr::drop_in_place&lt;qecp::model_hypergraph::ModelHyperedgeGroup&gt; (723 samples, 0.08%)</title><rect x="0.0544%" y="261" width="0.0789%" height="15" fill="rgb(248,212,6)" fg:x="499" fg:w="723"/><text x="0.3044%" y="271.50"></text></g><g><title>mwpf`alloc::sync::Arc&lt;T,A&gt;::drop_slow (538 samples, 0.06%)</title><rect x="0.0746%" y="245" width="0.0587%" height="15" fill="rgb(208,68,35)" fg:x="684" fg:w="538"/><text x="0.3246%" y="255.50"></text></g><g><title>mwpf`&lt;alloc::collections::btree::map::BTreeMap&lt;K,V,A&gt; as core::ops::drop::Drop&gt;::drop (181 samples, 0.02%)</title><rect x="0.1136%" y="229" width="0.0197%" height="15" fill="rgb(232,128,0)" fg:x="1041" fg:w="181"/><text x="0.3636%" y="239.50"></text></g><g><title>libsystem_malloc.dylib`_nanov2_free (127 samples, 0.01%)</title><rect x="0.1357%" y="261" width="0.0139%" height="15" fill="rgb(207,160,47)" fg:x="1244" fg:w="127"/><text x="0.3857%" y="271.50"></text></g><g><title>mwpf`&lt;hashbrown::raw::RawTable&lt;T,A&gt; as core::ops::drop::Drop&gt;::drop (189 samples, 0.02%)</title><rect x="0.1333%" y="277" width="0.0206%" height="15" fill="rgb(228,23,34)" fg:x="1222" fg:w="189"/><text x="0.3833%" y="287.50"></text></g><g><title>mwpf`alloc::sync::Arc&lt;T,A&gt;::drop_slow (1,127 samples, 0.12%)</title><rect x="0.0314%" y="293" width="0.1229%" height="15" fill="rgb(218,30,26)" fg:x="288" fg:w="1127"/><text x="0.2814%" y="303.50"></text></g><g><title>mwpf`core::ptr::drop_in_place&lt;mwpf::example_codes::QECPlaygroundCode&gt; (1,229 samples, 0.13%)</title><rect x="0.0262%" y="309" width="0.1341%" height="15" fill="rgb(220,122,19)" fg:x="240" fg:w="1229"/><text x="0.2762%" y="319.50"></text></g><g><title>mwpf`mwpf::dual_module_parallel::DualModuleParallel&lt;SerialModule,Queue&gt;::new_config (158 samples, 0.02%)</title><rect x="0.1731%" y="261" width="0.0172%" height="15" fill="rgb(250,228,42)" fg:x="1587" fg:w="158"/><text x="0.4231%" y="271.50"></text></g><g><title>mwpf`mwpf::cli::PrimalDualType::build (247 samples, 0.03%)</title><rect x="0.1661%" y="309" width="0.0269%" height="15" fill="rgb(240,193,28)" fg:x="1523" fg:w="247"/><text x="0.4161%" y="319.50"></text></g><g><title>mwpf`mwpf::mwpf_solver::SolverParallelUnionFind::new (247 samples, 0.03%)</title><rect x="0.1661%" y="293" width="0.0269%" height="15" fill="rgb(216,20,37)" fg:x="1523" fg:w="247"/><text x="0.4161%" y="303.50"></text></g><g><title>mwpf`mwpf::mwpf_solver::SolverParallel::new (247 samples, 0.03%)</title><rect x="0.1661%" y="277" width="0.0269%" height="15" fill="rgb(206,188,39)" fg:x="1523" fg:w="247"/><text x="0.4161%" y="287.50"></text></g><g><title>libsystem_malloc.dylib`free_tiny (142 samples, 0.02%)</title><rect x="0.2649%" y="261" width="0.0155%" height="15" fill="rgb(217,207,13)" fg:x="2428" fg:w="142"/><text x="0.5149%" y="271.50"></text></g><g><title>libsystem_malloc.dylib`tiny_free_no_lock (118 samples, 0.01%)</title><rect x="0.2675%" y="245" width="0.0129%" height="15" fill="rgb(231,73,38)" fg:x="2452" fg:w="118"/><text x="0.5175%" y="255.50"></text></g><g><title>mwpf`hashbrown::map::HashMap&lt;K,V,S,A&gt;::contains_key (157 samples, 0.02%)</title><rect x="0.3214%" y="261" width="0.0171%" height="15" fill="rgb(225,20,46)" fg:x="2946" fg:w="157"/><text x="0.5714%" y="271.50"></text></g><g><title>mwpf`&lt;core::hash::sip::Hasher&lt;S&gt; as core::hash::Hasher&gt;::write (162 samples, 0.02%)</title><rect x="0.3583%" y="229" width="0.0177%" height="15" fill="rgb(210,31,41)" fg:x="3285" fg:w="162"/><text x="0.6083%" y="239.50"></text></g><g><title>mwpf`hashbrown::map::HashMap&lt;K,V,S,A&gt;::insert (375 samples, 0.04%)</title><rect x="0.3385%" y="261" width="0.0409%" height="15" fill="rgb(221,200,47)" fg:x="3103" fg:w="375"/><text x="0.5885%" y="271.50"></text></g><g><title>mwpf`hashbrown::raw::RawTable&lt;T,A&gt;::reserve_rehash (270 samples, 0.03%)</title><rect x="0.3499%" y="245" width="0.0295%" height="15" fill="rgb(226,26,5)" fg:x="3208" fg:w="270"/><text x="0.5999%" y="255.50"></text></g><g><title>mwpf`qecp::model_hypergraph::ModelHyperedgeGroup::add (93 samples, 0.01%)</title><rect x="0.3794%" y="261" width="0.0101%" height="15" fill="rgb(249,33,26)" fg:x="3478" fg:w="93"/><text x="0.6294%" y="271.50"></text></g><g><title>libsystem_malloc.dylib`_nanov2_free (108 samples, 0.01%)</title><rect x="0.8375%" y="245" width="0.0118%" height="15" fill="rgb(235,183,28)" fg:x="7678" fg:w="108"/><text x="1.0875%" y="255.50"></text></g><g><title>mwpf`alloc::collections::btree::map::BTreeMap&lt;K,V,A&gt;::insert (345 samples, 0.04%)</title><rect x="0.8627%" y="245" width="0.0376%" height="15" fill="rgb(221,5,38)" fg:x="7909" fg:w="345"/><text x="1.1127%" y="255.50"></text></g><g><title>mwpf`alloc::raw_vec::RawVec&lt;T,A&gt;::reserve_for_push (174 samples, 0.02%)</title><rect x="0.9022%" y="245" width="0.0190%" height="15" fill="rgb(247,18,42)" fg:x="8271" fg:w="174"/><text x="1.1522%" y="255.50"></text></g><g><title>mwpf`qecp::simulator::Simulator::fast_measurement_given_few_errors (5,986 samples, 0.65%)</title><rect x="0.3899%" y="261" width="0.6530%" height="15" fill="rgb(241,131,45)" fg:x="3574" fg:w="5986"/><text x="0.6399%" y="271.50"></text></g><g><title>mwpf`qecp::simulator::Simulator::propagate_error_from (1,104 samples, 0.12%)</title><rect x="0.9224%" y="245" width="0.1204%" height="15" fill="rgb(249,31,29)" fg:x="8456" fg:w="1104"/><text x="1.1724%" y="255.50"></text></g><g><title>mwpf`qecp::simulator::Simulator::propagate_error_from (136 samples, 0.01%)</title><rect x="1.0428%" y="261" width="0.0148%" height="15" fill="rgb(225,111,53)" fg:x="9560" fg:w="136"/><text x="1.2928%" y="271.50"></text></g><g><title>mwpf`qecp::model_hypergraph::ModelHypergraph::build_with_weight_function_region (7,604 samples, 0.83%)</title><rect x="0.2363%" y="277" width="0.8295%" height="15" fill="rgb(238,160,17)" fg:x="2166" fg:w="7604"/><text x="0.4863%" y="287.50"></text></g><g><title>mwpf`qecp::model_hypergraph::ModelHypergraph::build (7,750 samples, 0.85%)</title><rect x="0.2207%" y="293" width="0.8454%" height="15" fill="rgb(214,148,48)" fg:x="2023" fg:w="7750"/><text x="0.4707%" y="303.50"></text></g><g><title>mwpf`mwpf::example_codes::QECPlaygroundCode::new (8,049 samples, 0.88%)</title><rect x="0.1957%" y="309" width="0.8780%" height="15" fill="rgb(232,36,49)" fg:x="1794" fg:w="8049"/><text x="0.4457%" y="319.50"></text></g><g><title>dyld`start (9,847 samples, 1.07%)</title><rect x="0.0000%" y="437" width="1.0741%" height="15" fill="rgb(209,103,24)" fg:x="0" fg:w="9847"/><text x="0.2500%" y="447.50"></text></g><g><title>mwpf`main (9,847 samples, 1.07%)</title><rect x="0.0000%" y="421" width="1.0741%" height="15" fill="rgb(229,88,8)" fg:x="0" fg:w="9847"/><text x="0.2500%" y="431.50"></text></g><g><title>mwpf`std::rt::lang_start (9,847 samples, 1.07%)</title><rect x="0.0000%" y="405" width="1.0741%" height="15" fill="rgb(213,181,19)" fg:x="0" fg:w="9847"/><text x="0.2500%" y="415.50"></text></g><g><title>mwpf`std::rt::lang_start_internal (9,847 samples, 1.07%)</title><rect x="0.0000%" y="389" width="1.0741%" height="15" fill="rgb(254,191,54)" fg:x="0" fg:w="9847"/><text x="0.2500%" y="399.50"></text></g><g><title>mwpf`std::rt::lang_start::_{{closure}} (9,847 samples, 1.07%)</title><rect x="0.0000%" y="373" width="1.0741%" height="15" fill="rgb(241,83,37)" fg:x="0" fg:w="9847"/><text x="0.2500%" y="383.50"></text></g><g><title>mwpf`std::sys_common::backtrace::__rust_begin_short_backtrace (9,847 samples, 1.07%)</title><rect x="0.0000%" y="357" width="1.0741%" height="15" fill="rgb(233,36,39)" fg:x="0" fg:w="9847"/><text x="0.2500%" y="367.50"></text></g><g><title>mwpf`mwpf::main (9,847 samples, 1.07%)</title><rect x="0.0000%" y="341" width="1.0741%" height="15" fill="rgb(226,3,54)" fg:x="0" fg:w="9847"/><text x="0.2500%" y="351.50"></text></g><g><title>mwpf`mwpf::cli::Cli::run (9,844 samples, 1.07%)</title><rect x="0.0003%" y="325" width="1.0738%" height="15" fill="rgb(245,192,40)" fg:x="3" fg:w="9844"/><text x="0.2503%" y="335.50"></text></g><g><title>libsystem_kernel.dylib`__exit (92 samples, 0.01%)</title><rect x="1.0742%" y="437" width="0.0100%" height="15" fill="rgb(238,167,29)" fg:x="9848" fg:w="92"/><text x="1.3242%" y="447.50"></text></g><g><title>mwpf`&lt;alloc::collections::btree::map::Iter&lt;K,V&gt; as core::iter::traits::iterator::Iterator&gt;::next (349 samples, 0.04%)</title><rect x="1.1363%" y="229" width="0.0381%" height="15" fill="rgb(232,182,51)" fg:x="10417" fg:w="349"/><text x="1.3863%" y="239.50"></text></g><g><title>mwpf`&lt;mwpf::dual_module_pq::Obstacle as core::hash::Hash&gt;::hash (234 samples, 0.03%)</title><rect x="1.2837%" y="197" width="0.0255%" height="15" fill="rgb(231,60,39)" fg:x="11768" fg:w="234"/><text x="1.5337%" y="207.50"></text></g><g><title>mwpf`&lt;std::hash::random::DefaultHasher as core::hash::Hasher&gt;::write (776 samples, 0.08%)</title><rect x="1.3092%" y="197" width="0.0846%" height="15" fill="rgb(208,69,12)" fg:x="12002" fg:w="776"/><text x="1.5592%" y="207.50"></text></g><g><title>mwpf`indexmap::map::IndexMap&lt;K,V,S&gt;::entry (2,332 samples, 0.25%)</title><rect x="1.2098%" y="213" width="0.2544%" height="15" fill="rgb(235,93,37)" fg:x="11091" fg:w="2332"/><text x="1.4598%" y="223.50"></text></g><g><title>mwpf`indexmap::map::core::entry::_&lt;impl indexmap::map::core::IndexMapCore&lt;K,V&gt;&gt;::entry (645 samples, 0.07%)</title><rect x="1.3939%" y="197" width="0.0704%" height="15" fill="rgb(213,116,39)" fg:x="12778" fg:w="645"/><text x="1.6439%" y="207.50"></text></g><g><title>mwpf`&lt;priority_queue::priority_queue::PriorityQueue&lt;mwpf::dual_module_pq::Obstacle,core::cmp::Reverse&lt;T&gt;&gt; as mwpf::dual_module_pq::FutureQueueMethods&lt;T,mwpf::dual_module_pq::Obstacle&gt;&gt;::will_happen (2,764 samples, 0.30%)</title><rect x="1.1744%" y="229" width="0.3015%" height="15" fill="rgb(222,207,29)" fg:x="10766" fg:w="2764"/><text x="1.4244%" y="239.50"></text></g><g><title>mwpf`indexmap::map::core::entry::_&lt;impl indexmap::map::core::IndexMapCore&lt;K,V&gt;&gt;::entry (107 samples, 0.01%)</title><rect x="1.4642%" y="213" width="0.0117%" height="15" fill="rgb(206,96,30)" fg:x="13423" fg:w="107"/><text x="1.7142%" y="223.50"></text></g><g><title>mwpf`indexmap::map::IndexMap&lt;K,V,S&gt;::entry (94 samples, 0.01%)</title><rect x="1.4759%" y="229" width="0.0103%" height="15" fill="rgb(218,138,4)" fg:x="13530" fg:w="94"/><text x="1.7259%" y="239.50"></text></g><g><title>mwpf`&lt;mwpf::dual_module_pq::DualModulePQ&lt;Queue&gt; as mwpf::dual_module::DualModuleImpl&gt;::set_grow_rate (6,081 samples, 0.66%)</title><rect x="1.1001%" y="245" width="0.6633%" height="15" fill="rgb(250,191,14)" fg:x="10085" fg:w="6081"/><text x="1.3501%" y="255.50"></text></g><g><title>mwpf`priority_queue::priority_queue::PriorityQueue&lt;I,P,H&gt;::heapify (2,542 samples, 0.28%)</title><rect x="1.4861%" y="229" width="0.2773%" height="15" fill="rgb(239,60,40)" fg:x="13624" fg:w="2542"/><text x="1.7361%" y="239.50"></text></g><g><title>mwpf`indexmap::map::IndexMap&lt;K,V,S&gt;::entry (146 samples, 0.02%)</title><rect x="1.7830%" y="197" width="0.0159%" height="15" fill="rgb(206,27,48)" fg:x="16345" fg:w="146"/><text x="2.0330%" y="207.50"></text></g><g><title>mwpf`&lt;priority_queue::priority_queue::PriorityQueue&lt;mwpf::dual_module_pq::Obstacle,core::cmp::Reverse&lt;T&gt;&gt; as mwpf::dual_module_pq::FutureQueueMethods&lt;T,mwpf::dual_module_pq::Obstacle&gt;&gt;::will_happen (170 samples, 0.02%)</title><rect x="1.7817%" y="213" width="0.0185%" height="15" fill="rgb(225,35,8)" fg:x="16333" fg:w="170"/><text x="2.0317%" y="223.50"></text></g><g><title>mwpf`&lt;mwpf::dual_module_pq::DualModulePQ&lt;Queue&gt; as mwpf::dual_module::DualModuleImpl&gt;::add_dual_node (396 samples, 0.04%)</title><rect x="1.7761%" y="229" width="0.0432%" height="15" fill="rgb(250,213,24)" fg:x="16282" fg:w="396"/><text x="2.0261%" y="239.50"></text></g><g><title>mwpf`priority_queue::priority_queue::PriorityQueue&lt;I,P,H&gt;::heapify (104 samples, 0.01%)</title><rect x="1.8079%" y="213" width="0.0113%" height="15" fill="rgb(247,123,22)" fg:x="16574" fg:w="104"/><text x="2.0579%" y="223.50"></text></g><g><title>mwpf`mwpf::dual_module::_&lt;impl mwpf::pointers::ArcUnsafe&lt;mwpf::dual_module::DualModuleInterface&gt;&gt;::find_or_create_node (404 samples, 0.04%)</title><rect x="1.7758%" y="245" width="0.0441%" height="15" fill="rgb(231,138,38)" fg:x="16279" fg:w="404"/><text x="2.0258%" y="255.50"></text></g><g><title>mwpf`&lt;mwpf::matrix::tail::Tail&lt;M&gt; as mwpf::matrix::interface::MatrixView&gt;::columns (100 samples, 0.01%)</title><rect x="1.8366%" y="213" width="0.0109%" height="15" fill="rgb(231,145,46)" fg:x="16837" fg:w="100"/><text x="2.0866%" y="223.50"></text></g><g><title>mwpf`mwpf::matrix::echelon::Echelon&lt;M&gt;::force_update_echelon_info (177 samples, 0.02%)</title><rect x="1.8290%" y="229" width="0.0193%" height="15" fill="rgb(251,118,11)" fg:x="16767" fg:w="177"/><text x="2.0790%" y="239.50"></text></g><g><title>mwpf`alloc::collections::btree::map::BTreeMap&lt;K,V,A&gt;::insert (263 samples, 0.03%)</title><rect x="1.8721%" y="149" width="0.0287%" height="15" fill="rgb(217,147,25)" fg:x="17162" fg:w="263"/><text x="2.1221%" y="159.50"></text></g><g><title>mwpf`mwpf::invalid_subgraph::InvalidSubgraph::new_complete_ptr (511 samples, 0.06%)</title><rect x="1.8515%" y="181" width="0.0557%" height="15" fill="rgb(247,81,37)" fg:x="16973" fg:w="511"/><text x="2.1015%" y="191.50"></text></g><g><title>mwpf`mwpf::invalid_subgraph::InvalidSubgraph::new_complete (506 samples, 0.06%)</title><rect x="1.8520%" y="165" width="0.0552%" height="15" fill="rgb(209,12,38)" fg:x="16978" fg:w="506"/><text x="2.1020%" y="175.50"></text></g><g><title>mwpf`alloc::collections::btree::map::BTreeMap&lt;K,V,A&gt;::insert (185 samples, 0.02%)</title><rect x="1.9400%" y="165" width="0.0202%" height="15" fill="rgb(227,1,9)" fg:x="17785" fg:w="185"/><text x="2.1900%" y="175.50"></text></g><g><title>mwpf`&lt;mwpf::plugin_union_find::PluginUnionFind as mwpf::plugin::PluginImpl&gt;::find_relaxers (1,069 samples, 0.12%)</title><rect x="1.8483%" y="213" width="0.1166%" height="15" fill="rgb(248,47,43)" fg:x="16944" fg:w="1069"/><text x="2.0983%" y="223.50"></text></g><g><title>mwpf`mwpf::plugin_union_find::PluginUnionFind::find_single_relaxer (1,068 samples, 0.12%)</title><rect x="1.8484%" y="197" width="0.1165%" height="15" fill="rgb(221,10,30)" fg:x="16945" fg:w="1068"/><text x="2.0984%" y="207.50"></text></g><g><title>mwpf`mwpf::relaxer::Relaxer::new_raw (529 samples, 0.06%)</title><rect x="1.9072%" y="181" width="0.0577%" height="15" fill="rgb(210,229,1)" fg:x="17484" fg:w="529"/><text x="2.1572%" y="191.50"></text></g><g><title>mwpf`alloc::collections::btree::map::BTreeMap&lt;K,V,A&gt;::insert (157 samples, 0.02%)</title><rect x="2.0094%" y="165" width="0.0171%" height="15" fill="rgb(222,148,37)" fg:x="18421" fg:w="157"/><text x="2.2594%" y="175.50"></text></g><g><title>mwpf`mwpf::plugin::PluginManager::find_relaxer (1,936 samples, 0.21%)</title><rect x="1.8211%" y="245" width="0.2112%" height="15" fill="rgb(234,67,33)" fg:x="16695" fg:w="1936"/><text x="2.0711%" y="255.50"></text></g><g><title>mwpf`mwpf::plugin::PluginEntry::execute (1,687 samples, 0.18%)</title><rect x="1.8483%" y="229" width="0.1840%" height="15" fill="rgb(247,98,35)" fg:x="16944" fg:w="1687"/><text x="2.0983%" y="239.50"></text></g><g><title>mwpf`mwpf::relaxer_forest::RelaxerForest::expand (618 samples, 0.07%)</title><rect x="1.9649%" y="213" width="0.0674%" height="15" fill="rgb(247,138,52)" fg:x="18013" fg:w="618"/><text x="2.2149%" y="223.50"></text></g><g><title>mwpf`mwpf::relaxer_forest::RelaxerForest::compute_expanded (578 samples, 0.06%)</title><rect x="1.9693%" y="197" width="0.0630%" height="15" fill="rgb(213,79,30)" fg:x="18053" fg:w="578"/><text x="2.2193%" y="207.50"></text></g><g><title>mwpf`mwpf::relaxer::Relaxer::new_raw (497 samples, 0.05%)</title><rect x="1.9781%" y="181" width="0.0542%" height="15" fill="rgb(246,177,23)" fg:x="18134" fg:w="497"/><text x="2.2281%" y="191.50"></text></g><g><title>mwpf`&lt;mwpf::matrix::basic::BasicMatrix as mwpf::matrix::interface::MatrixBasic&gt;::add_constraint (96 samples, 0.01%)</title><rect x="2.0331%" y="229" width="0.0105%" height="15" fill="rgb(230,62,27)" fg:x="18638" fg:w="96"/><text x="2.2831%" y="239.50"></text></g><g><title>mwpf`mwpf::primal_module_serial::PrimalModuleSerial::union (130 samples, 0.01%)</title><rect x="2.0323%" y="245" width="0.0142%" height="15" fill="rgb(216,154,8)" fg:x="18631" fg:w="130"/><text x="2.2823%" y="255.50"></text></g><g><title>mwpf`&lt;mwpf::primal_module_serial::PrimalModuleSerial as mwpf::primal_module::PrimalModuleImpl&gt;::resolve (8,810 samples, 0.96%)</title><rect x="1.0881%" y="261" width="0.9610%" height="15" fill="rgb(244,35,45)" fg:x="9975" fg:w="8810"/><text x="1.3381%" y="271.50"></text></g><g><title>mwpf`&lt;mwpf::dual_module_pq::DualModulePQ&lt;Queue&gt; as mwpf::dual_module::DualModuleImpl&gt;::compute_maximum_update_length (95 samples, 0.01%)</title><rect x="2.0537%" y="245" width="0.0104%" height="15" fill="rgb(251,115,12)" fg:x="18827" fg:w="95"/><text x="2.3037%" y="255.50"></text></g><g><title>mwpf`mwpf::dual_module_parallel::_&lt;impl mwpf::pointers::ArcUnsafe&lt;mwpf::dual_module_parallel::DualModuleParallelUnit&lt;SerialModule,Queue&gt;&gt;&gt;::compute_maximum_update_length (97 samples, 0.01%)</title><rect x="2.0536%" y="261" width="0.0106%" height="15" fill="rgb(240,54,50)" fg:x="18826" fg:w="97"/><text x="2.3036%" y="271.50"></text></g><g><title>mwpf`&lt;rayon::iter::for_each::ForEachConsumer&lt;F&gt; as rayon::iter::plumbing::Folder&lt;T&gt;&gt;::consume_iter (8,968 samples, 0.98%)</title><rect x="1.0860%" y="309" width="0.9783%" height="15" fill="rgb(233,84,52)" fg:x="9956" fg:w="8968"/><text x="1.3360%" y="319.50"></text></g><g><title>mwpf`mwpf::primal_module_parallel::_&lt;impl mwpf::pointers::ArcUnsafe&lt;mwpf::primal_module_parallel::PrimalModuleParallelUnit&gt;&gt;::individual_solve (8,968 samples, 0.98%)</title><rect x="1.0860%" y="293" width="0.9783%" height="15" fill="rgb(207,117,47)" fg:x="9956" fg:w="8968"/><text x="1.3360%" y="303.50"></text></g><g><title>mwpf`mwpf::primal_module_serial::PrimalModuleSerial::solve_step_callback_ptr (8,968 samples, 0.98%)</title><rect x="1.0860%" y="277" width="0.9783%" height="15" fill="rgb(249,43,39)" fg:x="9956" fg:w="8968"/><text x="1.3360%" y="287.50"></text></g><g><title>mwpf`&lt;mwpf::dual_module_pq::DualModulePQ&lt;Queue&gt; as mwpf::dual_module::DualModuleImpl&gt;::clear (97 samples, 0.01%)</title><rect x="2.0644%" y="261" width="0.0106%" height="15" fill="rgb(209,38,44)" fg:x="18925" fg:w="97"/><text x="2.3144%" y="271.50"></text></g><g><title>mwpf`&lt;alloc::collections::btree::map::IntoIter&lt;K,V,A&gt; as core::ops::drop::Drop&gt;::drop (95 samples, 0.01%)</title><rect x="2.0775%" y="213" width="0.0104%" height="15" fill="rgb(236,212,23)" fg:x="19045" fg:w="95"/><text x="2.3275%" y="223.50"></text></g><g><title>mwpf`&lt;mwpf::primal_module_serial::PrimalModuleSerial as mwpf::primal_module::PrimalModuleImpl&gt;::clear (229 samples, 0.02%)</title><rect x="2.0750%" y="245" width="0.0250%" height="15" fill="rgb(242,79,21)" fg:x="19022" fg:w="229"/><text x="2.3250%" y="255.50"></text></g><g><title>mwpf`alloc::sync::Arc&lt;T,A&gt;::drop_slow (228 samples, 0.02%)</title><rect x="2.0751%" y="229" width="0.0249%" height="15" fill="rgb(211,96,35)" fg:x="19023" fg:w="228"/><text x="2.3251%" y="239.50"></text></g><g><title>mwpf`core::ptr::drop_in_place&lt;mwpf::matrix::echelon::Echelon&lt;mwpf::matrix::tail::Tail&lt;mwpf::matrix::tight::Tight&lt;mwpf::matrix::basic::BasicMatrix&gt;&gt;&gt;&gt; (94 samples, 0.01%)</title><rect x="2.0897%" y="213" width="0.0103%" height="15" fill="rgb(253,215,40)" fg:x="19157" fg:w="94"/><text x="2.3397%" y="223.50"></text></g><g><title>mwpf`&lt;rayon::iter::for_each::ForEachConsumer&lt;F&gt; as rayon::iter::plumbing::Folder&lt;T&gt;&gt;::consume_iter (374 samples, 0.04%)</title><rect x="2.0750%" y="261" width="0.0408%" height="15" fill="rgb(211,81,21)" fg:x="19022" fg:w="374"/><text x="2.3250%" y="271.50"></text></g><g><title>mwpf`hashbrown::raw::RawTable&lt;T,A&gt;::clear (145 samples, 0.02%)</title><rect x="2.1000%" y="245" width="0.0158%" height="15" fill="rgb(208,190,38)" fg:x="19251" fg:w="145"/><text x="2.3500%" y="255.50"></text></g><g><title>mwpf`alloc::sync::Arc&lt;T,A&gt;::drop_slow (112 samples, 0.01%)</title><rect x="2.1036%" y="229" width="0.0122%" height="15" fill="rgb(235,213,38)" fg:x="19284" fg:w="112"/><text x="2.3536%" y="239.50"></text></g><g><title>mwpf`rayon::iter::plumbing::bridge_producer_consumer::helper (523 samples, 0.06%)</title><rect x="2.0644%" y="277" width="0.0571%" height="15" fill="rgb(237,122,38)" fg:x="18925" fg:w="523"/><text x="2.3144%" y="287.50"></text></g><g><title>mwpf`rayon::iter::plumbing::bridge_producer_consumer::helper (551 samples, 0.06%)</title><rect x="2.0643%" y="309" width="0.0601%" height="15" fill="rgb(244,218,35)" fg:x="18924" fg:w="551"/><text x="2.3143%" y="319.50"></text></g><g><title>mwpf`rayon_core::join::join_context::_{{closure}} (550 samples, 0.06%)</title><rect x="2.0644%" y="293" width="0.0600%" height="15" fill="rgb(240,68,47)" fg:x="18925" fg:w="550"/><text x="2.3144%" y="303.50"></text></g><g><title>mwpf`&lt;alloc::collections::btree::map::Iter&lt;K,V&gt; as core::iter::traits::iterator::Iterator&gt;::next (9,770 samples, 1.07%)</title><rect x="2.1400%" y="213" width="1.0657%" height="15" fill="rgb(210,16,53)" fg:x="19618" fg:w="9770"/><text x="2.3900%" y="223.50"></text></g><g><title>mwpf`&lt;alloc::vec::Vec&lt;T&gt; as alloc::vec::spec_from_iter::SpecFromIter&lt;T,I&gt;&gt;::from_iter (181 samples, 0.02%)</title><rect x="3.2058%" y="213" width="0.0197%" height="15" fill="rgb(235,124,12)" fg:x="29389" fg:w="181"/><text x="3.4558%" y="223.50"></text></g><g><title>mwpf`&lt;alloc::collections::btree::map::Iter&lt;K,V&gt; as core::iter::traits::iterator::Iterator&gt;::next (71,663 samples, 7.82%)</title><rect x="10.1067%" y="197" width="7.8172%" height="15" fill="rgb(224,169,11)" fg:x="92651" fg:w="71663"/><text x="10.3567%" y="207.50">mwpf`&lt;alloc..</text></g><g><title>mwpf`&lt;mwpf::dual_module_pq::Obstacle as core::hash::Hash&gt;::hash (4,903 samples, 0.53%)</title><rect x="22.1922%" y="181" width="0.5348%" height="15" fill="rgb(250,166,2)" fg:x="203443" fg:w="4903"/><text x="22.4422%" y="191.50"></text></g><g><title>mwpf`&lt;mwpf::dual_module_pq::Obstacle as core::hash::Hash&gt;::hash (21,923 samples, 2.39%)</title><rect x="30.3761%" y="165" width="2.3914%" height="15" fill="rgb(242,216,29)" fg:x="278468" fg:w="21923"/><text x="30.6261%" y="175.50">mw..</text></g><g><title>mwpf`&lt;std::hash::random::DefaultHasher as core::hash::Hasher&gt;::write (80,534 samples, 8.78%)</title><rect x="32.7676%" y="165" width="8.7849%" height="15" fill="rgb(230,116,27)" fg:x="300391" fg:w="80534"/><text x="33.0176%" y="175.50">mwpf`&lt;std::h..</text></g><g><title>mwpf`indexmap::map::IndexMap&lt;K,V,S&gt;::entry (247,417 samples, 26.99%)</title><rect x="22.7270%" y="181" width="26.9890%" height="15" fill="rgb(228,99,48)" fg:x="208346" fg:w="247417"/><text x="22.9770%" y="191.50">mwpf`indexmap::map::IndexMap&lt;K,V,S&gt;::entry</text></g><g><title>mwpf`indexmap::map::core::entry::_&lt;impl indexmap::map::core::IndexMapCore&lt;K,V&gt;&gt;::entry (74,838 samples, 8.16%)</title><rect x="41.5524%" y="165" width="8.1636%" height="15" fill="rgb(253,11,6)" fg:x="380925" fg:w="74838"/><text x="41.8024%" y="175.50">mwpf`indexm..</text></g><g><title>mwpf`&lt;priority_queue::priority_queue::PriorityQueue&lt;mwpf::dual_module_pq::Obstacle,core::cmp::Reverse&lt;T&gt;&gt; as mwpf::dual_module_pq::FutureQueueMethods&lt;T,mwpf::dual_module_pq::Obstacle&gt;&gt;::will_happen (307,303 samples, 33.52%)</title><rect x="17.9239%" y="197" width="33.5215%" height="15" fill="rgb(247,143,39)" fg:x="164314" fg:w="307303"/><text x="18.1739%" y="207.50">mwpf`&lt;priority_queue::priority_queue::PriorityQueue&lt;mw..</text></g><g><title>mwpf`indexmap::map::core::entry::_&lt;impl indexmap::map::core::IndexMapCore&lt;K,V&gt;&gt;::entry (15,852 samples, 1.73%)</title><rect x="49.7162%" y="181" width="1.7292%" height="15" fill="rgb(236,97,10)" fg:x="455765" fg:w="15852"/><text x="49.9662%" y="191.50"></text></g><g><title>mwpf`indexmap::map::IndexMap&lt;K,V,S&gt;::entry (13,516 samples, 1.47%)</title><rect x="51.4454%" y="197" width="1.4744%" height="15" fill="rgb(233,208,19)" fg:x="471617" fg:w="13516"/><text x="51.6954%" y="207.50"></text></g><g><title>mwpf`&lt;mwpf::dual_module_pq::DualModulePQ&lt;Queue&gt; as mwpf::dual_module::DualModuleImpl&gt;::set_grow_rate (792,728 samples, 86.47%)</title><rect x="3.2256%" y="213" width="86.4732%" height="15" fill="rgb(216,164,2)" fg:x="29570" fg:w="792728"/><text x="3.4756%" y="223.50">mwpf`&lt;mwpf::dual_module_pq::DualModulePQ&lt;Queue&gt; as mwpf::dual_module::DualModuleImpl&gt;::set_grow_rate</text></g><g><title>mwpf`priority_queue::priority_queue::PriorityQueue&lt;I,P,H&gt;::heapify (337,165 samples, 36.78%)</title><rect x="52.9198%" y="197" width="36.7790%" height="15" fill="rgb(220,129,5)" fg:x="485133" fg:w="337165"/><text x="53.1698%" y="207.50">mwpf`priority_queue::priority_queue::PriorityQueue&lt;I,P,H&gt;::h..</text></g><g><title>mwpf`&lt;mwpf::matrix::basic::BasicMatrix as mwpf::matrix::interface::MatrixBasic&gt;::add_variable (98 samples, 0.01%)</title><rect x="89.6999%" y="197" width="0.0107%" height="15" fill="rgb(242,17,10)" fg:x="822309" fg:w="98"/><text x="89.9499%" y="207.50"></text></g><g><title>mwpf`&lt;mwpf::matrix::basic::BasicMatrix as mwpf::matrix::interface::MatrixBasic&gt;::add_constraint (110 samples, 0.01%)</title><rect x="89.6987%" y="213" width="0.0120%" height="15" fill="rgb(242,107,0)" fg:x="822298" fg:w="110"/><text x="89.9487%" y="223.50"></text></g><g><title>mwpf`alloc::collections::btree::map::BTreeMap&lt;K,V,A&gt;::insert (300 samples, 0.03%)</title><rect x="89.7220%" y="197" width="0.0327%" height="15" fill="rgb(251,28,31)" fg:x="822511" fg:w="300"/><text x="89.9720%" y="207.50"></text></g><g><title>mwpf`&lt;mwpf::matrix::tight::Tight&lt;M&gt; as mwpf::matrix::interface::MatrixTight&gt;::update_edge_tightness (544 samples, 0.06%)</title><rect x="89.7107%" y="213" width="0.0593%" height="15" fill="rgb(233,223,10)" fg:x="822408" fg:w="544"/><text x="89.9607%" y="223.50"></text></g><g><title>mwpf`alloc::collections::btree::map::BTreeMap&lt;K,V,A&gt;::remove (141 samples, 0.02%)</title><rect x="89.7547%" y="197" width="0.0154%" height="15" fill="rgb(215,21,27)" fg:x="822811" fg:w="141"/><text x="90.0047%" y="207.50"></text></g><g><title>mwpf`&lt;priority_queue::priority_queue::PriorityQueue&lt;mwpf::dual_module_pq::Obstacle,core::cmp::Reverse&lt;T&gt;&gt; as mwpf::dual_module_pq::FutureQueueMethods&lt;T,mwpf::dual_module_pq::Obstacle&gt;&gt;::will_happen (1,430 samples, 0.16%)</title><rect x="89.7702%" y="213" width="0.1560%" height="15" fill="rgb(232,23,21)" fg:x="822953" fg:w="1430"/><text x="90.0202%" y="223.50"></text></g><g><title>mwpf`&lt;alloc::collections::btree::map::Iter&lt;K,V&gt; as core::iter::traits::iterator::Iterator&gt;::next (98 samples, 0.01%)</title><rect x="91.6871%" y="181" width="0.0107%" height="15" fill="rgb(244,5,23)" fg:x="840526" fg:w="98"/><text x="91.9371%" y="191.50"></text></g><g><title>mwpf`&lt;std::hash::random::DefaultHasher as core::hash::Hasher&gt;::write (258 samples, 0.03%)</title><rect x="91.7709%" y="149" width="0.0281%" height="15" fill="rgb(226,81,46)" fg:x="841294" fg:w="258"/><text x="92.0209%" y="159.50"></text></g><g><title>mwpf`indexmap::map::IndexMap&lt;K,V,S&gt;::entry (1,423 samples, 0.16%)</title><rect x="91.7062%" y="165" width="0.1552%" height="15" fill="rgb(247,70,30)" fg:x="840701" fg:w="1423"/><text x="91.9562%" y="175.50"></text></g><g><title>mwpf`indexmap::map::core::entry::_&lt;impl indexmap::map::core::IndexMapCore&lt;K,V&gt;&gt;::entry (572 samples, 0.06%)</title><rect x="91.7990%" y="149" width="0.0624%" height="15" fill="rgb(212,68,19)" fg:x="841552" fg:w="572"/><text x="92.0490%" y="159.50"></text></g><g><title>mwpf`&lt;priority_queue::priority_queue::PriorityQueue&lt;mwpf::dual_module_pq::Obstacle,core::cmp::Reverse&lt;T&gt;&gt; as mwpf::dual_module_pq::FutureQueueMethods&lt;T,mwpf::dual_module_pq::Obstacle&gt;&gt;::will_happen (1,604 samples, 0.17%)</title><rect x="91.6978%" y="181" width="0.1750%" height="15" fill="rgb(240,187,13)" fg:x="840624" fg:w="1604"/><text x="91.9478%" y="191.50"></text></g><g><title>mwpf`indexmap::map::core::entry::_&lt;impl indexmap::map::core::IndexMapCore&lt;K,V&gt;&gt;::entry (103 samples, 0.01%)</title><rect x="91.8615%" y="165" width="0.0112%" height="15" fill="rgb(223,113,26)" fg:x="842125" fg:w="103"/><text x="92.1115%" y="175.50"></text></g><g><title>libsystem_malloc.dylib`szone_realloc (244 samples, 0.03%)</title><rect x="91.8779%" y="117" width="0.0266%" height="15" fill="rgb(206,192,2)" fg:x="842275" fg:w="244"/><text x="92.1279%" y="127.50"></text></g><g><title>libsystem_malloc.dylib`szone_malloc_should_clear (151 samples, 0.02%)</title><rect x="91.8880%" y="101" width="0.0165%" height="15" fill="rgb(241,108,4)" fg:x="842368" fg:w="151"/><text x="92.1380%" y="111.50"></text></g><g><title>libsystem_malloc.dylib`small_malloc_should_clear (150 samples, 0.02%)</title><rect x="91.8882%" y="85" width="0.0164%" height="15" fill="rgb(247,173,49)" fg:x="842369" fg:w="150"/><text x="92.1382%" y="95.50"></text></g><g><title>libsystem_malloc.dylib`small_malloc_from_free_list (149 samples, 0.02%)</title><rect x="91.8883%" y="69" width="0.0163%" height="15" fill="rgb(224,114,35)" fg:x="842370" fg:w="149"/><text x="92.1383%" y="79.50"></text></g><g><title>libsystem_malloc.dylib`malloc_zone_realloc (490 samples, 0.05%)</title><rect x="91.8748%" y="133" width="0.0535%" height="15" fill="rgb(245,159,27)" fg:x="842247" fg:w="490"/><text x="92.1248%" y="143.50"></text></g><g><title>libsystem_platform.dylib`_platform_memmove (218 samples, 0.02%)</title><rect x="91.9045%" y="117" width="0.0238%" height="15" fill="rgb(245,172,44)" fg:x="842519" fg:w="218"/><text x="92.1545%" y="127.50"></text></g><g><title>libsystem_malloc.dylib`realloc (549 samples, 0.06%)</title><rect x="91.8745%" y="149" width="0.0599%" height="15" fill="rgb(236,23,11)" fg:x="842244" fg:w="549"/><text x="92.1245%" y="159.50"></text></g><g><title>mwpf`alloc::raw_vec::RawVec&lt;T,A&gt;::reserve_for_push (566 samples, 0.06%)</title><rect x="91.8728%" y="181" width="0.0617%" height="15" fill="rgb(205,117,38)" fg:x="842228" fg:w="566"/><text x="92.1228%" y="191.50"></text></g><g><title>mwpf`alloc::raw_vec::finish_grow (563 samples, 0.06%)</title><rect x="91.8731%" y="165" width="0.0614%" height="15" fill="rgb(237,72,25)" fg:x="842231" fg:w="563"/><text x="92.1231%" y="175.50"></text></g><g><title>mwpf`&lt;mwpf::dual_module_pq::DualModulePQ&lt;Queue&gt; as mwpf::dual_module::DualModuleImpl&gt;::add_dual_node (19,253 samples, 2.10%)</title><rect x="89.9315%" y="197" width="2.1002%" height="15" fill="rgb(244,70,9)" fg:x="824432" fg:w="19253"/><text x="90.1815%" y="207.50">m..</text></g><g><title>mwpf`priority_queue::priority_queue::PriorityQueue&lt;I,P,H&gt;::heapify (855 samples, 0.09%)</title><rect x="91.9384%" y="181" width="0.0933%" height="15" fill="rgb(217,125,39)" fg:x="842830" fg:w="855"/><text x="92.1884%" y="191.50"></text></g><g><title>mwpf`mwpf::dual_module::_&lt;impl mwpf::pointers::ArcUnsafe&lt;mwpf::dual_module::DualModuleInterface&gt;&gt;::find_or_create_node (19,305 samples, 2.11%)</title><rect x="89.9287%" y="213" width="2.1058%" height="15" fill="rgb(235,36,10)" fg:x="824406" fg:w="19305"/><text x="90.1787%" y="223.50">m..</text></g><g><title>mwpf`mwpf::matrix::interface::MatrixEchelon::get_solution_local_minimum (4,544 samples, 0.50%)</title><rect x="92.0345%" y="213" width="0.4957%" height="15" fill="rgb(251,123,47)" fg:x="843711" fg:w="4544"/><text x="92.2845%" y="223.50"></text></g><g><title>mwpf`&lt;alloc::collections::btree::map::BTreeMap&lt;K,V,A&gt; as core::ops::drop::Drop&gt;::drop (305 samples, 0.03%)</title><rect x="92.5311%" y="181" width="0.0333%" height="15" fill="rgb(221,13,13)" fg:x="848263" fg:w="305"/><text x="92.7811%" y="191.50"></text></g><g><title>mwpf`alloc::collections::btree::map::IntoIter&lt;K,V,A&gt;::dying_next (263 samples, 0.03%)</title><rect x="92.5357%" y="165" width="0.0287%" height="15" fill="rgb(238,131,9)" fg:x="848305" fg:w="263"/><text x="92.7857%" y="175.50"></text></g><g><title>mwpf`&lt;alloc::collections::btree::map::BTreeMap&lt;K,V,A&gt; as core::ops::drop::Drop&gt;::drop (780 samples, 0.09%)</title><rect x="92.5311%" y="197" width="0.0851%" height="15" fill="rgb(211,50,8)" fg:x="848263" fg:w="780"/><text x="92.7811%" y="207.50"></text></g><g><title>mwpf`alloc::sync::Arc&lt;T,A&gt;::drop_slow (412 samples, 0.04%)</title><rect x="92.5712%" y="181" width="0.0449%" height="15" fill="rgb(245,182,24)" fg:x="848631" fg:w="412"/><text x="92.8212%" y="191.50"></text></g><g><title>mwpf`alloc::collections::btree::map::IntoIter&lt;K,V,A&gt;::dying_next (348 samples, 0.04%)</title><rect x="92.5782%" y="165" width="0.0380%" height="15" fill="rgb(242,14,37)" fg:x="848695" fg:w="348"/><text x="92.8282%" y="175.50"></text></g><g><title>mwpf`&lt;alloc::collections::btree::set::BTreeSet&lt;T&gt; as core::iter::traits::collect::FromIterator&lt;T&gt;&gt;::from_iter (594 samples, 0.06%)</title><rect x="92.6162%" y="197" width="0.0648%" height="15" fill="rgb(246,228,12)" fg:x="849043" fg:w="594"/><text x="92.8662%" y="207.50"></text></g><g><title>mwpf`core::slice::sort::merge_sort (397 samples, 0.04%)</title><rect x="92.6377%" y="181" width="0.0433%" height="15" fill="rgb(213,55,15)" fg:x="849240" fg:w="397"/><text x="92.8877%" y="191.50"></text></g><g><title>mwpf`&lt;alloc::vec::Vec&lt;T&gt; as alloc::vec::spec_from_iter::SpecFromIter&lt;T,I&gt;&gt;::from_iter (93 samples, 0.01%)</title><rect x="92.6810%" y="197" width="0.0101%" height="15" fill="rgb(209,9,3)" fg:x="849637" fg:w="93"/><text x="92.9310%" y="207.50"></text></g><g><title>mwpf`&lt;alloc::collections::btree::map::BTreeMap&lt;K,V,A&gt; as core::ops::drop::Drop&gt;::drop (94 samples, 0.01%)</title><rect x="92.6914%" y="181" width="0.0103%" height="15" fill="rgb(230,59,30)" fg:x="849733" fg:w="94"/><text x="92.9414%" y="191.50"></text></g><g><title>mwpf`core::ptr::drop_in_place&lt;mwpf::relaxer_forest::RelaxerForest&gt; (146 samples, 0.02%)</title><rect x="92.6914%" y="197" width="0.0159%" height="15" fill="rgb(209,121,21)" fg:x="849733" fg:w="146"/><text x="92.9414%" y="207.50"></text></g><g><title>mwpf`&lt;mwpf::matrix::tail::Tail&lt;M&gt; as mwpf::matrix::interface::MatrixView&gt;::columns (1,606 samples, 0.18%)</title><rect x="94.7988%" y="181" width="0.1752%" height="15" fill="rgb(220,109,13)" fg:x="869052" fg:w="1606"/><text x="95.0488%" y="191.50"></text></g><g><title>mwpf`mwpf::matrix::echelon::Echelon&lt;M&gt;::force_update_echelon_info (20,968 samples, 2.29%)</title><rect x="92.7075%" y="197" width="2.2873%" height="15" fill="rgb(232,18,1)" fg:x="849880" fg:w="20968"/><text x="92.9575%" y="207.50">m..</text></g><g><title>mwpf`mwpf::matrix::row::ParityRow::xor_two_rows (190 samples, 0.02%)</title><rect x="94.9740%" y="181" width="0.0207%" height="15" fill="rgb(215,41,42)" fg:x="870658" fg:w="190"/><text x="95.2240%" y="191.50"></text></g><g><title>mwpf`&lt;alloc::collections::btree::set::BTreeSet&lt;T&gt; as core::iter::traits::collect::FromIterator&lt;T&gt;&gt;::from_iter (375 samples, 0.04%)</title><rect x="95.0153%" y="149" width="0.0409%" height="15" fill="rgb(224,123,36)" fg:x="871037" fg:w="375"/><text x="95.2653%" y="159.50"></text></g><g><title>mwpf`core::slice::sort::merge_sort (291 samples, 0.03%)</title><rect x="95.0245%" y="133" width="0.0317%" height="15" fill="rgb(240,125,3)" fg:x="871121" fg:w="291"/><text x="95.2745%" y="143.50"></text></g><g><title>mwpf`&lt;alloc::collections::btree::map::BTreeMap&lt;K,V,A&gt; as core::ops::drop::Drop&gt;::drop (312 samples, 0.03%)</title><rect x="95.5012%" y="117" width="0.0340%" height="15" fill="rgb(205,98,50)" fg:x="875491" fg:w="312"/><text x="95.7512%" y="127.50"></text></g><g><title>mwpf`alloc::collections::btree::map::IntoIter&lt;K,V,A&gt;::dying_next (247 samples, 0.03%)</title><rect x="95.5083%" y="101" width="0.0269%" height="15" fill="rgb(205,185,37)" fg:x="875556" fg:w="247"/><text x="95.7583%" y="111.50"></text></g><g><title>libsystem_platform.dylib`_platform_memmove (293 samples, 0.03%)</title><rect x="95.8340%" y="101" width="0.0320%" height="15" fill="rgb(238,207,15)" fg:x="878542" fg:w="293"/><text x="96.0840%" y="111.50"></text></g><g><title>mwpf`alloc::collections::btree::map::BTreeMap&lt;K,V,A&gt;::insert (3,219 samples, 0.35%)</title><rect x="95.5361%" y="117" width="0.3511%" height="15" fill="rgb(213,199,42)" fg:x="875811" fg:w="3219"/><text x="95.7861%" y="127.50"></text></g><g><title>mwpf`alloc::collections::btree::node::Handle&lt;alloc::collections::btree::node::NodeRef&lt;alloc::collections::btree::node::marker::Mut,K,V,alloc::collections::btree::node::marker::Leaf&gt;,alloc::collections::btree::node::marker::Edge&gt;::insert_recursing (166 samples, 0.02%)</title><rect x="95.8691%" y="101" width="0.0181%" height="15" fill="rgb(235,201,11)" fg:x="878864" fg:w="166"/><text x="96.1191%" y="111.50"></text></g><g><title>mwpf`&lt;alloc::collections::btree::map::BTreeMap&lt;K,V,A&gt; as core::clone::Clone&gt;::clone::clone_subtree (187 samples, 0.02%)</title><rect x="95.9243%" y="37" width="0.0204%" height="15" fill="rgb(207,46,11)" fg:x="879370" fg:w="187"/><text x="96.1743%" y="47.50"></text></g><g><title>mwpf`&lt;alloc::collections::btree::map::BTreeMap&lt;K,V,A&gt; as core::clone::Clone&gt;::clone::clone_subtree (370 samples, 0.04%)</title><rect x="95.9054%" y="53" width="0.0404%" height="15" fill="rgb(241,35,35)" fg:x="879196" fg:w="370"/><text x="96.1554%" y="63.50"></text></g><g><title>mwpf`&lt;alloc::collections::btree::map::BTreeMap&lt;K,V,A&gt; as core::clone::Clone&gt;::clone::clone_subtree (408 samples, 0.04%)</title><rect x="95.9014%" y="101" width="0.0445%" height="15" fill="rgb(243,32,47)" fg:x="879160" fg:w="408"/><text x="96.1514%" y="111.50"></text></g><g><title>mwpf`&lt;alloc::collections::btree::map::BTreeMap&lt;K,V,A&gt; as core::clone::Clone&gt;::clone::clone_subtree (407 samples, 0.04%)</title><rect x="95.9015%" y="85" width="0.0444%" height="15" fill="rgb(247,202,23)" fg:x="879161" fg:w="407"/><text x="96.1515%" y="95.50"></text></g><g><title>mwpf`&lt;alloc::collections::btree::map::BTreeMap&lt;K,V,A&gt; as core::clone::Clone&gt;::clone::clone_subtree (405 samples, 0.04%)</title><rect x="95.9018%" y="69" width="0.0442%" height="15" fill="rgb(219,102,11)" fg:x="879163" fg:w="405"/><text x="96.1518%" y="79.50"></text></g><g><title>mwpf`&lt;std::hash::random::DefaultHasher as core::hash::Hasher&gt;::write (104 samples, 0.01%)</title><rect x="95.9469%" y="101" width="0.0113%" height="15" fill="rgb(243,110,44)" fg:x="879577" fg:w="104"/><text x="96.1969%" y="111.50"></text></g><g><title>mwpf`mwpf::invalid_subgraph::InvalidSubgraph::new_complete_ptr (8,172 samples, 0.89%)</title><rect x="95.0757%" y="149" width="0.8914%" height="15" fill="rgb(222,74,54)" fg:x="871590" fg:w="8172"/><text x="95.3257%" y="159.50"></text></g><g><title>mwpf`mwpf::invalid_subgraph::InvalidSubgraph::new_complete (8,135 samples, 0.89%)</title><rect x="95.0797%" y="133" width="0.8874%" height="15" fill="rgb(216,99,12)" fg:x="871627" fg:w="8135"/><text x="95.3297%" y="143.50"></text></g><g><title>mwpf`mwpf::invalid_subgraph::InvalidSubgraph::new_raw (602 samples, 0.07%)</title><rect x="95.9014%" y="117" width="0.0657%" height="15" fill="rgb(226,22,26)" fg:x="879160" fg:w="602"/><text x="96.1514%" y="127.50"></text></g><g><title>libsystem_malloc.dylib`nanov2_allocate_outlined (104 samples, 0.01%)</title><rect x="96.4777%" y="101" width="0.0113%" height="15" fill="rgb(217,163,10)" fg:x="884443" fg:w="104"/><text x="96.7277%" y="111.50"></text></g><g><title>libsystem_malloc.dylib`szone_malloc_should_clear (107 samples, 0.01%)</title><rect x="96.4891%" y="101" width="0.0117%" height="15" fill="rgb(213,25,53)" fg:x="884547" fg:w="107"/><text x="96.7391%" y="111.50"></text></g><g><title>libsystem_malloc.dylib`tiny_malloc_should_clear (105 samples, 0.01%)</title><rect x="96.4893%" y="85" width="0.0115%" height="15" fill="rgb(252,105,26)" fg:x="884549" fg:w="105"/><text x="96.7393%" y="95.50"></text></g><g><title>libsystem_malloc.dylib`tiny_malloc_from_free_list (98 samples, 0.01%)</title><rect x="96.4900%" y="69" width="0.0107%" height="15" fill="rgb(220,39,43)" fg:x="884556" fg:w="98"/><text x="96.7400%" y="79.50"></text></g><g><title>mwpf`alloc::collections::btree::map::BTreeMap&lt;K,V,A&gt;::insert (1,816 samples, 0.20%)</title><rect x="96.3027%" y="133" width="0.1981%" height="15" fill="rgb(229,68,48)" fg:x="882839" fg:w="1816"/><text x="96.5527%" y="143.50"></text></g><g><title>mwpf`alloc::collections::btree::node::Handle&lt;alloc::collections::btree::node::NodeRef&lt;alloc::collections::btree::node::marker::Mut,K,V,alloc::collections::btree::node::marker::Leaf&gt;,alloc::collections::btree::node::marker::Edge&gt;::insert_recursing (282 samples, 0.03%)</title><rect x="96.4701%" y="117" width="0.0308%" height="15" fill="rgb(252,8,32)" fg:x="884373" fg:w="282"/><text x="96.7201%" y="127.50"></text></g><g><title>mwpf`alloc::collections::btree::map::IntoIter&lt;K,V,A&gt;::dying_next (168 samples, 0.02%)</title><rect x="96.5008%" y="133" width="0.0183%" height="15" fill="rgb(223,20,43)" fg:x="884655" fg:w="168"/><text x="96.7508%" y="143.50"></text></g><g><title>mwpf`alloc::collections::btree::map::entry::VacantEntry&lt;K,V,A&gt;::insert (234 samples, 0.03%)</title><rect x="96.5192%" y="133" width="0.0255%" height="15" fill="rgb(229,81,49)" fg:x="884823" fg:w="234"/><text x="96.7692%" y="143.50"></text></g><g><title>mwpf`alloc::collections::btree::node::Handle&lt;alloc::collections::btree::node::NodeRef&lt;alloc::collections::btree::node::marker::Mut,K,V,alloc::collections::btree::node::marker::Leaf&gt;,alloc::collections::btree::node::marker::Edge&gt;::insert_recursing (154 samples, 0.02%)</title><rect x="96.5279%" y="117" width="0.0168%" height="15" fill="rgb(236,28,36)" fg:x="884903" fg:w="154"/><text x="96.7779%" y="127.50"></text></g><g><title>mwpf`&lt;mwpf::plugin_union_find::PluginUnionFind as mwpf::plugin::PluginImpl&gt;::find_relaxers (14,310 samples, 1.56%)</title><rect x="94.9952%" y="181" width="1.5610%" height="15" fill="rgb(249,185,26)" fg:x="870852" fg:w="14310"/><text x="95.2452%" y="191.50"></text></g><g><title>mwpf`mwpf::plugin_union_find::PluginUnionFind::find_single_relaxer (14,265 samples, 1.56%)</title><rect x="95.0001%" y="165" width="1.5561%" height="15" fill="rgb(249,174,33)" fg:x="870897" fg:w="14265"/><text x="95.2501%" y="175.50"></text></g><g><title>mwpf`mwpf::relaxer::Relaxer::new_raw (5,400 samples, 0.59%)</title><rect x="95.9671%" y="149" width="0.5890%" height="15" fill="rgb(233,201,37)" fg:x="879762" fg:w="5400"/><text x="96.2171%" y="159.50"></text></g><g><title>mwpf`alloc::collections::btree::node::Handle&lt;alloc::collections::btree::node::NodeRef&lt;alloc::collections::btree::node::marker::Mut,K,V,alloc::collections::btree::node::marker::Leaf&gt;,alloc::collections::btree::node::marker::Edge&gt;::insert_recursing (105 samples, 0.01%)</title><rect x="96.5447%" y="133" width="0.0115%" height="15" fill="rgb(221,78,26)" fg:x="885057" fg:w="105"/><text x="96.7947%" y="143.50"></text></g><g><title>libsystem_malloc.dylib`nanov2_allocate_outlined (406 samples, 0.04%)</title><rect x="96.5884%" y="85" width="0.0443%" height="15" fill="rgb(250,127,30)" fg:x="885458" fg:w="406"/><text x="96.8384%" y="95.50"></text></g><g><title>libsystem_malloc.dylib`nanov2_find_block_and_allocate (351 samples, 0.04%)</title><rect x="96.5944%" y="69" width="0.0383%" height="15" fill="rgb(230,49,44)" fg:x="885513" fg:w="351"/><text x="96.8444%" y="79.50"></text></g><g><title>mwpf`&lt;alloc::collections::btree::map::BTreeMap&lt;K,V,A&gt; as core::clone::Clone&gt;::clone::clone_subtree (643 samples, 0.07%)</title><rect x="96.5772%" y="101" width="0.0701%" height="15" fill="rgb(229,67,23)" fg:x="885355" fg:w="643"/><text x="96.8272%" y="111.50"></text></g><g><title>mwpf`&lt;alloc::collections::btree::map::BTreeMap&lt;K,V,A&gt; as core::clone::Clone&gt;::clone::clone_subtree (126 samples, 0.01%)</title><rect x="96.6336%" y="85" width="0.0137%" height="15" fill="rgb(249,83,47)" fg:x="885872" fg:w="126"/><text x="96.8836%" y="95.50"></text></g><g><title>libsystem_malloc.dylib`nanov2_allocate_outlined (114 samples, 0.01%)</title><rect x="96.6349%" y="69" width="0.0124%" height="15" fill="rgb(215,43,3)" fg:x="885884" fg:w="114"/><text x="96.8849%" y="79.50"></text></g><g><title>libsystem_malloc.dylib`nanov2_find_block_and_allocate (107 samples, 0.01%)</title><rect x="96.6357%" y="53" width="0.0117%" height="15" fill="rgb(238,154,13)" fg:x="885891" fg:w="107"/><text x="96.8857%" y="63.50"></text></g><g><title>mwpf`&lt;alloc::collections::btree::map::BTreeMap&lt;K,V,A&gt; as core::clone::Clone&gt;::clone::clone_subtree (810 samples, 0.09%)</title><rect x="96.5598%" y="117" width="0.0884%" height="15" fill="rgb(219,56,2)" fg:x="885196" fg:w="810"/><text x="96.8098%" y="127.50"></text></g><g><title>mwpf`&lt;alloc::collections::btree::map::BTreeMap&lt;K,V,A&gt; as core::clone::Clone&gt;::clone::clone_subtree (846 samples, 0.09%)</title><rect x="96.5561%" y="165" width="0.0923%" height="15" fill="rgb(233,0,4)" fg:x="885162" fg:w="846"/><text x="96.8061%" y="175.50"></text></g><g><title>mwpf`&lt;alloc::collections::btree::map::BTreeMap&lt;K,V,A&gt; as core::clone::Clone&gt;::clone::clone_subtree (846 samples, 0.09%)</title><rect x="96.5561%" y="149" width="0.0923%" height="15" fill="rgb(235,30,7)" fg:x="885162" fg:w="846"/><text x="96.8061%" y="159.50"></text></g><g><title>mwpf`&lt;alloc::collections::btree::map::BTreeMap&lt;K,V,A&gt; as core::clone::Clone&gt;::clone::clone_subtree (843 samples, 0.09%)</title><rect x="96.5565%" y="133" width="0.0920%" height="15" fill="rgb(250,79,13)" fg:x="885165" fg:w="843"/><text x="96.8065%" y="143.50"></text></g><g><title>mwpf`&lt;alloc::collections::btree::map::BTreeMap&lt;K,V,A&gt; as core::cmp::PartialEq&gt;::eq (137 samples, 0.01%)</title><rect x="96.6500%" y="149" width="0.0149%" height="15" fill="rgb(211,146,34)" fg:x="886022" fg:w="137"/><text x="96.9000%" y="159.50"></text></g><g><title>mwpf`&lt;alloc::collections::btree::map::Iter&lt;K,V&gt; as core::iter::traits::iterator::Iterator&gt;::next (112 samples, 0.01%)</title><rect x="96.6527%" y="133" width="0.0122%" height="15" fill="rgb(228,22,38)" fg:x="886047" fg:w="112"/><text x="96.9027%" y="143.50"></text></g><g><title>mwpf`&lt;mwpf::relaxer::Relaxer as core::cmp::Ord&gt;::cmp (165 samples, 0.02%)</title><rect x="96.6500%" y="165" width="0.0180%" height="15" fill="rgb(235,168,5)" fg:x="886022" fg:w="165"/><text x="96.9000%" y="175.50"></text></g><g><title>mwpf`&lt;alloc::collections::btree::map::Iter&lt;K,V&gt; as core::iter::traits::iterator::Iterator&gt;::next (105 samples, 0.01%)</title><rect x="96.7403%" y="149" width="0.0115%" height="15" fill="rgb(221,155,16)" fg:x="886850" fg:w="105"/><text x="96.9903%" y="159.50"></text></g><g><title>libsystem_malloc.dylib`nanov2_allocate_outlined (409 samples, 0.04%)</title><rect x="97.2721%" y="101" width="0.0446%" height="15" fill="rgb(215,215,53)" fg:x="891725" fg:w="409"/><text x="97.5221%" y="111.50"></text></g><g><title>libsystem_malloc.dylib`nanov2_find_block_and_allocate (347 samples, 0.04%)</title><rect x="97.2788%" y="85" width="0.0379%" height="15" fill="rgb(223,4,10)" fg:x="891787" fg:w="347"/><text x="97.5288%" y="95.50"></text></g><g><title>mwpf`alloc::collections::btree::map::BTreeMap&lt;K,V,A&gt;::insert (2,043 samples, 0.22%)</title><rect x="97.0988%" y="133" width="0.2229%" height="15" fill="rgb(234,103,6)" fg:x="890137" fg:w="2043"/><text x="97.3488%" y="143.50"></text></g><g><title>mwpf`alloc::collections::btree::node::Handle&lt;alloc::collections::btree::node::NodeRef&lt;alloc::collections::btree::node::marker::Mut,K,V,alloc::collections::btree::node::marker::Leaf&gt;,alloc::collections::btree::node::marker::Edge&gt;::insert_recursing (549 samples, 0.06%)</title><rect x="97.2618%" y="117" width="0.0599%" height="15" fill="rgb(227,97,0)" fg:x="891631" fg:w="549"/><text x="97.5118%" y="127.50"></text></g><g><title>mwpf`alloc::collections::btree::map::IntoIter&lt;K,V,A&gt;::dying_next (158 samples, 0.02%)</title><rect x="97.3217%" y="133" width="0.0172%" height="15" fill="rgb(234,150,53)" fg:x="892180" fg:w="158"/><text x="97.5717%" y="143.50"></text></g><g><title>libsystem_malloc.dylib`nanov2_allocate_outlined (175 samples, 0.02%)</title><rect x="97.3557%" y="101" width="0.0191%" height="15" fill="rgb(228,201,54)" fg:x="892492" fg:w="175"/><text x="97.6057%" y="111.50"></text></g><g><title>libsystem_malloc.dylib`nanov2_find_block_and_allocate (148 samples, 0.02%)</title><rect x="97.3587%" y="85" width="0.0161%" height="15" fill="rgb(222,22,37)" fg:x="892519" fg:w="148"/><text x="97.6087%" y="95.50"></text></g><g><title>mwpf`alloc::collections::btree::map::entry::VacantEntry&lt;K,V,A&gt;::insert (359 samples, 0.04%)</title><rect x="97.3389%" y="133" width="0.0392%" height="15" fill="rgb(237,53,32)" fg:x="892338" fg:w="359"/><text x="97.5889%" y="143.50"></text></g><g><title>mwpf`alloc::collections::btree::node::Handle&lt;alloc::collections::btree::node::NodeRef&lt;alloc::collections::btree::node::marker::Mut,K,V,alloc::collections::btree::node::marker::Leaf&gt;,alloc::collections::btree::node::marker::Edge&gt;::insert_recursing (268 samples, 0.03%)</title><rect x="97.3488%" y="117" width="0.0292%" height="15" fill="rgb(233,25,53)" fg:x="892429" fg:w="268"/><text x="97.5988%" y="127.50"></text></g><g><title>mwpf`mwpf::plugin::PluginManager::find_relaxer (44,533 samples, 4.86%)</title><rect x="92.5302%" y="213" width="4.8578%" height="15" fill="rgb(210,40,34)" fg:x="848255" fg:w="44533"/><text x="92.7802%" y="223.50">mwpf`m..</text></g><g><title>mwpf`mwpf::plugin::PluginEntry::execute (21,937 samples, 2.39%)</title><rect x="94.9951%" y="197" width="2.3930%" height="15" fill="rgb(241,220,44)" fg:x="870851" fg:w="21937"/><text x="95.2451%" y="207.50">mw..</text></g><g><title>mwpf`mwpf::relaxer_forest::RelaxerForest::expand (7,626 samples, 0.83%)</title><rect x="96.5561%" y="181" width="0.8319%" height="15" fill="rgb(235,28,35)" fg:x="885162" fg:w="7626"/><text x="96.8061%" y="191.50"></text></g><g><title>mwpf`mwpf::relaxer_forest::RelaxerForest::compute_expanded (6,601 samples, 0.72%)</title><rect x="96.6680%" y="165" width="0.7201%" height="15" fill="rgb(210,56,17)" fg:x="886187" fg:w="6601"/><text x="96.9180%" y="175.50"></text></g><g><title>mwpf`mwpf::relaxer::Relaxer::new_raw (5,729 samples, 0.62%)</title><rect x="96.7631%" y="149" width="0.6249%" height="15" fill="rgb(224,130,29)" fg:x="887059" fg:w="5729"/><text x="97.0131%" y="159.50"></text></g><g><title>libsystem_malloc.dylib`malloc_zone_realloc (127 samples, 0.01%)</title><rect x="97.4469%" y="117" width="0.0139%" height="15" fill="rgb(235,212,8)" fg:x="893328" fg:w="127"/><text x="97.6969%" y="127.50"></text></g><g><title>mwpf`&lt;mwpf::matrix::basic::BasicMatrix as mwpf::matrix::interface::MatrixBasic&gt;::add_variable (433 samples, 0.05%)</title><rect x="97.4138%" y="181" width="0.0472%" height="15" fill="rgb(223,33,50)" fg:x="893024" fg:w="433"/><text x="97.6638%" y="191.50"></text></g><g><title>mwpf`alloc::raw_vec::RawVec&lt;T,A&gt;::reserve_for_push (130 samples, 0.01%)</title><rect x="97.4468%" y="165" width="0.0142%" height="15" fill="rgb(219,149,13)" fg:x="893327" fg:w="130"/><text x="97.6968%" y="175.50"></text></g><g><title>mwpf`alloc::raw_vec::finish_grow (129 samples, 0.01%)</title><rect x="97.4469%" y="149" width="0.0141%" height="15" fill="rgb(250,156,29)" fg:x="893328" fg:w="129"/><text x="97.6969%" y="159.50"></text></g><g><title>libsystem_malloc.dylib`realloc (129 samples, 0.01%)</title><rect x="97.4469%" y="133" width="0.0141%" height="15" fill="rgb(216,193,19)" fg:x="893328" fg:w="129"/><text x="97.6969%" y="143.50"></text></g><g><title>mwpf`&lt;mwpf::matrix::basic::BasicMatrix as mwpf::matrix::interface::MatrixBasic&gt;::add_constraint (604 samples, 0.07%)</title><rect x="97.3963%" y="197" width="0.0659%" height="15" fill="rgb(216,135,14)" fg:x="892864" fg:w="604"/><text x="97.6463%" y="207.50"></text></g><g><title>mwpf`mwpf::primal_module_serial::PrimalModuleSerial::union (719 samples, 0.08%)</title><rect x="97.3880%" y="213" width="0.0784%" height="15" fill="rgb(241,47,5)" fg:x="892788" fg:w="719"/><text x="97.6380%" y="223.50"></text></g><g><title>mwpf`priority_queue::priority_queue::PriorityQueue&lt;I,P,H&gt;::heapify (2,374 samples, 0.26%)</title><rect x="97.4664%" y="213" width="0.2590%" height="15" fill="rgb(233,42,35)" fg:x="893507" fg:w="2374"/><text x="97.7164%" y="223.50"></text></g><g><title>mwpf`&lt;mwpf::primal_module_serial::PrimalModuleSerial as mwpf::primal_module::PrimalModuleImpl&gt;::resolve (876,391 samples, 95.60%)</title><rect x="2.1261%" y="229" width="95.5994%" height="15" fill="rgb(231,13,6)" fg:x="19491" fg:w="876391"/><text x="2.3761%" y="239.50">mwpf`&lt;mwpf::primal_module_serial::PrimalModuleSerial as mwpf::primal_module::PrimalModuleImpl&gt;::resolve</text></g><g><title>mwpf`&lt;rayon::iter::for_each::ForEachConsumer&lt;F&gt; as rayon::iter::plumbing::Folder&lt;T&gt;&gt;::consume_iter (876,493 samples, 95.61%)</title><rect x="2.1244%" y="277" width="95.6105%" height="15" fill="rgb(207,181,40)" fg:x="19475" fg:w="876493"/><text x="2.3744%" y="287.50">mwpf`&lt;rayon::iter::for_each::ForEachConsumer&lt;F&gt; as rayon::iter::plumbing::Folder&lt;T&gt;&gt;::consume_iter</text></g><g><title>mwpf`mwpf::primal_module_parallel::_&lt;impl mwpf::pointers::ArcUnsafe&lt;mwpf::primal_module_parallel::PrimalModuleParallelUnit&gt;&gt;::fuse_and_solve (876,493 samples, 95.61%)</title><rect x="2.1244%" y="261" width="95.6105%" height="15" fill="rgb(254,173,49)" fg:x="19475" fg:w="876493"/><text x="2.3744%" y="271.50">mwpf`mwpf::primal_module_parallel::_&lt;impl mwpf::pointers::ArcUnsafe&lt;mwpf::primal_module_parallel::PrimalModuleParallelUnit&gt;&gt;::fuse_and_solve</text></g><g><title>mwpf`mwpf::primal_module_serial::PrimalModuleSerial::solve_step_callback_ptr (876,492 samples, 95.61%)</title><rect x="2.1245%" y="245" width="95.6104%" height="15" fill="rgb(221,1,38)" fg:x="19476" fg:w="876492"/><text x="2.3745%" y="255.50">mwpf`mwpf::primal_module_serial::PrimalModuleSerial::solve_step_callback_ptr</text></g><g><title>mwpf`&lt;alloc::collections::btree::map::Iter&lt;K,V&gt; as core::iter::traits::iterator::Iterator&gt;::next (172 samples, 0.02%)</title><rect x="97.7456%" y="181" width="0.0188%" height="15" fill="rgb(206,124,46)" fg:x="896066" fg:w="172"/><text x="97.9956%" y="191.50"></text></g><g><title>mwpf`&lt;alloc::collections::btree::map::Iter&lt;K,V&gt; as core::iter::traits::iterator::Iterator&gt;::next (706 samples, 0.08%)</title><rect x="97.8392%" y="165" width="0.0770%" height="15" fill="rgb(249,21,11)" fg:x="896924" fg:w="706"/><text x="98.0892%" y="175.50"></text></g><g><title>mwpf`&lt;mwpf::dual_module_pq::Obstacle as core::hash::Hash&gt;::hash (423 samples, 0.05%)</title><rect x="98.1531%" y="133" width="0.0461%" height="15" fill="rgb(222,201,40)" fg:x="899802" fg:w="423"/><text x="98.4031%" y="143.50"></text></g><g><title>mwpf`&lt;std::hash::random::DefaultHasher as core::hash::Hasher&gt;::write (1,605 samples, 0.18%)</title><rect x="98.1993%" y="133" width="0.1751%" height="15" fill="rgb(235,61,29)" fg:x="900225" fg:w="1605"/><text x="98.4493%" y="143.50"></text></g><g><title>mwpf`indexmap::map::IndexMap&lt;K,V,S&gt;::entry (5,012 samples, 0.55%)</title><rect x="97.9922%" y="149" width="0.5467%" height="15" fill="rgb(219,207,3)" fg:x="898327" fg:w="5012"/><text x="98.2422%" y="159.50"></text></g><g><title>mwpf`indexmap::map::core::entry::_&lt;impl indexmap::map::core::IndexMapCore&lt;K,V&gt;&gt;::entry (1,509 samples, 0.16%)</title><rect x="98.3743%" y="133" width="0.1646%" height="15" fill="rgb(222,56,46)" fg:x="901830" fg:w="1509"/><text x="98.6243%" y="143.50"></text></g><g><title>mwpf`&lt;priority_queue::priority_queue::PriorityQueue&lt;mwpf::dual_module_pq::Obstacle,core::cmp::Reverse&lt;T&gt;&gt; as mwpf::dual_module_pq::FutureQueueMethods&lt;T,mwpf::dual_module_pq::Obstacle&gt;&gt;::will_happen (5,923 samples, 0.65%)</title><rect x="97.9162%" y="165" width="0.6461%" height="15" fill="rgb(239,76,54)" fg:x="897630" fg:w="5923"/><text x="98.1662%" y="175.50"></text></g><g><title>mwpf`indexmap::map::core::entry::_&lt;impl indexmap::map::core::IndexMapCore&lt;K,V&gt;&gt;::entry (214 samples, 0.02%)</title><rect x="98.5389%" y="149" width="0.0233%" height="15" fill="rgb(231,124,27)" fg:x="903339" fg:w="214"/><text x="98.7889%" y="159.50"></text></g><g><title>mwpf`indexmap::map::IndexMap&lt;K,V,S&gt;::entry (180 samples, 0.02%)</title><rect x="98.5623%" y="165" width="0.0196%" height="15" fill="rgb(249,195,6)" fg:x="903553" fg:w="180"/><text x="98.8123%" y="175.50"></text></g><g><title>mwpf`&lt;mwpf::dual_module_pq::DualModulePQ&lt;Queue&gt; as mwpf::dual_module::DualModuleImpl&gt;::set_grow_rate (13,068 samples, 1.43%)</title><rect x="97.7654%" y="181" width="1.4255%" height="15" fill="rgb(237,174,47)" fg:x="896248" fg:w="13068"/><text x="98.0154%" y="191.50"></text></g><g><title>mwpf`priority_queue::priority_queue::PriorityQueue&lt;I,P,H&gt;::heapify (5,583 samples, 0.61%)</title><rect x="98.5819%" y="165" width="0.6090%" height="15" fill="rgb(206,201,31)" fg:x="903733" fg:w="5583"/><text x="98.8319%" y="175.50"></text></g><g><title>mwpf`&lt;mwpf::matrix::tight::Tight&lt;M&gt; as mwpf::matrix::interface::MatrixTight&gt;::update_edge_tightness (95 samples, 0.01%)</title><rect x="99.1956%" y="181" width="0.0104%" height="15" fill="rgb(231,57,52)" fg:x="909359" fg:w="95"/><text x="99.4456%" y="191.50"></text></g><g><title>mwpf`indexmap::map::IndexMap&lt;K,V,S&gt;::entry (270 samples, 0.03%)</title><rect x="99.2218%" y="133" width="0.0295%" height="15" fill="rgb(248,177,22)" fg:x="909599" fg:w="270"/><text x="99.4718%" y="143.50"></text></g><g><title>mwpf`indexmap::map::core::entry::_&lt;impl indexmap::map::core::IndexMapCore&lt;K,V&gt;&gt;::entry (96 samples, 0.01%)</title><rect x="99.2408%" y="117" width="0.0105%" height="15" fill="rgb(215,211,37)" fg:x="909773" fg:w="96"/><text x="99.4908%" y="127.50"></text></g><g><title>mwpf`&lt;priority_queue::priority_queue::PriorityQueue&lt;mwpf::dual_module_pq::Obstacle,core::cmp::Reverse&lt;T&gt;&gt; as mwpf::dual_module_pq::FutureQueueMethods&lt;T,mwpf::dual_module_pq::Obstacle&gt;&gt;::will_happen (307 samples, 0.03%)</title><rect x="99.2191%" y="149" width="0.0335%" height="15" fill="rgb(241,128,51)" fg:x="909574" fg:w="307"/><text x="99.4691%" y="159.50"></text></g><g><title>mwpf`&lt;mwpf::dual_module_pq::DualModulePQ&lt;Queue&gt; as mwpf::dual_module::DualModuleImpl&gt;::add_dual_node (660 samples, 0.07%)</title><rect x="99.2119%" y="165" width="0.0720%" height="15" fill="rgb(227,165,31)" fg:x="909508" fg:w="660"/><text x="99.4619%" y="175.50"></text></g><g><title>mwpf`priority_queue::priority_queue::PriorityQueue&lt;I,P,H&gt;::heapify (185 samples, 0.02%)</title><rect x="99.2637%" y="149" width="0.0202%" height="15" fill="rgb(228,167,24)" fg:x="909983" fg:w="185"/><text x="99.5137%" y="159.50"></text></g><g><title>mwpf`mwpf::dual_module::_&lt;impl mwpf::pointers::ArcUnsafe&lt;mwpf::dual_module::DualModuleInterface&gt;&gt;::find_or_create_node (672 samples, 0.07%)</title><rect x="99.2114%" y="181" width="0.0733%" height="15" fill="rgb(228,143,12)" fg:x="909504" fg:w="672"/><text x="99.4614%" y="191.50"></text></g><g><title>mwpf`&lt;alloc::collections::btree::map::BTreeMap&lt;K,V,A&gt; as core::ops::drop::Drop&gt;::drop (98 samples, 0.01%)</title><rect x="99.2898%" y="165" width="0.0107%" height="15" fill="rgb(249,149,8)" fg:x="910222" fg:w="98"/><text x="99.5398%" y="175.50"></text></g><g><title>mwpf`&lt;mwpf::matrix::tail::Tail&lt;M&gt; as mwpf::matrix::interface::MatrixView&gt;::columns (151 samples, 0.02%)</title><rect x="99.3248%" y="149" width="0.0165%" height="15" fill="rgb(243,35,44)" fg:x="910543" fg:w="151"/><text x="99.5748%" y="159.50"></text></g><g><title>mwpf`mwpf::matrix::echelon::Echelon&lt;M&gt;::force_update_echelon_info (333 samples, 0.04%)</title><rect x="99.3054%" y="165" width="0.0363%" height="15" fill="rgb(246,89,9)" fg:x="910365" fg:w="333"/><text x="99.5554%" y="175.50"></text></g><g><title>mwpf`alloc::collections::btree::map::BTreeMap&lt;K,V,A&gt;::insert (460 samples, 0.05%)</title><rect x="99.3885%" y="85" width="0.0502%" height="15" fill="rgb(233,213,13)" fg:x="911127" fg:w="460"/><text x="99.6385%" y="95.50"></text></g><g><title>mwpf`mwpf::invalid_subgraph::InvalidSubgraph::new_complete_ptr (945 samples, 0.10%)</title><rect x="99.3466%" y="117" width="0.1031%" height="15" fill="rgb(233,141,41)" fg:x="910743" fg:w="945"/><text x="99.5966%" y="127.50"></text></g><g><title>mwpf`mwpf::invalid_subgraph::InvalidSubgraph::new_complete (936 samples, 0.10%)</title><rect x="99.3476%" y="101" width="0.1021%" height="15" fill="rgb(239,167,4)" fg:x="910752" fg:w="936"/><text x="99.5976%" y="111.50"></text></g><g><title>mwpf`alloc::collections::btree::map::BTreeMap&lt;K,V,A&gt;::insert (286 samples, 0.03%)</title><rect x="99.5123%" y="101" width="0.0312%" height="15" fill="rgb(209,217,16)" fg:x="912262" fg:w="286"/><text x="99.7623%" y="111.50"></text></g><g><title>mwpf`&lt;mwpf::plugin_union_find::PluginUnionFind as mwpf::plugin::PluginImpl&gt;::find_relaxers (1,953 samples, 0.21%)</title><rect x="99.3417%" y="149" width="0.2130%" height="15" fill="rgb(219,88,35)" fg:x="910698" fg:w="1953"/><text x="99.5917%" y="159.50"></text></g><g><title>mwpf`mwpf::plugin_union_find::PluginUnionFind::find_single_relaxer (1,952 samples, 0.21%)</title><rect x="99.3418%" y="133" width="0.2129%" height="15" fill="rgb(220,193,23)" fg:x="910699" fg:w="1952"/><text x="99.5918%" y="143.50"></text></g><g><title>mwpf`mwpf::relaxer::Relaxer::new_raw (963 samples, 0.11%)</title><rect x="99.4497%" y="117" width="0.1050%" height="15" fill="rgb(230,90,52)" fg:x="911688" fg:w="963"/><text x="99.6997%" y="127.50"></text></g><g><title>mwpf`alloc::collections::btree::map::BTreeMap&lt;K,V,A&gt;::insert (297 samples, 0.03%)</title><rect x="99.6378%" y="101" width="0.0324%" height="15" fill="rgb(252,106,19)" fg:x="913413" fg:w="297"/><text x="99.8878%" y="111.50"></text></g><g><title>mwpf`mwpf::plugin::PluginManager::find_relaxer (3,593 samples, 0.39%)</title><rect x="99.2897%" y="181" width="0.3919%" height="15" fill="rgb(206,74,20)" fg:x="910221" fg:w="3593"/><text x="99.5397%" y="191.50"></text></g><g><title>mwpf`mwpf::plugin::PluginEntry::execute (3,116 samples, 0.34%)</title><rect x="99.3417%" y="165" width="0.3399%" height="15" fill="rgb(230,138,44)" fg:x="910698" fg:w="3116"/><text x="99.5917%" y="175.50"></text></g><g><title>mwpf`mwpf::relaxer_forest::RelaxerForest::expand (1,162 samples, 0.13%)</title><rect x="99.5548%" y="149" width="0.1268%" height="15" fill="rgb(235,182,43)" fg:x="912652" fg:w="1162"/><text x="99.8048%" y="159.50"></text></g><g><title>mwpf`mwpf::relaxer_forest::RelaxerForest::compute_expanded (1,052 samples, 0.11%)</title><rect x="99.5668%" y="133" width="0.1148%" height="15" fill="rgb(242,16,51)" fg:x="912762" fg:w="1052"/><text x="99.8168%" y="143.50"></text></g><g><title>mwpf`mwpf::relaxer::Relaxer::new_raw (938 samples, 0.10%)</title><rect x="99.5793%" y="117" width="0.1023%" height="15" fill="rgb(248,9,4)" fg:x="912876" fg:w="938"/><text x="99.8293%" y="127.50"></text></g><g><title>mwpf`&lt;mwpf::matrix::basic::BasicMatrix as mwpf::matrix::interface::MatrixBasic&gt;::add_variable (135 samples, 0.01%)</title><rect x="99.6918%" y="149" width="0.0147%" height="15" fill="rgb(210,31,22)" fg:x="913908" fg:w="135"/><text x="99.9418%" y="159.50"></text></g><g><title>mwpf`&lt;mwpf::matrix::basic::BasicMatrix as mwpf::matrix::interface::MatrixBasic&gt;::add_constraint (217 samples, 0.02%)</title><rect x="99.6836%" y="165" width="0.0237%" height="15" fill="rgb(239,54,39)" fg:x="913832" fg:w="217"/><text x="99.9336%" y="175.50"></text></g><g><title>mwpf`mwpf::primal_module_serial::PrimalModuleSerial::union (273 samples, 0.03%)</title><rect x="99.6816%" y="181" width="0.0298%" height="15" fill="rgb(230,99,41)" fg:x="913814" fg:w="273"/><text x="99.9316%" y="191.50"></text></g><g><title>mwpf`&lt;mwpf::primal_module_serial::PrimalModuleSerial as mwpf::primal_module::PrimalModuleImpl&gt;::resolve (18,090 samples, 1.97%)</title><rect x="97.7425%" y="197" width="1.9733%" height="15" fill="rgb(253,106,12)" fg:x="896038" fg:w="18090"/><text x="97.9925%" y="207.50">m..</text></g><g><title>mwpf`&lt;mwpf::dual_module_pq::DualModulePQ&lt;Queue&gt; as mwpf::dual_module::DualModuleImpl&gt;::compute_maximum_update_length (94 samples, 0.01%)</title><rect x="99.7201%" y="181" width="0.0103%" height="15" fill="rgb(213,46,41)" fg:x="914167" fg:w="94"/><text x="99.9701%" y="191.50"></text></g><g><title>mwpf`mwpf::dual_module_parallel::_&lt;impl mwpf::pointers::ArcUnsafe&lt;mwpf::dual_module_parallel::DualModuleParallelUnit&lt;SerialModule,Queue&gt;&gt;&gt;::compute_maximum_update_length (95 samples, 0.01%)</title><rect x="99.7201%" y="197" width="0.0104%" height="15" fill="rgb(215,133,35)" fg:x="914167" fg:w="95"/><text x="99.9701%" y="207.50"></text></g><g><title>mwpf`&lt;rayon::iter::for_each::ForEachConsumer&lt;F&gt; as rayon::iter::plumbing::Folder&lt;T&gt;&gt;::consume_iter (18,243 samples, 1.99%)</title><rect x="97.7407%" y="245" width="1.9900%" height="15" fill="rgb(213,28,5)" fg:x="896021" fg:w="18243"/><text x="97.9907%" y="255.50">m..</text></g><g><title>mwpf`mwpf::primal_module_parallel::_&lt;impl mwpf::pointers::ArcUnsafe&lt;mwpf::primal_module_parallel::PrimalModuleParallelUnit&gt;&gt;::individual_solve (18,243 samples, 1.99%)</title><rect x="97.7407%" y="229" width="1.9900%" height="15" fill="rgb(215,77,49)" fg:x="896021" fg:w="18243"/><text x="97.9907%" y="239.50">m..</text></g><g><title>mwpf`mwpf::primal_module_serial::PrimalModuleSerial::solve_step_callback_ptr (18,243 samples, 1.99%)</title><rect x="97.7407%" y="213" width="1.9900%" height="15" fill="rgb(248,100,22)" fg:x="896021" fg:w="18243"/><text x="97.9907%" y="223.50">m..</text></g><g><title>mwpf`&lt;mwpf::dual_module_pq::DualModulePQ&lt;Queue&gt; as mwpf::dual_module::DualModuleImpl&gt;::clear (160 samples, 0.02%)</title><rect x="99.7307%" y="229" width="0.0175%" height="15" fill="rgb(208,67,9)" fg:x="914264" fg:w="160"/><text x="99.9807%" y="239.50"></text></g><g><title>libsystem_kernel.dylib`madvise (93 samples, 0.01%)</title><rect x="99.8316%" y="101" width="0.0101%" height="15" fill="rgb(219,133,21)" fg:x="915189" fg:w="93"/><text x="100.0816%" y="111.50"></text></g><g><title>libsystem_malloc.dylib`nanov2_madvise_block (96 samples, 0.01%)</title><rect x="99.8314%" y="133" width="0.0105%" height="15" fill="rgb(246,46,29)" fg:x="915187" fg:w="96"/><text x="100.0814%" y="143.50"></text></g><g><title>libsystem_malloc.dylib`nanov2_madvise_block_locked (94 samples, 0.01%)</title><rect x="99.8316%" y="117" width="0.0103%" height="15" fill="rgb(246,185,52)" fg:x="915189" fg:w="94"/><text x="100.0816%" y="127.50"></text></g><g><title>mwpf`alloc::collections::btree::map::IntoIter&lt;K,V,A&gt;::dying_next (882 samples, 0.10%)</title><rect x="99.7583%" y="149" width="0.0962%" height="15" fill="rgb(252,136,11)" fg:x="914517" fg:w="882"/><text x="100.0083%" y="159.50"></text></g><g><title>libsystem_platform.dylib`_platform_memset (115 samples, 0.01%)</title><rect x="99.8419%" y="133" width="0.0125%" height="15" fill="rgb(219,138,53)" fg:x="915284" fg:w="115"/><text x="100.0919%" y="143.50"></text></g><g><title>mwpf`&lt;alloc::collections::btree::map::BTreeMap&lt;K,V,A&gt; as core::ops::drop::Drop&gt;::drop (1,556 samples, 0.17%)</title><rect x="99.7510%" y="165" width="0.1697%" height="15" fill="rgb(211,51,23)" fg:x="914450" fg:w="1556"/><text x="100.0010%" y="175.50"></text></g><g><title>mwpf`alloc::sync::Arc&lt;T,A&gt;::drop_slow (607 samples, 0.07%)</title><rect x="99.8545%" y="149" width="0.0662%" height="15" fill="rgb(247,221,28)" fg:x="915399" fg:w="607"/><text x="100.1045%" y="159.50"></text></g><g><title>mwpf`alloc::collections::btree::map::IntoIter&lt;K,V,A&gt;::dying_next (528 samples, 0.06%)</title><rect x="99.8631%" y="133" width="0.0576%" height="15" fill="rgb(251,222,45)" fg:x="915478" fg:w="528"/><text x="100.1131%" y="143.50"></text></g><g><title>mwpf`&lt;alloc::collections::btree::map::IntoIter&lt;K,V,A&gt; as core::ops::drop::Drop&gt;::drop (1,592 samples, 0.17%)</title><rect x="99.7510%" y="181" width="0.1737%" height="15" fill="rgb(217,162,53)" fg:x="914450" fg:w="1592"/><text x="100.0010%" y="191.50"></text></g><g><title>libsystem_malloc.dylib`free_small (105 samples, 0.01%)</title><rect x="99.9329%" y="165" width="0.0115%" height="15" fill="rgb(229,93,14)" fg:x="916118" fg:w="105"/><text x="100.1829%" y="175.50"></text></g><g><title>mwpf`&lt;mwpf::primal_module_serial::PrimalModuleSerial as mwpf::primal_module::PrimalModuleImpl&gt;::clear (1,895 samples, 0.21%)</title><rect x="99.7481%" y="213" width="0.2067%" height="15" fill="rgb(209,67,49)" fg:x="914424" fg:w="1895"/><text x="99.9981%" y="223.50"></text></g><g><title>mwpf`alloc::sync::Arc&lt;T,A&gt;::drop_slow (1,889 samples, 0.21%)</title><rect x="99.7488%" y="197" width="0.2061%" height="15" fill="rgb(213,87,29)" fg:x="914430" fg:w="1889"/><text x="99.9988%" y="207.50"></text></g><g><title>mwpf`core::ptr::drop_in_place&lt;mwpf::matrix::echelon::Echelon&lt;mwpf::matrix::tail::Tail&lt;mwpf::matrix::tight::Tight&lt;mwpf::matrix::basic::BasicMatrix&gt;&gt;&gt;&gt; (232 samples, 0.03%)</title><rect x="99.9295%" y="181" width="0.0253%" height="15" fill="rgb(205,151,52)" fg:x="916087" fg:w="232"/><text x="100.1795%" y="191.50"></text></g><g><title>mwpf`alloc::collections::btree::map::IntoIter&lt;K,V,A&gt;::dying_next (92 samples, 0.01%)</title><rect x="99.9448%" y="165" width="0.0100%" height="15" fill="rgb(253,215,39)" fg:x="916227" fg:w="92"/><text x="100.1948%" y="175.50"></text></g><g><title>mwpf`&lt;rayon_core::job::StackJob&lt;L,F,R&gt; as rayon_core::job::Job&gt;::execute (906,567 samples, 98.89%)</title><rect x="1.0860%" y="325" width="98.8911%" height="15" fill="rgb(221,220,41)" fg:x="9956" fg:w="906567"/><text x="1.3360%" y="335.50">mwpf`&lt;rayon_core::job::StackJob&lt;L,F,R&gt; as rayon_core::job::Job&gt;::execute</text></g><g><title>mwpf`rayon_core::registry::in_worker (897,048 samples, 97.85%)</title><rect x="2.1244%" y="309" width="97.8527%" height="15" fill="rgb(218,133,21)" fg:x="19475" fg:w="897048"/><text x="2.3744%" y="319.50">mwpf`rayon_core::registry::in_worker</text></g><g><title>mwpf`rayon_core::scope::ScopeBase::complete (897,048 samples, 97.85%)</title><rect x="2.1244%" y="293" width="97.8527%" height="15" fill="rgb(221,193,43)" fg:x="19475" fg:w="897048"/><text x="2.3744%" y="303.50">mwpf`rayon_core::scope::ScopeBase::complete</text></g><g><title>mwpf`rayon::iter::plumbing::bridge_producer_consumer::helper (20,502 samples, 2.24%)</title><rect x="97.7407%" y="277" width="2.2364%" height="15" fill="rgb(240,128,52)" fg:x="896021" fg:w="20502"/><text x="97.9907%" y="287.50">m..</text></g><g><title>mwpf`rayon_core::join::join_context::_{{closure}} (20,502 samples, 2.24%)</title><rect x="97.7407%" y="261" width="2.2364%" height="15" fill="rgb(253,114,12)" fg:x="896021" fg:w="20502"/><text x="97.9907%" y="271.50">m..</text></g><g><title>mwpf`rayon::iter::plumbing::bridge_producer_consumer::helper (2,259 samples, 0.25%)</title><rect x="99.7307%" y="245" width="0.2464%" height="15" fill="rgb(215,223,47)" fg:x="914264" fg:w="2259"/><text x="99.9807%" y="255.50"></text></g><g><title>mwpf`&lt;rayon::iter::for_each::ForEachConsumer&lt;F&gt; as rayon::iter::plumbing::Folder&lt;T&gt;&gt;::consume_iter (2,099 samples, 0.23%)</title><rect x="99.7481%" y="229" width="0.2290%" height="15" fill="rgb(248,225,23)" fg:x="914424" fg:w="2099"/><text x="99.9981%" y="239.50"></text></g><g><title>mwpf`hashbrown::raw::RawTable&lt;T,A&gt;::clear (203 samples, 0.02%)</title><rect x="99.9549%" y="213" width="0.0221%" height="15" fill="rgb(250,108,0)" fg:x="916320" fg:w="203"/><text x="100.2049%" y="223.50"></text></g><g><title>mwpf`alloc::sync::Arc&lt;T,A&gt;::drop_slow (179 samples, 0.02%)</title><rect x="99.9576%" y="197" width="0.0195%" height="15" fill="rgb(228,208,7)" fg:x="916344" fg:w="179"/><text x="100.2076%" y="207.50"></text></g><g><title>mwpf`alloc::collections::btree::map::IntoIter&lt;K,V,A&gt;::dying_next (144 samples, 0.02%)</title><rect x="99.9614%" y="181" width="0.0157%" height="15" fill="rgb(244,45,10)" fg:x="916379" fg:w="144"/><text x="100.2114%" y="191.50"></text></g><g><title>mwpf`rayon_core::registry::WorkerThread::wait_until_cold (906,596 samples, 98.89%)</title><rect x="1.0850%" y="341" width="98.8942%" height="15" fill="rgb(207,125,25)" fg:x="9947" fg:w="906596"/><text x="1.3350%" y="351.50">mwpf`rayon_core::registry::WorkerThread::wait_until_cold</text></g><g><title>libsystem_pthread.dylib`thread_start (906,603 samples, 98.89%)</title><rect x="1.0844%" y="437" width="98.8950%" height="15" fill="rgb(210,195,18)" fg:x="9941" fg:w="906603"/><text x="1.3344%" y="447.50">libsystem_pthread.dylib`thread_start</text></g><g><title>libsystem_pthread.dylib`_pthread_start (906,603 samples, 98.89%)</title><rect x="1.0844%" y="421" width="98.8950%" height="15" fill="rgb(249,80,12)" fg:x="9941" fg:w="906603"/><text x="1.3344%" y="431.50">libsystem_pthread.dylib`_pthread_start</text></g><g><title>mwpf`std::sys::unix::thread::Thread::new::thread_start (906,597 samples, 98.89%)</title><rect x="1.0850%" y="405" width="98.8943%" height="15" fill="rgb(221,65,9)" fg:x="9947" fg:w="906597"/><text x="1.3350%" y="415.50">mwpf`std::sys::unix::thread::Thread::new::thread_start</text></g><g><title>mwpf`core::ops::function::FnOnce::call_once{{vtable.shim}} (906,597 samples, 98.89%)</title><rect x="1.0850%" y="389" width="98.8943%" height="15" fill="rgb(235,49,36)" fg:x="9947" fg:w="906597"/><text x="1.3350%" y="399.50">mwpf`core::ops::function::FnOnce::call_once{{vtable.shim}}</text></g><g><title>mwpf`std::sys_common::backtrace::__rust_begin_short_backtrace (906,597 samples, 98.89%)</title><rect x="1.0850%" y="373" width="98.8943%" height="15" fill="rgb(225,32,20)" fg:x="9947" fg:w="906597"/><text x="1.3350%" y="383.50">mwpf`std::sys_common::backtrace::__rust_begin_short_backtrace</text></g><g><title>mwpf`rayon_core::registry::ThreadBuilder::run (906,597 samples, 98.89%)</title><rect x="1.0850%" y="357" width="98.8943%" height="15" fill="rgb(215,141,46)" fg:x="9947" fg:w="906597"/><text x="1.3350%" y="367.50">mwpf`rayon_core::registry::ThreadBuilder::run</text></g><g><title>mwpf`&lt;mwpf::dual_module_pq::DualModulePQ&lt;Queue&gt; as mwpf::dual_module::DualModuleImpl&gt;::clear (171 samples, 0.02%)</title><rect x="99.9794%" y="437" width="0.0187%" height="15" fill="rgb(250,160,47)" fg:x="916544" fg:w="171"/><text x="100.2294%" y="447.50"></text></g><g><title>all (916,733 samples, 100%)</title><rect x="0.0000%" y="453" width="100.0000%" height="15" fill="rgb(216,222,40)" fg:x="0" fg:w="916733"/><text x="0.2500%" y="463.50"></text></g></svg></svg>

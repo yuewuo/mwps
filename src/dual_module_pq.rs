@@ -553,6 +553,9 @@ where
 
     /// all defect vertices (including those mirrored vertices) in this unit
     pub all_defect_vertices: Vec<usize>,
+
+    /// unit is active if it has an edge connected to a boundary vertex with non-zero growth 
+    pub unit_active: ArcManualSafeLock<bool>, 
 }
 
 impl<Queue> DualModulePQ<Queue>
@@ -580,6 +583,10 @@ where
         let time_diff = global_time.clone() - &edge.last_updated_time;
         let newly_grown_amount = &time_diff * &edge.grow_rate;
         edge.growth_at_last_updated_time += newly_grown_amount;
+        if edge.connected_to_boundary_vertex && edge.growth_at_last_updated_time > Rational::zero() {
+            let unit_active = self.unit_active.write();
+            *unit_active = true;
+        }
         edge.last_updated_time = global_time.clone();
         debug_assert!(
             edge.growth_at_last_updated_time <= edge.weight,
@@ -688,6 +695,7 @@ where
             edge_num: initializer.weighted_edges.len(),
             all_mirrored_vertices: vec![],
             all_defect_vertices: vec![], // used only for parallel implementation
+            unit_active: ArcManualSafeLock::new_value(false), // used only for parallel implementation
         }
     }
 
@@ -1317,6 +1325,7 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
             edge_num: partitioned_initializer.edge_num,
             all_mirrored_vertices,
             all_defect_vertices,
+            unit_active: ArcManualSafeLock::new_value(false), // false by default, to be updated later when edge_growth are calcualted
         }
     }
 
