@@ -136,13 +136,13 @@ impl SolverInitializer {
         let defect_vertices_hash: BTreeSet<usize> = BTreeSet::from_iter(defect_vertices.to_vec()); 
         let difference: Vec<usize> = subgraph_defect_vertices.difference(&defect_vertices_hash).cloned().collect();
         if difference.is_empty() {
-            return true;
+            true
         } else {
             println!(
                 "defect vertices: {:?}\nsubgraph_defect_vertices: {:?}\ndifference: {:?}",
                 defect_vertices, subgraph_defect_vertices, difference
             );
-            return false;
+            false
         }
         // defect_vertices.sort();
         // if defect_vertices.len() != subgraph_defect_vertices.len() {

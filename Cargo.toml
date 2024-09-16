@@ -97,6 +97,7 @@ weak-table = "0.3.2"
 petgraph = { version = "0.6.0", features = ["serde-1"] }
 core_affinity = "0.8.0"
 color-print = "0.3.6"
+jemallocator = "0.5.4"
 
 [dev-dependencies]
 test-case = "3.1.0"

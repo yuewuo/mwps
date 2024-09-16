@@ -130,6 +130,11 @@ impl DualNode {
         self.last_updated_time = global_time_ptr.read_recursive().clone();
         self.global_time = Some(global_time_ptr);
     }
+
+    // pub fn clear(&mut self) {
+    //     self.invalid_subgraph.clear();
+
+    // }
 }
 
 pub type DualNodePtr = ArcManualSafeLock<DualNode>;
@@ -873,9 +878,9 @@ impl DualModuleInterfacePtr {
         }
 
         for vertex_index in vertices.iter() {
-            let incident_edges = &vertex_index.read_recursive().edges;
-            let parity = vertex_index.read_recursive().is_defect;
-            matrix.add_constraint(vertex_index.downgrade(), &incident_edges, parity);
+            // let incident_edges = &vertex_index.read_recursive().edges;
+            // let parity = vertex_index.read_recursive().is_defect;
+            matrix.add_constraint(vertex_index.clone());
         }
         matrix.get_solution()
     }

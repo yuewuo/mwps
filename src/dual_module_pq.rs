@@ -370,6 +370,23 @@ impl PartialOrd for VertexPtr {
     }
 }
 
+impl Ord for VertexWeak {
+    fn cmp(&self, other: &Self) -> Ordering {
+        // compare the pointer address 
+        let ptr1 = Weak::as_ptr(self.ptr());
+        let ptr2 = Weak::as_ptr(other.ptr());
+        // https://doc.rust-lang.org/reference/types/pointer.html
+        // "When comparing raw pointers they are compared by their address, rather than by what they point to."
+        ptr1.cmp(&ptr2)
+    }
+}
+
+impl PartialOrd for VertexWeak {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
 // impl VertexPtr {
 //     pub fn get_edge_neighbors(&self) -> Vec<EdgeWeak> {
 //         let vertex = self.read_recursive();
@@ -427,6 +444,7 @@ impl Edge {
         self.growth_at_last_updated_time = Rational::zero();
         self.last_updated_time = Rational::zero();
         self.dual_nodes.clear();
+        self.vertices.clear();
         #[cfg(feature = "incr_lp")]
         self.cluster_weights.clear();
     }
@@ -551,8 +569,8 @@ where
     /// all mirrored vertices of this unit, mainly for parallel implementation
     pub all_mirrored_vertices: Vec<VertexPtr>,
 
-    /// all defect vertices (including those mirrored vertices) in this unit
-    pub all_defect_vertices: Vec<usize>,
+    // /// all defect vertices (including those mirrored vertices) in this unit
+    // pub all_defect_vertices: Vec<usize>,
 
     /// unit is active if it has an edge connected to a boundary vertex with non-zero growth 
     pub unit_active: ArcManualSafeLock<bool>, 
@@ -694,7 +712,7 @@ where
             vertex_num: initializer.vertex_num,
             edge_num: initializer.weighted_edges.len(),
             all_mirrored_vertices: vec![],
-            all_defect_vertices: vec![], // used only for parallel implementation
+            // all_defect_vertices: vec![], // used only for parallel implementation
             unit_active: ArcManualSafeLock::new_value(false), // used only for parallel implementation
         }
     }
@@ -1324,7 +1342,7 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
             vertex_num: partitioned_initializer.vertex_num,
             edge_num: partitioned_initializer.edge_num,
             all_mirrored_vertices,
-            all_defect_vertices,
+            // all_defect_vertices,
             unit_active: ArcManualSafeLock::new_value(false), // false by default, to be updated later when edge_growth are calcualted
         }
     }

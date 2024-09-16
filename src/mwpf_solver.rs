@@ -3,6 +3,7 @@
 //! This module includes some common usage of primal and dual modules to solve MWPF problems.
 //! Note that you can call different primal and dual modules, even interchangeably, by following the examples in this file
 //!
+#![allow(warnings)]
 
 use crate::dual_module::*;
 // use crate::dual_module_serial::*;

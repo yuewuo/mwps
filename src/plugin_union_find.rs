@@ -33,7 +33,7 @@ impl PluginUnionFind {
         }
         let local_edges: BTreeSet<EdgePtr> = matrix.get_view_edges().iter().map(|e| e.upgrade_force()).collect();
         let invalid_subgraph = InvalidSubgraph::new_complete_ptr(
-            &matrix.get_vertices(),
+            &matrix.get_vertices().iter().map(|e| e.upgrade_force()).collect(),
             &local_edges,
         );
         Some(Relaxer::new([(invalid_subgraph, Rational::one())].into()))

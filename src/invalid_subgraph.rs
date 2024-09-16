@@ -193,10 +193,10 @@ impl InvalidSubgraph {
             matrix.add_variable(edge_ptr.downgrade());
         }
         for vertex_ptr in self.vertices.iter() {
-            let vertex = vertex_ptr.read_recursive();
-            let incident_edges = &vertex.edges;
-            let parity = vertex.is_defect;
-            matrix.add_constraint(vertex_ptr.downgrade(), &incident_edges, parity);
+            // let vertex = vertex_ptr.read_recursive();
+            // let incident_edges = &vertex.edges;
+            // let parity = vertex.is_defect;
+            matrix.add_constraint(vertex_ptr.clone());
         }
         if matrix.get_echelon_info().satisfiable {
             let temp = matrix.get_solution().unwrap().into_iter().map(|e| e.upgrade_force().read_recursive().edge_index).collect::<Vec<_>>();
@@ -216,11 +216,11 @@ impl InvalidSubgraph {
             matrix.add_variable(edge_ptr.downgrade());
         }
         for vertex_ptr in self.vertices.iter() {
-            let vertex = vertex_ptr.read_recursive();
-            let incident_edges = &vertex.edges;
+            // let vertex = vertex_ptr.read_recursive();
+            // let incident_edges = &vertex.edges;
             // let incident_edges = &vertex_ptr.get_edge_neighbors();
-            let parity = vertex.is_defect;
-            matrix.add_constraint(vertex_ptr.downgrade(), &incident_edges, parity);
+            // let parity = vertex.is_defect;
+            matrix.add_constraint(vertex_ptr.clone());
         }
         matrix
     }
