@@ -574,6 +574,9 @@ where
 
     /// unit is active if it has an edge connected to a boundary vertex with non-zero growth 
     pub unit_active: ArcManualSafeLock<bool>, 
+
+    /// for fast clear in constant time
+    pub active_timestamp: usize,
 }
 
 impl<Queue> DualModulePQ<Queue>
@@ -714,18 +717,21 @@ where
             all_mirrored_vertices: vec![],
             // all_defect_vertices: vec![], // used only for parallel implementation
             unit_active: ArcManualSafeLock::new_value(false), // used only for parallel implementation
+            active_timestamp: 0,
         }
     }
 
     /// clear all growth and existing dual nodes
     fn clear(&mut self) {
-        self.vertices.iter().for_each(|p| p.write().clear());
-        self.edges.iter().for_each(|p| p.write().clear());
+        self.clear_graph();
+        // self.vertices.iter().for_each(|p| p.write().clear());
+        // self.edges.iter().for_each(|p| p.write().clear());
 
         self.obstacle_queue.clear();
         self.global_time.write().set_zero();
         self.mode_mut().reset();
     }
+    
 
     #[allow(clippy::unnecessary_cast)]
     /// Adding a defect node to the DualModule
@@ -1344,7 +1350,34 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
             all_mirrored_vertices,
             // all_defect_vertices,
             unit_active: ArcManualSafeLock::new_value(false), // false by default, to be updated later when edge_growth are calcualted
+            active_timestamp: 0,
         }
+    }
+
+    /// hard clear all growth (manual call not recommended due to performance drawback)
+    pub fn hard_clear_graph(&mut self) {
+        for edge in self.edges.iter() {
+            // let mut edge = edge.write_force();
+            let mut edge = edge.write();
+            edge.clear();
+            // edge.timestamp = 0;
+        }
+        for vertex in self.vertices.iter() {
+            // let mut vertex = vertex.write_force();
+            let mut vertex = vertex.write();
+            vertex.clear();
+            // vertex.timestamp = 0;
+        }
+        self.active_timestamp = 0;
+    }
+
+    /// soft clear all growth
+    pub fn clear_graph(&mut self) {
+        if self.active_timestamp == usize::MAX {
+            // rarely happens
+            self.hard_clear_graph();
+        }
+        self.active_timestamp += 1; // implicitly clear all edges growth
     }
 
 }

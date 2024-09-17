@@ -1,0 +1,759 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no">
+    <title>Partition Profile Visualize</title>
+<link href="https://fonts.googleapis.com/css?family=Roboto:100,300,400,500,700,900|Material+Icons" rel="stylesheet" type="text/css">
+<link href="https://cdn.jsdelivr.net/npm/animate.css@^4.0.0/animate.min.css" rel="stylesheet" type="text/css">
+<link href="https://cdn.jsdelivr.net/npm/quasar@2.6.6/dist/quasar.prod.css" rel="stylesheet" type="text/css">
+<style>
+body, html {
+    margin: 0;
+    overflow: hidden;
+    height: 100%;
+}
+:root {
+    --s: 1;  /* scale */
+    --control-visibility: hidden;
+}
+.control-bar {
+    position: fixed;
+    width: calc(600px * var(--s));
+    background-color: rgb(250, 250, 250);
+    height: 100%;
+    right: 0;
+    overflow-y: hidden;
+    overflow-x: hidden;
+    visibility: var(--control-visibility);
+}
+.control-bar-inner {
+    width: 600px;
+    height: calc(100% / var(--s));
+    transform: scale(var(--s));
+    transform-origin: 0 0;
+    font-size: 18px;
+}
+.div-svg {
+    position: fixed;
+    height: 100%;
+    overflow-y: hidden;
+    overflow-x: hidden;
+}
+.div-svg-inner {
+    height: calc(100% / var(--s));
+    transform: scale(var(--s));
+    transform-origin: 0 0;
+}
+canvas {
+    display: block;
+}
+.slider {
+    margin-top: 0;
+    margin-left: 35px;
+    width: 530px;
+}
+.small-slider {
+    margin-top: 5px;
+    margin-left: 25px;
+    width: 150px;
+}
+.selector {
+    margin-top: 20px;
+    margin-left: 25px;
+    width: 550px;
+}
+h1 {
+    margin: 20px auto 0 auto;
+    text-align: center;
+    font-size: 40px;
+    line-height: 40px;
+}
+h3 {
+    margin: 0;
+    font-size: 25px;
+    line-height: 25px;
+    font-weight: bold;
+}
+.flex-center-div {
+    width: 600px;
+    margin-top: 10px;
+    display: flex;
+    justify-content: center;
+    flex-direction: row;
+}
+.select-info-div {
+    width: 580px;
+    padding: 10px;
+    margin: 10px;
+}
+.edge-visualizer {
+    display: inline-block;
+    height: 40px;
+    background-color: black;
+    margin: 0 10px 0 10px;
+}
+.left-grown, .unexplored, .right-grown {
+    margin: 0;
+    padding: 0;
+    display: inline-block;
+    height: 100%;
+    text-align: center;
+    font-size: 18px;
+    line-height: 40px;
+    transition: width 0.5s;
+}
+.left-grown {
+    background-color: #E8630A;
+}
+.unexplored {
+    background-color: grey;
+}
+.right-grown {
+    background-color: #FCD900;
+}
+.primal-div {
+    background-color: white;
+    width: 580px;
+    height: 580px;
+    margin: 10px;
+}
+</style>
+</head>
+<body>
+<script src="https://cdn.jsdelivr.net/npm/vue@3.2.33/dist/vue.global.prod.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/quasar@2.6.6/dist/quasar.umd.prod.js"></script>
+
+<div id="app">
+<div class="div-svg" :style="{ width: sizes.canvas_width + 'px' }">
+    <q-scroll-area v-if="!thread_view" class="div-svg-inner" :style="{ width: sizes.canvas_width / sizes.scale + 'px' }"
+            :vertical-thumb-style="vertical_thumb_style" :horizontal-thumb-style="horizontal_thumb_style"
+            :vertical-bar-style="vertical_bar_style" :horizontal-bar-style="horizontal_bar_style">
+        <!-- use SVG to enable direct download of rendered profile -->
+        <svg v-if="round_select != null" :width="svg_width" :height="svg_height" xmlns="http://www.w3.org/2000/svg" style="stroke-width:0;font: 14px sans-serif;">
+            <defs>
+                <marker id="arrowhead" markerWidth="5" markerHeight="4" refX="3.5" refY="2" orient="auto">
+                    <polygon points="0 0, 5 2, 0 4" style="fill:purple;"/>
+                </marker>
+            </defs>
+            <rect :width="length_scale * selected_profile.round_time" :height="decoding_time_height"
+                :x="margin + left_panel" :y="margin" style="fill:yellow;" rx="10" ry="10"/>
+            <rect :width="length_scale * selected_profile.events.verified" :height="decoding_time_height"
+                :x="margin + left_panel" :y="margin" style="fill:blue;" rx="10" ry="10"/>
+            <rect :width="length_scale * selected_profile.events.decoded" :height="decoding_time_height"
+                :x="margin + left_panel" :y="margin" style="fill:red;" rx="10" ry="10"/>
+            <!-- time axis labels -->
+            <g v-if="axis_values.length > 1">
+                <line v-for="time in axis_values" stroke-linecap="round"
+                    :x1="left_panel + margin + length_scale * time" :y1="0"
+                    :x2="left_panel + margin + length_scale * time" :y2="svg_height"
+                    style="stroke-width:2;stroke:grey;"/>
+                <text :x="left_panel + margin + length_scale * axis_values[1] - 5" :y="margin + decoding_time_height / 2 + 5" text-anchor="end">{{ axis_label }}</text>
+            </g>
+            <g v-for="([event_time, info], display_index) in display_info_vec">
+                <rect v-if="info.is_base_partition" :width="length_scale * (event_time.end - event_time.start)" :height="job_height"
+                    :x="left_panel + margin + length_scale * event_time.start" :y="job_y_bias + display_index * (job_height + margin)"
+                    style="fill:lightblue;" rx="10" ry="10"/>
+                <rect v-if="!info.is_base_partition" :width="length_scale * (event_time.end - event_time.start)" :height="job_height"
+                    :x="left_panel + margin + length_scale * event_time.start" :y="job_y_bias + display_index * (job_height + margin)"
+                    style="fill:lightgreen;" rx="10" ry="10"/>
+                <line v-if="show_dependency && info.left_event_time != null" stroke-linecap="round"
+                    :x1="left_panel + margin + length_scale * info.left_event_time.end" :y1="job_y_bias + info.left_display_index * (job_height + margin) + job_height / 2"
+                    :x2="left_panel + margin + length_scale * event_time.start" :y2="job_y_bias + display_index * (job_height + margin)"
+                    style="stroke-width:2;stroke:purple;" marker-end="url(#arrowhead)"/>
+                <line v-if="show_dependency && info.right_event_time != null" stroke-linecap="round"
+                    :x1="left_panel + margin + length_scale * info.right_event_time.end" :y1="job_y_bias + info.right_display_index * (job_height + margin) + job_height / 2"
+                    :x2="left_panel + margin + length_scale * event_time.start" :y2="job_y_bias + display_index * (job_height + margin) + job_height"
+                    style="stroke-width:2;stroke:purple;" marker-end="url(#arrowhead)"/>
+            </g>
+            <!-- left panel -->
+            <text :x="left_panel + margin - 3" :y="job_y_bias - 20" text-anchor="end">vertex range</text>
+            <text :x="left_panel + margin - 3" :y="job_y_bias" text-anchor="end">{{ display_info_vec[0][1].owning_range[0] }}</text>
+            <g v-for="([event_time, info], display_index) in display_info_vec">
+                <text :x="left_panel + margin - 3" :y="job_y_bias + (display_index + 1) * (job_height + margin)"
+                    text-anchor="end">{{ info.owning_range[1] }}</text>
+                <text :x="margin" :y="job_y_bias + (display_index + 0.5) * (job_height + margin)"
+                    text-anchor="start" style="fill:blue;">job {{ display_index_to_unit_index[display_index] }}</text>
+            </g>
+            <!-- time information -->
+            <text :x="left_panel + length_scale * selected_profile.round_time" :y="margin + decoding_time_height / 2 + 5" 
+                text-anchor="end">{{ Number.parseFloat(selected_profile.round_time).toExponential(3) }} (s)</text>
+            <g v-for="([event_time, info], display_index) in display_info_vec">
+                <text :x="left_panel + length_scale * event_time.end" :y="job_y_bias + display_index * (job_height + margin) + job_height / 2 + 5"
+                    text-anchor="end">
+                        finish at {{ Number.parseFloat(event_time.end).toExponential(3) }} (s)
+                        , duration: {{ Number.parseFloat(event_time.end - event_time.start).toExponential(3) }} (s)
+                        , computation: {{ Number.parseFloat(event_time.end - event_time.start).toExponential(3) }} (s)</text>
+            </g>
+        </svg>
+    </q-scroll-area>
+    <q-scroll-area v-if="thread_view" class="div-svg-inner" :style="{ width: sizes.canvas_width / sizes.scale + 'px' }"
+            :vertical-thumb-style="vertical_thumb_style" :horizontal-thumb-style="horizontal_thumb_style"
+            :vertical-bar-style="vertical_bar_style" :horizontal-bar-style="horizontal_bar_style">
+        <!-- use SVG to enable direct download of rendered profile -->
+        <svg v-if="round_select != null" :width="svg_width" :height="thread_view_svg_height" xmlns="http://www.w3.org/2000/svg" style="stroke-width:0;font: 14px sans-serif;">
+            <rect :width="length_scale * selected_profile.round_time" :height="decoding_time_height"
+                :x="margin + left_panel" :y="margin" style="fill:yellow;" rx="10" ry="10"/>
+            <rect :width="length_scale * selected_profile.events.verified" :height="decoding_time_height"
+                :x="margin + left_panel" :y="margin" style="fill:blue;" rx="10" ry="10"/>
+            <rect :width="length_scale * selected_profile.events.decoded" :height="decoding_time_height"
+                :x="margin + left_panel" :y="margin" style="fill:red;" rx="10" ry="10"/>
+            <!-- time axis labels -->
+            <g v-if="axis_values.length > 1">
+                <line v-for="time in axis_values" stroke-linecap="round"
+                    :x1="left_panel + margin + length_scale * time" :y1="0"
+                    :x2="left_panel + margin + length_scale * time" :y2="thread_view_svg_height"
+                    style="stroke-width:2;stroke:grey;"/>
+                <text :x="left_panel + margin + length_scale * axis_values[1] - 5" :y="margin + decoding_time_height / 2 + 5" text-anchor="end">{{ axis_label }}</text>
+            </g>
+            <g v-for="([event_time, info], _) in display_info_vec">
+                <line v-if="show_dependency && info.left_event_time != null" stroke-linecap="round"
+                    :x1="left_panel + margin + length_scale * info.left_event_time.end"
+                    :y1="job_y_bias + info.left_event_time.thread_index * (job_height + margin) + job_height / 2"
+                    :x2="left_panel + margin + length_scale * event_time.start"
+                    :y2="job_y_bias + event_time.thread_index * (job_height + margin) + job_height / 2"
+                    style="stroke-width:2;stroke:purple;" marker-end="url(#arrowhead)"/>
+                <line v-if="show_dependency && info.right_event_time != null" stroke-linecap="round"
+                    :x1="left_panel + margin + length_scale * info.right_event_time.end"
+                    :y1="job_y_bias + info.right_event_time.thread_index * (job_height + margin) + job_height / 2"
+                    :x2="left_panel + margin + length_scale * event_time.start"
+                    :y2="job_y_bias + event_time.thread_index * (job_height + margin) + job_height / 2"
+                    style="stroke-width:2;stroke:purple;" marker-end="url(#arrowhead)"/>
+            </g>
+            <g v-for="([event_time, info], _) in display_info_vec">
+                <rect v-if="info.is_base_partition" :width="length_scale * (event_time.end - event_time.start)" :height="job_height"
+                    :x="left_panel + margin + length_scale * event_time.start" :y="job_y_bias + event_time.thread_index * (job_height + margin)"
+                    style="fill:lightblue;" rx="10" ry="10"/>
+                <rect v-if="!info.is_base_partition" :width="length_scale * (event_time.end - event_time.start)" :height="job_height"
+                    :x="left_panel + margin + length_scale * event_time.start" :y="job_y_bias + event_time.thread_index * (job_height + margin)"
+                    style="fill:lightgreen;"/>
+            </g>
+            <!-- left panel -->
+            <text :x="left_panel + margin - 3" :y="job_y_bias - margin * 2" text-anchor="end">thread index</text>
+            <g v-for="thread_index in selected_profile_statistics.max_thread_index + 1">
+                <text :x="left_panel + margin - 10" :y="job_y_bias + (thread_index - 0.5) * (job_height + margin)"
+                    text-anchor="end">{{ thread_index - 1 }}</text>
+            </g>
+            <!-- time information -->
+            <text :x="left_panel + length_scale * selected_profile.round_time" :y="margin + decoding_time_height / 2 + 5" 
+                text-anchor="end">{{ Number.parseFloat(selected_profile.round_time).toExponential(3) }} (s)</text>
+            <g v-for="([event_time, info], _) in display_info_vec">
+                <text v-if="show_unit_index && info.is_base_partition" :x="left_panel + length_scale * event_time.end"
+                    :y="job_y_bias + event_time.thread_index * (job_height + margin) + job_height / 2 + 5"
+                    text-anchor="end">{{ info.unit_index }}</text>
+            </g>
+        </svg>
+    </q-scroll-area>
+</div>
+<div class="control-bar">
+    <q-scroll-area class="control-bar-inner" :vertical-thumb-style="vertical_thumb_style" :horizontal-thumb-style="horizontal_thumb_style"
+            :vertical-bar-style="vertical_bar_style" :horizontal-bar-style="horizontal_bar_style">
+        <div class="flex-center-div"><h1>Partition Profile</h1></div>
+        <q-banner inline-actions class="text-white bg-red" v-if="error_message != null" style="margin-top: 20px;">
+            {{ error_message }}
+        </q-banner>
+        <q-banner inline-actions class="text-black bg-yellow" v-if="warning_message != null" style="margin-top: 20px;">
+            {{ warning_message }}
+        </q-banner>
+        <div class="selector">
+            <q-select filled v-model="round_select_label" :options="round_labels" options-dense behavior="menu" rounded>
+                <template v-slot:before>
+                    <q-btn round flat icon="arrow_circle_left" :disabled="round_select == 0" @click="round_select -= 1" size="xl"/>
+                </template>
+                <template v-slot:after>
+                    <q-btn round flat icon="arrow_circle_right" :disabled="round_select == round_num-1" @click="round_select += 1" size="xl"/>
+                </template>
+            </q-select>
+        </div>
+        <div class="slider">
+            <q-slider v-model="round_select" :min="0" :max="round_num-1" :step="1" snap
+                thumb-size="25px" track-size="8px"></q-slider>
+        </div>
+        <div class="flex-center-div">
+            <div><q-toggle v-model="adaptive_scale" label="adaptive scale" size="md"/></div>
+            <span style="margin: 0 15px 0 15px; line-height: 52px; font-size: 25px;"></span>
+            <q-select rounded outlined v-model="length_scale_selected" :options="length_scale_options" label="unit time" style="width: 150px;"
+                emit-value behavior="menu" map-options dense></q-select>
+            <div class="small-slider">
+                <q-slider v-model="relative_scale_log" :min="-1.2" :max="1.2" :step="0.01" snap color="deep-orange"
+                    thumb-size="25px" track-size="8px"></q-slider>
+            </div>
+        </div>
+        <div class="flex-center-div">
+            <div><q-toggle color="green" v-model="thread_view" label="thread view" size="md"/></div>
+            <div><q-toggle color="green" v-model="show_dependency" label="show_dependency" size="md"/></div>
+            <div><q-toggle color="green" v-model="show_unit_index" label="show_unit_index" size="md"/></div>
+        </div>
+        <q-card bordered class="select-info-div" v-if="selected_profile != null">
+            <q-card-section class="bg-cyan text-white">
+                <div class="text-h6">Profile {{ round_select }}</div>
+            </q-card-section>
+            <q-separator inset></q-separator>
+            <q-card-section>
+                <div class="text-body1">Round Time: {{ Number.parseFloat(selected_profile.round_time).toExponential(3) }} (s)</div>
+                    <div class="text-body2" style="padding-left: 30px;">Pure Computation 
+                        ({{ Math.round(100 * selected_profile_statistics.computation_time / selected_profile.round_time) }}%):
+                        {{ Number.parseFloat(selected_profile_statistics.computation_time).toExponential(3) }} (s)</div>
+                        <div class="text-body2" style="padding-left: 60px;">Per Defect:
+                            {{ Number.parseFloat(selected_profile_statistics.decoding_time_per_defect).toExponential(3) }} (s)</div>
+                        <div class="text-body2" style="padding-left: 60px;">Per Measurement Round:
+                            {{ Number.parseFloat(selected_profile_statistics.decoding_time_per_measurement_round).toExponential(3) }} (s)</div>
+                        <div class="text-body2" style="padding-left: 60px;">Max Base Partition 
+                            ({{ Math.round(100 * selected_profile_statistics.base_partition_computation_time / selected_profile.round_time) }}%):
+                            {{ Number.parseFloat(selected_profile_statistics.base_partition_computation_time).toExponential(3) }} (s)</div>
+                        <div class="text-body2" style="padding-left: 60px;">Min Base Partition 
+                            ({{ Math.round(100 * selected_profile_statistics.base_partition_computation_min / selected_profile.round_time) }}%):
+                            {{ Number.parseFloat(selected_profile_statistics.base_partition_computation_min).toExponential(3) }} (s)</div>
+                    <div class="text-body2" style="padding-left: 30px;">Preparation
+                        ({{ Math.round(100 * selected_profile_statistics.preparation_time / selected_profile.round_time) }}%):
+                        {{ Number.parseFloat(selected_profile_statistics.preparation_time).toExponential(3) }} (s)</div>
+                    <div class="text-body2" style="padding-left: 30px;">Garbage Collection
+                        ({{ Math.round(100 * selected_profile_statistics.garbage_collection_time / selected_profile.round_time) }}%):
+                        {{ Number.parseFloat(selected_profile_statistics.garbage_collection_time).toExponential(3) }} (s)</div>
+                    <div class="text-body2" style="padding-left: 30px;">Per Defect:
+                        {{ Number.parseFloat(selected_profile_statistics.round_time_per_defect).toExponential(3) }} (s)</div>
+                    <div class="text-body2" style="padding-left: 30px;">Per Measurement Round:
+                        {{ Number.parseFloat(selected_profile_statistics.round_time_per_measurement_round).toExponential(3) }} (s)</div>
+                <div class="text-body1">Computation CPU Seconds: {{ Number.parseFloat(selected_profile_statistics.computation_cpu_seconds).toExponential(3) }} (s)</div>
+                    <div class="text-body2" style="padding-left: 30px;">Base Partition
+                        ({{ Math.round(100 * selected_profile_statistics.computation_cpu_seconds_base_partition / selected_profile_statistics.computation_cpu_seconds) }}%):
+                        {{ Number.parseFloat(selected_profile_statistics.computation_cpu_seconds_base_partition).toExponential(3) }} (s)</div>
+                    <div class="text-body2" style="padding-left: 30px;">Fusion
+                        ({{ Math.round(100 * selected_profile_statistics.computation_cpu_seconds_fusion / selected_profile_statistics.computation_cpu_seconds) }}%):
+                        {{ Number.parseFloat(selected_profile_statistics.computation_cpu_seconds_fusion).toExponential(3) }} (s)</div>
+                    <div class="text-body2" style="padding-left: 30px;">Per Defect:
+                        {{ Number.parseFloat(selected_profile_statistics.cpu_time_per_defect).toExponential(3) }} (s)</div>
+                    <div class="text-body2" style="padding-left: 30px;">Per Measurement Round:
+                        {{ Number.parseFloat(selected_profile_statistics.cpu_time_per_measurement_round).toExponential(3) }} (s)</div>
+                <div class="text-body1">Noisy Measurements: {{ benchmark_config.noisy_measurements }}</div>
+            </q-card-section>
+        </q-card>
+    </q-scroll-area>
+</div>
+</div>
+
+<script>
+
+// fetch partition profile runtime data
+const urlParams = new URLSearchParams(window.location.search)
+const filename = urlParams.get('filename')
+if (filename == null) {
+    alert("no filename found in url")
+}
+const global_length_scale = urlParams.get('length_scale')
+
+const { ref, reactive, watch, computed } = Vue
+
+const window_inner_width = ref(0)
+const window_inner_height = ref(0)
+function on_resize() {
+    window_inner_width.value = window.innerWidth
+    window_inner_height.value = window.innerHeight
+}
+on_resize()
+window.addEventListener('resize', on_resize)
+window.addEventListener('orientationchange', on_resize)
+
+const sizes = reactive({
+    control_bar_width: 0,
+    canvas_width: 0,
+    canvas_height: 0,
+    scale: 1,
+})
+
+watch([window_inner_width, window_inner_height], () => {
+    const window_scale = urlParams.get('window_scale')
+    if (window_scale != null) {
+        sizes.scale = window_scale
+    } else {
+    sizes.scale = window_inner_width.value / 1920
+    if (sizes.scale > window_inner_height.value / 1080) {  // ultra-wide
+        sizes.scale = window_inner_height.value / 1080
+    }
+    if (sizes.scale < 0.5) {
+        sizes.scale = 0.5
+    }
+    if (window_inner_width.value * 0.9 < 300) {
+        sizes.scale = window_inner_width.value / 600 * 0.9
+    }
+    }
+    document.documentElement.style.setProperty('--s', sizes.scale)
+    // sizes.scale = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--s'))
+    sizes.control_bar_width = 600 * sizes.scale
+    sizes.canvas_width = window_inner_width.value - sizes.control_bar_width
+    sizes.canvas_height = window_inner_height.value
+}, { immediate: true })
+
+const partition_config = ref(null)
+const benchmark_config = ref(null)
+const round_profiles = reactive([])
+
+// create vue3 app
+const App = {
+    setup() {
+        let app = {
+            error_message: ref(null),
+            warning_message: ref(null),
+            partition_config: partition_config,
+            benchmark_config: benchmark_config,
+            round_profiles: round_profiles,
+            unit_index_to_display_index: reactive({}),
+            display_index_to_unit_index: reactive([]),
+            unit_info_vec: reactive([]),  // local information about units
+            sizes: sizes,
+            thread_view: ref(true),
+            show_dependency: ref(true),
+            // round select
+            round_num: ref(1),
+            round_select: ref(null),
+            round_select_label: ref(0),
+            round_labels: reactive([]),
+            // job select
+            current_selected: ref(null),
+            selected_profile: computed(() => app.round_profiles[app.round_select.value]),
+            // svg configurations
+            margin: parseInt(urlParams.get('margin') || 10),
+            decoding_time_height: 20,
+            job_height: parseInt(urlParams.get('job_height') || 30),
+            left_panel: 100,  // display text information
+            job_y_bias: computed(() => app.decoding_time_height + 2 * app.margin),
+            svg_width: computed(() => app.length_scale.value * app.selected_profile.value.round_time + 2 * app.margin + app.left_panel),
+            svg_height: computed(() => (app.job_height + app.margin) * app.selected_profile.value.solver_profile.primal.event_time_vec.length + app.job_y_bias.value),
+            base_length_scale: ref(100),  // how many pixels for each second
+            relative_scale_log: ref(parseInt(urlParams.get('relative_scale_log') || 0)),
+            length_scale: computed(() => app.base_length_scale.value * Math.pow(10, app.relative_scale_log.value)),
+            adaptive_scale: ref(true),
+            length_scale_selected: ref(urlParams.get('length_scale_selected') || "adaptive"),
+            length_scale_options: reactive([{label:"adaptive",value:"adaptive"}
+                , {label:"1us",value:1e-6}, {label:"10us",value:1e-5}, {label:"100us",value:1e-4}
+                , {label:"1ms",value:1e-3}, {label:"10ms",value:1e-2}, {label:"100ms",value:1e-1}
+                , {label:"1s",value:1}, {label:"10s",value:10}, {label:"100s",value:100}, {label:"1000s",value:1000}]),
+            show_unit_index: ref(true),
+        }
+        return app
+    },
+    async mounted() {
+        // after Vue is loaded, make the page visible
+        document.documentElement.style.setProperty('--control-visibility', 'visible')
+        // fetch profile
+        try {
+            let response = await fetch('./data/' + filename, { cache: 'no-cache', })
+            lines = (await response.text()).split("\n")
+            for (let i=0; i<lines.length && lines[i] != ""; ++i) {
+                if (i == 0) {
+                    this.partition_config = JSON.parse(lines[i])
+                } else if (i == 1) {
+                    this.benchmark_config = JSON.parse(lines[i])
+                } else {
+                    this.round_profiles.push(JSON.parse(lines[i]))
+                }
+            }
+            // console.log(partition_config)
+        } catch (e) {
+            this.error_message = "fetch file error"
+            throw e
+        }
+        // load profile data
+        this.round_num = this.round_profiles.length
+        for (let [idx, value] of this.round_profiles.entries()) {
+            this.round_labels.push(`[${idx}] decoding time: ${Number.parseFloat(value.round_time).toExponential(3)}`)
+        }
+        this.round_select_label = this.round_labels[this.round_profiles.length < 21 ? this.round_profiles.length - 1 : 20]
+        // add keyboard shortcuts
+        document.onkeydown = (event) => {
+            if (!event.metaKey) {
+                if (event.key == "ArrowRight") {
+                    if (this.round_select < this.round_num - 1) {
+                        this.round_select += 1
+                    }
+                } else if (event.key == "ArrowLeft") {
+                    if (this.round_select > 0) {
+                        this.round_select -= 1
+                    }
+                } else {
+                    return  // unrecognized, propagate to other listeners
+                }
+                event.preventDefault()
+                event.stopPropagation()
+            }
+        }
+        // reorder the units for easier dependency drawing
+        this.unit_index_to_display_index = Array(this.partition_config.partitions.length + this.partition_config.fusions.length)
+        this.display_index_to_unit_index = Array(this.partition_config.partitions.length + this.partition_config.fusions.length)
+        for (let i=0; i<this.partition_config.partitions.length; ++i) {
+            this.unit_index_to_display_index[i] = i
+            this.unit_info_vec.push({
+                left_most: i,  // unit index, not display index
+                right_most: i,  // unit index, not display index
+            })
+        }
+        for (let i=0; i<this.partition_config.fusions.length; ++i) {
+            let unit_index = i + this.partition_config.partitions.length
+            let [left_index, right_index] = this.partition_config.fusions[i]
+            let max_left_most = Math.max(this.unit_info_vec[left_index].left_most, this.unit_info_vec[right_index].left_most)
+            let min_right_most = Math.min(this.unit_info_vec[left_index].right_most, this.unit_info_vec[right_index].right_most)
+            let right = Math.max(max_left_most, min_right_most)
+            let left = Math.min(max_left_most, min_right_most)
+            console.assert(right == left + 1, "invalid partition")
+            let display_index = this.unit_index_to_display_index[right]
+            this.unit_index_to_display_index[unit_index] = display_index
+            for (let j=0; j<unit_index; ++j) {
+                if (this.unit_index_to_display_index[j] >= display_index) {
+                    this.unit_index_to_display_index[j] = this.unit_index_to_display_index[j] + 1  // shift everything after to vacate the space
+                }
+            }
+            this.unit_info_vec.push({
+                left_most: Math.min(this.unit_info_vec[left_index].left_most, this.unit_info_vec[right_index].left_most),
+                right_most: Math.max(this.unit_info_vec[left_index].right_most, this.unit_info_vec[right_index].right_most),
+            })
+        }
+        for (let unit_index=0; unit_index<this.unit_index_to_display_index.length; ++unit_index) {
+            this.display_index_to_unit_index[this.unit_index_to_display_index[unit_index]] = unit_index
+        }
+        // user can set length scale in url
+        if (global_length_scale != null) {
+            this.adaptive_scale = false
+            this.base_length_scale = global_length_scale
+            this.length_scale_options.push({label:"custom",value:"custom"})
+            this.length_scale_selected = "custom"
+        }
+    },
+    methods: {
+        show_round(round_idx) {
+            try {
+                if (this.adaptive_scale) {  // automatic zoom to enable best visualization at first
+                    this.base_length_scale = (this.sizes.canvas_width / this.sizes.scale - 2 * this.margin - this.left_panel) / this.selected_profile.round_time
+                }
+            } catch (e) {
+                this.error_message = "load data error"
+                throw e
+            }
+        },
+        set_length_scale(unit_time) {
+            this.relative_scale_log = 0
+            if (unit_time == "adaptive") {
+                this.adaptive_scale = true
+                return
+            }
+            if (unit_time == "custom") {
+                this.adaptive_scale = false
+                this.base_length_scale = global_length_scale
+                return
+            }
+            this.adaptive_scale = false
+            this.base_length_scale = (this.sizes.canvas_width / this.sizes.scale - 2 * this.margin - this.left_panel) / unit_time / 5
+        },
+        update_selected_display() {
+            if (this.current_selected == null) return
+        },
+    },
+    watch: {
+        async round_select() {
+            // console.log(this.round_select)
+            this.show_round(this.round_select)  // load the round
+            this.round_select_label = this.round_labels[this.round_select]
+            for (const _ of Array(4).keys()) await Vue.nextTick()
+            this.update_selected_display()
+        },
+        round_select_label() {
+            this.round_select = parseInt(this.round_select_label.split(']')[0].split('[')[1])
+        },
+        current_selected() {
+            this.update_selected_display()
+        },
+        lock_view() {
+            gui3d.enable_control.value = !this.lock_view
+        },
+        length_scale_selected() {
+            this.set_length_scale(this.length_scale_selected)
+        },
+        adaptive_scale() {
+            if (this.adaptive_scale) {
+                this.relative_scale_log = 0
+                this.length_scale_selected = "adaptive"
+                this.show_round(this.round_select)
+            }
+        },
+        async sizes() {
+            for (const _ of Array(4).keys()) await Vue.nextTick()
+            this.show_round(this.round_select)
+        },
+    },
+    computed: {
+        scale() {
+            return this.sizes.scale
+        },
+        display_info_vec() {
+            const original_event_time_vec = this.selected_profile.solver_profile.primal.event_time_vec
+            let display_info_vec = []
+            for (let i=0; i<original_event_time_vec.length; ++i) {
+                let info = { }
+                display_info_vec.push([original_event_time_vec[this.display_index_to_unit_index[i]], info])
+            }
+            // fill in useful display unit information
+            for (let i=0; i<this.partition_config.partitions.length; ++i) {
+                let unit_index = i
+                let [left_vertex, right_vertex] = this.partition_config.partitions[i]
+                let [_, info] = display_info_vec[this.unit_index_to_display_index[unit_index]]
+                info.owning_range = [left_vertex, right_vertex]
+                info.is_base_partition = true
+                info.unit_index = unit_index
+            }
+            for (let i=0; i<this.partition_config.fusions.length; ++i) {
+                let unit_index = i + this.partition_config.partitions.length
+                let [left_index, right_index] = this.partition_config.fusions[i]
+                let [_, info] = display_info_vec[this.unit_index_to_display_index[unit_index]]
+                info.unit_index = unit_index
+                info.left_display_index = this.unit_index_to_display_index[left_index]
+                info.right_display_index = this.unit_index_to_display_index[right_index]
+                if (info.left_display_index > info.right_display_index) {  // make sure left_display_index < right_display_index
+                    const left_display_index = info.left_display_index
+                    info.left_display_index = info.right_display_index
+                    info.right_display_index = left_display_index
+                }
+                console.assert(info.left_display_index < info.right_display_index)
+                info.left_event_time = original_event_time_vec[this.display_index_to_unit_index[info.left_display_index]]
+                info.right_event_time = original_event_time_vec[this.display_index_to_unit_index[info.right_display_index]]
+                info.owning_range = [
+                    display_info_vec[info.left_display_index][1].owning_range[1],
+                    display_info_vec[info.right_display_index][1].owning_range[0],
+                ]
+            }
+            return display_info_vec
+        },
+        axis_interval() {
+            const min_interval_pixel = 50
+            for (let interval of [1e-6, 1e-5, 1e-4, 1e-3, 1e-2, 1e-1, 1, 10, 100, 1000]) {
+                if (interval * this.length_scale >= min_interval_pixel) {
+                    return interval
+                }
+            }
+            return 1000
+        },
+        axis_label() {
+            let axis_interval = this.axis_interval
+            if (axis_interval < 1e-3) return `${axis_interval * 1e6}us`
+            if (axis_interval < 1) return `${axis_interval * 1e3}ms`
+            return `${axis_interval}s`
+        },
+        axis_values() {
+            let axis_values = []
+            let axis_interval = this.axis_interval
+            let time = 0
+            for (let i=0; i<1000 && time < this.selected_profile.round_time; ++i) {
+                axis_values.push(time)
+                time += axis_interval
+            }
+            return axis_values
+        },
+        selected_profile_statistics() {
+            const event_time_vec = this.selected_profile.solver_profile.primal.event_time_vec
+            let min_event_time = event_time_vec[0].start
+            let max_event_time = event_time_vec[0].end
+            let max_base_event_end = event_time_vec[0].end
+            let min_base_event_end = event_time_vec[0].end
+            for (let i=1; i<event_time_vec.length; ++i) {
+                min_event_time = Math.min(min_event_time, event_time_vec[i].start)
+                max_event_time = Math.max(max_event_time, event_time_vec[i].end)
+                if (i < this.partition_config.partitions.length) {
+                    max_base_event_end = Math.max(max_base_event_end, event_time_vec[i].end)
+                    min_base_event_end = Math.min(min_base_event_end, event_time_vec[i].end)
+                }
+            }
+            let computation_time = max_event_time - min_event_time
+            let preparation_time = min_event_time
+            let garbage_collection_time = this.selected_profile.round_time - max_event_time
+            let computation_cpu_seconds = 0
+            let computation_cpu_seconds_base_partition = 0
+            for (let i=0; i<event_time_vec.length; ++i) {
+                computation_cpu_seconds += event_time_vec[i].end - event_time_vec[i].start
+                if (i < this.partition_config.partitions.length) {
+                    computation_cpu_seconds_base_partition += event_time_vec[i].end - event_time_vec[i].start
+                }
+            }
+            let computation_cpu_seconds_fusion = computation_cpu_seconds - computation_cpu_seconds_base_partition
+            let base_partition_computation_time = max_base_event_end - min_event_time
+            let base_partition_computation_min = min_base_event_end - min_event_time
+            let round_time_per_defect = this.selected_profile.round_time / this.selected_profile.defect_num
+            let round_time_per_measurement_round = this.selected_profile.round_time / (this.benchmark_config.noisy_measurements + 1)
+            let decoding_time_per_defect = this.selected_profile.events.decoded / this.selected_profile.defect_num
+            let decoding_time_per_measurement_round = this.selected_profile.events.decoded / (this.benchmark_config.noisy_measurements + 1)
+            let cpu_time_per_defect = computation_cpu_seconds / this.selected_profile.defect_num
+            let cpu_time_per_measurement_round = computation_cpu_seconds / (this.benchmark_config.noisy_measurements + 1)
+            let max_thread_index = 0
+            for (let i=0; i<event_time_vec.length; ++i) {
+                if (event_time_vec[i].thread_index > max_thread_index) {
+                    max_thread_index = event_time_vec[i].thread_index
+                }
+            }
+            let profile_statistics = {
+                computation_time,
+                preparation_time,
+                garbage_collection_time,
+                computation_cpu_seconds,
+                base_partition_computation_time,
+                base_partition_computation_min,
+                round_time_per_defect,
+                round_time_per_measurement_round,
+                decoding_time_per_defect,
+                decoding_time_per_measurement_round,
+                cpu_time_per_defect,
+                cpu_time_per_measurement_round,
+                computation_cpu_seconds_base_partition,
+                computation_cpu_seconds_fusion,
+                max_thread_index,
+            }
+            // console.log(profile_statistics)
+            return profile_statistics
+        },
+        thread_view_svg_height() {
+            return (this.job_height + this.margin) * (this.selected_profile_statistics.max_thread_index + 1) + this.job_y_bias
+        },
+        vertical_thumb_style() {
+            return {
+                right: `4px`,
+                borderRadius: `5px`,
+                backgroundColor: '#027be3',
+                width: `5px`,
+                opacity: 0.75
+            }
+        },
+        horizontal_thumb_style() {
+            return {
+                bottom: `4px`,
+                borderRadius: `5px`,
+                backgroundColor: '#027be3',
+                height: `5px`,
+                opacity: 0.75
+            }
+        },
+        vertical_bar_style() {
+            return {
+                right: `2px`,
+                borderRadius: `9px`,
+                backgroundColor: '#027be3',
+                width: `9px`,
+                opacity: 0.2
+            }
+        },
+        horizontal_bar_style() {
+            return {
+                bottom: `2px`,
+                borderRadius: `9px`,
+                backgroundColor: '#027be3',
+                height: `9px`,
+                opacity: 0.2
+            }
+        },
+    },
+}
+
+const app = Vue.createApp(App)
+app.use(Quasar)
+window.app = app.mount("#app")
+
+</script>
+
+</body>
+</html>
