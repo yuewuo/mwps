@@ -813,17 +813,10 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
     /// check the maximum length to grow (shrink) for all nodes, return a list of conflicting reason and a single number indicating the maximum rate to grow:
     /// this number will be 0 if any conflicting reason presents
     fn compute_maximum_update_length(&mut self) -> GroupMaxUpdateLength {
+        // we need this to run on the newly (additionally) added unit
+        self.serial_module.compute_maximum_update_length()
         // we should not need this, refer to the `compute_maximum_update_length()` implementation in DualModuleParallelUnitPtr
-        unimplemented!()
-        // println!("unit compute max update length");
-        // let mut group_max_update_length = GroupMaxUpdateLength::new();
-        // self.bfs_compute_maximum_update_length(&mut group_max_update_length);
-        
-        // // // we only update the group_max_update_length for the units involed in fusion
-        // // if self.involved_in_fusion {
-        // //     group_max_update_length.update(); 
-        // // }
-        // group_max_update_length
+        // unimplemented!()
     }
 
     // /// An optional function that can manipulate individual dual node, not necessarily supported by all implementations
@@ -837,13 +830,10 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
     /// grow a specific length globally, length must be positive.
     /// note that a negative growth should be implemented by reversing the speed of each dual node
     fn grow(&mut self, length: Rational) {
+        // we need this to run on the newly (additionally) added unit
+        self.serial_module.grow(length);
         // we should not need this, refer to the `grow()` implementation in DualModuleParallelUnitPtr
-        unimplemented!()
-        // let x = &*self;
-        // // let dual_module_unit: ArcRwLock<DualModuleParallelUnit<SerialModule, Queue>> = ArcRwLock::new_value(x.clone());
-        // let dual_module_unit = std::ptr::addr_of!(self);
-        // dual_module_unit.bfs_grow(length);
-        // self.bfs_grow(length);
+        // unimplemented!()
     }
 
     fn get_edge_nodes(&self, edge_ptr: EdgePtr) -> Vec<DualNodePtr> {
@@ -1276,52 +1266,45 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
 impl<SerialModule: DualModuleImpl + Send + Sync, Queue> DualModuleParallelUnit<SerialModule, Queue> 
 where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug + Send + Sync + Clone,
 {
-    // pub fn fuse_helper(&mut self,         
-    //     other_dual_unit: &DualModuleParallelUnitPtr<SerialModule, Queue>
-    // ) {
-    //     if let Some(is_fused) = self.adjacent_parallel_units.get_mut(other_dual_unit) {
-    //         *is_fused = true;
-    //     }        
-    // }
-    
-    // pub fn fuse(
-    //     &mut self, 
-    //     self_interface: &DualModuleInterfacePtr, 
-    //     other_interface: &DualModuleInterfacePtr, 
-    //     other_dual_unit: &DualModuleParallelUnitPtr<SerialModule>
-    // ) {
+    pub fn new_seperate_config(initializer: &SolverInitializer,
+        seperate_partition_info: &PartitionInfo,
+        config: DualModuleParallelConfig
+    ) -> Self {
 
-    //     // change the index of dual nodes in the other interface
-        
+        let seperate_partition_info = Arc::new(seperate_partition_info.clone());
 
-    //     // fuse dual unit
-    //     self.fuse_helper(other_dual_unit);
-    //     // if let Some(is_fused) = self.adjacent_parallel_units.get_mut(other_dual_unit) {
-    //     //     *is_fused = true;
-    //     // }        
-    //     println!("fuse asdf");
-    //     // now we fuse the interface (copying the interface of other to myself)
-    //     self_interface.fuse(other_interface);
-    // }
+        let unit_partition_info = &seperate_partition_info.units[0];
+        let owning_range = &unit_partition_info.owning_range;
+        let boundary_vertices = &unit_partition_info.boundary_vertices;
 
-    // /// dfs to add defect node
-    // fn dfs_grow_dual_node(&mut self, dual_node_ptr: &DualNodePtr, length: Rational, defect_vertex: VertexIndex, visited: &mut HashSet<usize>) {
+        let partitioned_solver_initializer = PartitionedSolverInitializer {
+            unit_index: unit_partition_info.unit_index,
+            vertex_num: initializer.vertex_num,
+            edge_num: initializer.weighted_edges.len(),
+            owning_range: *owning_range,
+            weighted_edges: initializer.weighted_edges.iter().enumerate().map(|e| (e.1.clone(), e.0)).collect::<Vec<_>>(),
+            boundary_vertices: boundary_vertices.clone(),
+            is_boundary_unit: unit_partition_info.is_boundary_unit,
+            defect_vertices: seperate_partition_info.config.defect_vertices.clone(),
+            // boundary_vertices: unit_partition_info.boundary_vertices.clone(),
+            // adjacent_partition_units: unit_partition_info.adjacent_partition_units.clone(),
+            // owning_interface: Some(partition_units[unit_index].downgrade()),
+        };
 
-    //     if self.owning_range.contains(defect_vertex) {
-    //         // println!("the unit containing this dual node is {} with owning range {} to {}", self.unit_index, self.owning_range.range[0], self.owning_range.range[1]);
-    //         self.serial_module.grow_dual_node(dual_node_ptr, length);
-    //         return;
-    //     }
 
-    //     visited.insert(self.unit_index);
-
-    //     // println!("neighbor len: {}", self.adjacent_parallel_units.len());
-    //     for neighbor in self.adjacent_parallel_units.iter() {
-    //         if !visited.contains(&neighbor.upgrade_force().read_recursive().unit_index) {
-    //             neighbor.upgrade_force().write().dfs_grow_dual_node(dual_node_ptr, length.clone(), defect_vertex, visited);
-    //         }
-    //     }
-    // }
+        let mut dual_module: DualModulePQ<Queue> = DualModulePQ::new_seperate_unit(&partitioned_solver_initializer); 
+        DualModuleParallelUnit {
+            unit_index: partitioned_solver_initializer.unit_index,
+            partition_info: Arc::clone(&seperate_partition_info),
+            owning_range: *owning_range,
+            serial_module: dual_module,
+            enable_parallel_execution: config.enable_parallel_execution,
+            adjacent_parallel_units: vec![],
+            is_boundary_unit: unit_partition_info.is_boundary_unit,
+            mode: DualModuleMode::default(),
+            _phantom: PhantomData,
+        }
+    }
 }
 
 

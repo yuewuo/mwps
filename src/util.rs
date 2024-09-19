@@ -890,6 +890,16 @@ impl PartitionConfig {
         }
     }
 
+    pub fn new_separate(vertex_num: VertexNum, fusions: Vec<(usize, usize)>, defect_vertices: Vec<usize>) -> Self {
+        Self {
+            vertex_num,
+            partitions: vec![], // we do not partition this newly (additionally) added unit
+            fusions: fusions,
+            dag_partition_units: Graph::new_undirected(), // we do not use this for the newly (additionally) added unit
+            defect_vertices: BTreeSet::from_iter(defect_vertices),
+        }
+    }
+
     /// the partition below relies on the fact that the vertices' indices are continuous
     #[allow(clippy::unnecessary_cast)]
     pub fn info(&self) -> PartitionInfo {
@@ -998,6 +1008,22 @@ impl PartitionConfig {
                 units: partition_unit_info,
                 vertex_to_owning_unit,
             }
+        }
+    }
+
+    pub fn info_seperate(&self, unit_index: usize, boundary_vertics: VertexRange) -> PartitionInfo {
+        // the self.partitins, dag should be empty
+        let partition_unit_info = PartitionUnitInfo {
+            owning_range: VertexRange::new(0, self.vertex_num),
+            unit_index: unit_index,
+            is_boundary_unit: false, // not useful for this newly (additionally) added unit
+            adjacent_parallel_units: vec![self.fusions[0].1], // note that self.fusions = (self, other)
+            boundary_vertices: vec![boundary_vertics], 
+        };
+        PartitionInfo {
+            config: self.clone(),
+            units: vec![partition_unit_info],
+            vertex_to_owning_unit: HashMap::new(),
         }
     }
 }

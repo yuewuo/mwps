@@ -1354,6 +1354,61 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
         }
     }
 
+    pub fn new_seperate_unit(new_seperate_initializer: &PartitionedSolverInitializer) -> Self {
+        // initializer.sanity_check().unwrap();
+        // create vertices, might need to offset the vertex index by the total number of vertex in the already existing blocks
+        let vertices: Vec<VertexPtr> = (0..new_seperate_initializer.vertex_num)
+            .map(|vertex_index| {
+                VertexPtr::new_value(Vertex {
+                    vertex_index,
+                    is_defect: false,
+                    edges: vec![],
+                    mirrored_vertices: vec![], // set to empty for non-parallel implementation
+                })
+            })
+            .collect();
+        // set global time 
+        let global_time = ArcManualSafeLock::new_value(Rational::zero());
+        // set edges
+        let mut edges = Vec::<EdgePtr>::new();
+        for (hyperedge, _) in new_seperate_initializer.weighted_edges.iter() {
+            let edge_ptr = EdgePtr::new_value(Edge {
+                edge_index: edges.len() as EdgeIndex,
+                weight: Rational::from_usize(hyperedge.weight).unwrap(),
+                dual_nodes: vec![],
+                vertices: hyperedge
+                    .vertices
+                    .iter()
+                    .map(|i| vertices[*i as usize].downgrade())
+                    .collect::<Vec<_>>(),
+                last_updated_time: Rational::zero(),
+                growth_at_last_updated_time: Rational::zero(),
+                grow_rate: Rational::zero(),
+                unit_index: None,
+                connected_to_boundary_vertex: false,
+                #[cfg(feature = "incr_lp")]
+                cluster_weights: hashbrown::HashMap::new(),
+            });
+            for &vertex_index in hyperedge.vertices.iter() {
+                vertices[vertex_index as usize].write().edges.push(edge_ptr.downgrade());
+            }
+            edges.push(edge_ptr);
+        }
+        Self {
+            vertices,
+            edges,
+            obstacle_queue: Queue::default(),
+            global_time: global_time.clone(),
+            mode: DualModuleMode::default(),
+            vertex_num: new_seperate_initializer.vertex_num,
+            edge_num: new_seperate_initializer.weighted_edges.len(),
+            all_mirrored_vertices: vec![],
+            // all_defect_vertices: vec![], // used only for parallel implementation
+            unit_active: ArcManualSafeLock::new_value(false), // used only for parallel implementation
+            active_timestamp: 0,
+        }
+    }
+
     /// hard clear all growth (manual call not recommended due to performance drawback)
     pub fn hard_clear_graph(&mut self) {
         for edge in self.edges.iter() {
