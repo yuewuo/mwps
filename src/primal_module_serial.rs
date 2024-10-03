@@ -5,7 +5,6 @@
 
 use crate::decoding_hypergraph::*;
 use crate::dual_module::*;
-use crate::invalid_subgraph;
 use crate::invalid_subgraph::*;
 use crate::matrix::*;
 use crate::num_traits::{One, Zero};
