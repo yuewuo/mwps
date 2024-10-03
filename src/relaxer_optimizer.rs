@@ -675,7 +675,7 @@ pub mod tests {
         // z
         let z = model.add_col(1., (0.).., []);
 
-        let c1 = model.add_row(..6., [(x, 3.), (y, 1.)]);
+        let _c1 = model.add_row(..6., [(x, 3.), (y, 1.)]);
         let c2 = model.add_row(..7., [(y, 1.), (z, 2.)]);
 
         let solved = model.solve();
@@ -770,7 +770,7 @@ pub mod tests {
         let c2 = model.add_row(..=7., []);
         let x = model.add_col(1., (0.).., [(c1, 3.)]);
         let _y = model.add_col(2., (0.).., [(c1, 1.), (c2, 1.)]);
-        let lazy_staticz = model.add_col(1., (0.).., [(c2, 2.)]);
+        let _lazy_staticz = model.add_col(1., (0.).., [(c2, 2.)]);
 
         let solved = model.solve();
         assert_eq!(solved.status(), HighsModelStatus::Optimal);
