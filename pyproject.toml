@@ -29,6 +29,6 @@ classifiers = [
 ]
 
 [tool.maturin]
-features = ["python_binding", "f64_weight"]
+features = ["python_binding", "f64_weight", "cluster_size_limit"]
 bindings = "pyo3"
-cargo-extra-args = "--features python_binding,f64_weight"
+cargo-extra-args = "--features python_binding,f64_weight,cluster_size_limit"

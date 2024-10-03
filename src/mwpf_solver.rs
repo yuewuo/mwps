@@ -58,15 +58,15 @@ macro_rules! bind_trait_to_python {
             }
             #[pyo3(name = "solve")] // in Python, `solve` and `solve_visualizer` is the same because it can take optional parameter
             fn trait_solve(&mut self, syndrome_pattern: &SyndromePattern, visualizer: Option<&mut Visualizer>) {
-                self.solve_visualizer(syndrome_pattern, visualizer, 0)
+                self.solve_visualizer(syndrome_pattern, visualizer)
             }
             #[pyo3(name = "subgraph_range")] // in Python, `subgraph_range` and `subgraph_range_visualizer` is the same
             fn trait_subgraph_range(&mut self, visualizer: Option<&mut Visualizer>) -> (Subgraph, WeightRange) {
-                self.subgraph_range_visualizer(visualizer, 0)
+                self.subgraph_range_visualizer(visualizer)
             }
             #[pyo3(name = "subgraph")]
             fn trait_subgraph(&mut self, visualizer: Option<&mut Visualizer>) -> Subgraph {
-                self.subgraph_range_visualizer(visualizer, 0).0
+                self.subgraph_range_visualizer(visualizer).0
             }
             #[pyo3(name = "sum_dual_variables")]
             fn trait_sum_dual_variables(&self) -> PyResult<Py<PyAny>> {

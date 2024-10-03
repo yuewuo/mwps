@@ -3,7 +3,9 @@
 //! Generics for primal modules, defining the necessary interfaces for a primal module
 //!
 
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+#[cfg(feature = "cluster_size_limit")]
+use std::collections::VecDeque;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use crate::dual_module::*;
