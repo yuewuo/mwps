@@ -46,9 +46,10 @@ u32_index = []                                    # use u32 instead of usize as 
 python_binding = ["pyo3"]                         # bind to Python
 wasm_binding = ["wasm-bindgen"]                   # bind to wasm
 colorful = []                                     # enable colorful output in case terminal exists
-qecp_integrate = ["qecp"]
-float_lp = ["highs"]
-incr_lp = []
+qecp_integrate = ["qecp"]                         # integrate with qecp
+float_lp = ["highs"]                              # use floating point LP solver, which is highs
+incr_lp = []                                      # solve lp problems incrementally, compatible with highs, by modifying the internal data of the probelm
+cluster_size_limit = []                           # allow configuration for limit on primal cluster size, for accrate benchmark timing.
 
 [dependencies]
 pyo3 = { version = "0.19.2", features = [

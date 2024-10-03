@@ -224,8 +224,6 @@ impl DualModuleImpl for DualModuleSerial {
         let mut dual_node = dual_node_ptr.write();
         let grow_rate_diff = grow_rate.clone() - &dual_node.grow_rate;
         dual_node.grow_rate = grow_rate;
-        drop(dual_node);
-        let dual_node = dual_node_ptr.read_recursive();
         for &edge_index in dual_node.invalid_subgraph.hair.iter() {
             let mut edge = self.edges[edge_index as usize].write();
             edge.grow_rate += &grow_rate_diff;

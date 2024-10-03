@@ -92,7 +92,7 @@ impl DualNode {
             Some(global_time) => {
                 // Note: clone here to give up read lock?
                 let global_time = global_time.read_recursive();
-                if self.last_updated_time < global_time.clone() {
+                if global_time.ge(&self.last_updated_time) {
                     (global_time.clone() - self.last_updated_time.clone()) * self.grow_rate.clone()
                         + self.dual_variable_at_last_updated_time.clone()
                 } else {
@@ -292,28 +292,50 @@ pub trait DualModuleImpl {
     /// note that a negative growth should be implemented by reversing the speed of each dual node
     fn grow(&mut self, length: Rational);
 
+    /// get all nodes contributing to the edge
     fn get_edge_nodes(&self, edge_index: EdgeIndex) -> Vec<DualNodePtr>;
+
+    /// get the slack on a specific edge (weight - growth)
     fn get_edge_slack(&self, edge_index: EdgeIndex) -> Rational;
+
+    /// check if the edge is tight
     fn is_edge_tight(&self, edge_index: EdgeIndex) -> bool;
 
     /* New tuning-related methods */
-    /// mode mangements
+    // mode mangements
+
+    /// get the current mode of the dual module
     fn mode(&self) -> &DualModuleMode;
+
+    /// get the mutable reference to the current mode of the dual module
     fn mode_mut(&mut self) -> &mut DualModuleMode;
+
+    /// advance the mode from searching to tuning
     fn advance_mode(&mut self) {
         eprintln!("this dual_module does not implement different modes");
     }
+
+    /// reset the mode to the default
     fn reset_mode(&mut self) {
         *self.mode_mut() = DualModuleMode::default();
     }
 
-    /// "set_grow_rate", but in tuning phase
-    fn set_grow_rate_tune(&mut self, dual_node_ptr: &DualNodePtr, grow_rate: Rational) {
-        eprintln!("this dual_module does not implement tuning");
-        self.set_grow_rate(dual_node_ptr, grow_rate)
+    /// document the end of tuning for getting the total tuning time
+    fn end_tuning(&mut self) {
+        panic!("this module doesn't work with tuning")
     }
 
-    /// "add_dual_node", but in tuning phase
+    /// get the total tuning time
+    fn get_total_tuning_time(&self) -> Option<f64> {
+        panic!("this module doesn't work with tuning")
+    }
+
+    /// Reset: clear the tuning time
+    fn clear_tuning_time(&mut self) {
+        panic!("this module doesn't work with tuning")
+    }
+
+    /// "add_dual_node", but in tuning phase, don't modify the pq or the grow rates
     fn add_dual_node_tune(&mut self, dual_node_ptr: &DualNodePtr) {
         eprintln!("this dual_module does not implement tuning");
         self.add_dual_node(dual_node_ptr);
@@ -359,17 +381,16 @@ pub trait DualModuleImpl {
         Some(OrderedFloat::from(100.0))
     }
 
+    /// In the tuning phase, given the optimizer result and the dual node deltas, return the conflicts that are caused by the current dual node deltas
     fn get_conflicts_tune(
         &self,
         optimizer_result: OptimizerResult,
-        // dual_node_deltas: BTreeMap<OrderedDualNodePtr, Rational>,
         dual_node_deltas: BTreeMap<OrderedDualNodePtr, (Rational, NodeIndex)>,
     ) -> BTreeSet<MaxUpdateLength> {
         let mut conflicts = BTreeSet::new();
         match optimizer_result {
             OptimizerResult::EarlyReturned => {
                 // if early returned, meaning optimizer didn't optimize, but simply should find current conflicts and return
-                // for (dual_node_ptr, grow_rate) in dual_node_deltas.into_iter() {
                 for (dual_node_ptr, (grow_rate, _)) in dual_node_deltas.into_iter() {
                     let node_ptr_read = dual_node_ptr.ptr.read_recursive();
                     if grow_rate.is_negative() && node_ptr_read.dual_variable_at_last_updated_time.is_zero() {
@@ -387,8 +408,7 @@ pub trait DualModuleImpl {
             }
             OptimizerResult::Skipped => {
                 // if skipped, should check if is growable, if not return the conflicts that leads to that conclusion
-                // for (dual_node_ptr, grow_rate) in dual_node_deltas.into_iter() {
-                for (dual_node_ptr, (grow_rate, cluster_index)) in dual_node_deltas.into_iter() {
+                for (dual_node_ptr, (grow_rate, _cluster_index)) in dual_node_deltas.into_iter() {
                     // check if the single direction is growable
                     let mut actual_grow_rate = Rational::from_usize(std::usize::MAX).unwrap();
                     let node_ptr_read = dual_node_ptr.ptr.read_recursive();
@@ -410,12 +430,13 @@ pub trait DualModuleImpl {
                         }
                     } else {
                         // if yes, grow and return new conflicts
+                        //      note: can grow directly here because this is guaranteed to only have a single direction
                         drop(node_ptr_read);
                         let mut node_ptr_write = dual_node_ptr.ptr.write();
                         for edge_index in node_ptr_write.invalid_subgraph.hair.iter() {
                             self.grow_edge(*edge_index, &actual_grow_rate);
                             #[cfg(feature = "incr_lp")]
-                            self.update_edge_cluster_weights(*edge_index, cluster_index, actual_grow_rate); // note: comment out if not using cluster-based
+                            self.update_edge_cluster_weights(*edge_index, _cluster_index, actual_grow_rate); // note: comment out if not using cluster-based
                             if actual_grow_rate.is_positive() && self.is_edge_tight_tune(*edge_index) {
                                 conflicts.insert(MaxUpdateLength::Conflicting(*edge_index));
                             }
@@ -432,9 +453,10 @@ pub trait DualModuleImpl {
             }
             _ => {
                 // in other cases, optimizer should have optimized, so we should apply the deltas and return the nwe conflicts
+
+                // edge deltas needs to be applied at once for accurate conflicts calculation
                 let mut edge_deltas = BTreeMap::new();
-                // for (dual_node_ptr, grow_rate) in dual_node_deltas.into_iter() {
-                for (dual_node_ptr, (grow_rate, cluster_index)) in dual_node_deltas.into_iter() {
+                for (dual_node_ptr, (grow_rate, _cluster_index)) in dual_node_deltas.into_iter() {
                     // update the dual node and check for conflicts
                     let mut node_ptr_write = dual_node_ptr.ptr.write();
                     node_ptr_write.dual_variable_at_last_updated_time += grow_rate.clone();
@@ -457,7 +479,7 @@ pub trait DualModuleImpl {
                             }
                         }
                         #[cfg(feature = "incr_lp")]
-                        self.update_edge_cluster_weights(*edge_index, cluster_index, grow_rate.clone());
+                        self.update_edge_cluster_weights(*edge_index, _cluster_index, grow_rate.clone());
                         // note: comment out if not using cluster-based
                     }
                 }
@@ -608,12 +630,11 @@ impl DualModuleInterfacePtr {
 
     pub fn sum_dual_variables(&self) -> Rational {
         let interface = self.read_recursive();
-        let mut sum = Rational::zero();
-        for dual_node_ptr in interface.nodes.iter() {
-            let dual_node = dual_node_ptr.read_recursive();
-            sum += dual_node.get_dual_variable();
-        }
-        sum
+        interface
+            .nodes
+            .iter()
+            .map(|node_ptr| node_ptr.read_recursive().get_dual_variable())
+            .sum()
     }
 
     pub fn clear(&self) {
@@ -630,9 +651,7 @@ impl DualModuleInterfacePtr {
 
     /// make it private; use `load` instead
     fn create_defect_node(&self, vertex_idx: VertexIndex, dual_module: &mut impl DualModuleImpl) -> DualNodePtr {
-        let interface = self.read_recursive();
-        let mut internal_vertices = BTreeSet::new();
-        internal_vertices.insert(vertex_idx);
+        let mut interface = self.write();
         let invalid_subgraph = Arc::new(InvalidSubgraph::new_complete(
             vec![vertex_idx].into_iter().collect(),
             BTreeSet::new(),
@@ -648,14 +667,12 @@ impl DualModuleInterfacePtr {
             last_updated_time: Rational::zero(),
         });
 
-        let cloned_node_ptr = node_ptr.clone();
-        drop(interface);
-        let mut interface = self.write();
-        interface.nodes.push(node_ptr);
+        interface.nodes.push(node_ptr.clone());
         interface.hashmap.insert(invalid_subgraph, node_index);
         drop(interface);
-        dual_module.add_defect_node(&cloned_node_ptr);
-        cloned_node_ptr
+
+        dual_module.add_defect_node(&node_ptr);
+        node_ptr
     }
 
     /// find existing node
@@ -669,26 +686,7 @@ impl DualModuleInterfacePtr {
     }
 
     pub fn create_node(&self, invalid_subgraph: Arc<InvalidSubgraph>, dual_module: &mut impl DualModuleImpl) -> DualNodePtr {
-        debug_assert!(
-            self.find_node(&invalid_subgraph).is_none(),
-            "do not create the same node twice"
-        );
-        let mut interface = self.write();
-        let node_index = interface.nodes.len() as NodeIndex;
-        interface.hashmap.insert(invalid_subgraph.clone(), node_index);
-        let node_ptr = DualNodePtr::new_value(DualNode {
-            index: node_index,
-            invalid_subgraph,
-            grow_rate: Rational::one(),
-            dual_variable_at_last_updated_time: Rational::zero(),
-            global_time: None,
-            last_updated_time: Rational::zero(),
-        });
-        interface.nodes.push(node_ptr.clone());
-        drop(interface);
-        dual_module.add_dual_node(&node_ptr);
-
-        node_ptr
+        self.create_node_internal(invalid_subgraph, dual_module, Rational::one(), DualModuleImpl::add_dual_node)
     }
 
     /// `create_node` for tuning
@@ -697,26 +695,12 @@ impl DualModuleInterfacePtr {
         invalid_subgraph: Arc<InvalidSubgraph>,
         dual_module: &mut impl DualModuleImpl,
     ) -> DualNodePtr {
-        debug_assert!(
-            self.find_node(&invalid_subgraph).is_none(),
-            "do not create the same node twice"
-        );
-        let mut interface = self.write();
-        let node_index = interface.nodes.len() as NodeIndex;
-        interface.hashmap.insert(invalid_subgraph.clone(), node_index);
-        let node_ptr = DualNodePtr::new_value(DualNode {
-            index: node_index,
+        self.create_node_internal(
             invalid_subgraph,
-            grow_rate: Rational::zero(),
-            dual_variable_at_last_updated_time: Rational::zero(),
-            global_time: None,
-            last_updated_time: Rational::zero(),
-        });
-        interface.nodes.push(node_ptr.clone());
-        drop(interface);
-        dual_module.add_dual_node_tune(&node_ptr);
-
-        node_ptr
+            dual_module,
+            Rational::zero(),
+            DualModuleImpl::add_dual_node_tune,
+        )
     }
 
     /// return whether it's existing node or not
@@ -736,11 +720,45 @@ impl DualModuleInterfacePtr {
         &self,
         invalid_subgraph: &Arc<InvalidSubgraph>,
         dual_module: &mut impl DualModuleImpl,
-    ) -> (bool, DualNodePtr) {
+    ) -> Option<(bool, DualNodePtr)> {
         match self.find_node(invalid_subgraph) {
-            Some(node_ptr) => (true, node_ptr),
-            None => (false, self.create_node_tune(invalid_subgraph.clone(), dual_module)),
+            Some(node_ptr) => Some((true, node_ptr)),
+            None => Some((false, self.create_node_tune(invalid_subgraph.clone(), dual_module))),
         }
+    }
+
+    /// internal function for creating a node, for D.R.Y.
+    fn create_node_internal<D: DualModuleImpl>(
+        &self,
+        invalid_subgraph: Arc<InvalidSubgraph>,
+        dual_module: &mut D,
+        grow_rate: Rational,
+        add_dual_node_fn: fn(&mut D, &DualNodePtr),
+    ) -> DualNodePtr {
+        debug_assert!(
+            self.find_node(&invalid_subgraph).is_none(),
+            "do not create the same node twice"
+        );
+
+        let mut interface = self.write();
+        let node_index = interface.nodes.len() as NodeIndex;
+        interface.hashmap.insert(invalid_subgraph.clone(), node_index);
+
+        let node_ptr = DualNodePtr::new_value(DualNode {
+            index: node_index,
+            invalid_subgraph,
+            grow_rate,
+            dual_variable_at_last_updated_time: Rational::zero(),
+            global_time: None,
+            last_updated_time: Rational::zero(),
+        });
+
+        interface.nodes.push(node_ptr.clone());
+        drop(interface);
+
+        add_dual_node_fn(dual_module, &node_ptr);
+
+        node_ptr
     }
 }
 

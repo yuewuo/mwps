@@ -3,7 +3,7 @@
 //! Generics for primal modules, defining the necessary interfaces for a primal module
 //!
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::sync::Arc;
 
 use crate::dual_module::*;
@@ -16,6 +16,9 @@ use crate::util::*;
 use crate::visualize::*;
 
 pub type Affinity = OrderedFloat;
+
+#[cfg(feature = "cluster_size_limit")]
+const MAX_HISTORY: usize = 10;
 
 /// common trait that must be implemented for each implementation of primal module
 pub trait PrimalModuleImpl {
@@ -158,12 +161,9 @@ pub trait PrimalModuleImpl {
         // starting with unbounded state here: All edges and nodes are not growing as of now
         // Tune
         while self.has_more_plugins() {
-            // Note: intersting, seems these aren't needed... But just kept here in case of future need, as well as correctness related failures
             if start {
                 start = false;
                 dual_module.advance_mode();
-                #[cfg(feature = "incr_lp")]
-                self.calculate_edges_free_weight_clusters(dual_module);
             }
             self.update_sorted_clusters_aff(dual_module);
             let cluster_affs = self.get_sorted_clusters_aff();
@@ -175,11 +175,54 @@ pub trait PrimalModuleImpl {
                     self.resolve_cluster_tune(cluster_index, interface, dual_module, &mut dual_node_deltas);
 
                 let mut conflicts = dual_module.get_conflicts_tune(optimizer_result, dual_node_deltas);
-                while !resolved {
-                    let (_conflicts, _resolved) = self.resolve_tune(conflicts, interface, dual_module);
+
+                // for cycle resolution
+                #[cfg(feature = "cluster_size_limit")]
+                let mut order: VecDeque<BTreeSet<MaxUpdateLength>> = VecDeque::with_capacity(MAX_HISTORY); // fifo order of the conflicts sets seen
+                #[cfg(feature = "cluster_size_limit")]
+                let mut current_sequences: Vec<(usize, BTreeSet<MaxUpdateLength>)> = Vec::new(); // the indexes that are currently being processed
+
+                '_resolving: while !resolved {
+                    let (_conflicts, _resolved) = self.resolve_tune(conflicts.clone(), interface, dual_module);
+
+                    #[cfg(feature = "cluster_size_limit")]
+                    {
+                        // cycle resolution
+                        let drained: Vec<(usize, BTreeSet<MaxUpdateLength>)> = std::mem::take(&mut current_sequences);
+                        for (idx, start) in drained.into_iter() {
+                            if _conflicts.eq(&start) {
+                                dual_module.end_tuning();
+                                break '_resolving;
+                            }
+                            if _conflicts.eq(order
+                                .get(MAX_HISTORY - idx - 1)
+                                .unwrap_or(order.get(order.len() - idx - 1).unwrap()))
+                            {
+                                current_sequences.push((idx + 1, start));
+                            }
+                        }
+
+                        order.push_back(_conflicts.clone());
+                        if order.len() > MAX_HISTORY {
+                            order.pop_front();
+                            current_sequences = current_sequences
+                                .into_iter()
+                                .filter_map(|(x, start)| if x >= MAX_HISTORY { None } else { Some((x + 1, start)) })
+                                .collect();
+                        }
+
+                        for (idx, c) in order.iter().enumerate() {
+                            if c.eq(&_conflicts) {
+                                current_sequences.push((idx, c.clone()));
+                            }
+                        }
+                    }
+
                     if _resolved {
+                        dual_module.end_tuning();
                         break;
                     }
+
                     conflicts = _conflicts;
                     resolved = _resolved;
                 }
@@ -187,16 +230,14 @@ pub trait PrimalModuleImpl {
         }
     }
 
-    fn subgraph(&mut self, interface: &DualModuleInterfacePtr, dual_module: &mut impl DualModuleImpl, seed: u64)
-        -> Subgraph;
+    fn subgraph(&mut self, interface: &DualModuleInterfacePtr, dual_module: &mut impl DualModuleImpl) -> Subgraph;
 
     fn subgraph_range(
         &mut self,
         interface: &DualModuleInterfacePtr,
         dual_module: &mut impl DualModuleImpl,
-        seed: u64,
     ) -> (Subgraph, WeightRange) {
-        let subgraph = self.subgraph(interface, dual_module, seed);
+        let subgraph = self.subgraph(interface, dual_module);
         let weight_range = WeightRange::new(
             interface.sum_dual_variables(),
             Rational::from_usize(
@@ -251,16 +292,30 @@ pub trait PrimalModuleImpl {
     }
 
     /* affinity */
+
+    /// calculate the affinity map of clusters and maintain an decreasing order of priority
     fn update_sorted_clusters_aff<D: DualModuleImpl>(&mut self, _dual_module: &mut D) {
         panic!("not implemented `update_sorted_clusters_aff`");
     }
 
+    /// get the sorted clusters by affinity
     fn get_sorted_clusters_aff(&mut self) -> BTreeSet<ClusterAffinity> {
         panic!("not implemented `get_sorted_clusters_aff`");
     }
 
     #[cfg(feature = "incr_lp")]
-    fn calculate_edges_free_weight_clusters(&mut self, dual_module: &mut impl DualModuleImpl) {
+    /// calculate the edges free weight map by cluster
+    fn calculate_edges_free_weight_clusters(&mut self, _dual_module: &mut impl DualModuleImpl) {
         panic!("not implemented `calculate_edges_free_weight_clusters`");
+    }
+
+    /// unset the cluster_weight parameter
+    #[cfg(feature = "incr_lp")]
+    fn uninit_cluster_weight(&mut self) {}
+
+    /// get the cluster_weight parameter
+    #[cfg(feature = "incr_lp")]
+    fn is_cluster_weight_initialized(&self) -> bool {
+        true
     }
 }

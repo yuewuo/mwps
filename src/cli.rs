@@ -92,7 +92,7 @@ pub struct BenchmarkParameters {
     /// message on the progress bar
     #[clap(long, default_value_t = format!(""))]
     pb_message: String,
-    /// use deterministic seed for debugging purpose
+    /// use deterministic seed for debugging purpose (round number is the seed)
     #[clap(long, action)]
     use_deterministic_seed: bool,
     /// the benchmark profile output file path
@@ -101,10 +101,10 @@ pub struct BenchmarkParameters {
     /// skip some iterations, useful when debugging
     #[clap(long, default_value_t = 0)]
     starting_iteration: usize,
-    /// apply deterministic seed for debugging purpose
+    /// apply a deterministic seed for debugging purposes
     #[clap(long, action)]
     apply_deterministic_seed: Option<u64>,
-    /// single seed for debugging purposes
+    /// only execute a single seed for debugging purposes
     #[clap(long, action)]
     single_seed: Option<u64>,
 }
@@ -324,6 +324,7 @@ impl Cli {
                     None
                 };
 
+                // single seed mode, intended only execute a single failing round
                 if let Some(seed) = single_seed {
                     let (syndrome_pattern, error_pattern) = code.generate_random_errors(seed);
                     if print_syndrome_pattern {
@@ -332,7 +333,6 @@ impl Cli {
                     if print_error_pattern {
                         println!("error_pattern: {:?}", error_pattern);
                     }
-                    // create a new visualizer each round
                     let mut visualizer = None;
                     if enable_visualizer {
                         let new_visualizer = Visualizer::new(
@@ -343,7 +343,7 @@ impl Cli {
                         .unwrap();
                         visualizer = Some(new_visualizer);
                     }
-                    primal_dual_solver.solve_visualizer(&syndrome_pattern, visualizer.as_mut(), seed); // FIXME: for release, remove the seed that is passed in for debugging purposes
+                    primal_dual_solver.solve_visualizer(&syndrome_pattern, visualizer.as_mut());
                     result_verifier.verify(
                         &mut primal_dual_solver,
                         &syndrome_pattern,
@@ -351,24 +351,21 @@ impl Cli {
                         visualizer.as_mut(),
                         seed,
                     );
-                    primal_dual_solver.clear(); // also count the clear operation
+                    primal_dual_solver.clear();
 
                     return;
                 }
 
                 let mut benchmark_profiler = BenchmarkProfiler::new(noisy_measurements, benchmark_profiler_output);
-                // let mut rng = thread_rng();
                 thread_rng().gen::<u64>();
                 let mut seed = match apply_deterministic_seed {
                     Some(seed) => seed,
                     None => thread_rng().gen::<u64>(),
                 };
                 let mut rng = SmallRng::seed_from_u64(seed);
-                // println!("OG_s: {:?}", seed);
                 for round in (starting_iteration as u64)..(total_rounds as u64) {
                     pb.as_mut().map(|pb| pb.set(round));
                     seed = if use_deterministic_seed { round } else { rng.next_u64() };
-                    // println!("NEW rng seed: {:?}", seed);
                     let (syndrome_pattern, error_pattern) = code.generate_random_errors(seed);
                     if print_syndrome_pattern {
                         println!("syndrome_pattern: {:?}", syndrome_pattern);
@@ -388,7 +385,7 @@ impl Cli {
                         visualizer = Some(new_visualizer);
                     }
                     benchmark_profiler.begin(&syndrome_pattern, &error_pattern);
-                    primal_dual_solver.solve_visualizer(&syndrome_pattern, visualizer.as_mut(), seed); // FIXME: for release, remove the seed that is passed in for debugging purposes
+                    primal_dual_solver.solve_visualizer(&syndrome_pattern, visualizer.as_mut());
                     benchmark_profiler.event("decoded".to_string());
                     result_verifier.verify(
                         &mut primal_dual_solver,
@@ -401,6 +398,11 @@ impl Cli {
                     primal_dual_solver.clear(); // also count the clear operation
 
                     benchmark_profiler.end(Some(&*primal_dual_solver));
+
+                    if primal_dual_solver.get_tuning_time().is_some() {
+                        primal_dual_solver.clear_tuning_time();
+                    }
+
                     if let Some(pb) = pb.as_mut() {
                         if pb_message.is_empty() {
                             pb.message(format!("{} ", benchmark_profiler.brief()).as_str());
@@ -417,7 +419,9 @@ impl Cli {
                     println!();
                 }
 
+                // printing the total round time and total tuning time for benchmark purpose
                 eprintln!("total resolve time {:?}", benchmark_profiler.sum_round_time);
+                eprintln!("total tuning time {:?}", benchmark_profiler.sum_tuning_time);
             }
             Commands::MatrixSpeed(parameters) => {
                 let MatrixSpeedParameters {
@@ -459,61 +463,33 @@ impl Cli {
                     primal_dual_config,
                 } => {
                     let mut parameters = vec![];
-                    for p in [0.001, 0.003, 0.01, 0.03, 0.1, 0.3, 0.499] {
-                        for d in [3, 7, 11, 15, 19] {
-                            parameters.push(vec![
-                                format!("{d}"),
-                                format!("{p}"),
-                                format!("--code-type"),
-                                format!("code-capacity-repetition-code"),
-                                format!("--pb-message"),
-                                format!("repetition {d} {p}"),
-                            ]);
+                    let code_types = ["repetition", "planar", "tailored", "color"];
+
+                    for code_type in code_types.iter() {
+                        for p in [0.001, 0.003, 0.01, 0.03, 0.1, 0.3, 0.499] {
+                            for d in [3, 7, 11, 15, 19] {
+                                parameters.push(vec![
+                                    format!("{d}"),
+                                    format!("{p}"),
+                                    format!("--code-type"),
+                                    format!("code-capacity-{code_type}-code"),
+                                    format!("--pb-message"),
+                                    format!("{code_type} {d} {p}"),
+                                ]);
+                            }
                         }
                     }
-                    for p in [0.001, 0.003, 0.01, 0.03, 0.1, 0.3, 0.499] {
-                        for d in [3, 7, 11, 15, 19] {
-                            parameters.push(vec![
-                                format!("{d}"),
-                                format!("{p}"),
-                                format!("--code-type"),
-                                format!("code-capacity-planar-code"),
-                                format!("--pb-message"),
-                                format!("planar {d} {p}"),
-                            ]);
-                        }
-                    }
-                    for p in [0.001, 0.003, 0.01, 0.03, 0.1, 0.3, 0.499] {
-                        for d in [3, 7, 11, 15, 19] {
-                            parameters.push(vec![
-                                format!("{d}"),
-                                format!("{p}"),
-                                format!("--code-type"),
-                                format!("code-capacity-tailored-code"),
-                                format!("--pb-message"),
-                                format!("tailored {d} {p}"),
-                            ]);
-                        }
-                    }
-                    for p in [0.001, 0.003, 0.01, 0.03, 0.1, 0.3, 0.499] {
-                        for d in [3, 7, 11, 15, 19] {
-                            parameters.push(vec![
-                                format!("{d}"),
-                                format!("{p}"),
-                                format!("--code-type"),
-                                format!("code-capacity-color-code"),
-                                format!("--pb-message"),
-                                format!("color {d} {p}"),
-                            ]);
-                        }
-                    }
+
                     let command_head = vec![format!(""), format!("benchmark")];
                     let mut command_tail = vec!["--total-rounds".to_string(), format!("{TEST_EACH_ROUNDS}")];
-                    if use_strict {
-                        command_tail.append(&mut vec![format!("--verifier"), format!("strict-actual-error")]);
-                    } else {
-                        command_tail.append(&mut vec![format!("--verifier"), format!("actual-error")]);
-                    }
+                    command_tail.append(&mut vec![
+                        format!("--verifier"),
+                        if use_strict {
+                            "strict-actual-error".to_string()
+                        } else {
+                            "actual-error".to_string()
+                        },
+                    ]);
                     if enable_visualizer {
                         command_tail.append(&mut vec![format!("--enable-visualizer")]);
                     }
@@ -691,7 +667,9 @@ impl ResultVerifier for VerifierActualError {
         } else {
             Rational::from_usize(self.initializer.get_subgraph_total_weight(error_pattern)).unwrap()
         };
-        let (subgraph, weight_range) = primal_dual_solver.subgraph_range_visualizer(visualizer, seed);
+        let (subgraph, weight_range) = primal_dual_solver.subgraph_range_visualizer(visualizer);
+
+        // primal_dual_solver.print_clusters();
         assert!(
             self.initializer
                 .matches_subgraph_syndrome(&subgraph, &syndrome_pattern.defect_vertices),

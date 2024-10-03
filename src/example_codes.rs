@@ -92,7 +92,7 @@ impl CodeEdge {
 /// default function for computing (pre-scaled) weight from probability
 #[cfg_attr(feature = "python_binding", pyfunction)]
 pub fn weight_of_p(p: f64) -> f64 {
-    assert!((0. ..=0.5).contains(&p), "p must be a reasonable value between 0 and 50%");
+    assert!((0. ..0.5).contains(&p), "p must be a reasonable value between 0 and 50%");
     ((1. - p) / p).ln()
 }
 

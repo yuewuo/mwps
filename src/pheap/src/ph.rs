@@ -19,7 +19,7 @@ impl<K: Clone, P: Clone + PartialOrd> Clone for PairingHeap<K, P> {
         while let Some(node) = queue.pop_front() {
             unsafe {
                 let node = node.as_ref();
-                let new_node = new_heap.insert2(node.key.clone(), node.prio.clone());
+                let _new_node = new_heap.insert2(node.key.clone(), node.prio.clone());
                 if let Some(left) = node.left {
                     queue.push_back(left);
                 }
@@ -325,7 +325,7 @@ impl<K, P> Drop for PairingHeap<K, P> {
 
                 let sibling = (*node.as_ptr()).right.take();
                 (*node.as_ptr()).parent = None;
-                Box::from_raw(node.as_ptr());
+                let _ = Box::from_raw(node.as_ptr());
 
                 sibling
             } else {

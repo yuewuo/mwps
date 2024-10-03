@@ -26,19 +26,25 @@ use std::sync::Arc;
 
 pub trait PrimalDualSolver {
     fn clear(&mut self);
-    fn solve_visualizer(&mut self, syndrome_pattern: &SyndromePattern, visualizer: Option<&mut Visualizer>, seed: u64);
-    fn solve(&mut self, syndrome_pattern: &SyndromePattern, seed: u64) {
-        self.solve_visualizer(syndrome_pattern, None, seed)
+    fn solve_visualizer(&mut self, syndrome_pattern: &SyndromePattern, visualizer: Option<&mut Visualizer>);
+    fn solve(&mut self, syndrome_pattern: &SyndromePattern) {
+        self.solve_visualizer(syndrome_pattern, None)
     }
-    fn subgraph_range_visualizer(&mut self, visualizer: Option<&mut Visualizer>, seed: u64) -> (Subgraph, WeightRange);
-    fn subgraph_range(&mut self, seed: u64) -> (Subgraph, WeightRange) {
-        self.subgraph_range_visualizer(None, seed)
+    fn subgraph_range_visualizer(&mut self, visualizer: Option<&mut Visualizer>) -> (Subgraph, WeightRange);
+    fn subgraph_range(&mut self) -> (Subgraph, WeightRange) {
+        self.subgraph_range_visualizer(None)
     }
-    fn subgraph(&mut self, seed: u64) -> Subgraph {
-        self.subgraph_range(seed).0
+    fn subgraph(&mut self) -> Subgraph {
+        self.subgraph_range().0
     }
     fn sum_dual_variables(&self) -> Rational;
     fn generate_profiler_report(&self) -> serde_json::Value;
+
+    fn get_tuning_time(&self) -> Option<f64>;
+    fn clear_tuning_time(&mut self);
+    fn print_clusters(&self) {
+        panic!();
+    }
 }
 
 #[cfg(feature = "python_binding")]
@@ -79,6 +85,10 @@ pub struct SolverSerialPluginsConfig {
     /// growing strategy
     #[serde(default = "hyperion_default_configs::growing_strategy")]
     growing_strategy: GrowingStrategy,
+    #[cfg(feature = "cluster_size_limit")]
+    /// cluster size limit for the primal module in the tuning phase
+    /// this is the threshold for which LP will not be ran on a specific cluster to optimize the solution
+    pub tuning_cluster_size_limit: Option<usize>,
 }
 
 pub mod hyperion_default_configs {
@@ -118,6 +128,12 @@ impl SolverSerialPlugins {
         primal_module.growing_strategy = config.growing_strategy;
         primal_module.plugins = plugins;
         primal_module.config = config.primal.clone();
+
+        #[cfg(feature = "cluster_size_limit")]
+        {
+            primal_module.cluster_node_limit = config.tuning_cluster_size_limit;
+        }
+
         Self {
             dual_module: DualModulePQ::new_empty(initializer),
             // dual_module: DualModuleSerial::new_empty(initializer),
@@ -134,7 +150,7 @@ impl PrimalDualSolver for SolverSerialPlugins {
         self.dual_module.clear();
         self.interface_ptr.clear();
     }
-    fn solve_visualizer(&mut self, syndrome_pattern: &SyndromePattern, visualizer: Option<&mut Visualizer>, seed: u64) {
+    fn solve_visualizer(&mut self, syndrome_pattern: &SyndromePattern, visualizer: Option<&mut Visualizer>) {
         let syndrome_pattern = Arc::new(syndrome_pattern.clone());
         if !syndrome_pattern.erasures.is_empty() {
             unimplemented!();
@@ -147,17 +163,15 @@ impl PrimalDualSolver for SolverSerialPlugins {
         );
         debug_assert!(
             {
-                let subgraph = self.subgraph(seed);
+                let subgraph = self.subgraph();
                 self.model_graph
                     .matches_subgraph_syndrome(&subgraph, &syndrome_pattern.defect_vertices)
             },
             "the subgraph does not generate the syndrome"
         );
     }
-    fn subgraph_range_visualizer(&mut self, visualizer: Option<&mut Visualizer>, seed: u64) -> (Subgraph, WeightRange) {
-        let (subgraph, weight_range) = self
-            .primal_module
-            .subgraph_range(&self.interface_ptr, &mut self.dual_module, seed);
+    fn subgraph_range_visualizer(&mut self, visualizer: Option<&mut Visualizer>) -> (Subgraph, WeightRange) {
+        let (subgraph, weight_range) = self.primal_module.subgraph_range(&self.interface_ptr, &mut self.dual_module);
         if let Some(visualizer) = visualizer {
             visualizer
                 .snapshot_combined(
@@ -177,6 +191,15 @@ impl PrimalDualSolver for SolverSerialPlugins {
             "primal": self.primal_module.generate_profiler_report(),
         })
     }
+    fn get_tuning_time(&self) -> Option<f64> {
+        self.dual_module.get_total_tuning_time()
+    }
+    fn clear_tuning_time(&mut self) {
+        self.dual_module.clear_tuning_time()
+    }
+    fn print_clusters(&self) {
+        self.primal_module.print_clusters();
+    }
 }
 
 macro_rules! bind_primal_dual_solver_trait {
@@ -185,26 +208,26 @@ macro_rules! bind_primal_dual_solver_trait {
             fn clear(&mut self) {
                 self.0.clear()
             }
-            fn solve_visualizer(
-                &mut self,
-                syndrome_pattern: &SyndromePattern,
-                visualizer: Option<&mut Visualizer>,
-                seed: u64,
-            ) {
-                self.0.solve_visualizer(syndrome_pattern, visualizer, seed)
+            fn solve_visualizer(&mut self, syndrome_pattern: &SyndromePattern, visualizer: Option<&mut Visualizer>) {
+                self.0.solve_visualizer(syndrome_pattern, visualizer)
             }
-            fn subgraph_range_visualizer(
-                &mut self,
-                visualizer: Option<&mut Visualizer>,
-                seed: u64,
-            ) -> (Subgraph, WeightRange) {
-                self.0.subgraph_range_visualizer(visualizer, seed)
+            fn subgraph_range_visualizer(&mut self, visualizer: Option<&mut Visualizer>) -> (Subgraph, WeightRange) {
+                self.0.subgraph_range_visualizer(visualizer)
             }
             fn sum_dual_variables(&self) -> Rational {
                 self.0.sum_dual_variables()
             }
             fn generate_profiler_report(&self) -> serde_json::Value {
                 self.0.generate_profiler_report()
+            }
+            fn get_tuning_time(&self) -> Option<f64> {
+                self.0.get_tuning_time()
+            }
+            fn clear_tuning_time(&mut self) {
+                self.0.clear_tuning_time()
+            }
+            fn print_clusters(&self) {
+                self.0.print_clusters()
             }
         }
     };
@@ -332,7 +355,7 @@ impl SolverErrorPatternLogger {
 
 impl PrimalDualSolver for SolverErrorPatternLogger {
     fn clear(&mut self) {}
-    fn solve_visualizer(&mut self, syndrome_pattern: &SyndromePattern, _visualizer: Option<&mut Visualizer>, _seed: u64) {
+    fn solve_visualizer(&mut self, syndrome_pattern: &SyndromePattern, _visualizer: Option<&mut Visualizer>) {
         self.file
             .write_all(
                 serde_json::to_string(&serde_json::json!(syndrome_pattern))
@@ -342,7 +365,7 @@ impl PrimalDualSolver for SolverErrorPatternLogger {
             .unwrap();
         self.file.write_all(b"\n").unwrap();
     }
-    fn subgraph_range_visualizer(&mut self, _visualizer: Option<&mut Visualizer>, _seed: u64) -> (Subgraph, WeightRange) {
+    fn subgraph_range_visualizer(&mut self, _visualizer: Option<&mut Visualizer>) -> (Subgraph, WeightRange) {
         panic!("error pattern logger do not actually solve the problem, please use Verifier::None by `--verifier none`")
     }
     fn sum_dual_variables(&self) -> Rational {
@@ -351,6 +374,10 @@ impl PrimalDualSolver for SolverErrorPatternLogger {
     fn generate_profiler_report(&self) -> serde_json::Value {
         json!({})
     }
+    fn get_tuning_time(&self) -> Option<f64> {
+        None
+    }
+    fn clear_tuning_time(&mut self) {}
 }
 
 #[cfg(feature = "python_binding")]

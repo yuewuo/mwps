@@ -96,7 +96,7 @@ pub fn get_version() -> String {
         &mut dual_module,
         None,
     );
-    let (subgraph, weight_range) = primal_module.subgraph_range(&interface_ptr, &mut dual_module, 0);
+    let (subgraph, weight_range) = primal_module.subgraph_range(&interface_ptr, &mut dual_module);
     println!("subgraph: {subgraph:?}");
     // env!("CARGO_PKG_VERSION").to_string()
     format!("subgraph: {subgraph:?}, weight_range: {weight_range:?}")
