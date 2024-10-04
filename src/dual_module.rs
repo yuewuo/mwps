@@ -797,10 +797,10 @@ impl MWPSVisualizer for DualModuleInterfacePtr {
                 if abbrev { "v" } else { "vertices" }: dual_node.invalid_subgraph.vertices,
                 if abbrev { "h" } else { "hair" }: dual_node.invalid_subgraph.hair,
                 if abbrev { "d" } else { "dual_variable" }: dual_node.get_dual_variable().to_f64(),
-                if abbrev { "dn" } else { "dual_variable_numerator" }: dual_node.get_dual_variable().numer().to_i64(),
+                if abbrev { "dn" } else { "dual_variable_numerator" }: numer_of(&dual_node.get_dual_variable()),
                 if abbrev { "dd" } else { "dual_variable_denominator" }: dual_node.get_dual_variable().denom().to_i64(),
                 if abbrev { "r" } else { "grow_rate" }: dual_node.grow_rate.to_f64(),
-                if abbrev { "rn" } else { "grow_rate_numerator" }: dual_node.grow_rate.numer().to_i64(),
+                if abbrev { "rn" } else { "grow_rate_numerator" }: numer_of(&dual_node.grow_rate),
                 if abbrev { "rd" } else { "grow_rate_denominator" }: dual_node.grow_rate.denom().to_i64(),
             }));
         }
@@ -808,7 +808,7 @@ impl MWPSVisualizer for DualModuleInterfacePtr {
         json!({
             "interface": {
                 "sum_dual": sum_dual.to_f64(),
-                "sdn": sum_dual.numer().to_i64(),
+                "sdn": numer_of(&sum_dual),
                 "sdd": sum_dual.denom().to_i64(),
             },
             "dual_nodes": dual_nodes,

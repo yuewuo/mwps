@@ -890,9 +890,9 @@ where
                 if abbrev { "w" } else { "weight" }: edge.weight.to_f64(),
                 if abbrev { "v" } else { "vertices" }: edge.vertices.iter().map(|x| x.upgrade_force().read_recursive().vertex_index).collect::<Vec<_>>(),
                 if abbrev { "g" } else { "growth" }: current_growth.to_f64(),
-                "gn": current_growth.numer().to_i64(),
+                "gn": numer_of(&current_growth),
                 "gd": current_growth.denom().to_i64(),
-                "un": unexplored.numer().to_i64(),
+                "un": numer_of(&unexplored),
                 "ud": unexplored.denom().to_i64(),
             }));
         }

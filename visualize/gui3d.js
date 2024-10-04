@@ -300,7 +300,7 @@ export let segmented_edge_colors = [
     "#8C4515",  // brown
     "#E14CB6",  // pink
 ]
-let segmented_untight_opacity = 0.5
+let segmented_untight_opacity = 0.2
 let segmented_tight_opacity = 1
 export const segmented_edge_materials = []
 function update_segmented_edge_materials() {
@@ -397,21 +397,17 @@ export function load_position(mesh_position, data_position) {
 
 export const active_mwpf_data = shallowRef(null)
 export const active_snapshot_idx = ref(0)
-export const edge_to_dual_indices = computed(() => {
-    const mwpf_data = active_mwpf_data.value
-    const snapshot_idx = active_snapshot_idx.value
-    const snapshot = mwpf_data.snapshots[snapshot_idx][1]
-    const dual_indices = []
-    for (let [_, edge] of snapshot.edges.entries()) {
-        dual_indices.push([])
-    }
-    for (let [node_index, node] of snapshot.dual_nodes.entries()) {
-        for (let edge_index of node.h) {
-            dual_indices[edge_index].push(node_index)
+function calculate_edge_to_dual_indices(snapshot) {
+    const dual_indices = Array(snapshot.edges.length).fill(null).map(() => Array())
+    if (snapshot.dual_nodes != null) {
+        for (let [node_index, node] of snapshot.dual_nodes.entries()) {
+            for (let edge_index of node.h) {
+                dual_indices[edge_index].push(node_index)
+            }
         }
     }
     return dual_indices
-})
+}
 export async function refresh_snapshot_data() {
     // console.log("refresh_snapshot_data")
     if (active_mwpf_data.value != null) {  // no mwpf data provided
@@ -477,6 +473,11 @@ export async function refresh_snapshot_data() {
             edge_offset = Math.sqrt(Math.pow(scaled_vertex_outline_radius.value, 2) - Math.pow(scaled_edge_radius.value, 2))
         }
         edge_caches = []  // clear cache
+        let edge_to_dual_indices = null
+        if (segmented.value) {
+            edge_to_dual_indices = calculate_edge_to_dual_indices(snapshot)
+        }
+        let edge_branch_segmented_data = null  // new segment visualization method from Katie: each branch display differently
         for (let [i, edge] of snapshot.edges.entries()) {
             // calculate the center point of all vertices
             let sum_position = new THREE.Vector3(0, 0, 0)
@@ -497,33 +498,19 @@ export async function refresh_snapshot_data() {
             }
             edge_vec_mesh.splice(0, edge_vec_mesh.length) // clear
             const edge_material = get_edge_material(edge.g, edge.w)
-            const segmented_dual_indices = []
-            if (segmented.value && snapshot.dual_nodes != null) {  // check the non-zero contributing dual variables
-                for (let node_index of edge_to_dual_indices.value[i]) {
-                    if (snapshot.dual_nodes[node_index].d != 0) {
-                        segmented_dual_indices.push(node_index)
-                    }
+            const create_edge_mesh = () => {
+                const edge_mesh = new THREE.Mesh(get_edge_geometry(edge.v.length), edge_material)
+                edge_mesh.userData = {
+                    type: "edge",
+                    edge_index: i,
                 }
+                edge_mesh.visible = false
+                scene.add(edge_mesh)
+                return edge_mesh
             }
-            for (let j = 0; j < edge.v.length; ++j) {
-                const create_edge_mesh = () => {
-                    const edge_mesh = new THREE.Mesh(get_edge_geometry(edge.v.length), edge_material)
-                    edge_mesh.userData = {
-                        type: "edge",
-                        edge_index: i,
-                    }
-                    edge_mesh.visible = false
-                    scene.add(edge_mesh)
-                    return edge_mesh
-                }
-                if (segmented.value) {
-                    // the last segment is the empty segment
-                    for (let k = 0; k < segmented_dual_indices.length + 1; ++k) {
-                        edge_vec_mesh.push(create_edge_mesh())
-                    }
-                } else {
-                    edge_vec_mesh.push(create_edge_mesh())
-                }
+            // when display in segments, calculate the edge properties for each branch
+            if (segmented.value) {
+                edge_branch_segmented_data = calculate_edge_branch_segmented(snapshot, edge_to_dual_indices, i)
             }
             for (let j = 0; j < edge.v.length; ++j) {
                 const vertex_index = edge.v[j]
@@ -557,20 +544,37 @@ export async function refresh_snapshot_data() {
                     }
                 })
                 if (segmented.value) {
-                    // the segmented edges
+                    const grown_end = edge_branch_segmented_data.grown_end[j]
+                    const grown_center = edge_branch_segmented_data.grown_center[j]
+                    const segments_center = edge_branch_segmented_data.contributor_center[j]
+                    const segments_end = edge_branch_segmented_data.contributor_end[j]
+                    // calculate the segments of this edge branch
                     let accumulated_ratio = 0
-                    for (let k = 0; k < segmented_dual_indices.length + 1; ++k) {
-                        const is_segments = k != segmented_dual_indices.length
-                        const edge_mesh = edge_vec_mesh[k * edge.v.length + j]
-                        let segment_ratio = 0
-                        let node_index = -1
-                        if (is_segments) {
-                            node_index = segmented_dual_indices[k]
-                            const node = snapshot.dual_nodes[node_index]
-                            segment_ratio = node.d / edge.w
-                        } else {
-                            segment_ratio = 1 - accumulated_ratio
-                        }
+                    const branch_weight = edge.w / edge.v.length
+                    const segments = []
+                    //     growing from end vertices
+                    for (const [ni, length] of segments_end) {
+                        const ratio = length / branch_weight
+                        segments.push([ni, accumulated_ratio, ratio])
+                        accumulated_ratio += ratio
+                    }
+                    //     the middle empty segment
+                    if (grown_end + grown_center < branch_weight) {
+                        const ratio = (branch_weight - grown_end - grown_center) / branch_weight
+                        segments.push([null, accumulated_ratio, ratio])
+                        accumulated_ratio += ratio
+                    }
+                    //     growing from center vertices
+                    for (let index = segments_center.length - 1; index >= 0; index--) {
+                        const [ni, length] = segments_center[index]
+                        const ratio = length / branch_weight
+                        segments.push([ni, accumulated_ratio, ratio])
+                        accumulated_ratio += ratio
+                    }
+                    // create the segments
+                    for (const [node_index, accumulated_ratio, segment_ratio] of segments) {
+                        const edge_mesh = create_edge_mesh()
+                        edge_vec_mesh.push(edge_mesh)
                         edge_mesh.position.copy(segment_position_of(accumulated_ratio))
                         if (edge.v.length != 1) {
                             edge_mesh.scale.set(1, edge_length * segment_ratio, 1)
@@ -582,13 +586,9 @@ export async function refresh_snapshot_data() {
                             edge_mesh.geometry = get_singular_edge_geometry_segments(inner / outer)
                             edge_mesh.scale.set(outer, 1, outer)
                         }
-                        accumulated_ratio += segment_ratio
                         edge_mesh.visible = true
-                        if (edge.v.length != 1 && edge_length * segment_ratio == 0) {
-                            edge_mesh.visible = false
-                        }
                         edge_mesh.renderOrder = 20 - edge.v.length  // better visual effect
-                        if (is_segments) {
+                        if (node_index != null) {
                             edge_mesh.material = get_segmented_edge_material(edge.un == 0, node_index)
                         } else {
                             edge_mesh.material = get_edge_material(0, edge.w)
@@ -601,7 +601,8 @@ export async function refresh_snapshot_data() {
                         }
                     }
                 } else {
-                    const edge_mesh = edge_vec_mesh[j]
+                    const edge_mesh = create_edge_mesh()
+                    edge_vec_mesh.push(edge_mesh)
                     edge_mesh.position.copy(start_position)
                     if (edge.v.length != 1) {
                         edge_mesh.scale.set(1, edge_length, 1)
@@ -668,6 +669,109 @@ export function show_snapshot(snapshot_idx, mwpf_data) {
     active_snapshot_idx.value = snapshot_idx
     active_mwpf_data.value = mwpf_data
 }
+
+/*
+ * Idea from Katie 2024.10.2: draw each edge branch differently to show which vertices the dual variables contribute
+ * 
+ * The previous visualization is to display all each hypergraph in deg_v branches, and each branch is identical.
+ *     Then for each branch, we print the contribution of all the dual variables. This method is very simple, and essentially
+ *     convert the hyperedge printing problem to deg_v number of simple edge printing. However, this method will not 
+ *     convey the information of which vertices are the dual variables "flooding" from. For example, a single defect vertex
+ *     grows over its adjacent hyperedges, however this method does not allow readers to get the information of which vertex
+ *     is growing by looking at the edge along.
+ * 
+ * We then found a new method to display it better: Since we know the subset of vertices that a dual variable contributes,
+ *     namely $e \cap V_S$, we can grow from these vertices and then show the direction of the dual variable. This method
+ *     is stable, in a sense that a small change of dual variables corresponds to a small change of the visualization effect,
+ *     given that the dual variables have a consistent order (by their indices).
+ * 
+ * This function outputs an object describing the segments on each edge branch.
+ */
+function calculate_edge_branch_segmented(snapshot, edge_to_dual_indices, edge_index) {
+    // calculate the list of contributing dual variables
+    let dual_indices = []
+    let edge = snapshot.edges[edge_index]
+    if (segmented.value && snapshot.dual_nodes != null) {  // check the non-zero contributing dual variables
+        for (let node_index of edge_to_dual_indices[edge_index]) {
+            if (snapshot.dual_nodes[node_index].d != 0) {
+                dual_indices.push(node_index)
+            }
+        }
+    }
+    // the grown value for each edge branch
+    let grown_end = Array(edge.v.length).fill(0)
+    let grown_center = Array(edge.v.length).fill(0)
+    // the contributing dual variables from the end vertex and the center vertex, respectively
+    let contributor_end = Array(edge.v.length).fill(null).map(() => Array())
+    let contributor_center = Array(edge.v.length).fill(null).map(() => Array())
+    // iterate over all dual variables and put them on the edge branches
+    let branch_weight = edge.w / edge.v.length
+    for (let ni of dual_indices) {
+        const node = snapshot.dual_nodes[ni]
+        // calculate the contributing vertices of this dual variable: $e \cap V_S$
+        let vertices = []
+        let v_s = new Set(snapshot.dual_nodes[ni].v)
+        for (let [v_eid, v] of edge.v.entries()) {
+            if (v_s.has(v)) {
+                vertices.push(v_eid)
+            }
+        }
+        console.assert(vertices.length > 0, "contributing dual variable must overlap with at least one end vertex")
+        let center_grow = 0  // the amount of growth that must happen at the center because some edge branch is already tight
+        let branch_growth = node.d / vertices.length
+        // first, grow from end vertices, each with `branch_growth`
+        for (let v_eid of vertices) {
+            let remain = branch_weight - grown_end[v_eid] - grown_center[v_eid]
+            if (branch_growth <= remain) {
+                grown_end[v_eid] += branch_growth
+                contributor_end[v_eid].push([ni, branch_growth])
+            } else {
+                grown_end[v_eid] += remain
+                contributor_end[v_eid].push([ni, remain])
+                center_grow += branch_growth - remain
+            }
+        }
+        // then, grow from center vertices
+        while (center_grow > 0) {
+            let available_vertices = []
+            let min_positive_remain = null
+            for (let [v_eid, vi] of edge.v.entries()) {
+                let remain = branch_weight - grown_end[v_eid] - grown_center[v_eid]
+                if (remain > 0) {
+                    available_vertices.push(v_eid)
+                    if (min_positive_remain == null) {
+                        min_positive_remain = remain
+                    } else if (remain < min_positive_remain) {
+                        min_positive_remain = remain
+                    }
+                }
+            }
+            if (min_positive_remain == null) {
+                if (center_grow > 1e-6) {  // tolerance of error
+                    console.error(`need to grow from center of ${center_grow} but all branches are fully grown`)
+                }
+                break
+            }
+            // in this round, we can only grow `min_positive_remain` on the branches of `available_vertices`
+            if (min_positive_remain > center_grow / available_vertices.length) {
+                min_positive_remain = center_grow / available_vertices.length
+            }
+            center_grow -= min_positive_remain * available_vertices.length
+            for (let v_eid of available_vertices) {
+                grown_center[v_eid] += min_positive_remain
+                const center = contributor_center[v_eid]
+                // grow from center, potentially merging with existing segments
+                if (center.length > 0 && center[center.length - 1][0] == ni) {
+                    center[center.length - 1][1] += min_positive_remain
+                } else {
+                    center.push([ni, min_positive_remain])
+                }
+            }
+        }
+    }
+    return { grown_end, grown_center, contributor_end, contributor_center }
+}
+
 
 // configurations
 const gui = new GUI({ width: 400, title: "render configurations" })

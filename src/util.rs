@@ -21,10 +21,19 @@ pub type Weight = usize; // only used as input, all internal weight representati
 cfg_if::cfg_if! {
     if #[cfg(feature="r64_weight")] {
         pub type Rational = num_rational::Rational64;
+        pub fn numer_of(value: &Rational) -> i64 {
+            value.numer().to_i64().unwrap()
+        }
     } else if #[cfg(feature="float_lp")] {
         pub type Rational = crate::ordered_float::OrderedFloat;
+        pub fn numer_of(value: &Rational) -> f64 {
+            value.numer().to_f64().unwrap()
+        }
     } else  {
         pub type Rational = num_rational::BigRational;
+        pub fn numer_of(value: &Rational) -> i64 {
+            value.numer().to_i64().unwrap()
+        }
     }
 }
 
