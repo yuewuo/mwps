@@ -337,8 +337,6 @@ impl PrimalModuleImpl for PrimalModuleSerial {
                     .clone()
                     .unwrap_or_else(|| panic!("bug occurs: cluster should be solved, but the subgraph is not yet generated || the seed is {seed:?}")),
             );
-    
-           
         }
         // println!("subgraph: {:?}", subgraph);
         subgraph

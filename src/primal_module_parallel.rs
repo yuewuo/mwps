@@ -1976,12 +1976,6 @@ pub mod tests {
             no_per_layer,
             None,
         );
-
-        // now we fuse the two blocks together and solve them 
-        // new_primal_module_ptr.solve_additional_unit(new_dual_module, primal_module, dual_module, new_partition_info, no_per_layer, callback);
-
-
-        // code.positions
  
         // let useless_interface_ptr = DualModuleInterfacePtr::new();
         // let (subgraph, weight_range) = primal_module.subgraph_range(&useless_interface_ptr, 0);
