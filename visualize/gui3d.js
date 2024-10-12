@@ -300,7 +300,7 @@ export let segmented_edge_colors = [
     "#8C4515",  // brown
     "#E14CB6",  // pink
 ]
-let segmented_untight_opacity = 0.2
+let segmented_untight_opacity = parseFloat(urlParams.get('segmented_untight_opacity') || 0.2)
 let segmented_tight_opacity = 1
 export const segmented_edge_materials = []
 function update_segmented_edge_materials() {
@@ -506,6 +506,7 @@ export async function refresh_snapshot_data() {
                 }
                 edge_mesh.visible = false
                 scene.add(edge_mesh)
+                edge_vec_mesh.push(edge_mesh)
                 return edge_mesh
             }
             // when display in segments, calculate the edge properties for each branch
@@ -574,7 +575,6 @@ export async function refresh_snapshot_data() {
                     // create the segments
                     for (const [node_index, accumulated_ratio, segment_ratio] of segments) {
                         const edge_mesh = create_edge_mesh()
-                        edge_vec_mesh.push(edge_mesh)
                         edge_mesh.position.copy(segment_position_of(accumulated_ratio))
                         if (edge.v.length != 1) {
                             edge_mesh.scale.set(1, edge_length * segment_ratio, 1)
@@ -602,7 +602,6 @@ export async function refresh_snapshot_data() {
                     }
                 } else {
                     const edge_mesh = create_edge_mesh()
-                    edge_vec_mesh.push(edge_mesh)
                     edge_mesh.position.copy(start_position)
                     if (edge.v.length != 1) {
                         edge_mesh.scale.set(1, edge_length, 1)
