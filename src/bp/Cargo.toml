@@ -1,0 +1,12 @@
+[package]
+name = "bp"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "bp"
+path = "src/lib.rs"
+
+[dependencies]
+float-cmp = "0.10.0"
+rand = "0.8.5"
