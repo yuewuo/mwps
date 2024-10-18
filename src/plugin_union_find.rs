@@ -15,11 +15,31 @@ use crate::relaxer::*;
 use crate::util::*;
 use std::collections::BTreeSet;
 
+#[cfg(all(feature = "pointer", feature = "non-pq"))]
+use crate::dual_module_serial::{EdgeWeak, VertexWeak, EdgePtr, VertexPtr};
+#[cfg(all(feature = "pointer", not(feature = "non-pq")))]
+use crate::dual_module_pq::{EdgeWeak, VertexWeak, EdgePtr, VertexPtr};
+
 #[derive(Debug, Clone, Default)]
 pub struct PluginUnionFind {}
 
 impl PluginUnionFind {
+    #[cfg(feature="pointer")]
     /// check if the cluster is valid (hypergraph union-find decoder)
+    pub fn find_single_relaxer(matrix: &mut EchelonMatrix) -> Option<Relaxer> {
+        if matrix.get_echelon_info().satisfiable {
+            return None; // cannot find any relaxer
+        }
+        let local_edges: BTreeSet<EdgePtr> = matrix.get_view_edges().iter().map(|e| e.upgrade_force()).collect::<BTreeSet<_>>();
+        let invalid_subgraph = InvalidSubgraph::new_complete_ptr(
+            &matrix.get_vertices().iter().map(|e| e.upgrade_force()).collect::<BTreeSet<_>>(),
+            &local_edges,
+        );
+        Some(Relaxer::new([(invalid_subgraph, Rational::one())].into()))
+    }
+    
+    /// check if the cluster is valid (hypergraph union-find decoder)
+    #[cfg(not(feature="pointer"))]
     pub fn find_single_relaxer(decoding_graph: &DecodingHyperGraph, matrix: &mut EchelonMatrix) -> Option<Relaxer> {
         if matrix.get_echelon_info().satisfiable {
             return None; // cannot find any relaxer
@@ -36,11 +56,20 @@ impl PluginUnionFind {
 impl PluginImpl for PluginUnionFind {
     fn find_relaxers(
         &self,
+        #[cfg(not(feature="pointer"))]
         decoding_graph: &DecodingHyperGraph,
         matrix: &mut EchelonMatrix,
         _positive_dual_nodes: &[DualNodePtr],
     ) -> Vec<Relaxer> {
-        if let Some(relaxer) = Self::find_single_relaxer(decoding_graph, matrix) {
+        #[cfg(feature="pointer")]
+        if let Some(relaxer) = Self::find_single_relaxer(matrix) {
+            vec![relaxer]
+        } else {
+            vec![]
+        }
+
+        #[cfg(not(feature="pointer"))]
+        if let Some(relaxer) = Self::find_single_relaxer(matrix) {
             vec![relaxer]
         } else {
             vec![]

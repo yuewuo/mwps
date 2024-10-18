@@ -8,11 +8,12 @@ use std::collections::VecDeque;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
+use crate::num_traits::Zero;
 use crate::dual_module::*;
 use crate::num_traits::FromPrimitive;
 use crate::ordered_float::OrderedFloat;
 use crate::pointers::*;
-use crate::primal_module_serial::ClusterAffinity;
+use crate::primal_module_serial::{ClusterAffinity, PrimalClusterPtr, PrimalClusterWeak};
 use crate::relaxer_optimizer::OptimizerResult;
 use crate::util::*;
 use crate::visualize::*;
@@ -171,10 +172,17 @@ pub trait PrimalModuleImpl {
             let cluster_affs = self.get_sorted_clusters_aff();
 
             for cluster_affinity in cluster_affs.into_iter() {
+                #[cfg(not(feature="pointer"))]
                 let cluster_index = cluster_affinity.cluster_index;
+                #[cfg(feature="pointer")]
+                let cluster_ptr = cluster_affinity.cluster_ptr;
                 let mut dual_node_deltas = BTreeMap::new();
+                #[cfg(not(feature="pointer"))]
                 let (mut resolved, optimizer_result) =
                     self.resolve_cluster_tune(cluster_index, interface, dual_module, &mut dual_node_deltas);
+                #[cfg(feature="pointer")]
+                let (mut resolved, optimizer_result) =
+                    self.resolve_cluster_tune(&cluster_ptr, interface, dual_module, &mut dual_node_deltas);
 
                 let mut conflicts = dual_module.get_conflicts_tune(optimizer_result, dual_node_deltas);
 
@@ -232,8 +240,31 @@ pub trait PrimalModuleImpl {
         }
     }
 
+    #[cfg(feature="pointer")]
+    fn subgraph(&mut self, interface: &DualModuleInterfacePtr) -> Subgraph;
+
+    #[cfg(not(feature="pointer"))]
     fn subgraph(&mut self, interface: &DualModuleInterfacePtr, dual_module: &mut impl DualModuleImpl) -> Subgraph;
 
+    #[cfg(feature="pointer")]
+    fn subgraph_range(
+        &mut self,
+        interface: &DualModuleInterfacePtr,
+    ) -> (Subgraph, WeightRange) {
+        let subgraph = self.subgraph(interface);
+        let mut upper = Rational::zero();
+        for (i, edge_weak) in subgraph.iter().enumerate() {
+            upper += edge_weak.upgrade_force().read_recursive().weight;
+        }
+        let weight_range = WeightRange::new(
+            interface.sum_dual_variables(),
+            upper
+        );
+
+        (subgraph, weight_range)
+    }
+
+    #[cfg(not(feature="pointer"))]
     fn subgraph_range(
         &mut self,
         interface: &DualModuleInterfacePtr,
@@ -267,14 +298,23 @@ pub trait PrimalModuleImpl {
     }
 
     /// in "tune" mode, return the list of clusters that need to be resolved
+    #[cfg(not(feature="pointer"))]
     fn pending_clusters(&mut self) -> Vec<usize> {
+        panic!("not implemented `pending_clusters`");
+    }
+
+    #[cfg(feature="pointer")]
+    fn pending_clusters(&mut self) -> Vec<PrimalClusterWeak> {
         panic!("not implemented `pending_clusters`");
     }
 
     /// check if a cluster has been solved, if not then resolve it
     fn resolve_cluster(
         &mut self,
+        #[cfg(not(feature="pointer"))]
         _cluster_index: NodeIndex,
+        #[cfg(feature="pointer")]
+        _cluster_ptr: &PrimalClusterPtr,
         _interface_ptr: &DualModuleInterfacePtr,
         _dual_module: &mut impl DualModuleImpl,
     ) -> bool {
@@ -284,10 +324,16 @@ pub trait PrimalModuleImpl {
     /// `resolve_cluster` but in tuning mode, optimizer result denotes what the optimizer has accomplished
     fn resolve_cluster_tune(
         &mut self,
+        #[cfg(feature="pointer")]
+        _cluster_index: &PrimalClusterPtr,
+        #[cfg(not(feature="pointer"))]
         _cluster_index: NodeIndex,
         _interface_ptr: &DualModuleInterfacePtr,
         _dual_module: &mut impl DualModuleImpl,
         // _dual_node_deltas: &mut BTreeMap<OrderedDualNodePtr, Rational>,
+        #[cfg(feature="pointer")]
+        _dual_node_deltas: &mut BTreeMap<OrderedDualNodePtr, (Rational, PrimalClusterPtr)>,
+        #[cfg(not(feature="pointer"))]
         _dual_node_deltas: &mut BTreeMap<OrderedDualNodePtr, (Rational, NodeIndex)>,
     ) -> (bool, OptimizerResult) {
         panic!("not implemented `resolve_cluster_tune`");

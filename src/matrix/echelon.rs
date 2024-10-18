@@ -6,6 +6,11 @@ use derivative::Derivative;
 use prettytable::*;
 use std::collections::BTreeSet;
 
+#[cfg(all(feature = "pointer", feature = "non-pq"))]
+use crate::dual_module_serial::{EdgeWeak, VertexWeak, EdgePtr, VertexPtr};
+#[cfg(all(feature = "pointer", not(feature = "non-pq")))]
+use crate::dual_module_pq::{EdgeWeak, VertexWeak, EdgePtr, VertexPtr};
+
 #[derive(Clone, Derivative)]
 #[derivative(Default(new = "true"))]
 pub struct Echelon<M: MatrixView> {
@@ -23,6 +28,71 @@ impl<M: MatrixView> Echelon<M> {
     }
 }
 
+#[cfg(feature="pointer")]
+impl<M: MatrixTail + MatrixView> MatrixTail for Echelon<M> {
+    fn get_tail_edges(&self) -> &BTreeSet<EdgeWeak> {
+        self.base.get_tail_edges()
+    }
+    fn get_tail_edges_mut(&mut self) -> &mut BTreeSet<EdgeWeak>{
+        self.is_info_outdated = true;
+        self.base.get_tail_edges_mut()
+    }
+}
+
+#[cfg(feature="pointer")]
+impl<M: MatrixTight> MatrixTight for Echelon<M> {
+    fn update_edge_tightness(&mut self, edge_weak: EdgeWeak, is_tight: bool) {
+        self.is_info_outdated = true;
+        self.base.update_edge_tightness(edge_weak, is_tight)
+    }
+    fn is_tight(&self, edge_weak: EdgeWeak) -> bool {
+        self.base.is_tight(edge_weak)
+    }
+}
+
+#[cfg(feature="pointer")]
+impl<M: MatrixView> MatrixBasic for Echelon<M> {
+    fn add_variable(&mut self, edge_weak: EdgeWeak) -> Option<VarIndex> {
+        self.is_info_outdated = true;
+        self.base.add_variable(edge_weak)
+    }
+
+    fn add_constraint(
+        &mut self,
+        vertex_ptr: VertexPtr,
+        // incident_edges: &[EdgeWeak],
+        // parity: bool,
+    ) -> Option<Vec<VarIndex>> {
+        self.is_info_outdated = true;
+        self.base.add_constraint(vertex_ptr)
+    }
+
+    fn xor_row(&mut self, _target: RowIndex, _source: RowIndex) {
+        panic!("xor operation on an echelon matrix is forbidden");
+    }
+    fn swap_row(&mut self, _a: RowIndex, _b: RowIndex) {
+        panic!("swap operation on an echelon matrix is forbidden");
+    }
+    fn get_lhs(&self, row: RowIndex, var_index: VarIndex) -> bool {
+        self.get_base().get_lhs(row, var_index)
+    }
+    fn get_rhs(&self, row: RowIndex) -> bool {
+        self.get_base().get_rhs(row)
+    }
+    fn var_to_edge_index(&self, var_index: VarIndex) -> EdgeWeak {
+        self.get_base().var_to_edge_index(var_index)
+    }
+    fn edge_to_var_index(&self, edge_weak: EdgeWeak) -> Option<VarIndex> {
+        self.get_base().edge_to_var_index(edge_weak)
+    }
+    fn get_vertices(&self) -> BTreeSet<VertexWeak> {
+        self.get_base().get_vertices()
+    }
+}
+
+
+
+#[cfg(not(feature="pointer"))]
 impl<M: MatrixTail + MatrixView> MatrixTail for Echelon<M> {
     fn get_tail_edges(&self) -> &BTreeSet<EdgeIndex> {
         self.base.get_tail_edges()
@@ -33,6 +103,7 @@ impl<M: MatrixTail + MatrixView> MatrixTail for Echelon<M> {
     }
 }
 
+#[cfg(not(feature="pointer"))]
 impl<M: MatrixTight> MatrixTight for Echelon<M> {
     fn update_edge_tightness(&mut self, edge_index: EdgeIndex, is_tight: bool) {
         self.is_info_outdated = true;
@@ -43,6 +114,7 @@ impl<M: MatrixTight> MatrixTight for Echelon<M> {
     }
 }
 
+#[cfg(not(feature="pointer"))]
 impl<M: MatrixView> MatrixBasic for Echelon<M> {
     fn add_variable(&mut self, edge_index: EdgeIndex) -> Option<VarIndex> {
         self.is_info_outdated = true;
@@ -243,12 +315,24 @@ impl<M: MatrixView> VizTrait for Echelon<M> {
         // add row information on the right
         table.title.add_cell(Cell::new("\u{25BC}"));
         for (row, row_info) in info.rows.iter().enumerate() {
-            let cell = if row_info.has_leading() {
-                Cell::new(self.column_to_edge_index(row_info.column).to_string().as_str()).style_spec("irFm")
-            } else {
-                Cell::new("*").style_spec("rFr")
-            };
-            table.rows[row].add_cell(cell);
+            #[cfg(feature="pointer")] {
+                let cell = if row_info.has_leading() {
+                    Cell::new(self.column_to_edge_index(row_info.column).upgrade_force().read_recursive().edge_index
+                    .to_string().as_str()).style_spec("irFm") 
+                } else {
+                    Cell::new("*").style_spec("rFr")
+                };
+                table.rows[row].add_cell(cell);
+            }
+    
+            #[cfg(not(feature="pointer"))] {
+                let cell = if row_info.has_leading() {
+                    Cell::new(self.column_to_edge_index(row_info.column).to_string().as_str()).style_spec("irFm")
+                } else {
+                    Cell::new("*").style_spec("rFr")
+                };
+                table.rows[row].add_cell(cell);
+            }
         }
         // add column information on the bottom
         let mut bottom_row = Row::empty();
@@ -269,6 +353,7 @@ impl<M: MatrixView> VizTrait for Echelon<M> {
 }
 
 #[cfg(test)]
+#[cfg(not(feature="pointer"))]
 pub mod tests {
     use super::super::basic::*;
     use super::super::tail::*;

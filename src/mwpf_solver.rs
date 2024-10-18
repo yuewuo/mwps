@@ -5,7 +5,9 @@
 //!
 
 use crate::dual_module::*;
-// use crate::dual_module_serial::*;
+#[cfg(feature = "non-pq")]
+use crate::dual_module_serial::*;
+#[cfg(not(feature = "non-pq"))]
 use crate::dual_module_pq::*;
 use crate::example_codes::*;
 use crate::model_hypergraph::*;
@@ -104,7 +106,9 @@ pub mod hyperion_default_configs {
 }
 
 pub struct SolverSerialPlugins {
-    // dual_module: DualModuleSerial,
+    #[cfg(feature = "non-pq")]
+    dual_module: DualModuleSerial,
+    #[cfg(not(feature = "non-pq"))]
     dual_module: DualModulePQ<FutureObstacleQueue<Rational>>,
     primal_module: PrimalModuleSerial,
     interface_ptr: DualModuleInterfacePtr,
@@ -135,9 +139,14 @@ impl SolverSerialPlugins {
         }
 
         Self {
+            #[cfg(feature = "non-pq")]
+            dual_module: DualModuleSerial::new_empty(initializer),
+            #[cfg(not(feature = "non-pq"))]
             dual_module: DualModulePQ::new_empty(initializer),
-            // dual_module: DualModuleSerial::new_empty(initializer),
             primal_module,
+            #[cfg(feature="pointer")]
+            interface_ptr: DualModuleInterfacePtr::new(),
+            #[cfg(not(feature="pointer"))]
             interface_ptr: DualModuleInterfacePtr::new(model_graph.clone()),
             model_graph,
         }
@@ -171,6 +180,9 @@ impl PrimalDualSolver for SolverSerialPlugins {
         );
     }
     fn subgraph_range_visualizer(&mut self, visualizer: Option<&mut Visualizer>) -> (Subgraph, WeightRange) {
+        #[cfg(feature="pointer")]
+        let (subgraph, weight_range) = self.primal_module.subgraph_range(&self.interface_ptr);
+        #[cfg(not(feature="pointer"))]
         let (subgraph, weight_range) = self.primal_module.subgraph_range(&self.interface_ptr, &mut self.dual_module);
         if let Some(visualizer) = visualizer {
             visualizer

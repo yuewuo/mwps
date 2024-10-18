@@ -5,7 +5,26 @@ use crate::util::*;
 use derivative::Derivative;
 use std::collections::{BTreeMap, BTreeSet};
 
+#[cfg(all(feature = "pointer", feature = "non-pq"))]
+use crate::dual_module_serial::{EdgeWeak, VertexWeak, EdgePtr, VertexPtr};
+#[cfg(all(feature = "pointer", not(feature = "non-pq")))]
+use crate::dual_module_pq::{EdgeWeak, VertexWeak, EdgePtr, VertexPtr};
+
 /// complete matrix considers a predefined set of edges and won't consider any other edges
+#[cfg(feature="pointer")]
+#[derive(Clone, Derivative)]
+#[derivative(Default(new = "true"))]
+pub struct CompleteMatrix {
+    /// the vertices already maintained by this parity check
+    vertices: BTreeSet<VertexWeak>,
+    /// the edges maintained by this parity check, mapping to the local indices
+    edges: BTreeMap<EdgeWeak, VarIndex>,
+    /// variable index map to edge index
+    variables: Vec<EdgeWeak>,
+    constraints: Vec<ParityRow>,
+}
+
+#[cfg(not(feature = "pointer"))]
 #[derive(Clone, Derivative)]
 #[derivative(Default(new = "true"))]
 pub struct CompleteMatrix {
@@ -18,6 +37,82 @@ pub struct CompleteMatrix {
     constraints: Vec<ParityRow>,
 }
 
+
+#[cfg(feature = "pointer")]
+impl MatrixBasic for CompleteMatrix {
+    fn add_variable(&mut self, edge_weak: EdgeWeak) -> Option<VarIndex> {
+        if self.edges.contains_key(&edge_weak) {
+            // variable already exists
+            return None;
+        }
+        if !self.constraints.is_empty() {
+            panic!("complete matrix doesn't allow dynamic edges, please insert all edges at the beginning")
+        }
+        let var_index = self.variables.len();
+        self.edges.insert(edge_weak.clone(), var_index);
+        self.variables.push(edge_weak);
+        Some(var_index)
+    }
+
+    fn add_constraint(
+        &mut self,
+        vertex_ptr: VertexPtr,
+        // incident_edges: &[EdgeWeak],
+        // parity: bool,
+    ) -> Option<Vec<VarIndex>> {
+        if self.vertices.contains(&vertex_ptr.downgrade()) {
+            // no need to add repeat constraint
+            return None;
+        }
+        self.vertices.insert(vertex_ptr.downgrade());
+        let mut row = ParityRow::new_length(self.variables.len());
+        let vertex = vertex_ptr.read_recursive();
+        // let incident_edges = &vertex.edges;
+        for edge_index in vertex.edges.iter() {
+            if self.exists_edge(edge_index.clone()) {
+                let var_index = self.edges[&edge_index];
+                row.set_left(var_index, true);
+            }
+        }
+        // let parity = vertex.is_defect;
+        row.set_right(vertex.is_defect);
+        self.constraints.push(row);
+        // never add new edges
+        None
+    }
+
+    /// row operations
+    fn xor_row(&mut self, target: RowIndex, source: RowIndex) {
+        ParityRow::xor_two_rows(&mut self.constraints, target, source)
+    }
+
+    fn swap_row(&mut self, a: RowIndex, b: RowIndex) {
+        self.constraints.swap(a, b);
+    }
+
+    fn get_lhs(&self, row: RowIndex, var_index: VarIndex) -> bool {
+        self.constraints[row].get_left(var_index)
+    }
+
+    fn get_rhs(&self, row: RowIndex) -> bool {
+        self.constraints[row].get_right()
+    }
+
+    fn var_to_edge_index(&self, var_index: VarIndex) -> EdgeWeak {
+        self.variables[var_index].clone()
+    }
+
+    fn edge_to_var_index(&self, edge_weak: EdgeWeak) -> Option<VarIndex> {
+        self.edges.get(&edge_weak).cloned()
+    }
+
+    fn get_vertices(&self) -> BTreeSet<VertexWeak> {
+        self.vertices.clone()
+    }
+}
+
+
+#[cfg(not(feature = "pointer"))]
 impl MatrixBasic for CompleteMatrix {
     fn add_variable(&mut self, edge_index: EdgeIndex) -> Option<VarIndex> {
         if self.edges.contains_key(&edge_index) {
@@ -108,6 +203,7 @@ impl VizTrait for CompleteMatrix {
 }
 
 #[cfg(test)]
+#[cfg(not(feature="pointer"))]
 pub mod tests {
     use crate::matrix::Echelon;
 

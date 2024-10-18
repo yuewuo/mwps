@@ -1,3 +1,4 @@
+#![cfg(feature = "non-pq")]
 //! Serial Dual Module
 //!
 //! A serial implementation of the dual module
@@ -15,6 +16,10 @@ use crate::visualize::*;
 use crate::{add_shared_methods, dual_module::*};
 use num_traits::FromPrimitive;
 use std::collections::BTreeSet;
+use std::cmp::Ordering;
+
+#[cfg(feature = "pointer")]
+use std::sync::{Arc, Weak};
 
 pub struct DualModuleSerial {
     /// all vertices including virtual ones
@@ -23,7 +28,10 @@ pub struct DualModuleSerial {
     pub edges: Vec<EdgePtr>,
     /// maintain an active list to optimize for average cases: most defect vertices have already been matched, and we only need to work on a few remained;
     /// note that this list may contain duplicate nodes
+    #[cfg(not(feature="pointer"))]
     pub active_edges: BTreeSet<EdgeIndex>,
+    #[cfg(feature="pointer")]
+    pub active_edges: BTreeSet<EdgePtr>,
     /// active nodes
     pub active_nodes: BTreeSet<OrderedDualNodePtr>,
 
@@ -43,7 +51,7 @@ pub struct Vertex {
     /// if a vertex is defect, then [`Vertex::propagated_dual_node`] always corresponds to that root
     pub is_defect: bool,
     /// all neighbor edges, in surface code this should be constant number of edges
-    #[derivative(Debug = "ignore")]
+    // #[derivative(Debug = "ignore")]
     pub edges: Vec<EdgeWeak>,
 }
 
@@ -65,25 +73,59 @@ impl std::fmt::Debug for VertexWeak {
     }
 }
 
+impl Ord for VertexPtr {
+    fn cmp(&self, other: &Self) -> Ordering {
+        // compare the pointer address 
+        let ptr1 = Arc::as_ptr(self.ptr());
+        let ptr2 = Arc::as_ptr(other.ptr());
+        // https://doc.rust-lang.org/reference/types/pointer.html
+        // "When comparing raw pointers they are compared by their address, rather than by what they point to."
+        ptr1.cmp(&ptr2)
+    }
+}
+
+impl PartialOrd for VertexPtr {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for VertexWeak {
+    fn cmp(&self, other: &Self) -> Ordering {
+        // compare the pointer address 
+        let ptr1 = Weak::as_ptr(self.ptr());
+        let ptr2 = Weak::as_ptr(other.ptr());
+        // https://doc.rust-lang.org/reference/types/pointer.html
+        // "When comparing raw pointers they are compared by their address, rather than by what they point to."
+        ptr1.cmp(&ptr2)
+    }
+}
+
+impl PartialOrd for VertexWeak {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
 #[derive(Derivative)]
 #[derivative(Debug)]
 pub struct Edge {
     /// global edge index
-    edge_index: EdgeIndex,
+    pub edge_index: EdgeIndex,
     /// total weight of this edge
-    weight: Rational,
+    pub weight: Rational,
     #[derivative(Debug = "ignore")]
-    vertices: Vec<VertexWeak>,
+    pub vertices: Vec<VertexWeak>,
     /// growth value, growth <= weight
-    growth: Rational,
+    pub growth: Rational,
     /// the dual nodes that contributes to this edge
-    dual_nodes: Vec<DualNodeWeak>,
+    pub dual_nodes: Vec<DualNodeWeak>,
     /// the speed of growth
-    grow_rate: Rational,
+    pub grow_rate: Rational,
 
     #[cfg(feature = "incr_lp")]
     /// storing the weights of the clusters that are currently contributing to this edge
-    cluster_weights: hashbrown::HashMap<usize, Rational>,
+    pub cluster_weights: hashbrown::HashMap<usize, Rational>,
 }
 
 pub type EdgePtr = ArcRwLock<Edge>;
@@ -126,6 +168,49 @@ impl std::fmt::Debug for EdgeWeak {
     }
 }
 
+impl Ord for EdgePtr {
+    fn cmp(&self, other: &Self) -> Ordering {
+        // let edge_1 = self.read_recursive();
+        // let edge_2 = other.read_recursive();
+        // edge_1.edge_index.cmp(&edge_2.edge_index)
+        // compare the pointer address 
+        let ptr1 = Arc::as_ptr(self.ptr());
+        let ptr2 = Arc::as_ptr(other.ptr());
+        // https://doc.rust-lang.org/reference/types/pointer.html
+        // "When comparing raw pointers they are compared by their address, rather than by what they point to."
+        ptr1.cmp(&ptr2)
+    }
+}
+
+impl PartialOrd for EdgePtr {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for EdgeWeak {
+    fn cmp(&self, other: &Self) -> Ordering {
+        // let edge_1 = self.upgrade_force().read_recursive();
+        // let edge_2 = other.upgrade_force().read_recursive();
+        // edge_1.edge_index.cmp(&edge_2.edge_index)
+        // self.upgrade_force().read_recursive().edge_index.cmp(&other.upgrade_force().read_recursive().edge_index)
+        // compare the pointer address 
+        let ptr1 = Weak::as_ptr(self.ptr());
+        let ptr2 = Weak::as_ptr(other.ptr());
+        // let ptr1 = Arc::as_ptr(self.upgrade_force().ptr());
+        // let ptr2 = Arc::as_ptr(other.upgrade_force().ptr());
+        // https://doc.rust-lang.org/reference/types/pointer.html
+        // "When comparing raw pointers they are compared by their address, rather than by what they point to."
+        ptr1.cmp(&ptr2)
+    }
+}
+
+impl PartialOrd for EdgeWeak {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
 impl DualModuleImpl for DualModuleSerial {
     /// initialize the dual module, which is supposed to be reused for multiple decoding tasks with the same structure
     #[allow(clippy::unnecessary_cast)]
@@ -140,7 +225,7 @@ impl DualModuleImpl for DualModuleSerial {
                     edges: vec![],
                 })
             })
-            .collect();
+            .collect::<Vec<_>>();
         // set edges
         let mut edges = Vec::<EdgePtr>::new();
         for hyperedge in initializer.weighted_edges.iter() {
@@ -192,7 +277,10 @@ impl DualModuleImpl for DualModuleSerial {
             "defect node (without edges) should only work on a single vertex, for simplicity"
         );
         let vertex_index = dual_node.invalid_subgraph.vertices.iter().next().unwrap();
+        #[cfg(not(feature="pointer"))]
         let mut vertex = self.vertices[*vertex_index].write();
+        #[cfg(feature="pointer")]
+        let mut vertex = vertex_index.write();
         assert!(!vertex.is_defect, "defect should not be added twice");
         vertex.is_defect = true;
         drop(dual_node);
@@ -206,7 +294,10 @@ impl DualModuleImpl for DualModuleSerial {
         let dual_node_weak = dual_node_ptr.downgrade();
         let dual_node = dual_node_ptr.read_recursive();
         for &edge_index in dual_node.invalid_subgraph.hair.iter() {
+            #[cfg(not(feature="pointer"))]
             let mut edge = self.edges[edge_index as usize].write();
+            #[cfg(feature="pointer")]
+            let mut edge = edge_index.write();
             edge.grow_rate += &dual_node.grow_rate;
             edge.dual_nodes.push(dual_node_weak.clone());
             if edge.grow_rate.is_zero() {
@@ -225,7 +316,10 @@ impl DualModuleImpl for DualModuleSerial {
         let grow_rate_diff = grow_rate.clone() - &dual_node.grow_rate;
         dual_node.grow_rate = grow_rate;
         for &edge_index in dual_node.invalid_subgraph.hair.iter() {
+            #[cfg(not(feature="pointer"))]
             let mut edge = self.edges[edge_index as usize].write();
+            #[cfg(feature="pointer")]
+            let mut edge = edge_index.write();
             edge.grow_rate += &grow_rate_diff;
             if edge.grow_rate.is_zero() {
                 self.active_edges.remove(&edge_index);
@@ -251,7 +345,10 @@ impl DualModuleImpl for DualModuleSerial {
         let node = dual_node_ptr.read_recursive();
         let mut max_update_length = MaxUpdateLength::new();
         for &edge_index in node.invalid_subgraph.hair.iter() {
+            #[cfg(not(feature="pointer"))]
             let edge = self.edges[edge_index as usize].read_recursive();
+            #[cfg(feature="pointer")]
+            let edge = edge_index.read_recursive();
             let mut grow_rate = Rational::zero();
             if simultaneous_update {
                 // consider all dual nodes
@@ -302,7 +399,10 @@ impl DualModuleImpl for DualModuleSerial {
     fn compute_maximum_update_length(&mut self) -> GroupMaxUpdateLength {
         let mut group_max_update_length = GroupMaxUpdateLength::new();
         for &edge_index in self.active_edges.iter() {
+            #[cfg(not(feature="pointer"))]
             let edge = self.edges[edge_index as usize].read_recursive();
+            #[cfg(feature="pointer")]
+            let edge = edge_index.read_recursive();
             let mut grow_rate = Rational::zero();
             for node_weak in edge.dual_nodes.iter() {
                 let node_ptr = node_weak.upgrade_force();
@@ -347,7 +447,10 @@ impl DualModuleImpl for DualModuleSerial {
         let node = dual_node_ptr.read_recursive();
         let grow_amount = length * node.grow_rate.clone();
         for &edge_index in node.invalid_subgraph.hair.iter() {
+            #[cfg(not(feature="pointer"))]
             let mut edge = self.edges[edge_index as usize].write();
+            #[cfg(feature="pointer")]
+            let mut edge = edge_index.write();
             edge.growth += grow_amount.clone();
             // assert!(
             //     !edge.growth.is_negative(),
@@ -378,7 +481,10 @@ impl DualModuleImpl for DualModuleSerial {
         );
         // update the active edges
         for &edge_index in self.active_edges.iter() {
+            #[cfg(not(feature="pointer"))]
             let mut edge = self.edges[edge_index as usize].write();
+            #[cfg(feature="pointer")]
+            let mut edge = edge_index.write();
             let mut grow_rate = Rational::zero();
             for node_weak in edge.dual_nodes.iter() {
                 grow_rate += node_weak.upgrade_force().read_recursive().grow_rate.clone();
@@ -407,6 +513,7 @@ impl DualModuleImpl for DualModuleSerial {
         }
     }
 
+    #[cfg(not(feature="pointer"))]
     #[allow(clippy::unnecessary_cast)]
     fn get_edge_nodes(&self, edge_index: EdgeIndex) -> Vec<DualNodePtr> {
         self.edges[edge_index as usize]
@@ -414,18 +521,36 @@ impl DualModuleImpl for DualModuleSerial {
             .dual_nodes
             .iter()
             .map(|x| x.upgrade_force())
-            .collect()
+            .collect::<Vec<_>>()
     }
 
+    #[cfg(feature="pointer")]
+    #[allow(clippy::unnecessary_cast)]
+    fn get_edge_nodes(&self, edge_ptr: EdgePtr) -> Vec<DualNodePtr> {
+        edge_ptr.read_recursive().dual_nodes.iter().map(|x| x.upgrade_force()).collect::<Vec<_>>()
+    }
+
+    #[cfg(not(feature="pointer"))]
     fn get_edge_slack(&self, edge_index: EdgeIndex) -> Rational {
         let edge = self.edges[edge_index].read_recursive();
         edge.weight.clone() - edge.growth.clone()
     }
 
+    #[cfg(feature="pointer")]
+    fn get_edge_slack(&self, edge_ptr: EdgePtr) -> Rational {
+        edge_ptr.read_recursive().weight.clone() - edge_ptr.read_recursive().growth.clone()
+    }
+
+    #[cfg(not(feature="pointer"))]
     #[allow(clippy::unnecessary_cast)]
     fn is_edge_tight(&self, edge_index: EdgeIndex) -> bool {
         let edge = self.edges[edge_index as usize].read_recursive();
         edge.growth == edge.weight
+    }
+
+    #[cfg(feature="pointer")]
+    fn is_edge_tight(&self, edge_ptr: EdgePtr) -> bool {
+        edge_ptr.read_recursive().growth == edge_ptr.read_recursive().weight
     }
 
     add_shared_methods!();
@@ -436,8 +561,15 @@ impl DualModuleImpl for DualModuleSerial {
         println!("edges: {:?}", self.edges);
     }
 
+    #[cfg(not(feature="pointer"))]
     fn grow_edge(&self, edge_index: EdgeIndex, amount: &Rational) {
-        let mut edge = self.edges[edge_index].write();
+        let mut edge = self.edges[edge_index as usize].write();
+        edge.growth += amount;
+    }
+
+    #[cfg(feature="pointer")]
+    fn grow_edge(&self, edge_ptr: EdgePtr, amount: &Rational) {
+        let mut edge = edge_ptr.write();
         edge.growth += amount;
     }
 
@@ -449,7 +581,10 @@ impl DualModuleImpl for DualModuleSerial {
 
         let mut weight = Rational::zero();
         for &edge_index in cluster.edges.iter() {
-            let edge_ptr = self.edges[edge_index].read_recursive();
+            #[cfg(not(feature="pointer"))]
+            let edge_ptr = self.edges[edge_index as usize].read_recursive();
+            #[cfg(feature="pointer")]
+            let edge_ptr = edge_index.read_recursive();
             weight += &edge_ptr.weight - &edge_ptr.growth;
         }
         for node in cluster.nodes.iter() {
@@ -464,6 +599,7 @@ impl DualModuleImpl for DualModuleSerial {
         Some(OrderedFloat::from(start))
     }
 
+    #[cfg(not(feature="pointer"))]
     fn get_edge_free_weight(
         &self,
         edge_index: EdgeIndex,
@@ -482,7 +618,68 @@ impl DualModuleImpl for DualModuleSerial {
         free_weight
     }
 
-    #[cfg(feature = "incr_lp")]
+    #[cfg(feature="pointer")]
+    fn get_edge_free_weight(
+        &self,
+        edge_ptr: EdgePtr,
+        participating_dual_variables: &hashbrown::HashSet<usize>,
+    ) -> Rational {
+        let edge = edge_ptr.read_recursive();
+        let mut free_weight = edge.weight.clone();
+        for dual_node in edge.dual_nodes.iter() {
+            let dual_node = dual_node.upgrade_force();
+            if participating_dual_variables.contains(&dual_node.read_recursive().index) {
+                continue;
+            }
+            free_weight -= &dual_node.read_recursive().dual_variable_at_last_updated_time;
+        }
+
+        free_weight
+    }
+    
+    #[cfg(all(feature = "incr_lp", feature="pointer"))]
+    fn get_edge_free_weight_cluster(&self, edge_ptr: EdgePtr, cluster_index: NodeIndex) -> Rational {
+        let edge = edge_ptr.read_recursive();
+        edge.weight.clone()
+            - edge
+                .cluster_weights
+                .iter()
+                .filter_map(|(c_idx, y)| if cluster_index.ne(c_idx) { Some(y) } else { None })
+                .sum::<Rational>()
+    }
+
+    #[cfg(all(feature = "incr_lp", feature="pointer"))]
+    fn update_edge_cluster_weights_union(
+        &self,
+        edge_ptr: &EdgePtr,
+        drained_cluster_index: NodeIndex,
+        absorbing_cluster_index: NodeIndex,
+    ) {
+        let dual_node = dual_node_ptr.read_recursive();
+        for edge_ptr in dual_node.invalid_subgraph.hair.iter() {
+            let mut edge = edge_ptr.write();
+            if let Some(removed) = edge.cluster_weights.remove(&drained_cluster_index) {
+                *edge
+                    .cluster_weights
+                    .entry(absorbing_cluster_index)
+                    .or_insert(Rational::zero()) += removed;
+            }
+        }
+    }
+
+    #[cfg(all(feature = "incr_lp", feature="pointer"))]
+    fn update_edge_cluster_weights(&self, edge_ptr: &EdgePtr, cluster_index: usize, weight: Rational) {
+        match edge_ptr.write().cluster_weights.entry(cluster_index) {
+            hashbrown::hash_map::Entry::Occupied(mut o) => {
+                *o.get_mut() += weight;
+            }
+            hashbrown::hash_map::Entry::Vacant(v) => {
+                v.insert(weight);
+            }
+        }
+    }
+
+    #[cfg(all(feature = "incr_lp", not(feature="pointer")))]
     fn get_edge_free_weight_cluster(&self, edge_index: EdgeIndex, cluster_index: NodeIndex) -> Rational {
         let edge = self.edges[edge_index as usize].read_recursive();
         edge.weight.clone()
@@ -493,7 +690,7 @@ impl DualModuleImpl for DualModuleSerial {
                 .sum::<Rational>()
     }
 
-    #[cfg(feature = "incr_lp")]
+    #[cfg(all(feature = "incr_lp", not(feature="pointer")))]
     fn update_edge_cluster_weights_union(
         &self,
         dual_node_ptr: &DualNodePtr,
@@ -512,7 +709,7 @@ impl DualModuleImpl for DualModuleSerial {
         }
     }
 
-    #[cfg(feature = "incr_lp")]
+    #[cfg(all(feature = "incr_lp", not(feature="pointer")))]
     fn update_edge_cluster_weights(&self, edge_index: usize, cluster_index: usize, weight: Rational) {
         match self.edges[edge_index].write().cluster_weights.entry(cluster_index) {
             hashbrown::hash_map::Entry::Occupied(mut o) => {
@@ -522,6 +719,16 @@ impl DualModuleImpl for DualModuleSerial {
                 v.insert(weight);
             }
         }
+    }
+
+    #[cfg(feature="pointer")]
+    fn get_vertex_ptr(&self, vertex_index: VertexIndex) -> VertexPtr {
+        self.vertices[vertex_index].clone()
+    }
+
+    #[cfg(feature="pointer")]
+    fn get_edge_ptr(&self, edge_index: EdgeIndex) -> EdgePtr {
+        self.edges[edge_index].clone()
     }
 }
 
@@ -579,6 +786,7 @@ impl MWPSVisualizer for DualModuleSerial {
 }
 
 #[cfg(test)]
+#[cfg(not(feature="pointer"))]
 mod tests {
     use super::*;
     use crate::decoding_hypergraph::*;

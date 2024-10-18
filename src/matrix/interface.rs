@@ -23,10 +23,224 @@ use crate::util::*;
 use derivative::Derivative;
 use std::collections::BTreeSet;
 
+
+#[cfg(feature = "pointer")]
+use num_traits::{One, Zero};
+
+#[cfg(all(feature = "pointer", feature = "non-pq"))]
+use crate::dual_module_serial::{EdgeWeak, VertexWeak, EdgePtr, VertexPtr};
+#[cfg(all(feature = "pointer", not(feature = "non-pq")))]
+use crate::dual_module_pq::{EdgeWeak, VertexWeak, EdgePtr, VertexPtr};
+
+
 pub type VarIndex = usize;
 pub type RowIndex = usize;
 pub type ColumnIndex = usize;
 
+#[cfg(feature = "pointer")]
+pub trait MatrixBasic {
+    /// add an edge to the basic matrix, return the `var_index` if newly created
+    fn add_variable(&mut self, edge_weak: EdgeWeak) -> Option<VarIndex>;
+
+    /// add constraint will implicitly call `add_variable` if the edge is not added and return the indices of them
+    fn add_constraint(
+        &mut self,
+        vertex_ptr: VertexPtr,
+        // incident_edges: &[EdgeWeak],
+        // parity: bool,
+    ) -> Option<Vec<VarIndex>>;
+
+    /// row operations
+    fn xor_row(&mut self, target: RowIndex, source: RowIndex);
+    fn swap_row(&mut self, a: RowIndex, b: RowIndex);
+
+    /// view the raw matrix
+    fn get_lhs(&self, row: RowIndex, var_index: VarIndex) -> bool;
+    fn get_rhs(&self, row: RowIndex) -> bool;
+
+    /// get edge index from the var_index
+    fn var_to_edge_index(&self, var_index: VarIndex) -> EdgeWeak;
+
+    fn edge_to_var_index(&self, edge_weak: EdgeWeak) -> Option<VarIndex>;
+
+    fn exists_edge(&self, edge_weak: EdgeWeak) -> bool {
+        self.edge_to_var_index(edge_weak).is_some()
+    }
+
+    fn get_vertices(&self) -> BTreeSet<VertexWeak>;
+}
+
+#[cfg(feature = "pointer")]
+pub trait MatrixView: MatrixBasic {
+    /// the number of columns: to get the `var_index` of each column,
+    /// use `column_to_var_index()`; here the mutable reference enables
+    /// lazy update of the internal data structure
+    fn columns(&mut self) -> usize;
+
+    /// get the `var_index` in the basic matrix
+    fn column_to_var_index(&self, column: ColumnIndex) -> VarIndex;
+
+    fn column_to_edge_index(&self, column: ColumnIndex) -> EdgeWeak {
+        let var_index = self.column_to_var_index(column);
+        self.var_to_edge_index(var_index)
+    }
+
+    /// the number of rows: rows always have indices 0..rows
+    fn rows(&mut self) -> usize;
+
+    fn get_view_edges(&mut self) -> Vec<EdgeWeak> {
+        (0..self.columns())
+            .map(|column: usize| self.column_to_edge_index(column))
+            .collect()
+    }
+
+    fn var_to_column_index(&mut self, var_index: VarIndex) -> Option<ColumnIndex> {
+        (0..self.columns()).find(|&column| self.column_to_var_index(column) == var_index)
+    }
+
+    fn edge_to_column_index(&mut self, edge_weak: EdgeWeak) -> Option<ColumnIndex> {
+        let var_index = self.edge_to_var_index(edge_weak)?;
+        self.var_to_column_index(var_index)
+    }
+}
+
+#[cfg(feature = "pointer")]
+pub trait MatrixTight: MatrixView {
+    fn update_edge_tightness(&mut self, edge_weak: EdgeWeak, is_tight: bool);
+    fn is_tight(&self, edge_weak: EdgeWeak) -> bool;
+
+    fn add_variable_with_tightness(&mut self, edge_weak: EdgeWeak, is_tight: bool) {
+        self.add_variable(edge_weak.clone());
+        self.update_edge_tightness(edge_weak.clone(), is_tight);
+    }
+
+    fn add_tight_variable(&mut self, edge_weak: EdgeWeak) {
+        self.add_variable_with_tightness(edge_weak, true)
+    }
+}
+
+#[cfg(feature = "pointer")]
+pub trait MatrixTail {
+    fn get_tail_edges(&self) -> &BTreeSet<EdgeWeak>;
+    fn get_tail_edges_mut(&mut self) -> &mut BTreeSet<EdgeWeak>;
+
+    fn set_tail_edges<EdgeIter>(&mut self, edges: EdgeIter)
+    where
+        EdgeIter: Iterator<Item = EdgeWeak>,
+    {
+        let tail_edges = self.get_tail_edges_mut();
+        tail_edges.clear();
+        for edge_weak in edges {
+            tail_edges.insert(edge_weak);
+        }
+    }
+
+    fn get_tail_edges_vec(&self) -> Vec<EdgeWeak> {
+        // let mut edges: Vec<EdgeWeak> = self.get_tail_edges().iter().map(|e| e.downgrade()).collect();
+        let mut edges: Vec<EdgeWeak> = self.get_tail_edges().iter().cloned().collect();
+        // edges.sort();
+        edges
+    }
+}
+
+#[cfg(feature = "pointer")]
+pub trait MatrixEchelon: MatrixView {
+    fn get_echelon_info(&mut self) -> &EchelonInfo;
+    fn get_echelon_info_immutable(&self) -> &EchelonInfo;
+
+    fn get_solution(&mut self) -> Option<Subgraph> {
+        self.get_echelon_info(); // make sure it's in echelon form
+        let info = self.get_echelon_info_immutable();
+        if !info.satisfiable {
+            return None; // no solution
+        }
+        let mut solution = vec![];
+        for (row, row_info) in info.rows.iter().enumerate() {
+            debug_assert!(row_info.has_leading());
+            if self.get_rhs(row) {
+                let column = row_info.column;
+                let edge_weak = self.column_to_edge_index(column);
+                solution.push(edge_weak.clone());
+            }
+        }
+
+        Some(solution)
+    }
+
+    /// try every independent variables and try to minimize the total weight of the solution
+    fn get_solution_local_minimum<F>(&mut self, weight_of: F) -> Option<Subgraph>
+    where
+        F: Fn(EdgeWeak) -> Rational,
+    {
+        self.get_echelon_info(); // make sure it's in echelon form
+        let info = self.get_echelon_info_immutable();
+        // println!("echelon info: {:?}", info);
+        if !info.satisfiable {
+            return None; // no solution
+        }
+        let mut solution: BTreeSet<EdgeWeak> = BTreeSet::new();
+        for (row, row_info) in info.rows.iter().enumerate() {
+            debug_assert!(row_info.has_leading());
+            if self.get_rhs(row) {
+                let column = row_info.column;
+                let edge_index = self.column_to_edge_index(column);
+                solution.insert(edge_index);
+            }
+        }
+        let mut independent_columns = vec![];
+        for (column, column_info) in info.columns.iter().enumerate() {
+            if !column_info.is_dependent() {
+                independent_columns.push(column);
+            }
+        }
+        let mut total_weight = Rational::zero();
+        for edge_index in solution.iter() {
+            total_weight += weight_of(edge_index.clone());
+        }
+        let mut pending_flip_edge_indices = vec![];
+        let mut is_local_minimum = false;
+        while !is_local_minimum {
+            is_local_minimum = true;
+            // try every independent variable and find a local minimum
+            for &column in independent_columns.iter() {
+                pending_flip_edge_indices.clear();
+                let var_index = self.column_to_var_index(column);
+                let edge_weak = self.var_to_edge_index(var_index);
+                let local_weight = weight_of(edge_weak.clone());
+                let mut primal_delta =
+                    (local_weight) * (if solution.contains(&edge_weak) { -Rational::one() } else { Rational::one() });
+                pending_flip_edge_indices.push(edge_weak);
+                for row in 0..info.rows.len() {
+                    if self.get_lhs(row, var_index) {
+                        debug_assert!(info.rows[row].has_leading());
+                        let flip_column = info.rows[row].column;
+                        debug_assert!(flip_column < column);
+                        let flip_edge_index = self.column_to_edge_index(flip_column);
+                        primal_delta += (weight_of(flip_edge_index.clone()))
+                            * (if solution.contains(&flip_edge_index) { -Rational::one() } else { Rational::one() });
+                        pending_flip_edge_indices.push(flip_edge_index);
+                    }
+                }
+                if primal_delta < Rational::zero() {
+                    total_weight = total_weight + primal_delta;
+                    for edge_index in pending_flip_edge_indices.iter() {
+                        if solution.contains(&edge_index) {
+                            solution.remove(&edge_index);
+                        } else {
+                            solution.insert(edge_index.clone());
+                        }
+                    }
+                    is_local_minimum = false;
+                    break; // loop over again
+                }
+            }
+        }
+        Some(solution.into_iter().collect())
+    }
+}
+
+
+#[cfg(not(feature = "pointer"))]
 pub trait MatrixBasic {
     /// add an edge to the basic matrix, return the `var_index` if newly created
     fn add_variable(&mut self, edge_index: EdgeIndex) -> Option<VarIndex>;
@@ -59,6 +273,7 @@ pub trait MatrixBasic {
     fn get_vertices(&self) -> BTreeSet<VertexIndex>;
 }
 
+#[cfg(not(feature = "pointer"))]
 pub trait MatrixView: MatrixBasic {
     /// the number of columns: to get the `var_index` of each column,
     /// use `column_to_var_index()`; here the mutable reference enables
@@ -92,6 +307,7 @@ pub trait MatrixView: MatrixBasic {
     }
 }
 
+#[cfg(not(feature = "pointer"))]
 pub trait MatrixTight: MatrixView {
     fn update_edge_tightness(&mut self, edge_index: EdgeIndex, is_tight: bool);
     fn is_tight(&self, edge_index: usize) -> bool;
@@ -106,6 +322,7 @@ pub trait MatrixTight: MatrixView {
     }
 }
 
+#[cfg(not(feature = "pointer"))]
 pub trait MatrixTail {
     fn get_tail_edges(&self) -> &BTreeSet<EdgeIndex>;
     fn get_tail_edges_mut(&mut self) -> &mut BTreeSet<EdgeIndex>;
@@ -128,6 +345,8 @@ pub trait MatrixTail {
     }
 }
 
+
+#[cfg(not(feature = "pointer"))]
 pub trait MatrixEchelon: MatrixView {
     fn get_echelon_info(&mut self) -> &EchelonInfo;
     fn get_echelon_info_immutable(&self) -> &EchelonInfo;
@@ -299,6 +518,7 @@ impl std::fmt::Debug for RowInfo {
     }
 }
 
+#[cfg(not(feature = "pointer"))]
 #[cfg(test)]
 pub mod tests {
     use super::super::*;

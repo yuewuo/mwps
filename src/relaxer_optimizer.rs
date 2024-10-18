@@ -17,6 +17,11 @@ use derivative::Derivative;
 
 use num_traits::{Signed, Zero};
 
+#[cfg(all(feature = "pointer", feature = "non-pq"))]
+use crate::dual_module_serial::{EdgeWeak, VertexWeak, EdgePtr, VertexPtr};
+#[cfg(all(feature = "pointer", not(feature = "non-pq")))]
+use crate::dual_module_pq::{EdgeWeak, VertexWeak, EdgePtr, VertexPtr};
+
 #[cfg(feature = "slp")]
 use num_traits::One;
 #[cfg(feature = "incr_lp")]
@@ -221,6 +226,9 @@ impl RelaxerOptimizer {
     pub fn optimize(
         &mut self,
         relaxer: Relaxer,
+        #[cfg(feature="pointer")]
+        edge_slacks: BTreeMap<EdgePtr, Rational>,
+        #[cfg(not(feature="pointer"))]
         edge_slacks: BTreeMap<EdgeIndex, Rational>,
         mut dual_variables: BTreeMap<Arc<InvalidSubgraph>, Rational>,
     ) -> (Relaxer, bool) {
@@ -242,6 +250,10 @@ impl RelaxerOptimizer {
         let mut x_vars = vec![];
         let mut y_vars = vec![];
         let mut invalid_subgraphs = Vec::with_capacity(dual_variables.len());
+        #[cfg(feature="pointer")]
+        let mut edge_contributor: BTreeMap<EdgePtr, Vec<usize>> =
+            edge_slacks.keys().map(|edge_index| (edge_index.clone(), vec![])).collect::<BTreeMap<_, _>>();
+        #[cfg(not(feature="pointer"))]
         let mut edge_contributor: BTreeMap<EdgeIndex, Vec<usize>> =
             edge_slacks.keys().map(|&edge_index| (edge_index, vec![])).collect();
 
@@ -259,12 +271,12 @@ impl RelaxerOptimizer {
             );
             invalid_subgraphs.push(invalid_subgraph.clone());
 
-            for &edge_index in invalid_subgraph.hair.iter() {
+            for edge_index in invalid_subgraph.hair.iter() {
                 edge_contributor.get_mut(&edge_index).unwrap().push(var_index);
             }
         }
 
-        for (&edge_index, &slack) in edge_slacks.iter() {
+        for (edge_index, &slack) in edge_slacks.iter() {
             let mut row_entries = vec![];
             for &var_index in edge_contributor[&edge_index].iter() {
                 row_entries.push((x_vars[var_index], 1.0));

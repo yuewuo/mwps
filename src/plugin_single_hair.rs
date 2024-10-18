@@ -17,10 +17,95 @@ use num_traits::One;
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
+#[cfg(all(feature = "pointer", feature = "non-pq"))]
+use crate::dual_module_serial::{EdgeWeak, VertexWeak, EdgePtr, VertexPtr};
+#[cfg(all(feature = "pointer", not(feature = "non-pq")))]
+use crate::dual_module_pq::{EdgeWeak, VertexWeak, EdgePtr, VertexPtr};
+
 #[derive(Debug, Clone, Default)]
 pub struct PluginSingleHair {}
 
 impl PluginImpl for PluginSingleHair {
+    #[cfg(feature="pointer")]
+    fn find_relaxers(
+        &self,
+        matrix: &mut EchelonMatrix,
+        positive_dual_nodes: &[DualNodePtr],
+    ) -> Vec<Relaxer> {
+        // single hair requires the matrix to have at least one feasible solution
+        #[cfg(feature="pointer")]
+        if let Some(relaxer) = PluginUnionFind::find_single_relaxer(matrix) {
+            return vec![relaxer];
+        }
+        // then try to find more relaxers
+        let mut relaxers = vec![];
+        for dual_node_ptr in positive_dual_nodes.iter() {
+            let dual_node = dual_node_ptr.read_recursive();
+            #[cfg(feature="pointer")]
+            let mut hair_view = HairView::new(matrix, dual_node.invalid_subgraph.hair.iter().map(|e| e.downgrade()));
+            #[cfg(not(feature="pointer"))]
+            let mut hair_view = HairView::new(matrix, dual_node.invalid_subgraph.hair.iter().map(|e| e.downgrade()));
+            debug_assert!(hair_view.get_echelon_satisfiable());
+            // hair_view.printstd();
+            // optimization: check if there exists a single-hair solution, if not, clear the previous relaxers
+            let constrained_rows: Vec<EdgeIndex> = (0..hair_view.rows()).filter(|&row| hair_view.get_rhs(row)).collect();
+            let mut has_single_hair_solution = false;
+            for column in 0..hair_view.columns() {
+                if constrained_rows
+                    .iter()
+                    .all(|&row| hair_view.get_lhs(row, hair_view.column_to_var_index(column)))
+                {
+                    has_single_hair_solution = true;
+                    break;
+                }
+            }
+            if !has_single_hair_solution {
+                relaxers.clear(); // no need for relaxers from other dual nodes
+            }
+            for &row in constrained_rows.iter() {
+                let mut unnecessary_edges = vec![];
+                for column in 0..hair_view.columns() {
+                    let var_index = hair_view.column_to_var_index(column);
+                    if !hair_view.get_lhs(row, var_index) {
+                        let edge_index = hair_view.var_to_edge_index(var_index);
+                        unnecessary_edges.push(edge_index);
+                    }
+                }
+                if !unnecessary_edges.is_empty() {
+                    // we can construct a relaxer here, by growing a new invalid subgraph that
+                    // removes those unnecessary edges and shrinking the existing one
+                    let mut vertices: BTreeSet<VertexPtr> = hair_view.get_vertices().iter().map(|e| e.upgrade_force()).collect::<BTreeSet<_>>();
+                    let mut edges: BTreeSet<EdgePtr> = hair_view.get_base_view_edges().iter().map(|e| e.upgrade_force()).collect::<BTreeSet<_>>();
+
+                    for edge_index in dual_node.invalid_subgraph.hair.iter() {
+                        edges.remove(&edge_index);
+                    }
+                    for edge_ptr in unnecessary_edges.iter() {
+                        let edge_ptr = edge_ptr.upgrade_force();
+                        edges.insert(edge_ptr.clone());
+                        for vertex in edge_ptr.read_recursive().vertices.iter() {
+                            vertices.insert(vertex.upgrade_force());
+                        }
+                    }
+                    let invalid_subgraph = Arc::new(InvalidSubgraph::new_complete(&vertices, &edges));
+                    let relaxer = Relaxer::new(
+                        [
+                            (invalid_subgraph, Rational::one()),
+                            (dual_node.invalid_subgraph.clone(), -Rational::one()),
+                        ]
+                        .into(),
+                    );
+                    relaxers.push(relaxer);
+                }
+            }
+            if !has_single_hair_solution {
+                break; // no need to check other dual nodes
+            }
+        }
+        relaxers
+    }
+
+    #[cfg(not(feature="pointer"))]
     fn find_relaxers(
         &self,
         decoding_graph: &DecodingHyperGraph,
@@ -35,7 +120,7 @@ impl PluginImpl for PluginSingleHair {
         let mut relaxers = vec![];
         for dual_node_ptr in positive_dual_nodes.iter() {
             let dual_node = dual_node_ptr.read_recursive();
-            let mut hair_view = HairView::new(matrix, dual_node.invalid_subgraph.hair.iter().cloned());
+            let mut hair_view = HairView::new(matrix, dual_node.invalid_subgraph.hair.iter().map(|e| e.downgrade()));
             debug_assert!(hair_view.get_echelon_satisfiable());
             // hair_view.printstd();
             // optimization: check if there exists a single-hair solution, if not, clear the previous relaxers

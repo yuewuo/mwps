@@ -362,7 +362,7 @@ pub trait ExampleCode {
 
     /// generate random errors based on the edge probabilities and a seed for pseudo number generator
     #[allow(clippy::unnecessary_cast)]
-    fn generate_random_errors(&mut self, seed: u64) -> (SyndromePattern, Subgraph) {
+    fn generate_random_errors(&mut self, seed: u64) -> (SyndromePattern, Vec<usize>) {
         let mut rng = DeterministicRng::seed_from_u64(seed);
         let (vertices, edges) = self.vertices_edges();
         for vertex in vertices.iter_mut() {
@@ -902,7 +902,7 @@ impl ExampleCode for QECPlaygroundCode {
     }
     // override simulation function
     #[allow(clippy::unnecessary_cast)]
-    fn generate_random_errors(&mut self, seed: u64) -> (SyndromePattern, Subgraph) {
+    fn generate_random_errors(&mut self, seed: u64) -> (SyndromePattern, Vec<usize>) {
         use qecp::simulator::SimulatorGenerics;
         let rng = qecp::reproducible_rand::Xoroshiro128StarStar::seed_from_u64(seed);
         self.simulator.set_rng(rng);
@@ -1154,7 +1154,7 @@ impl ExampleCode for ErrorPatternReader {
     fn immutable_vertices_edges(&self) -> (&Vec<CodeVertex>, &Vec<CodeEdge>) {
         (&self.vertices, &self.edges)
     }
-    fn generate_random_errors(&mut self, _seed: u64) -> (SyndromePattern, Subgraph) {
+    fn generate_random_errors(&mut self, _seed: u64) -> (SyndromePattern, Vec<usize>) {
         assert!(
             self.syndrome_index < self.syndrome_patterns.len(),
             "reading syndrome pattern more than in the file, consider generate the file with more data points"

@@ -11,14 +11,20 @@ use crate::num_traits::{FromPrimitive, One, Signed, ToPrimitive, Zero};
 use crate::ordered_float::OrderedFloat;
 use crate::pointers::*;
 use crate::primal_module::Affinity;
-use crate::primal_module_serial::PrimalClusterPtr;
+use crate::primal_module_serial::{PrimalClusterPtr, PrimalModuleSerialNodeWeak};
 use crate::relaxer_optimizer::OptimizerResult;
 use crate::util::*;
 use crate::visualize::*;
 
 use std::collections::BTreeMap;
 use std::collections::{BTreeSet, HashMap};
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
+
+#[cfg(all(feature = "pointer", feature = "non-pq"))]
+use crate::dual_module_serial::{EdgeWeak, VertexWeak, EdgePtr, VertexPtr};
+#[cfg(all(feature = "pointer", not(feature = "non-pq")))]
+use crate::dual_module_pq::{EdgeWeak, VertexWeak, EdgePtr, VertexPtr};
+use crate::matrix::*;
 
 // this is not effecitively doing much right now due to the My (Leo's) desire for ultra performance (inlining function > branches)
 #[derive(Default, Debug)]
@@ -65,6 +71,7 @@ macro_rules! add_shared_methods {
     };
 }
 
+#[cfg(not(feature="pointer"))]
 pub struct DualNode {
     /// the index of this dual node, helps to locate internal details of this dual node
     pub index: NodeIndex,
@@ -81,6 +88,27 @@ pub struct DualNode {
     pub last_updated_time: Rational,
     /// dual variable's value at the last updated time
     pub dual_variable_at_last_updated_time: Rational,
+}
+
+#[cfg(feature="pointer")]
+pub struct DualNode {
+    /// the index of this dual node, helps to locate internal details of this dual node
+    pub index: NodeIndex,
+    /// the corresponding invalid subgraph
+    pub invalid_subgraph: Arc<InvalidSubgraph>,
+
+    /// the strategy to grow the dual variables
+    pub grow_rate: Rational,
+    /// the pointer to the global time
+    /// Note: may employ some unsafe features while being sound in performance-critical cases
+    ///       and can remove option when removing dual_module_serial
+    global_time: Option<ArcRwLock<Rational>>,
+    /// the last time this dual_node is synced/updated with the global time
+    pub last_updated_time: Rational,
+    /// dual variable's value at the last updated time
+    pub dual_variable_at_last_updated_time: Rational,
+    /// the corresponding PrimalModuleSerialNode
+    pub primal_module_serial_node: Option<PrimalModuleSerialNodeWeak>,
 }
 
 impl DualNode {
@@ -132,7 +160,7 @@ impl std::fmt::Debug for DualNodePtr {
             dual_node.get_dual_variable(),
             dual_node.dual_variable_at_last_updated_time,
             dual_node.last_updated_time,
-            dual_node.invalid_subgraph.hair
+            dual_node.invalid_subgraph.hair.iter().map(|e| e.read_recursive().edge_index).collect::<Vec<_>>(),
         )
     }
 }
@@ -143,8 +171,19 @@ impl std::fmt::Debug for DualNodeWeak {
     }
 }
 
+#[cfg(feature="pointer")]
+impl DualNodePtr {
+    /// we mainly use the vertex_index from this function to run bfs to find the partition unit responsible for this dual node
+    pub fn get_representative_vertex(&self) -> VertexPtr {
+        let dual_node = self.read_recursive();
+        let defect_vertex = dual_node.invalid_subgraph.vertices.first().unwrap();
+        defect_vertex.clone()
+    }
+}
+
 /// an array of dual nodes
 /// dual nodes, once created, will never be deconstructed until the next run
+#[cfg(not(feature="pointer"))]
 #[derive(Derivative)]
 #[derivative(Debug)]
 pub struct DualModuleInterface {
@@ -154,6 +193,16 @@ pub struct DualModuleInterface {
     pub hashmap: HashMap<Arc<InvalidSubgraph>, NodeIndex>,
     /// the decoding graph
     pub decoding_graph: DecodingHyperGraph,
+}
+
+#[cfg(feature="pointer")]
+#[derive(Derivative)]
+#[derivative(Debug)]
+pub struct DualModuleInterface {
+    /// all the dual node that can be used to control a concrete dual module implementation
+    pub nodes: Vec<DualNodePtr>,
+    /// given an invalid subgraph, find its corresponding dual node
+    pub hashmap: HashMap<Arc<InvalidSubgraph>, NodeIndex>,
 }
 
 pub type DualModuleInterfacePtr = ArcRwLock<DualModuleInterface>;
@@ -183,7 +232,10 @@ pub enum MaxUpdateLength {
     /// non-zero maximum update length
     ValidGrow(Rational),
     /// conflicting growth, violating the slackness constraint
+    #[cfg(not(feature="pointer"))]
     Conflicting(EdgeIndex),
+    #[cfg(feature="pointer")]
+    Conflicting(EdgePtr),
     /// hitting 0 dual variable while shrinking, only happens when `grow_rate` < 0
     ///     note: Using OrderedDualNodePtr since we can compare without acquiring the lock, for enabling btreeset/hashset/pq etc. with lower overhead
     ShrinkProhibited(OrderedDualNodePtr),
@@ -202,16 +254,39 @@ impl OrderedDualNodePtr {
         Self { index, ptr }
     }
 }
+
+#[cfg(not(feature="pointer"))]
 impl PartialOrd for OrderedDualNodePtr {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.index.cmp(&other.index))
     }
 }
+#[cfg(not(feature="pointer"))]
 impl Ord for OrderedDualNodePtr {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         self.index.cmp(&other.index)
     }
 }
+
+#[cfg(feature="pointer")]
+impl PartialOrd for OrderedDualNodePtr {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        // Some(self.index.cmp(&other.index))
+        Some(self.cmp(other))
+    }
+}
+#[cfg(feature="pointer")]
+impl Ord for OrderedDualNodePtr {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        // self.index.cmp(&other.index)
+        let ptr1 = Arc::as_ptr(self.ptr.ptr());
+        let ptr2 = Arc::as_ptr(other.ptr.ptr());
+        // https://doc.rust-lang.org/reference/types/pointer.html
+        // "When comparing raw pointers they are compared by their address, rather than by what they point to."
+        ptr1.cmp(&ptr2)
+    }
+}
+
 
 #[derive(Derivative, PartialEq, Eq, Clone, Debug)]
 pub struct OrderedDualNodeWeak {
@@ -228,14 +303,32 @@ impl OrderedDualNodeWeak {
         OrderedDualNodePtr::new(self.index, self.weak_ptr.upgrade_force())
     }
 }
+
+#[cfg(not(feature="pointer"))]
 impl PartialOrd for OrderedDualNodeWeak {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.index.cmp(&other.index))
     }
 }
+#[cfg(not(feature="pointer"))]
 impl Ord for OrderedDualNodeWeak {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         self.index.cmp(&other.index)
+    }
+}
+
+#[cfg(feature="pointer")]
+impl PartialOrd for OrderedDualNodeWeak {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+#[cfg(feature="pointer")]
+impl Ord for OrderedDualNodeWeak {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        let ptr1 = Weak::as_ptr(self.weak_ptr.ptr());
+        let ptr2 = Weak::as_ptr(other.weak_ptr.ptr());
+        ptr1.cmp(&ptr2)
     }
 }
 
@@ -293,13 +386,22 @@ pub trait DualModuleImpl {
     fn grow(&mut self, length: Rational);
 
     /// get all nodes contributing to the edge
+    #[cfg(not(feature="pointer"))]
     fn get_edge_nodes(&self, edge_index: EdgeIndex) -> Vec<DualNodePtr>;
+    #[cfg(feature="pointer")]
+    fn get_edge_nodes(&self, edge_ptr: EdgePtr) -> Vec<DualNodePtr>;
 
     /// get the slack on a specific edge (weight - growth)
+    #[cfg(not(feature="pointer"))]
     fn get_edge_slack(&self, edge_index: EdgeIndex) -> Rational;
+    #[cfg(feature="pointer")]
+    fn get_edge_slack(&self, edge_ptr: EdgePtr) -> Rational;
 
     /// check if the edge is tight
+    #[cfg(not(feature="pointer"))]
     fn is_edge_tight(&self, edge_index: EdgeIndex) -> bool;
+    #[cfg(feature="pointer")]
+    fn is_edge_tight(&self, edge_ptr: EdgePtr) -> bool;
 
     /* New tuning-related methods */
     // mode mangements
@@ -347,20 +449,37 @@ pub trait DualModuleImpl {
     }
 
     /// grow a specific edge on the spot
+    #[cfg(not(feature="pointer"))]
     fn grow_edge(&self, _edge_index: EdgeIndex, _amount: &Rational) {
+        panic!("this dual_module doesn't support edge growth");
+    }
+    #[cfg(feature="pointer")]
+    fn grow_edge(&self, _edge_ptr: EdgePtr, _amount: &Rational) {
         panic!("this dual_module doesn't support edge growth");
     }
 
     /// `is_edge_tight` but in tuning phase
+    #[cfg(not(feature="pointer"))]
     fn is_edge_tight_tune(&self, edge_index: EdgeIndex) -> bool {
         eprintln!("this dual_module does not implement tuning");
         self.is_edge_tight(edge_index)
     }
+    #[cfg(feature="pointer")]
+    fn is_edge_tight_tune(&self, edge_ptr: EdgePtr) -> bool {
+        eprintln!("this dual_module does not implement tuning");
+        self.is_edge_tight(edge_ptr)
+    }
 
     /// `get_edge_slack` but in tuning phase
+    #[cfg(not(feature="pointer"))]
     fn get_edge_slack_tune(&self, edge_index: EdgeIndex) -> Rational {
         eprintln!("this dual_module does not implement tuning");
         self.get_edge_slack(edge_index)
+    }
+    #[cfg(feature="pointer")]
+    fn get_edge_slack_tune(&self, edge_ptr: EdgePtr) -> Rational {
+        eprintln!("this dual_module does not implement tuning");
+        self.get_edge_slack(edge_ptr)
     }
 
     /* miscs */
@@ -382,6 +501,171 @@ pub trait DualModuleImpl {
     }
 
     /// In the tuning phase, given the optimizer result and the dual node deltas, return the conflicts that are caused by the current dual node deltas
+    #[cfg(feature="pointer")]
+    fn get_conflicts_tune(
+        &self,
+        optimizer_result: OptimizerResult,
+        dual_node_deltas: BTreeMap<OrderedDualNodePtr, (Rational, PrimalClusterPtr)>,
+    ) -> BTreeSet<MaxUpdateLength> {
+        let mut conflicts = BTreeSet::new();
+        match optimizer_result {
+            OptimizerResult::EarlyReturned => {
+                // if early returned, meaning optimizer didn't optimize, but simply should find current conflicts and return
+                for (dual_node_ptr, (grow_rate, _)) in dual_node_deltas.into_iter() {
+                    let node_ptr_read = dual_node_ptr.ptr.read_recursive();
+                    if grow_rate.is_negative() && node_ptr_read.dual_variable_at_last_updated_time.is_zero() {
+                        conflicts.insert(MaxUpdateLength::ShrinkProhibited(OrderedDualNodePtr::new(
+                            node_ptr_read.index,
+                            dual_node_ptr.ptr.clone(),
+                        )));
+                    }
+                    for edge_ptr in node_ptr_read.invalid_subgraph.hair.iter() {
+                        if grow_rate.is_positive() && self.is_edge_tight_tune(edge_ptr.clone()) {
+                            conflicts.insert(MaxUpdateLength::Conflicting(edge_ptr.clone()));
+                        }
+                    }
+                }
+            }
+            OptimizerResult::Skipped => {
+                // if skipped, should check if is growable, if not return the conflicts that leads to that conclusion
+                for (dual_node_ptr, (grow_rate, _cluster_index)) in dual_node_deltas.into_iter() {
+                    // check if the single direction is growable
+                    let mut actual_grow_rate = Rational::from_usize(std::usize::MAX).unwrap();
+                    let node_ptr_read = dual_node_ptr.ptr.read_recursive();
+                    #[cfg(feature = "pointer")]
+                    for edge_index in node_ptr_read.invalid_subgraph.hair.iter() {
+                        actual_grow_rate = std::cmp::min(actual_grow_rate, self.get_edge_slack_tune(edge_index.clone()));
+                    }
+                    #[cfg(not(feature = "pointer"))]
+                    for edge_index in node_ptr_read.invalid_subgraph.hair.iter() {
+                        actual_grow_rate = std::cmp::min(actual_grow_rate, self.get_edge_slack_tune(*edge_index));
+                    }
+                    if actual_grow_rate.is_zero() {
+                        // if not, return the current conflicts
+                        #[cfg(feature = "pointer")]
+                        for edge_index in node_ptr_read.invalid_subgraph.hair.iter() {
+                            if grow_rate.is_positive() && self.is_edge_tight_tune(edge_index.clone()) {
+                                conflicts.insert(MaxUpdateLength::Conflicting(edge_index.clone()));
+                            }
+                        }
+
+                        #[cfg(not(feature = "pointer"))]
+                        for edge_index in node_ptr_read.invalid_subgraph.hair.iter() {
+                            if grow_rate.is_positive() && self.is_edge_tight_tune(*edge_index) {
+                                conflicts.insert(MaxUpdateLength::Conflicting(*edge_index));
+                            }
+                        }
+                        if grow_rate.is_negative() && node_ptr_read.dual_variable_at_last_updated_time.is_zero() {
+                            conflicts.insert(MaxUpdateLength::ShrinkProhibited(OrderedDualNodePtr::new(
+                                node_ptr_read.index,
+                                dual_node_ptr.ptr.clone(),
+                            )));
+                        }
+                    } else {
+                        // if yes, grow and return new conflicts
+                        //      note: can grow directly here because this is guaranteed to only have a single direction
+                        drop(node_ptr_read);
+                        let mut node_ptr_write = dual_node_ptr.ptr.write();
+                        #[cfg(feature = "pointer")]
+                        for edge_index in node_ptr_write.invalid_subgraph.hair.iter() {
+                            self.grow_edge(edge_index.clone(), &actual_grow_rate);
+                            #[cfg(feature = "incr_lp")]
+                            self.update_edge_cluster_weights(*edge_index, _cluster_index, actual_grow_rate); // note: comment out if not using cluster-based
+                            if actual_grow_rate.is_positive() && self.is_edge_tight_tune(edge_index.clone()) {
+                                conflicts.insert(MaxUpdateLength::Conflicting(edge_index.clone()));
+                            }
+                        }
+                        #[cfg(not(feature = "pointer"))]
+                        for edge_index in node_ptr_write.invalid_subgraph.hair.iter() {
+                            self.grow_edge(*edge_index, &actual_grow_rate);
+                            #[cfg(feature = "incr_lp")]
+                            self.update_edge_cluster_weights(*edge_index, _cluster_index, actual_grow_rate); // note: comment out if not using cluster-based
+                            if actual_grow_rate.is_positive() && self.is_edge_tight_tune(*edge_index) {
+                                conflicts.insert(MaxUpdateLength::Conflicting(*edge_index));
+                            }
+                        }
+                        node_ptr_write.dual_variable_at_last_updated_time += actual_grow_rate.clone();
+                        if actual_grow_rate.is_negative() && node_ptr_write.dual_variable_at_last_updated_time.is_zero() {
+                            conflicts.insert(MaxUpdateLength::ShrinkProhibited(OrderedDualNodePtr::new(
+                                node_ptr_write.index,
+                                dual_node_ptr.ptr.clone(),
+                            )));
+                        }
+                    }
+                }
+            }
+            _ => {
+                // in other cases, optimizer should have optimized, so we should apply the deltas and return the nwe conflicts
+
+                // edge deltas needs to be applied at once for accurate conflicts calculation
+                let mut edge_deltas = BTreeMap::new();
+                for (dual_node_ptr, (grow_rate, _cluster_index)) in dual_node_deltas.into_iter() {
+                    // update the dual node and check for conflicts
+                    let mut node_ptr_write = dual_node_ptr.ptr.write();
+                    node_ptr_write.dual_variable_at_last_updated_time += grow_rate.clone();
+                    if grow_rate.is_negative() && node_ptr_write.dual_variable_at_last_updated_time.is_zero() {
+                        conflicts.insert(MaxUpdateLength::ShrinkProhibited(OrderedDualNodePtr::new(
+                            node_ptr_write.index,
+                            dual_node_ptr.ptr.clone(),
+                        )));
+                    }
+
+                    // calculate the total edge deltas
+                    for edge_index in node_ptr_write.invalid_subgraph.hair.iter() {
+                        #[cfg(not(feature = "pointer"))]
+                        match edge_deltas.entry(*edge_index) {
+                            std::collections::btree_map::Entry::Vacant(v) => {
+                                v.insert(grow_rate.clone());
+                            }
+                            std::collections::btree_map::Entry::Occupied(mut o) => {
+                                let current = o.get_mut();
+                                *current += grow_rate.clone();
+                            }
+                        }
+                        #[cfg(feature = "pointer")]
+                        match edge_deltas.entry(edge_index.clone()) {
+                            std::collections::btree_map::Entry::Vacant(v) => {
+                                v.insert(grow_rate.clone());
+                            }
+                            std::collections::btree_map::Entry::Occupied(mut o) => {
+                                let current = o.get_mut();
+                                *current += grow_rate.clone();
+                            }
+                        }
+                        #[cfg(feature = "incr_lp")]
+                        self.update_edge_cluster_weights(*edge_index, _cluster_index, grow_rate.clone());
+                        // note: comment out if not using cluster-based
+                    }
+                }
+
+                // apply the edge deltas and check for conflicts
+                #[cfg(not(feature = "pointer"))]
+                for (edge_index, grow_rate) in edge_deltas.into_iter() {
+                    if grow_rate.is_zero() {
+                        continue;
+                    }
+                    self.grow_edge(edge_index, &grow_rate);
+                    if grow_rate.is_positive() && self.is_edge_tight_tune(edge_index) {
+                        conflicts.insert(MaxUpdateLength::Conflicting(edge_index));
+                    }
+                }
+                #[cfg(feature = "pointer")]
+                for (edge_index, grow_rate) in edge_deltas.into_iter() {
+                    if grow_rate.is_zero() {
+                        continue;
+                    }
+                    self.grow_edge(edge_index.clone(), &grow_rate);
+                    if grow_rate.is_positive() && self.is_edge_tight_tune(edge_index.clone()) {
+                        conflicts.insert(MaxUpdateLength::Conflicting(edge_index.clone()));
+                    }
+                }
+            }
+        }
+        conflicts
+    }
+
+    /// In the tuning phase, given the optimizer result and the dual node deltas, return the conflicts that are caused by the current dual node deltas
+    #[cfg(not(feature="pointer"))]
     fn get_conflicts_tune(
         &self,
         optimizer_result: OptimizerResult,
@@ -500,25 +784,51 @@ pub trait DualModuleImpl {
     }
 
     /// get the edge free weight, for each edge what is the weight that are free to use by the given participating dual variables
+    #[cfg(not(feature="pointer"))]
     fn get_edge_free_weight(
         &self,
         edge_index: EdgeIndex,
         participating_dual_variables: &hashbrown::HashSet<usize>,
     ) -> Rational;
+    #[cfg(feature="pointer")]
+    fn get_edge_free_weight(
+        &self,
+        edge_ptr: EdgePtr,
+        participating_dual_variables: &hashbrown::HashSet<usize>,
+    ) -> Rational;
 
-    #[cfg(feature = "incr_lp")]
+    #[cfg(all(feature = "incr_lp", not(feature = "pointer")))]
     fn update_edge_cluster_weights(&self, edge_index: EdgeIndex, cluster_index: NodeIndex, grow_rate: Rational);
 
-    #[cfg(feature = "incr_lp")]
+    #[cfg(all(feature = "incr_lp", not(feature = "pointer")))]
     fn get_edge_free_weight_cluster(&self, edge_index: EdgeIndex, cluster_index: NodeIndex) -> Rational;
 
-    #[cfg(feature = "incr_lp")]
+    #[cfg(all(feature = "incr_lp", not(feature = "pointer")))]
     fn update_edge_cluster_weights_union(
         &self,
         dual_node_ptr: &DualNodePtr,
         drained_cluster_index: NodeIndex,
         absorbing_cluster_index: NodeIndex,
     );
+
+    #[cfg(all(feature = "incr_lp", feature = "pointer"))]
+    fn update_edge_cluster_weights(&self, edge_ptr: EdgePtr, cluster_index: NodeIndex, grow_rate: Rational);
+
+    #[cfg(all(feature = "incr_lp", feature = "pointer"))]
+    fn get_edge_free_weight_cluster(&self, edge_ptr: EdgePtr, cluster_index: NodeIndex) -> Rational;
+
+    #[cfg(all(feature = "incr_lp", feature = "pointer"))]
+    fn update_edge_cluster_weights_union(
+        &self,
+        dual_node_ptr: &DualNodePtr,
+        drained_cluster_index: NodeIndex,
+        absorbing_cluster_index: NodeIndex,
+    );
+
+    #[cfg(feature="pointer")]
+    fn get_vertex_ptr(&self, vertex_index: VertexIndex) -> VertexPtr;
+    #[cfg(feature="pointer")]
+    fn get_edge_ptr(&self, edge_index: EdgeIndex) -> EdgePtr;
 }
 
 impl MaxUpdateLength {
@@ -603,9 +913,43 @@ impl GroupMaxUpdateLength {
             Self::Conflicts(conflicts) => conflicts.last(),
         }
     }
+
+    #[cfg(feature="pointer")]
+    pub fn extend(&mut self, other: Self) {
+        match self {
+            Self::Conflicts(conflicts) => {
+                if let Self::Conflicts(other_conflicts) = other {
+                    conflicts.extend(other_conflicts);
+                } // only add conflicts
+            },
+            Self::Unbounded => {
+                match other {
+                    Self::Unbounded => {} // do nothing
+                    Self::ValidGrow(length) => *self = Self::ValidGrow(length),
+                    Self::Conflicts(mut other_list) => {
+                        let mut list = Vec::<MaxUpdateLength>::new();
+                        std::mem::swap(&mut list, &mut other_list);
+                        *self = Self::Conflicts(list);
+                    }
+                }
+            },
+            Self::ValidGrow(current_length) => match other {
+                Self::Conflicts(mut other_list) => {
+                    let mut list = Vec::<MaxUpdateLength>::new();
+                    std::mem::swap(&mut list, &mut other_list);
+                    *self = Self::Conflicts(list);
+                }
+                Self::Unbounded => {} // do nothing
+                Self::ValidGrow(length) => {
+                    *current_length = std::cmp::min(current_length.clone(), length);
+                }
+            }
+        }
+    }
 }
 
 impl DualModuleInterfacePtr {
+    #[cfg(not(feature="pointer"))]
     pub fn new(model_graph: Arc<ModelHyperGraph>) -> Self {
         Self::new_value(DualModuleInterface {
             nodes: Vec::new(),
@@ -613,16 +957,38 @@ impl DualModuleInterfacePtr {
             decoding_graph: DecodingHyperGraph::new(model_graph, Arc::new(SyndromePattern::new_empty())),
         })
     }
+    #[cfg(feature="pointer")]
+    pub fn new() -> Self {
+        Self::new_value(DualModuleInterface {
+            nodes: Vec::new(),
+            hashmap: HashMap::new(),
+        })
+    }
 
     /// a dual module interface MUST be created given a concrete implementation of the dual module
+    #[cfg(not(feature="pointer"))]
     pub fn new_load(decoding_graph: DecodingHyperGraph, dual_module_impl: &mut impl DualModuleImpl) -> Self {
         let interface_ptr = Self::new(decoding_graph.model_graph.clone());
         interface_ptr.load(decoding_graph.syndrome_pattern, dual_module_impl);
         interface_ptr
     }
+    #[cfg(feature="pointer")]
+    pub fn new_load(syndrome_pattern: Arc<SyndromePattern>, dual_module_impl: &mut impl DualModuleImpl) -> Self {
+        let interface_ptr = Self::new();
+        interface_ptr.load(syndrome_pattern, dual_module_impl);
+        interface_ptr
+    }
 
+    #[cfg(not(feature="pointer"))]
     pub fn load(&self, syndrome_pattern: Arc<SyndromePattern>, dual_module_impl: &mut impl DualModuleImpl) {
         self.write().decoding_graph.set_syndrome(syndrome_pattern.clone());
+        for vertex_idx in syndrome_pattern.defect_vertices.iter() {
+            self.create_defect_node(*vertex_idx, dual_module_impl);
+        }
+    }
+    #[cfg(feature="pointer")]
+    pub fn load(&self, syndrome_pattern: Arc<SyndromePattern>, dual_module_impl: &mut impl DualModuleImpl) {
+        // self.write().decoding_graph.set_syndrome(syndrome_pattern.clone());
         for vertex_idx in syndrome_pattern.defect_vertices.iter() {
             self.create_defect_node(*vertex_idx, dual_module_impl);
         }
@@ -649,14 +1015,52 @@ impl DualModuleInterfacePtr {
         interface.nodes.get(node_index as usize).cloned()
     }
 
-    /// make it private; use `load` instead
+    #[cfg(feature="pointer")]
     fn create_defect_node(&self, vertex_idx: VertexIndex, dual_module: &mut impl DualModuleImpl) -> DualNodePtr {
         let mut interface = self.write();
-        let invalid_subgraph = Arc::new(InvalidSubgraph::new_complete(
-            vec![vertex_idx].into_iter().collect(),
-            BTreeSet::new(),
-            &interface.decoding_graph,
-        ));
+        let vertex_ptr = dual_module.get_vertex_ptr(vertex_idx);
+        vertex_ptr.write().is_defect = true;
+        let mut vertices = BTreeSet::new();
+        vertices.insert(vertex_ptr);
+        let invalid_subgraph: Arc<InvalidSubgraph> = Arc::new(
+            InvalidSubgraph::new_complete(
+                &vertices,
+                &BTreeSet::new()
+            )
+        );
+        
+        let node_index = interface.nodes.len() as NodeIndex;
+        let node_ptr = DualNodePtr::new_value(DualNode {
+            index: node_index,
+            invalid_subgraph: invalid_subgraph.clone(),
+            grow_rate: Rational::one(),
+            dual_variable_at_last_updated_time: Rational::zero(),
+            global_time: None,
+            last_updated_time: Rational::zero(),
+            primal_module_serial_node: None, // to be filled in when initializing a primalnode
+        });
+
+        interface.nodes.push(node_ptr.clone());
+        interface.hashmap.insert(invalid_subgraph, node_index);
+        drop(interface);
+
+        dual_module.add_defect_node(&node_ptr);
+        node_ptr
+    }
+
+
+    /// make it private; use `load` instead
+    #[cfg(not(feature="pointer"))]
+    fn create_defect_node(&self, vertex_idx: VertexIndex, dual_module: &mut impl DualModuleImpl) -> DualNodePtr {
+        let mut interface = self.write();
+        let invalid_subgraph: Arc<InvalidSubgraph> = Arc::new(
+            InvalidSubgraph::new_complete(
+                vec![vertex_idx].into_iter().collect::<BTreeSet<_>>(),
+                BTreeSet::new(),
+                &interface.decoding_graph,
+            )
+        );
+        
         let node_index = interface.nodes.len() as NodeIndex;
         let node_ptr = DualNodePtr::new_value(DualNode {
             index: node_index,
@@ -751,6 +1155,8 @@ impl DualModuleInterfacePtr {
             dual_variable_at_last_updated_time: Rational::zero(),
             global_time: None,
             last_updated_time: Rational::zero(),
+            #[cfg(feature="pointer")]
+            primal_module_serial_node: None, // to be filled in when initializing a primalnode
         });
 
         interface.nodes.push(node_ptr.clone());
@@ -760,17 +1166,50 @@ impl DualModuleInterfacePtr {
 
         node_ptr
     }
+
+    pub fn is_valid_cluster_auto_vertices(&self, edges: &BTreeSet<EdgePtr>) -> bool {
+        self.find_valid_subgraph_auto_vertices(edges).is_some()
+    }
+
+    pub fn find_valid_subgraph_auto_vertices(&self, edges: &BTreeSet<EdgePtr>) -> Option<Subgraph> {
+        let mut vertices: BTreeSet<VertexPtr> = BTreeSet::new();
+        for edge_ptr in edges.iter() {
+            // let local_vertices = &edge_ptr.get_vertex_neighbors();
+            let local_vertices = &edge_ptr.read_recursive().vertices;
+            for vertex in local_vertices {
+                vertices.insert(vertex.upgrade_force());
+            }
+        }
+
+        self.find_valid_subgraph(edges, &vertices)
+    }
+
+    pub fn find_valid_subgraph(&self, edges: &BTreeSet<EdgePtr>, vertices: &BTreeSet<VertexPtr>) -> Option<Subgraph> {
+        let mut matrix = Echelon::<CompleteMatrix>::new();
+        for edge_index in edges.iter() {
+            matrix.add_variable(edge_index.downgrade());
+        }
+
+        for vertex_index in vertices.iter() {
+            // let incident_edges = &vertex_index.read_recursive().edges;
+            // let parity = vertex_index.read_recursive().is_defect;
+            matrix.add_constraint(vertex_index.clone());
+        }
+        matrix.get_solution()
+    }
 }
 
 // shortcuts for easier code writing at debugging
 impl DualModuleInterfacePtr {
+    #[cfg(not(feature="pointer"))]
     pub fn create_node_vec(&self, edges: &[EdgeIndex], dual_module: &mut impl DualModuleImpl) -> DualNodePtr {
         let invalid_subgraph = Arc::new(InvalidSubgraph::new(
-            edges.iter().cloned().collect(),
+            edges.iter().cloned().collect::<BTreeSet<_>>(),
             &self.read_recursive().decoding_graph,
         ));
         self.create_node(invalid_subgraph, dual_module)
     }
+    #[cfg(not(feature="pointer"))]
     pub fn create_node_complete_vec(
         &self,
         vertices: &[VertexIndex],
@@ -778,15 +1217,39 @@ impl DualModuleInterfacePtr {
         dual_module: &mut impl DualModuleImpl,
     ) -> DualNodePtr {
         let invalid_subgraph = Arc::new(InvalidSubgraph::new_complete(
-            vertices.iter().cloned().collect(),
-            edges.iter().cloned().collect(),
+            vertices.iter().cloned().collect::<BTreeSet<_>>(),
+            edges.iter().cloned().collect::<BTreeSet<_>>(),
             &self.read_recursive().decoding_graph,
         ));
         self.create_node(invalid_subgraph, dual_module)
     }
+
+    #[cfg(feature="pointer")]
+    pub fn create_node_vec(&self, edges: &[EdgeWeak], dual_module: &mut impl DualModuleImpl) -> DualNodePtr {
+        let invalid_subgraph = Arc::new(InvalidSubgraph::new(
+            &edges.iter().filter_map(|weak_edge| weak_edge.upgrade()).collect::<BTreeSet<_>>(),
+        ));
+        self.create_node(invalid_subgraph, dual_module)
+    }
+
+    #[cfg(feature="pointer")]
+    pub fn create_node_complete_vec(
+        &self,
+        vertices: &[VertexWeak],
+        edges: &[EdgeWeak],
+        dual_module: &mut impl DualModuleImpl,
+    ) -> DualNodePtr {
+        let invalid_subgraph = Arc::new(InvalidSubgraph::new_complete(
+            &vertices.iter().filter_map(|weak_vertex| weak_vertex.upgrade()).collect::<BTreeSet<_>>(),
+            &edges.iter().filter_map(|weak_edge| weak_edge.upgrade()).collect::<BTreeSet<_>>(),
+        ));
+        self.create_node(invalid_subgraph, dual_module)
+    }   
+
 }
 
 impl MWPSVisualizer for DualModuleInterfacePtr {
+    #[cfg(not(feature="pointer"))]
     fn snapshot(&self, abbrev: bool) -> serde_json::Value {
         let interface = self.read_recursive();
         let mut dual_nodes = Vec::<serde_json::Value>::new();
@@ -809,6 +1272,38 @@ impl MWPSVisualizer for DualModuleInterfacePtr {
             "interface": {
                 "sum_dual": sum_dual.to_f64(),
                 "sdn": numer_of(&sum_dual),
+                "sdd": sum_dual.denom().to_i64(),
+            },
+            "dual_nodes": dual_nodes,
+        })
+    }
+
+    #[cfg(feature="pointer")]
+    fn snapshot(&self, abbrev: bool) -> serde_json::Value {
+        let interface = self.read_recursive();
+        let mut dual_nodes = Vec::<serde_json::Value>::new();
+        for dual_node_ptr in interface.nodes.iter() {
+            let dual_node = dual_node_ptr.read_recursive();
+            let edges: Vec<usize> = dual_node.invalid_subgraph.edges.iter().map(|e|e.read_recursive().edge_index).collect();
+            let vertices: Vec<usize> = dual_node.invalid_subgraph.vertices.iter().map(|e|e.read_recursive().vertex_index).collect();
+            let hair: Vec<usize>  = dual_node.invalid_subgraph.hair.iter().map(|e|e.read_recursive().edge_index).collect();
+            dual_nodes.push(json!({
+                if abbrev { "e" } else { "edges" }: edges,
+                if abbrev { "v" } else { "vertices" }: vertices,
+                if abbrev { "h" } else { "hair" }: hair,
+                if abbrev { "d" } else { "dual_variable" }: dual_node.get_dual_variable().to_f64(),
+                if abbrev { "dn" } else { "dual_variable_numerator" }: dual_node.get_dual_variable().numer().to_i64(),
+                if abbrev { "dd" } else { "dual_variable_denominator" }: dual_node.get_dual_variable().denom().to_i64(),
+                if abbrev { "r" } else { "grow_rate" }: dual_node.grow_rate.to_f64(),
+                if abbrev { "rn" } else { "grow_rate_numerator" }: dual_node.grow_rate.numer().to_i64(),
+                if abbrev { "rd" } else { "grow_rate_denominator" }: dual_node.grow_rate.denom().to_i64(),
+            }));
+        }
+        let sum_dual = self.sum_dual_variables();
+        json!({
+            "interface": {
+                "sum_dual": sum_dual.to_f64(),
+                "sdn": sum_dual.numer().to_i64(),
                 "sdd": sum_dual.denom().to_i64(),
             },
             "dual_nodes": dual_nodes,

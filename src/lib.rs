@@ -73,22 +73,33 @@ use wasm_bindgen::prelude::*;
 pub fn get_version() -> String {
     use decoding_hypergraph::*;
     use dual_module::*;
+    #[cfg(feature = "non-pq")]
     use dual_module_serial::*;
+    #[cfg(not(feature = "non-pq"))]
+    use dual_module_pq::*;
     use example_codes::*;
     use primal_module::*;
     use primal_module_serial::*;
+    use crate::util::Rational;
+
     // TODO: I'm just testing basic functionality
     let defect_vertices = vec![23, 24, 29, 30];
     let code = CodeCapacityTailoredCode::new(7, 0., 0.01, 1);
     // create dual module
     let model_graph = code.get_model_graph();
+    #[cfg(feature = "non-pq")]
     let mut dual_module = DualModuleSerial::new_empty(&model_graph.initializer);
+    #[cfg(not(feature = "non-pq"))]
+    let mut dual_module: DualModulePQ<FutureObstacleQueue<Rational>>  = DualModulePQ::new_empty(&model_graph.initializer);
     // create primal module
     let mut primal_module = PrimalModuleSerial::new_empty(&model_graph.initializer);
     primal_module.growing_strategy = GrowingStrategy::SingleCluster;
     primal_module.plugins = std::sync::Arc::new(vec![]);
     // try to work on a simple syndrome
     let decoding_graph = DecodingHyperGraph::new_defects(model_graph, defect_vertices.clone());
+    #[cfg(feature="pointer")]
+    let interface_ptr = DualModuleInterfacePtr::new();
+    #[cfg(not(feature="pointer"))]
     let interface_ptr = DualModuleInterfacePtr::new(decoding_graph.model_graph.clone());
     primal_module.solve_visualizer(
         &interface_ptr,
@@ -96,6 +107,9 @@ pub fn get_version() -> String {
         &mut dual_module,
         None,
     );
+    #[cfg(feature="pointer")]
+    let (subgraph, weight_range) = primal_module.subgraph_range(&interface_ptr);
+    #[cfg(not(feature="pointer"))]
     let (subgraph, weight_range) = primal_module.subgraph_range(&interface_ptr, &mut dual_module);
     println!("subgraph: {subgraph:?}");
     // env!("CARGO_PKG_VERSION").to_string()

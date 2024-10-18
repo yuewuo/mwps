@@ -8,6 +8,28 @@ use std::collections::BTreeMap;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
+#[cfg(all(feature = "pointer", feature = "non-pq"))]
+use crate::dual_module_serial::{EdgeWeak, VertexWeak, EdgePtr, VertexPtr};
+#[cfg(all(feature = "pointer", not(feature = "non-pq")))]
+use crate::dual_module_pq::{EdgeWeak, VertexWeak, EdgePtr, VertexPtr};
+
+#[cfg(feature="pointer")]
+#[derive(Clone, PartialEq, Eq, Derivative)]
+#[derivative(Debug)]
+pub struct Relaxer {
+    /// the hash value calculated by other fields
+    #[derivative(Debug = "ignore")]
+    hash_value: u64,
+    /// the direction of invalid subgraphs
+    direction: BTreeMap<Arc<InvalidSubgraph>, Rational>,
+    /// the edges that will be untightened after growing along `direction`;
+    /// basically all the edges that have negative `overall_growing_rate`
+    untighten_edges: BTreeMap<EdgePtr, Rational>,
+    /// the edges that will grow
+    growing_edges: BTreeMap<EdgePtr, Rational>,
+}
+
+#[cfg(not(feature="pointer"))]
 #[derive(Clone, PartialEq, Eq, Derivative)]
 #[derivative(Debug)]
 pub struct Relaxer {
@@ -65,7 +87,7 @@ impl Relaxer {
     pub fn new_raw(direction: BTreeMap<Arc<InvalidSubgraph>, Rational>) -> Self {
         let mut edges = BTreeMap::new();
         for (invalid_subgraph, speed) in direction.iter() {
-            for &edge_index in invalid_subgraph.hair.iter() {
+            for edge_index in invalid_subgraph.hair.iter() {
                 if let Some(edge) = edges.get_mut(&edge_index) {
                     *edge += speed;
                 } else {
@@ -77,9 +99,9 @@ impl Relaxer {
         let mut growing_edges = BTreeMap::new();
         for (edge_index, speed) in edges {
             if speed.is_negative() {
-                untighten_edges.insert(edge_index, speed);
+                untighten_edges.insert(edge_index.clone(), speed);
             } else if speed.is_positive() {
-                growing_edges.insert(edge_index, speed);
+                growing_edges.insert(edge_index.clone(), speed);
             }
         }
         let mut relaxer = Self {
@@ -123,16 +145,29 @@ impl Relaxer {
         &self.direction
     }
 
+    #[cfg(feature="pointer")]
+    pub fn get_growing_edges(&self) -> &BTreeMap<EdgePtr, Rational> {
+        &self.growing_edges
+    }
+
+    #[cfg(feature="pointer")]
+    pub fn get_untighten_edges(&self) -> &BTreeMap<EdgePtr, Rational> {
+        &self.untighten_edges
+    }
+
+    #[cfg(not(feature="pointer"))]
     pub fn get_growing_edges(&self) -> &BTreeMap<EdgeIndex, Rational> {
         &self.growing_edges
     }
 
+    #[cfg(not(feature="pointer"))]
     pub fn get_untighten_edges(&self) -> &BTreeMap<EdgeIndex, Rational> {
         &self.untighten_edges
     }
 }
 
 #[cfg(test)]
+#[cfg(not(feature="pointer"))]
 mod tests {
     use super::*;
     use crate::decoding_hypergraph::tests::*;

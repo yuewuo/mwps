@@ -23,6 +23,7 @@ pub trait PluginImpl {
     /// given the tight edges and parity constraints, find relaxers
     fn find_relaxers(
         &self,
+        #[cfg(not(feature="pointer"))]
         decoding_graph: &DecodingHyperGraph,
         matrix: &mut EchelonMatrix,
         positive_dual_nodes: &[DualNodePtr],
@@ -73,6 +74,51 @@ pub struct PluginEntry {
 }
 
 impl PluginEntry {
+    #[cfg(feature="pointer")]
+    pub fn execute(
+        &self,
+        matrix: &mut EchelonMatrix,
+        positive_dual_nodes: &[DualNodePtr],
+        relaxer_forest: &mut RelaxerForest,
+    ) -> Option<Relaxer> {
+        let mut repeat = true;
+        let mut repeat_count = 0;
+        while repeat {
+            // execute the plugin
+            let relaxers = self.plugin.find_relaxers(&mut *matrix, positive_dual_nodes);
+            if relaxers.is_empty() {
+                repeat = false;
+            }
+            for relaxer in relaxers.into_iter() {
+                for edge_index in relaxer.get_untighten_edges().keys() {
+                    matrix.update_edge_tightness(edge_index.downgrade(), false);
+                }
+                let relaxer = Arc::new(relaxer);
+                let sum_speed = relaxer.get_sum_speed();
+                if sum_speed.is_positive() {
+                    // println!("sum speed: {:?}", sum_speed);
+                    return Some(relaxer_forest.expand(&relaxer));
+                } else {
+                    relaxer_forest.add(relaxer);
+                }
+            }
+            // determine whether repeat again
+            match self.repeat_strategy {
+                RepeatStrategy::Once => {
+                    repeat = false;
+                }
+                RepeatStrategy::Multiple { max_repetition } => {
+                    if repeat_count + 1 >= max_repetition {
+                        repeat = false;
+                    }
+                }
+            }
+            repeat_count += 1;
+        }
+        None
+    }
+
+    #[cfg(not(feature="pointer"))]
     pub fn execute(
         &self,
         decoding_graph: &DecodingHyperGraph,
@@ -90,7 +136,10 @@ impl PluginEntry {
             }
             for relaxer in relaxers.into_iter() {
                 for edge_index in relaxer.get_untighten_edges().keys() {
+                    #[cfg(not(feature="pointer"))]
                     matrix.update_edge_tightness(*edge_index, false);
+                    #[cfg(feature="pointer")]
+                    matrix.update_edge_tightness(edge_index.downgrade(), false);
                 }
                 let relaxer = Arc::new(relaxer);
                 let sum_speed = relaxer.get_sum_speed();
@@ -135,6 +184,27 @@ impl PluginManager {
         self.plugins.is_empty()
     }
 
+    #[cfg(feature="pointer")]
+    pub fn find_relaxer(
+        &mut self,
+        matrix: &mut EchelonMatrix,
+        positive_dual_nodes: &[DualNodePtr],
+    ) -> Option<Relaxer> {
+        let mut relaxer_forest = RelaxerForest::new(
+            matrix.get_view_edges().into_iter(),
+            positive_dual_nodes
+                .iter()
+                .map(|ptr| ptr.read_recursive().invalid_subgraph.clone()),
+        );
+        for plugin_entry in self.plugins.iter().take(*self.plugin_count.read_recursive()) {
+            if let Some(relaxer) = plugin_entry.execute( matrix, positive_dual_nodes, &mut relaxer_forest) {
+                return Some(relaxer);
+            }
+        }
+        // add a union find relaxer finder as the last resort if nothing is reported
+        PluginUnionFind::entry().execute( matrix, positive_dual_nodes, &mut relaxer_forest)
+    }
+    #[cfg(not(feature="pointer"))]
     pub fn find_relaxer(
         &mut self,
         decoding_graph: &DecodingHyperGraph,

@@ -1,3 +1,4 @@
+#![cfg(feature = "non-pq")]
 // cargo run --release --features qecp_integrate --bin aps2024_demo
 
 use mwpf::dual_module::*;

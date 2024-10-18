@@ -53,10 +53,18 @@ impl<M: MatrixView> From<&mut M> for VizTable {
         let mut title = Row::empty();
         title.add_cell(Cell::new(""));
         for column in 0..matrix.columns() {
-            let var_index = matrix.column_to_var_index(column);
-            let edge_index = matrix.var_to_edge_index(var_index);
-            let edge_index_str = Self::force_single_column(edge_index.to_string().as_str());
-            title.add_cell(Cell::new(edge_index_str.as_str()).style_spec("brFm"));
+            #[cfg(feature="pointer")] {
+                let var_index = matrix.column_to_var_index(column);
+                let edge_weak = matrix.var_to_edge_index(var_index);
+                let edge_index_str = Self::force_single_column(edge_weak.upgrade_force().read_recursive().edge_index.to_string().as_str());
+                title.add_cell(Cell::new(edge_index_str.as_str()).style_spec("brFm"));
+            } 
+            #[cfg(not(feature="pointer"))] {
+                let var_index = matrix.column_to_var_index(column);
+                let edge_index = matrix.var_to_edge_index(var_index);
+                let edge_index_str = Self::force_single_column(edge_index.to_string().as_str());
+                title.add_cell(Cell::new(edge_index_str.as_str()).style_spec("brFm"));
+            }
         }
         title.add_cell(Cell::new(" = "));
         // create body rows
@@ -126,6 +134,7 @@ impl VizTrait for VizTable {
 }
 
 #[cfg(test)]
+#[cfg(not(feature="pointer"))]
 pub mod tests {
     use super::super::*;
 

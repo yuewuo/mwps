@@ -9,194 +9,390 @@ use crate::util::*;
 use prettytable::*;
 use std::collections::*;
 
+#[cfg(all(feature = "pointer", feature = "non-pq"))]
+use crate::dual_module_serial::{EdgeWeak, VertexWeak, EdgePtr, VertexPtr};
+#[cfg(all(feature = "pointer", not(feature = "non-pq")))]
+use crate::dual_module_pq::{EdgeWeak, VertexWeak, EdgePtr, VertexPtr};
+
 pub struct HairView<'a, M: MatrixTail + MatrixEchelon> {
     base: &'a mut M,
     column_bias: ColumnIndex,
     row_bias: RowIndex,
 }
 
-impl<'a, M: MatrixTail + MatrixEchelon> HairView<'a, M> {
-    pub fn get_base(&self) -> &M {
-        self.base
-    }
-    pub fn get_base_view_edges(&mut self) -> Vec<EdgeIndex> {
-        self.base.get_view_edges()
-    }
-}
-
-impl<'a, M: MatrixTail + MatrixEchelon> HairView<'a, M> {
-    pub fn new<EdgeIter>(matrix: &'a mut M, hair: EdgeIter) -> Self
-    where
-        EdgeIter: Iterator<Item = EdgeIndex>,
-    {
-        matrix.set_tail_edges(hair);
-        let columns = matrix.columns();
-        let rows = matrix.rows();
-        let mut column_bias = columns;
-        let mut row_bias = rows;
-        for column in (0..columns).rev() {
-            let edge_index = matrix.column_to_edge_index(column);
-            if matrix.get_tail_edges().contains(&edge_index) {
-                column_bias = column;
-            } else {
-                break;
+cfg_if::cfg_if! {
+    if #[cfg(feature="pointer")] {
+        impl<'a, M: MatrixTail + MatrixEchelon> HairView<'a, M> {
+            pub fn get_base(&self) -> &M {
+                self.base
+            }
+            pub fn get_base_view_edges(&mut self) -> Vec<EdgeWeak> {
+                self.base.get_view_edges()
             }
         }
-        let echelon_info = matrix.get_echelon_info();
-        for column in column_bias..columns {
-            let column_info = &echelon_info.columns[column];
-            if column_info.is_dependent() {
-                row_bias = column_info.row;
-                break;
+
+        impl<'a, M: MatrixTail + MatrixEchelon> HairView<'a, M> {
+            pub fn new<EdgeIter>(matrix: &'a mut M, hair: EdgeIter) -> Self
+            where
+                EdgeIter: Iterator<Item = EdgeWeak>,
+            {
+                matrix.set_tail_edges(hair);
+                let columns = matrix.columns();
+                let rows = matrix.rows();
+                let mut column_bias = columns;
+                let mut row_bias = rows;
+                for column in (0..columns).rev() {
+                    let edge_index = matrix.column_to_edge_index(column);
+                    if matrix.get_tail_edges().contains(&edge_index) {
+                        column_bias = column;
+                    } else {
+                        break;
+                    }
+                }
+                let echelon_info = matrix.get_echelon_info();
+                for column in column_bias..columns {
+                    let column_info = &echelon_info.columns[column];
+                    if column_info.is_dependent() {
+                        row_bias = column_info.row;
+                        break;
+                    }
+                }
+                Self {
+                    base: matrix,
+                    column_bias,
+                    row_bias,
+                }
+            }
+
+            pub fn get_echelon_column_info(&mut self, column: ColumnIndex) -> ColumnInfo {
+                self.base.get_echelon_info().columns[column + self.column_bias]
+            }
+
+            pub fn get_echelon_row_info(&mut self, row: RowIndex) -> RowInfo {
+                self.base.get_echelon_info().rows[row + self.row_bias]
+            }
+
+            pub fn get_echelon_satisfiable(&mut self) -> bool {
+                self.base.get_echelon_info().satisfiable
             }
         }
-        Self {
-            base: matrix,
-            column_bias,
-            row_bias,
+
+        impl<'a, M: MatrixTail + MatrixEchelon> MatrixTail for HairView<'a, M> {
+            fn get_tail_edges(&self) -> &BTreeSet<EdgeWeak> {
+                self.get_base().get_tail_edges()
+            }
+            fn get_tail_edges_mut(&mut self) -> &mut BTreeSet<EdgeWeak> {
+                panic!("cannot mutate a hair view");
+            }
         }
-    }
 
-    pub fn get_echelon_column_info(&mut self, column: ColumnIndex) -> ColumnInfo {
-        self.base.get_echelon_info().columns[column + self.column_bias]
-    }
-
-    pub fn get_echelon_row_info(&mut self, row: RowIndex) -> RowInfo {
-        self.base.get_echelon_info().rows[row + self.row_bias]
-    }
-
-    pub fn get_echelon_satisfiable(&mut self) -> bool {
-        self.base.get_echelon_info().satisfiable
-    }
-}
-
-impl<'a, M: MatrixTail + MatrixEchelon> MatrixTail for HairView<'a, M> {
-    fn get_tail_edges(&self) -> &BTreeSet<EdgeIndex> {
-        self.get_base().get_tail_edges()
-    }
-    fn get_tail_edges_mut(&mut self) -> &mut BTreeSet<EdgeIndex> {
-        panic!("cannot mutate a hair view");
-    }
-}
-
-impl<'a, M: MatrixTail + MatrixEchelon> MatrixEchelon for HairView<'a, M> {
-    fn get_echelon_info(&mut self) -> &EchelonInfo {
-        panic!("cannot get echelon info, please use individual method")
-    }
-    fn get_echelon_info_immutable(&self) -> &EchelonInfo {
-        panic!("cannot get echelon info, please use individual method")
-    }
-}
-
-impl<'a, M: MatrixTight + MatrixTail + MatrixEchelon> MatrixTight for HairView<'a, M> {
-    fn update_edge_tightness(&mut self, _edge_index: EdgeIndex, _is_tight: bool) {
-        panic!("cannot mutate a hair view");
-    }
-    fn is_tight(&self, edge_index: usize) -> bool {
-        self.get_base().is_tight(edge_index)
-    }
-}
-
-impl<'a, M: MatrixTail + MatrixEchelon> MatrixBasic for HairView<'a, M> {
-    fn add_variable(&mut self, _edge_index: EdgeIndex) -> Option<VarIndex> {
-        panic!("cannot mutate a hair view");
-    }
-
-    fn add_constraint(
-        &mut self,
-        _vertex_index: VertexIndex,
-        _incident_edges: &[EdgeIndex],
-        _parity: bool,
-    ) -> Option<Vec<VarIndex>> {
-        panic!("cannot mutate a hair view");
-    }
-
-    fn xor_row(&mut self, _target: RowIndex, _source: RowIndex) {
-        panic!("cannot mutate a hair view");
-    }
-    fn swap_row(&mut self, _a: RowIndex, _b: RowIndex) {
-        panic!("cannot mutate a hair view");
-    }
-    fn get_lhs(&self, row: RowIndex, var_index: VarIndex) -> bool {
-        self.get_base().get_lhs(row + self.row_bias, var_index)
-    }
-    fn get_rhs(&self, row: RowIndex) -> bool {
-        self.get_base().get_rhs(row + self.row_bias)
-    }
-    fn var_to_edge_index(&self, var_index: VarIndex) -> EdgeIndex {
-        self.get_base().var_to_edge_index(var_index)
-    }
-    fn edge_to_var_index(&self, edge_index: EdgeIndex) -> Option<VarIndex> {
-        self.get_base().edge_to_var_index(edge_index)
-    }
-    fn get_vertices(&self) -> BTreeSet<VertexIndex> {
-        self.get_base().get_vertices()
-    }
-}
-
-impl<'a, M: MatrixTail + MatrixEchelon> MatrixView for HairView<'a, M> {
-    fn columns(&mut self) -> usize {
-        self.base.columns() - self.column_bias
-    }
-
-    fn column_to_var_index(&self, column: ColumnIndex) -> VarIndex {
-        self.base.column_to_var_index(column + self.column_bias)
-    }
-
-    fn rows(&mut self) -> usize {
-        self.base.rows() - self.row_bias
-    }
-}
-
-impl<'a, M: MatrixTail + MatrixEchelon> VizTrait for HairView<'a, M> {
-    fn viz_table(&mut self) -> VizTable {
-        let mut table = VizTable::from(&mut *self);
-        // add hair mark
-        assert!(table.title.get_cell(0).unwrap().get_content().is_empty());
-        if self.base.get_echelon_info().satisfiable {
-            table.title.set_cell(Cell::new("H").style_spec("brFg"), 0).unwrap();
-        } else {
-            table.title.set_cell(Cell::new("X").style_spec("brFr"), 0).unwrap();
+        impl<'a, M: MatrixTail + MatrixEchelon> MatrixEchelon for HairView<'a, M> {
+            fn get_echelon_info(&mut self) -> &EchelonInfo {
+                panic!("cannot get echelon info, please use individual method")
+            }
+            fn get_echelon_info_immutable(&self) -> &EchelonInfo {
+                panic!("cannot get echelon info, please use individual method")
+            }
         }
-        // add row information on the right
-        table.title.add_cell(Cell::new("\u{25BC}"));
-        let rows = self.rows();
-        for row in 0..rows {
-            let row_info = self.get_echelon_row_info(row);
-            let cell = if row_info.has_leading() {
-                Cell::new(
-                    self.column_to_edge_index(row_info.column - self.column_bias)
-                        .to_string()
-                        .as_str(),
-                )
-                .style_spec("irFm")
-            } else {
-                Cell::new("*").style_spec("rFr")
-            };
-            table.rows[row].add_cell(cell);
+
+        impl<'a, M: MatrixTight + MatrixTail + MatrixEchelon> MatrixTight for HairView<'a, M> {
+            fn update_edge_tightness(&mut self, _edge_weak: EdgeWeak, _is_tight: bool) {
+                panic!("cannot mutate a hair view");
+            }
+            fn is_tight(&self, edge_weak: EdgeWeak) -> bool {
+                self.get_base().is_tight(edge_weak)
+            }
         }
-        // add column information on the bottom
-        let mut bottom_row = Row::empty();
-        bottom_row.add_cell(Cell::new(" \u{25B6}"));
-        let columns = self.columns();
-        for column in 0..columns {
-            let column_info = self.get_echelon_column_info(column);
-            let cell = if column_info.is_dependent() {
-                Cell::new(VizTable::force_single_column((column_info.row - self.row_bias).to_string().as_str()).as_str())
-                    .style_spec("irFb")
-            } else {
-                Cell::new("*").style_spec("rFr")
-            };
-            bottom_row.add_cell(cell);
+
+        impl<'a, M: MatrixTail + MatrixEchelon> MatrixBasic for HairView<'a, M> {
+            fn add_variable(&mut self, _edge_weak: EdgeWeak) -> Option<VarIndex> {
+                panic!("cannot mutate a hair view");
+            }
+
+            fn add_constraint(
+                &mut self,
+                _vertex_ptr: VertexPtr,
+                // _incident_edges: &[EdgeWeak],
+                // _parity: bool,
+            ) -> Option<Vec<VarIndex>> {
+                panic!("cannot mutate a hair view");
+            }
+
+            fn xor_row(&mut self, _target: RowIndex, _source: RowIndex) {
+                panic!("cannot mutate a hair view");
+            }
+            fn swap_row(&mut self, _a: RowIndex, _b: RowIndex) {
+                panic!("cannot mutate a hair view");
+            }
+            fn get_lhs(&self, row: RowIndex, var_index: VarIndex) -> bool {
+                self.get_base().get_lhs(row + self.row_bias, var_index)
+            }
+            fn get_rhs(&self, row: RowIndex) -> bool {
+                self.get_base().get_rhs(row + self.row_bias)
+            }
+            fn var_to_edge_index(&self, var_index: VarIndex) -> EdgeWeak {
+                self.get_base().var_to_edge_index(var_index)
+            }
+            fn edge_to_var_index(&self, edge_weak: EdgeWeak) -> Option<VarIndex> {
+                self.get_base().edge_to_var_index(edge_weak)
+            }
+            fn get_vertices(&self) -> BTreeSet<VertexWeak> {
+                self.get_base().get_vertices()
+            }
         }
-        bottom_row.add_cell(Cell::new("\u{25C0}  "));
-        bottom_row.add_cell(Cell::new("\u{25B2}"));
-        table.rows.push(bottom_row);
-        table
+
+        impl<'a, M: MatrixTail + MatrixEchelon> MatrixView for HairView<'a, M> {
+            fn columns(&mut self) -> usize {
+                self.base.columns() - self.column_bias
+            }
+
+            fn column_to_var_index(&self, column: ColumnIndex) -> VarIndex {
+                self.base.column_to_var_index(column + self.column_bias)
+            }
+
+            fn rows(&mut self) -> usize {
+                self.base.rows() - self.row_bias
+            }
+        }
+
+        impl<'a, M: MatrixTail + MatrixEchelon> VizTrait for HairView<'a, M> {
+            fn viz_table(&mut self) -> VizTable {
+                let mut table = VizTable::from(&mut *self);
+                // add hair mark
+                assert!(table.title.get_cell(0).unwrap().get_content().is_empty());
+                if self.base.get_echelon_info().satisfiable {
+                    table.title.set_cell(Cell::new("H").style_spec("brFg"), 0).unwrap();
+                } else {
+                    table.title.set_cell(Cell::new("X").style_spec("brFr"), 0).unwrap();
+                }
+                // add row information on the right
+                table.title.add_cell(Cell::new("\u{25BC}"));
+                let rows = self.rows();
+                for row in 0..rows {
+                    let row_info = self.get_echelon_row_info(row);
+                    let cell = if row_info.has_leading() {
+                        Cell::new(
+                            self.column_to_edge_index(row_info.column - self.column_bias).upgrade_force().read_recursive().edge_index
+                                .to_string()
+                                .as_str(),
+                        )
+                        .style_spec("irFm")
+                    } else {
+                        Cell::new("*").style_spec("rFr")
+                    };
+                    table.rows[row].add_cell(cell);
+                }
+                // add column information on the bottom
+                let mut bottom_row = Row::empty();
+                bottom_row.add_cell(Cell::new(" \u{25B6}"));
+                let columns = self.columns();
+                for column in 0..columns {
+                    let column_info = self.get_echelon_column_info(column);
+                    let cell = if column_info.is_dependent() {
+                        Cell::new(VizTable::force_single_column((column_info.row - self.row_bias).to_string().as_str()).as_str())
+                            .style_spec("irFb")
+                    } else {
+                        Cell::new("*").style_spec("rFr")
+                    };
+                    bottom_row.add_cell(cell);
+                }
+                bottom_row.add_cell(Cell::new("\u{25C0}  "));
+                bottom_row.add_cell(Cell::new("\u{25B2}"));
+                table.rows.push(bottom_row);
+                table
+            }
+        }
+    } else {
+        impl<'a, M: MatrixTail + MatrixEchelon> HairView<'a, M> {
+            pub fn get_base(&self) -> &M {
+                self.base
+            }
+        
+            pub fn get_base_view_edges(&mut self) -> Vec<EdgeIndex> {
+                self.base.get_view_edges()
+            }
+        }
+        
+        impl<'a, M: MatrixTail + MatrixEchelon> HairView<'a, M> {
+            pub fn new<EdgeIter>(matrix: &'a mut M, hair: EdgeIter) -> Self
+            where
+                EdgeIter: Iterator<Item = EdgeIndex>,
+            {
+                matrix.set_tail_edges(hair);
+                let columns = matrix.columns();
+                let rows = matrix.rows();
+                let mut column_bias = columns;
+                let mut row_bias = rows;
+                for column in (0..columns).rev() {
+                    let edge_index = matrix.column_to_edge_index(column);
+                    if matrix.get_tail_edges().contains(&edge_index) {
+                        column_bias = column;
+                    } else {
+                        break;
+                    }
+                }
+                let echelon_info = matrix.get_echelon_info();
+                for column in column_bias..columns {
+                    let column_info = &echelon_info.columns[column];
+                    if column_info.is_dependent() {
+                        row_bias = column_info.row;
+                        break;
+                    }
+                }
+                Self {
+                    base: matrix,
+                    column_bias,
+                    row_bias,
+                }
+            }
+        
+            pub fn get_echelon_column_info(&mut self, column: ColumnIndex) -> ColumnInfo {
+                self.base.get_echelon_info().columns[column + self.column_bias]
+            }
+        
+            pub fn get_echelon_row_info(&mut self, row: RowIndex) -> RowInfo {
+                self.base.get_echelon_info().rows[row + self.row_bias]
+            }
+        
+            pub fn get_echelon_satisfiable(&mut self) -> bool {
+                self.base.get_echelon_info().satisfiable
+            }
+        }
+        
+        impl<'a, M: MatrixTail + MatrixEchelon> MatrixTail for HairView<'a, M> {
+            fn get_tail_edges(&self) -> &BTreeSet<EdgeIndex> {
+                self.get_base().get_tail_edges()
+            }
+            fn get_tail_edges_mut(&mut self) -> &mut BTreeSet<EdgeIndex> {
+                panic!("cannot mutate a hair view");
+            }
+        }
+        
+        impl<'a, M: MatrixTail + MatrixEchelon> MatrixEchelon for HairView<'a, M> {
+            fn get_echelon_info(&mut self) -> &EchelonInfo {
+                panic!("cannot get echelon info, please use individual method")
+            }
+            fn get_echelon_info_immutable(&self) -> &EchelonInfo {
+                panic!("cannot get echelon info, please use individual method")
+            }
+        }
+        
+        impl<'a, M: MatrixTight + MatrixTail + MatrixEchelon> MatrixTight for HairView<'a, M> {
+            fn update_edge_tightness(&mut self, _edge_index: EdgeIndex, _is_tight: bool) {
+                panic!("cannot mutate a hair view");
+            }
+            fn is_tight(&self, edge_index: usize) -> bool {
+                self.get_base().is_tight(edge_index)
+            }
+        }
+        
+        impl<'a, M: MatrixTail + MatrixEchelon> MatrixBasic for HairView<'a, M> {
+            fn add_variable(&mut self, _edge_index: EdgeIndex) -> Option<VarIndex> {
+                panic!("cannot mutate a hair view");
+            }
+        
+            fn add_constraint(
+                &mut self,
+                _vertex_index: VertexIndex,
+                _incident_edges: &[EdgeIndex],
+                _parity: bool,
+            ) -> Option<Vec<VarIndex>> {
+                panic!("cannot mutate a hair view");
+            }
+        
+            fn xor_row(&mut self, _target: RowIndex, _source: RowIndex) {
+                panic!("cannot mutate a hair view");
+            }
+            fn swap_row(&mut self, _a: RowIndex, _b: RowIndex) {
+                panic!("cannot mutate a hair view");
+            }
+            fn get_lhs(&self, row: RowIndex, var_index: VarIndex) -> bool {
+                self.get_base().get_lhs(row + self.row_bias, var_index)
+            }
+            fn get_rhs(&self, row: RowIndex) -> bool {
+                self.get_base().get_rhs(row + self.row_bias)
+            }
+            fn var_to_edge_index(&self, var_index: VarIndex) -> EdgeIndex {
+                self.get_base().var_to_edge_index(var_index)
+            }
+            fn edge_to_var_index(&self, edge_index: EdgeIndex) -> Option<VarIndex> {
+                self.get_base().edge_to_var_index(edge_index)
+            }
+            fn get_vertices(&self) -> BTreeSet<VertexIndex> {
+                self.get_base().get_vertices()
+            }
+        }
+        
+        impl<'a, M: MatrixTail + MatrixEchelon> MatrixView for HairView<'a, M> {
+            fn columns(&mut self) -> usize {
+                self.base.columns() - self.column_bias
+            }
+        
+            fn column_to_var_index(&self, column: ColumnIndex) -> VarIndex {
+                self.base.column_to_var_index(column + self.column_bias)
+            }
+        
+            fn rows(&mut self) -> usize {
+                self.base.rows() - self.row_bias
+            }
+        }
+        
+        impl<'a, M: MatrixTail + MatrixEchelon> VizTrait for HairView<'a, M> {
+            fn viz_table(&mut self) -> VizTable {
+                let mut table = VizTable::from(&mut *self);
+                // add hair mark
+                assert!(table.title.get_cell(0).unwrap().get_content().is_empty());
+                if self.base.get_echelon_info().satisfiable {
+                    table.title.set_cell(Cell::new("H").style_spec("brFg"), 0).unwrap();
+                } else {
+                    table.title.set_cell(Cell::new("X").style_spec("brFr"), 0).unwrap();
+                }
+                // add row information on the right
+                table.title.add_cell(Cell::new("\u{25BC}"));
+                let rows = self.rows();
+                for row in 0..rows {
+                    let row_info = self.get_echelon_row_info(row);
+                    let cell = if row_info.has_leading() {
+                        Cell::new(
+                            self.column_to_edge_index(row_info.column - self.column_bias)
+                                .to_string()
+                                .as_str(),
+                        )
+                        .style_spec("irFm")
+                    } else {
+                        Cell::new("*").style_spec("rFr")
+                    };
+                    table.rows[row].add_cell(cell);
+                }
+                // add column information on the bottom
+                let mut bottom_row = Row::empty();
+                bottom_row.add_cell(Cell::new(" \u{25B6}"));
+                let columns = self.columns();
+                for column in 0..columns {
+                    let column_info = self.get_echelon_column_info(column);
+                    let cell = if column_info.is_dependent() {
+                        Cell::new(VizTable::force_single_column((column_info.row - self.row_bias).to_string().as_str()).as_str())
+                            .style_spec("irFb")
+                    } else {
+                        Cell::new("*").style_spec("rFr")
+                    };
+                    bottom_row.add_cell(cell);
+                }
+                bottom_row.add_cell(Cell::new("\u{25C0}  "));
+                bottom_row.add_cell(Cell::new("\u{25B2}"));
+                table.rows.push(bottom_row);
+                table
+            }
+        }        
     }
 }
+
+
+
+
 
 #[cfg(test)]
+#[cfg(not(feature="pointer"))]
 pub mod tests {
     use super::super::basic::*;
     use super::super::echelon::*;

@@ -1,3 +1,4 @@
+#![cfg(feature = "non-pq")]
 // cargo run --release --bin paper_figures
 
 use mwpf::dual_module::*;

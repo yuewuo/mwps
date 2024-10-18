@@ -5,6 +5,26 @@ use crate::util::*;
 use derivative::Derivative;
 use std::collections::{BTreeMap, BTreeSet};
 
+
+#[cfg(all(feature = "pointer", feature = "non-pq"))]
+use crate::dual_module_serial::{EdgeWeak, VertexWeak, EdgePtr, VertexPtr};
+#[cfg(all(feature = "pointer", not(feature = "non-pq")))]
+use crate::dual_module_pq::{EdgeWeak, VertexWeak, EdgePtr, VertexPtr};
+
+#[cfg(feature = "pointer")]
+#[derive(Clone, Derivative)]
+#[derivative(Default(new = "true"))]
+pub struct BasicMatrix {
+    /// the vertices already maintained by this parity check
+    pub vertices: BTreeSet<VertexWeak>,
+    /// the edges maintained by this parity check, mapping to the local indices
+    pub edges: BTreeMap<EdgeWeak, VarIndex>,
+    /// variable index map to edge index
+    pub variables: Vec<EdgeWeak>,
+    pub constraints: Vec<ParityRow>,
+}
+
+#[cfg(not(feature = "pointer"))]
 #[derive(Clone, Derivative)]
 #[derivative(Default(new = "true"))]
 pub struct BasicMatrix {
@@ -17,6 +37,80 @@ pub struct BasicMatrix {
     pub constraints: Vec<ParityRow>,
 }
 
+#[cfg(feature = "pointer")]
+impl MatrixBasic for BasicMatrix {
+    fn add_variable(&mut self, edge_weak: EdgeWeak) -> Option<VarIndex> {
+        if self.edges.contains_key(&edge_weak) {
+            // variable already exists
+            return None;
+        }
+        let var_index = self.variables.len();
+        self.edges.insert(edge_weak.clone(), var_index);
+        self.variables.push(edge_weak.clone()); 
+        ParityRow::add_one_variable(&mut self.constraints, self.variables.len());
+        Some(var_index)
+    }
+
+    fn add_constraint(
+        &mut self,
+        vertex_ptr: VertexPtr,
+    ) -> Option<Vec<VarIndex>> {
+        if self.vertices.contains(&vertex_ptr.downgrade()) {
+            // no need to add repeat constraint
+            return None;
+        }
+        let mut var_indices = None;
+        self.vertices.insert(vertex_ptr.downgrade());
+        let vertex = vertex_ptr.read_recursive();
+        for edge_weak in vertex.edges.iter() {
+            if let Some(var_index) = self.add_variable(edge_weak.clone()) {
+                // this is a newly added edge
+                var_indices.get_or_insert_with(Vec::new).push(var_index);
+            }
+        }
+        let mut row = ParityRow::new_length(self.variables.len());
+        for edge_weak in vertex.edges.iter() {
+            let var_index = self.edges[&edge_weak];
+            row.set_left(var_index, true);
+        }
+        row.set_right(vertex.is_defect);
+        drop(vertex);
+        self.constraints.push(row);
+        var_indices
+    }
+
+    /// row operations
+    fn xor_row(&mut self, target: RowIndex, source: RowIndex) {
+        ParityRow::xor_two_rows(&mut self.constraints, target, source)
+    }
+
+    fn swap_row(&mut self, a: RowIndex, b: RowIndex) {
+        self.constraints.swap(a, b);
+    }
+
+    fn get_lhs(&self, row: RowIndex, var_index: VarIndex) -> bool {
+        self.constraints[row].get_left(var_index)
+    }
+
+    fn get_rhs(&self, row: RowIndex) -> bool {
+        self.constraints[row].get_right()
+    }
+
+    fn var_to_edge_index(&self, var_index: VarIndex) -> EdgeWeak {
+        self.variables[var_index].clone()
+    }
+
+    fn edge_to_var_index(&self, edge_weak: EdgeWeak) -> Option<VarIndex> {
+        self.edges.get(&edge_weak).cloned()
+    }
+
+    fn get_vertices(&self) -> BTreeSet<VertexWeak> {
+        self.vertices.clone()
+    }
+}
+
+
+#[cfg(not(feature = "pointer"))]
 impl MatrixBasic for BasicMatrix {
     fn add_variable(&mut self, edge_index: EdgeIndex) -> Option<VarIndex> {
         if self.edges.contains_key(&edge_index) {
@@ -109,6 +203,7 @@ impl VizTrait for BasicMatrix {
 }
 
 #[cfg(test)]
+#[cfg(not(feature = "pointer"))]
 pub mod tests {
     use super::*;
 

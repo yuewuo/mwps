@@ -84,6 +84,17 @@ impl<T: Send + Sync> RwLockPtr<T> for ArcRwLock<T> {
     }
 }
 
+impl<T: Send + Sync> WeakRwLock<T> {
+    #[inline(always)]
+    pub fn ptr(&self) -> &Weak<RwLock<T>> {
+        &self.ptr
+    }
+    #[inline(always)]
+    pub fn ptr_mut(&mut self) -> &mut Weak<RwLock<T>> {
+        &mut self.ptr
+    }
+}
+
 impl<T: Send + Sync> PartialEq for ArcRwLock<T> {
     fn eq(&self, other: &Self) -> bool {
         self.ptr_eq(other)
@@ -110,6 +121,24 @@ impl<T> std::ops::Deref for ArcRwLock<T> {
     type Target = RwLock<T>;
     fn deref(&self) -> &Self::Target {
         &self.ptr
+    }
+}
+
+impl<T: Send + Sync> std::hash::Hash for ArcRwLock<T> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        let address = Arc::as_ptr(&self.ptr);
+        address.hash(state);
+        // self.ptr.hash(state);
+
+    //    std::ptr::hash(self.ptr(), state);
+    }
+}
+
+impl<T: Send + Sync> std::hash::Hash for WeakRwLock<T> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        let address = Weak::as_ptr(&self.ptr);
+        address.hash(state);
+    //    std::ptr::hash(self, state);
     }
 }
 

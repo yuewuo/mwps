@@ -1,3 +1,4 @@
+#![cfg(not(feature = "non-pq"))]
 //! Dual Module with Priority Queue
 //!
 //! A serial implementation of the dual module with priority queue optimization
@@ -30,6 +31,9 @@ use parking_lot::{lock_api::RwLockWriteGuard, RawRwLock};
 use pheap::PairingHeap;
 use priority_queue::PriorityQueue;
 
+#[cfg(feature = "pointer")]
+use std::sync::{Arc, Weak};
+
 /* Helper structs for events/obstacles during growing */
 #[derive(Debug, Clone)]
 pub struct FutureEvent<T: Ord + PartialEq + Eq, E> {
@@ -57,6 +61,14 @@ impl<T: Ord + PartialEq + Eq, E> PartialOrd for FutureEvent<T, E> {
     }
 }
 
+#[cfg(feature="pointer")]
+#[derive(PartialEq, Eq, Debug, Clone)]
+pub enum Obstacle {
+    Conflict { edge_index: EdgePtr },
+    ShrinkToZero { dual_node_ptr: DualNodePtr },
+}
+
+#[cfg(not(feature="pointer"))]
 #[derive(PartialEq, Eq, Debug, Clone)]
 pub enum Obstacle {
     Conflict { edge_index: EdgeIndex },
@@ -64,6 +76,27 @@ pub enum Obstacle {
 }
 
 // implement hash for Obstacle
+#[cfg(feature="pointer")]
+// implement hash for Obstacle
+impl std::hash::Hash for Obstacle {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        match self {
+            Obstacle::Conflict { edge_index } => {
+                // state.write_u8(0);
+                // edge_ptr.hash(state);
+                (0, edge_index).hash(state);
+            }
+            Obstacle::ShrinkToZero { dual_node_ptr } => {
+                // (1, dual_node_ptr).hash(state); // todo: perhaps swap to using OrderedDualNodePtr
+                // state.write_u8(1);
+                // dual_node_ptr.hash(state);
+                (1, dual_node_ptr).hash(state); // todo: perhaps swap to using OrderedDualNodePtr
+            }
+        }
+    }
+}
+
+#[cfg(not(feature="pointer"))]
 impl std::hash::Hash for Obstacle {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         match self {
@@ -88,6 +121,9 @@ impl Obstacle {
         #[allow(clippy::unnecessary_cast)]
         return match self {
             Obstacle::Conflict { edge_index } => {
+                #[cfg(feature="pointer")]
+                let edge = edge_index.read_recursive();
+                #[cfg(not(feature="pointer"))]
                 let edge = dual_module_pq.edges[*edge_index as usize].read_recursive();
                 // not changing, cannot have conflict
                 if !edge.grow_rate.is_positive() {
@@ -192,8 +228,16 @@ pub struct Vertex {
     /// if a vertex is defect, then [`Vertex::propagated_dual_node`] always corresponds to that root
     pub is_defect: bool,
     /// all neighbor edges, in surface code this should be constant number of edges
+    #[cfg(feature = "pointer")]
+    pub edges: Vec<EdgeWeak>,
+
+    #[cfg(not(feature = "pointer"))]
     #[derivative(Debug = "ignore")]
     pub edges: Vec<EdgeWeak>,
+
+    /// if this vertex is in boundary unit, find its corresponding mirror vertices in the other units. If this vertex is in non-boundary unit but a mirrored vertex, 
+    /// find its other mirrored vertices in other units (both boundary and non-boundary units)
+    pub mirrored_vertices: Vec<VertexWeak>,
 }
 
 impl Vertex {
@@ -220,29 +264,75 @@ impl std::fmt::Debug for VertexWeak {
     }
 }
 
+impl Ord for VertexPtr {
+    fn cmp(&self, other: &Self) -> Ordering {
+        // compare the pointer address 
+        let ptr1 = Arc::as_ptr(self.ptr());
+        let ptr2 = Arc::as_ptr(other.ptr());
+        // https://doc.rust-lang.org/reference/types/pointer.html
+        // "When comparing raw pointers they are compared by their address, rather than by what they point to."
+        ptr1.cmp(&ptr2)
+    }
+}
+
+impl PartialOrd for VertexPtr {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for VertexWeak {
+    fn cmp(&self, other: &Self) -> Ordering {
+        // compare the pointer address 
+        let ptr1 = Weak::as_ptr(self.ptr());
+        let ptr2 = Weak::as_ptr(other.ptr());
+        // https://doc.rust-lang.org/reference/types/pointer.html
+        // "When comparing raw pointers they are compared by their address, rather than by what they point to."
+        ptr1.cmp(&ptr2)
+    }
+}
+
+impl PartialOrd for VertexWeak {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+
 #[derive(Derivative)]
 #[derivative(Debug)]
 pub struct Edge {
     /// global edge index
-    edge_index: EdgeIndex,
+    pub edge_index: EdgeIndex,
     /// total weight of this edge
-    weight: Rational,
+    pub weight: Rational,
+
+    #[cfg(feature = "pointer")]
+    pub vertices: Vec<VertexWeak>,
+
+    #[cfg(not(feature = "pointer"))]
     #[derivative(Debug = "ignore")]
-    vertices: Vec<VertexWeak>,
+    pub vertices: Vec<VertexWeak>,
     /// the dual nodes that contributes to this edge
-    dual_nodes: Vec<OrderedDualNodeWeak>,
+    pub dual_nodes: Vec<OrderedDualNodeWeak>,
 
     /// the speed of growth, at the current time
     ///     Note: changing this should cause the `growth_at_last_updated_time` and `last_updated_time` to update
-    grow_rate: Rational,
+    pub grow_rate: Rational,
     /// the last time this Edge is synced/updated with the global time
-    last_updated_time: Rational,
+    pub last_updated_time: Rational,
     /// growth value at the last updated time, also, growth_at_last_updated_time <= weight
-    growth_at_last_updated_time: Rational,
+    pub growth_at_last_updated_time: Rational,
+
+    /// the partition unit this edge belongs to. For non-parallel implementation, this value is set to None.
+    pub unit_index: Option<usize>,
+
+    /// whether this edge is connected to a boundary vertex, (this edges must belong to non-boundary unit)
+    pub connected_to_boundary_vertex: bool, 
 
     #[cfg(feature = "incr_lp")]
     /// storing the weights of the clusters that are currently contributing to this edge
-    cluster_weights: hashbrown::HashMap<usize, Rational>,
+    pub cluster_weights: hashbrown::HashMap<usize, Rational>,
 }
 
 impl Edge {
@@ -261,16 +351,17 @@ pub type EdgeWeak = WeakRwLock<Edge>;
 impl std::fmt::Debug for EdgePtr {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         let edge = self.read_recursive();
-        write!(
-            f,
-            "[edge: {}]: weight: {}, grow_rate: {}, growth_at_last_updated_time: {}, last_updated_time: {}\n\tdual_nodes: {:?}\n",
-            edge.edge_index,
-            edge.weight,
-            edge.grow_rate,
-            edge.growth_at_last_updated_time,
-            edge.last_updated_time,
-            edge.dual_nodes.iter().filter(|node| !node.weak_ptr.upgrade_force().read_recursive().grow_rate.is_zero()).collect::<Vec<_>>()
-        )
+        write!(f, "[edge: {}", edge.edge_index)
+        // write!(
+        //     f,
+        //     "[edge: {}]: weight: {}, grow_rate: {}, growth_at_last_updated_time: {}, last_updated_time: {}\n\tdual_nodes: {:?}\n",
+        //     edge.edge_index,
+        //     edge.weight,
+        //     edge.grow_rate,
+        //     edge.growth_at_last_updated_time,
+        //     edge.last_updated_time,
+        //     edge.dual_nodes.iter().filter(|node| !node.weak_ptr.upgrade_force().read_recursive().grow_rate.is_zero()).collect::<Vec<_>>()
+        // )
     }
 }
 
@@ -288,6 +379,49 @@ impl std::fmt::Debug for EdgeWeak {
             edge.last_updated_time,
             edge.dual_nodes.iter().filter(|node| !node.weak_ptr.upgrade_force().read_recursive().grow_rate.is_zero()).collect::<Vec<_>>()
         )
+    }
+}
+
+impl Ord for EdgePtr {
+    fn cmp(&self, other: &Self) -> Ordering {
+        // let edge_1 = self.read_recursive();
+        // let edge_2 = other.read_recursive();
+        // edge_1.edge_index.cmp(&edge_2.edge_index)
+        // compare the pointer address 
+        let ptr1 = Arc::as_ptr(self.ptr());
+        let ptr2 = Arc::as_ptr(other.ptr());
+        // https://doc.rust-lang.org/reference/types/pointer.html
+        // "When comparing raw pointers they are compared by their address, rather than by what they point to."
+        ptr1.cmp(&ptr2)
+    }
+}
+
+impl PartialOrd for EdgePtr {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for EdgeWeak {
+    fn cmp(&self, other: &Self) -> Ordering {
+        // let edge_1 = self.upgrade_force().read_recursive();
+        // let edge_2 = other.upgrade_force().read_recursive();
+        // edge_1.edge_index.cmp(&edge_2.edge_index)
+        // self.upgrade_force().read_recursive().edge_index.cmp(&other.upgrade_force().read_recursive().edge_index)
+        // compare the pointer address 
+        let ptr1 = Weak::as_ptr(self.ptr());
+        let ptr2 = Weak::as_ptr(other.ptr());
+        // let ptr1 = Arc::as_ptr(self.upgrade_force().ptr());
+        // let ptr2 = Arc::as_ptr(other.upgrade_force().ptr());
+        // https://doc.rust-lang.org/reference/types/pointer.html
+        // "When comparing raw pointers they are compared by their address, rather than by what they point to."
+        ptr1.cmp(&ptr2)
+    }
+}
+
+impl PartialOrd for EdgeWeak {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
     }
 }
 
@@ -309,6 +443,19 @@ where
 
     /// the current mode of the dual module
     mode: DualModuleMode,
+
+    /// the number of all vertices (including those partitioned into other serial module)
+    pub vertex_num: VertexNum, 
+    /// the number of all edges (including those partitioned into other seiral module)
+    pub edge_num: usize,
+    /// all mirrored vertices of this unit, mainly for parallel implementation
+    pub all_mirrored_vertices: Vec<VertexPtr>,
+
+    // /// all defect vertices (including those mirrored vertices) in this unit
+    // pub all_defect_vertices: Vec<usize>,
+
+    /// unit is active if it has an edge connected to a boundary vertex with non-zero growth 
+    pub unit_active: ArcRwLock<bool>, 
 
     tuning_start_time: Option<Instant>,
     total_tuning_time: Option<f64>,
@@ -334,6 +481,11 @@ where
         let time_diff = global_time.clone() - &edge.last_updated_time;
         let newly_grown_amount = &time_diff * &edge.grow_rate;
         edge.growth_at_last_updated_time += newly_grown_amount;
+
+        if edge.connected_to_boundary_vertex && edge.growth_at_last_updated_time > Rational::zero() {
+            let mut unit_active = self.unit_active.write();
+            *unit_active = true;
+        }
         edge.last_updated_time = global_time.clone();
         debug_assert!(
             edge.growth_at_last_updated_time <= edge.weight,
@@ -397,6 +549,7 @@ where
                     vertex_index,
                     is_defect: false,
                     edges: vec![],
+                    mirrored_vertices: vec![], // set to empty for non-parallel implementation
                 })
             })
             .collect();
@@ -415,6 +568,8 @@ where
                 last_updated_time: Rational::zero(),
                 growth_at_last_updated_time: Rational::zero(),
                 grow_rate: Rational::zero(),
+                unit_index: None,
+                connected_to_boundary_vertex: false,
                 #[cfg(feature = "incr_lp")]
                 cluster_weights: hashbrown::HashMap::new(),
             });
@@ -431,6 +586,10 @@ where
             mode: DualModuleMode::default(),
             tuning_start_time: None,
             total_tuning_time: None,
+            vertex_num: initializer.vertex_num,
+            edge_num: initializer.weighted_edges.len(),
+            all_mirrored_vertices: vec![],
+            unit_active: ArcRwLock::new_value(false),
         }
     }
 
@@ -447,6 +606,7 @@ where
         self.tuning_start_time = None;
     }
 
+    #[cfg(not(feature="pointer"))]
     #[allow(clippy::unnecessary_cast)]
     /// Adding a defect node to the DualModule
     fn add_defect_node(&mut self, dual_node_ptr: &DualNodePtr) {
@@ -462,6 +622,20 @@ where
         vertex.is_defect = true;
         drop(dual_node);
         drop(vertex);
+        self.add_dual_node(dual_node_ptr);
+    }
+
+    #[cfg(feature="pointer")]
+    #[allow(clippy::unnecessary_cast)]
+    /// Adding a defect node to the DualModule
+    fn add_defect_node(&mut self, dual_node_ptr: &DualNodePtr) {
+        let dual_node = dual_node_ptr.read_recursive();
+        debug_assert!(dual_node.invalid_subgraph.edges.is_empty());
+        debug_assert!(
+            dual_node.invalid_subgraph.vertices.len() == 1,
+            "defect node (without edges) should only work on a single vertex, for simplicity"
+        );
+        drop(dual_node);
         self.add_dual_node(dual_node_ptr);
     }
 
@@ -483,7 +657,10 @@ where
             );
         }
 
-        for &edge_index in dual_node.invalid_subgraph.hair.iter() {
+        for edge_index in dual_node.invalid_subgraph.hair.iter() {
+            #[cfg(feature="pointer")]
+            let mut edge = edge_index.write();
+            #[cfg(not(feature="pointer"))]
             let mut edge = self.edges[edge_index as usize].write();
 
             // should make sure the edge is up-to-speed before making its variables change
@@ -494,11 +671,20 @@ where
                 .push(OrderedDualNodeWeak::new(dual_node.index, dual_node_weak.clone()));
 
             if edge.grow_rate.is_positive() {
+                #[cfg(not(feature="pointer"))]
                 self.obstacle_queue.will_happen(
                     // it is okay to use global_time now, as this must be up-to-speed
                     (edge.weight.clone() - edge.growth_at_last_updated_time.clone()) / edge.grow_rate.clone()
                         + global_time.clone(),
                     Obstacle::Conflict { edge_index },
+                );
+
+                #[cfg(feature="pointer")]
+                self.obstacle_queue.will_happen(
+                    // it is okay to use global_time now, as this must be up-to-speed
+                    (edge.weight.clone() - edge.growth_at_last_updated_time.clone()) / edge.grow_rate.clone()
+                        + global_time.clone(),
+                    Obstacle::Conflict { edge_index: edge_index.clone() },
                 );
             }
         }
@@ -509,7 +695,10 @@ where
         let dual_node_weak = dual_node_ptr.downgrade();
         let dual_node = dual_node_ptr.read_recursive();
 
-        for &edge_index in dual_node.invalid_subgraph.hair.iter() {
+        for edge_index in dual_node.invalid_subgraph.hair.iter() {
+            #[cfg(feature="pointer")]
+            let mut edge = edge_index.write();
+            #[cfg(not(feature="pointer"))]
             let mut edge = self.edges[edge_index as usize].write();
 
             edge.dual_nodes
@@ -538,12 +727,25 @@ where
         }
 
         // don't reacquire the read guard
-        for &edge_index in dual_node.invalid_subgraph.hair.iter() {
+        for edge_index in dual_node.invalid_subgraph.hair.iter() {
+            #[cfg(feature="pointer")]
+            let mut edge = edge_index.write();
+            #[cfg(not(feature="pointer"))]
             let mut edge = self.edges[edge_index as usize].write();
+
             self.update_edge_if_necessary(&mut edge);
 
             edge.grow_rate += &grow_rate_diff;
             if edge.grow_rate.is_positive() {
+                #[cfg(feature="pointer")]
+                self.obstacle_queue.will_happen(
+                    // it is okay to use global_time now, as this must be up-to-speed
+                    (edge.weight.clone() - edge.growth_at_last_updated_time.clone()) / edge.grow_rate.clone()
+                        + global_time.clone(),
+                    Obstacle::Conflict { edge_index: edge_index.clone() },
+                );
+
+                #[cfg(not(feature="pointer"))]
                 self.obstacle_queue.will_happen(
                     // it is okay to use global_time now, as this must be up-to-speed
                     (edge.weight.clone() - edge.growth_at_last_updated_time.clone()) / edge.grow_rate.clone()
@@ -626,6 +828,18 @@ where
     }
 
     /* identical with the dual_module_serial */
+    #[cfg(feature="pointer")]
+    #[allow(clippy::unnecessary_cast)]
+    fn get_edge_nodes(&self, edge_ptr: EdgePtr) -> Vec<DualNodePtr> {
+        edge_ptr.read_recursive()
+                .dual_nodes
+                .iter()
+                .map(|x| x.upgrade_force().ptr)
+                .collect::<Vec<_>>()
+    }
+
+    /* identical with the dual_module_serial */
+    #[cfg(not(feature="pointer"))]
     #[allow(clippy::unnecessary_cast)]
     fn get_edge_nodes(&self, edge_index: EdgeIndex) -> Vec<DualNodePtr> {
         self.edges[edge_index as usize]
@@ -636,6 +850,17 @@ where
             .collect()
     }
 
+    #[cfg(feature="pointer")]
+    #[allow(clippy::unnecessary_cast)]
+    /// how much away from saturated is the edge
+    fn get_edge_slack(&self, edge_ptr: EdgePtr) -> Rational {
+        let edge = edge_ptr.read_recursive();
+        edge.weight.clone()
+            - (self.global_time.read_recursive().clone() - edge.last_updated_time.clone()) * edge.grow_rate.clone()
+            - edge.growth_at_last_updated_time.clone()
+    }
+
+    #[cfg(not(feature="pointer"))]
     #[allow(clippy::unnecessary_cast)]
     /// how much away from saturated is the edge
     fn get_edge_slack(&self, edge_index: EdgeIndex) -> Rational {
@@ -646,6 +871,12 @@ where
     }
 
     /// is the edge saturated
+    #[cfg(feature="pointer")]
+    fn is_edge_tight(&self, edge_ptr: EdgePtr) -> bool {
+        self.get_edge_slack(edge_ptr).is_zero()
+    }
+
+    #[cfg(not(feature="pointer"))]
     fn is_edge_tight(&self, edge_index: EdgeIndex) -> bool {
         self.get_edge_slack(edge_index).is_zero()
     }
@@ -656,11 +887,25 @@ where
     add_shared_methods!();
 
     /// is the edge tight, but for tuning mode
+    #[cfg(feature="pointer")]
+    fn is_edge_tight_tune(&self, edge_ptr: EdgePtr) -> bool {
+        let edge = edge_ptr.read_recursive();
+        edge.weight == edge.growth_at_last_updated_time
+    }
+
+    #[cfg(not(feature="pointer"))]
     fn is_edge_tight_tune(&self, edge_index: EdgeIndex) -> bool {
         let edge = self.edges[edge_index].read_recursive();
         edge.weight == edge.growth_at_last_updated_time
     }
 
+    #[cfg(feature="pointer")]
+    fn get_edge_slack_tune(&self, edge_ptr: EdgePtr) -> Rational {
+        let edge = edge_ptr.read_recursive();
+        edge.weight.clone() - edge.growth_at_last_updated_time.clone()
+    }
+
+    #[cfg(not(feature="pointer"))]
     fn get_edge_slack_tune(&self, edge_index: EdgeIndex) -> Rational {
         let edge = self.edges[edge_index].read_recursive();
         edge.weight.clone() - edge.growth_at_last_updated_time.clone()
@@ -690,6 +935,13 @@ where
     }
 
     /// grow specific amount for a specific edge
+    #[cfg(feature="pointer")]
+    fn grow_edge(&self, edge_ptr: EdgePtr, amount: &Rational) {
+        let mut edge = edge_ptr.write();
+        edge.growth_at_last_updated_time += amount;
+    }
+
+    #[cfg(not(feature="pointer"))]
     fn grow_edge(&self, edge_index: EdgeIndex, amount: &Rational) {
         let mut edge = self.edges[edge_index].write();
         edge.growth_at_last_updated_time += amount;
@@ -791,9 +1043,15 @@ where
         start -= cluster.edges.len() as f64 + cluster.nodes.len() as f64;
 
         let mut weight = Rational::zero();
+        #[cfg(not(feature="pointer"))]
         for &edge_index in cluster.edges.iter() {
             let edge_ptr = self.edges[edge_index].read_recursive();
             weight += &edge_ptr.weight - &edge_ptr.growth_at_last_updated_time;
+        }
+        #[cfg(feature="pointer")]
+        for edge_ptr in cluster.edges.iter() {
+            let edge = edge_ptr.read_recursive();
+            weight += &edge.weight - &edge.growth_at_last_updated_time;
         }
         for node in cluster.nodes.iter() {
             let dual_node = node.read_recursive().dual_node_ptr.clone();
@@ -806,6 +1064,26 @@ where
         Some(OrderedFloat::from(start))
     }
 
+    #[cfg(feature="pointer")]
+    fn get_edge_free_weight(
+        &self,
+        edge_ptr: EdgePtr,
+        participating_dual_variables: &hashbrown::HashSet<usize>,
+    ) -> Rational {
+        let edge = edge_ptr.read_recursive();
+        let mut free_weight = edge.weight.clone();
+        for dual_node in edge.dual_nodes.iter() {
+            if participating_dual_variables.contains(&dual_node.index) {
+                continue;
+            }
+            let dual_node = dual_node.upgrade_force();
+            free_weight -= &dual_node.ptr.read_recursive().dual_variable_at_last_updated_time;
+        }
+
+        free_weight
+    }
+
+    #[cfg(not(feature="pointer"))]
     fn get_edge_free_weight(
         &self,
         edge_index: EdgeIndex,
@@ -824,7 +1102,17 @@ where
         free_weight
     }
 
-    #[cfg(feature = "incr_lp")]
+    #[cfg(feature="pointer")]
+    fn get_vertex_ptr(&self, vertex_index: VertexIndex) -> VertexPtr {
+        self.vertices[vertex_index].clone()
+    }
+
+    #[cfg(feature="pointer")]
+    fn get_edge_ptr(&self, edge_index: EdgeIndex) -> EdgePtr {
+        self.edges[edge_index].clone()
+    }
+
+    #[cfg(all(feature = "incr_lp", not(feature="pointer")))]
     fn get_edge_free_weight_cluster(&self, edge_index: EdgeIndex, cluster_index: NodeIndex) -> Rational {
         let edge = self.edges[edge_index as usize].read_recursive();
         edge.weight.clone()
@@ -835,7 +1123,7 @@ where
                 .sum::<Rational>()
     }
 
-    #[cfg(feature = "incr_lp")]
+    #[cfg(all(feature = "incr_lp", not(feature="pointer")))]
     fn update_edge_cluster_weights_union(
         &self,
         dual_node_ptr: &DualNodePtr,
@@ -854,7 +1142,7 @@ where
         }
     }
 
-    #[cfg(feature = "incr_lp")]
+    #[cfg(all(feature = "incr_lp", not(feature="pointer")))]
     fn update_edge_cluster_weights(&self, edge_index: usize, cluster_index: usize, weight: Rational) {
         match self.edges[edge_index].write().cluster_weights.entry(cluster_index) {
             hashbrown::hash_map::Entry::Occupied(mut o) => {
@@ -904,6 +1192,7 @@ where
 }
 
 #[cfg(test)]
+#[cfg(not(feature="pointer"))]
 mod tests {
     use super::*;
     use crate::decoding_hypergraph::*;

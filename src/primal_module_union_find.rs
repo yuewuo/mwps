@@ -18,6 +18,11 @@ use crate::util::*;
 use crate::visualize::*;
 use std::collections::BTreeSet;
 
+#[cfg(all(feature = "pointer", feature = "non-pq"))]
+use crate::dual_module_serial::{EdgeWeak, VertexWeak, EdgePtr, VertexPtr};
+#[cfg(all(feature = "pointer", not(feature = "non-pq")))]
+use crate::dual_module_pq::{EdgeWeak, VertexWeak, EdgePtr, VertexPtr};
+
 #[derive(Derivative)]
 #[derivative(Debug)]
 pub struct PrimalModuleUnionFind {
@@ -28,10 +33,20 @@ pub struct PrimalModuleUnionFind {
 type UnionFind = UnionFindGeneric<PrimalModuleUnionFindNode>;
 
 /// define your own union-find node data structure like this
+#[cfg(not(feature="pointer"))]
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct PrimalModuleUnionFindNode {
     /// all the internal edges
     pub internal_edges: BTreeSet<EdgeIndex>,
+    /// the corresponding node index with these internal edges
+    pub node_index: NodeIndex,
+}
+
+#[cfg(feature="pointer")]
+#[derive(Debug, Clone)]
+pub struct PrimalModuleUnionFindNode {
+    /// all the internal edges
+    pub internal_edges: BTreeSet<EdgePtr>,
     /// the corresponding node index with these internal edges
     pub node_index: NodeIndex,
 }
@@ -113,7 +128,7 @@ impl PrimalModuleImpl for PrimalModuleUnionFind {
             match conflict {
                 MaxUpdateLength::Conflicting(edge_index) => {
                     // union all the dual nodes in the edge index and create new dual node by adding this edge to `internal_edges`
-                    let dual_nodes = dual_module.get_edge_nodes(edge_index);
+                    let dual_nodes = dual_module.get_edge_nodes(edge_index.clone());
                     debug_assert!(
                         !dual_nodes.is_empty(),
                         "should not conflict if no dual nodes are contributing"
@@ -136,6 +151,7 @@ impl PrimalModuleImpl for PrimalModuleUnionFind {
                 }
             }
         }
+        #[cfg(not(feature="pointer"))]
         for &cluster_index in active_clusters.iter() {
             if interface_ptr
                 .read_recursive()
@@ -157,22 +173,54 @@ impl PrimalModuleImpl for PrimalModuleUnionFind {
                 interface_ptr.create_node(invalid_subgraph, dual_module);
             }
         }
+        #[cfg(feature="pointer")]
+        for &cluster_index in active_clusters.iter() {
+            if interface_ptr
+                .is_valid_cluster_auto_vertices(&self.union_find.get(cluster_index as usize).internal_edges)
+            {
+                // do nothing
+            } else {
+                let new_cluster_node_index = self.union_find.size() as NodeIndex;
+                self.union_find.insert(PrimalModuleUnionFindNode {
+                    internal_edges: BTreeSet::new(),
+                    node_index: new_cluster_node_index,
+                });
+                self.union_find.union(cluster_index as usize, new_cluster_node_index as usize);
+                let invalid_subgraph = InvalidSubgraph::new_ptr(
+                    &self.union_find.get(cluster_index as usize).internal_edges.clone(),
+                );
+                interface_ptr.create_node(invalid_subgraph, dual_module);
+            }
+        }
         false
     }
 
-    fn subgraph(&mut self, interface_ptr: &DualModuleInterfacePtr, _dual_module: &mut impl DualModuleImpl) -> Subgraph {
+    fn subgraph(
+        &mut self, 
+        interface_ptr: &DualModuleInterfacePtr, 
+        #[cfg(not(feature="pointer"))]
+        _dual_module: &mut impl DualModuleImpl
+    ) -> Subgraph {
         let mut valid_clusters = BTreeSet::new();
         let mut subgraph = vec![];
         for i in 0..self.union_find.size() {
             let root_index = self.union_find.find(i);
             if !valid_clusters.contains(&root_index) {
                 valid_clusters.insert(root_index);
+                #[cfg(not(feature="pointer"))]
                 let cluster_subgraph = interface_ptr
                     .read_recursive()
                     .decoding_graph
                     .find_valid_subgraph_auto_vertices(&self.union_find.get(root_index).internal_edges)
                     .expect("must be valid cluster");
+                #[cfg(feature="pointer")]
+                let cluster_subgraph = interface_ptr
+                    .find_valid_subgraph_auto_vertices(&self.union_find.get(root_index).internal_edges)
+                    .expect("must be valid cluster");
+                #[cfg(not(feature="pointer"))]
                 subgraph.extend(cluster_subgraph.iter());
+                #[cfg(feature="pointer")]
+                subgraph.extend(cluster_subgraph);
             }
         }
         subgraph
@@ -191,6 +239,7 @@ impl MWPSVisualizer for PrimalModuleUnionFind {
 
 #[cfg(test)]
 pub mod tests {
+    #[cfg(feature="non-pq")]
     use super::super::dual_module_serial::*;
     use super::super::example_codes::*;
     use super::*;
@@ -219,14 +268,20 @@ pub mod tests {
         let mut primal_module = PrimalModuleUnionFind::new_empty(&model_graph.initializer);
         // try to work on a simple syndrome
         code.set_defect_vertices(&defect_vertices);
+        #[cfg(not(feature="pointer"))]
         let interface_ptr = DualModuleInterfacePtr::new(model_graph.clone());
+        #[cfg(feature="pointer")]
+        let interface_ptr = DualModuleInterfacePtr::new();
         primal_module.solve_visualizer(
             &interface_ptr,
             Arc::new(code.get_syndrome()),
             &mut dual_module,
             visualizer.as_mut(),
         );
+        #[cfg(not(feature="pointer"))]
         let (subgraph, weight_range) = primal_module.subgraph_range(&interface_ptr, &mut dual_module);
+        #[cfg(feature="pointer")]
+        let (subgraph, weight_range) = primal_module.subgraph_range(&interface_ptr);
         if let Some(visualizer) = visualizer.as_mut() {
             visualizer
                 .snapshot_combined(
@@ -286,7 +341,8 @@ pub mod tests {
             code,
             defect_vertices,
             final_dual,
-            DualModuleSerial::new_empty(&model_graph.initializer),
+            // DualModuleSerial::new_empty(&model_graph.initializer),
+            DualModulePQ::<FutureObstacleQueue<Rational>>::new_empty(&model_graph.initializer),
             model_graph,
             Some(visualizer),
         )

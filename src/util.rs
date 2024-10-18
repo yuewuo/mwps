@@ -16,6 +16,12 @@ use std::fs::File;
 use std::io::prelude::*;
 use std::time::Instant;
 
+#[cfg(all(feature = "pointer", feature = "non-pq"))]
+use crate::dual_module_serial::{EdgeWeak, VertexWeak, EdgePtr, VertexPtr};
+#[cfg(all(feature = "pointer", not(feature = "non-pq")))]
+use crate::dual_module_pq::{EdgeWeak, VertexWeak, EdgePtr, VertexPtr};
+use crate::num_traits::Zero;
+
 pub type Weight = usize; // only used as input, all internal weight representation will use `Rational`
 
 cfg_if::cfg_if! {
@@ -147,6 +153,7 @@ impl SolverInitializer {
         true
     }
 
+    #[cfg(not(feature="pointer"))]
     #[allow(clippy::unnecessary_cast)]
     pub fn get_subgraph_total_weight(&self, subgraph: &Subgraph) -> Weight {
         let mut weight = 0;
@@ -156,6 +163,48 @@ impl SolverInitializer {
         weight
     }
 
+    #[cfg(feature="pointer")]
+    #[allow(clippy::unnecessary_cast)]
+    pub fn get_subgraph_total_weight(&self, subgraph: &Subgraph) -> Rational {
+        let mut weight = Rational::zero();
+        for edge_weak in subgraph.iter() {
+            // weight += self.weighted_edges[edge_index as usize].weight;
+            weight += edge_weak.upgrade_force().read_recursive().weight;
+        }
+        weight
+    }
+
+    #[cfg(feature="pointer")]
+    #[allow(clippy::unnecessary_cast)]
+    pub fn get_subgraph_index_total_weight(&self, subgraph_index: &Vec<usize>) -> Rational {
+        use crate::num_traits::FromPrimitive;
+        let mut weight = Rational::zero();
+        for &edge_index in subgraph_index.iter() {
+            weight += Rational::from_usize(self.weighted_edges[edge_index as usize].weight).unwrap();
+        }
+        weight
+    }
+
+    #[cfg(feature="pointer")]
+    #[allow(clippy::unnecessary_cast)]
+    pub fn get_subgraph_syndrome(&self, subgraph: &Subgraph) -> BTreeSet<usize> {
+        let mut defect_vertices = BTreeSet::new();
+        for edge_weak in subgraph.iter() {
+            let edge_ptr = edge_weak.upgrade_force();
+            let vertices = &edge_ptr.read_recursive().vertices;
+            let unique_vertices = vertices.into_iter().map(|v| v.upgrade_force().read_recursive().vertex_index).collect::<Vec<_>>();
+            for vertex_index in unique_vertices.iter() {
+                if defect_vertices.contains(vertex_index) {
+                    defect_vertices.remove(vertex_index);
+                } else {
+                    defect_vertices.insert(*vertex_index);
+                }
+            }
+        }
+        defect_vertices
+    }
+
+    #[cfg(not(feature="pointer"))]
     #[allow(clippy::unnecessary_cast)]
     pub fn get_subgraph_syndrome(&self, subgraph: &Subgraph) -> BTreeSet<VertexIndex> {
         let mut defect_vertices = BTreeSet::new();
@@ -267,9 +316,21 @@ impl F64Rng for DeterministicRng {
 
 /// the result of MWPF algorithm: a parity subgraph (defined by some edges that,
 /// if are selected, will generate the parity result in the syndrome)
+#[cfg(feature = "pointer")]
+pub type Subgraph = Vec<EdgeWeak>;
+#[cfg(not(feature = "pointer"))]
 pub type Subgraph = Vec<EdgeIndex>;
 
 impl MWPSVisualizer for Subgraph {
+    #[cfg(feature="pointer")]
+    fn snapshot(&self, _abbrev: bool) -> serde_json::Value {
+        let subgraph_by_index: Vec<usize> = self.into_iter().map(|e| e.upgrade_force().read_recursive().edge_index).collect();
+        json!({
+            "subgraph": subgraph_by_index,
+        })
+    }
+
+    #[cfg(not(feature="pointer"))]
     fn snapshot(&self, _abbrev: bool) -> serde_json::Value {
         json!({
             "subgraph": self,
@@ -389,7 +450,7 @@ impl BenchmarkProfiler {
         }
     }
     /// record the beginning of a decoding procedure
-    pub fn begin(&mut self, syndrome_pattern: &SyndromePattern, error_pattern: &Subgraph) {
+    pub fn begin(&mut self, syndrome_pattern: &SyndromePattern, error_pattern: &Vec<usize>) {
         // sanity check last entry, if exists, is complete
         if let Some(last_entry) = self.records.last() {
             assert!(
@@ -459,7 +520,7 @@ pub struct BenchmarkProfilerEntry {
     /// the syndrome pattern of this decoding problem
     pub syndrome_pattern: SyndromePattern,
     /// the error pattern
-    pub error_pattern: Subgraph,
+    pub error_pattern: Vec<usize>,
     /// the time of beginning a decoding procedure
     begin_time: Option<Instant>,
     /// record additional events
@@ -469,7 +530,7 @@ pub struct BenchmarkProfilerEntry {
 }
 
 impl BenchmarkProfilerEntry {
-    pub fn new(syndrome_pattern: &SyndromePattern, error_pattern: &Subgraph) -> Self {
+    pub fn new(syndrome_pattern: &SyndromePattern, error_pattern: &Vec<usize>) -> Self {
         Self {
             syndrome_pattern: syndrome_pattern.clone(),
             error_pattern: error_pattern.clone(),

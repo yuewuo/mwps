@@ -4,122 +4,251 @@ use crate::util::*;
 use derivative::Derivative;
 use std::collections::BTreeSet;
 
-#[derive(Clone, Derivative)]
-#[derivative(Default(new = "true"))]
-pub struct Tight<M: MatrixView> {
-    base: M,
-    /// the set of tight edges: should be a relatively small set
-    tight_edges: BTreeSet<EdgeIndex>,
-    /// tight matrix gives a view of only tight edges, with sorted indices
-    #[derivative(Default(value = "true"))]
-    is_var_indices_outdated: bool,
-    /// the internal store of var indices
-    var_indices: Vec<VarIndex>,
-}
 
-impl<M: MatrixView> Tight<M> {
-    pub fn get_base(&self) -> &M {
-        &self.base
-    }
-}
+#[cfg(all(feature = "pointer", feature = "non-pq"))]
+use crate::dual_module_serial::{EdgeWeak, VertexWeak, EdgePtr, VertexPtr};
+#[cfg(all(feature = "pointer", not(feature = "non-pq")))]
+use crate::dual_module_pq::{EdgeWeak, VertexWeak, EdgePtr, VertexPtr};
 
-impl<M: MatrixView> MatrixTight for Tight<M> {
-    fn update_edge_tightness(&mut self, edge_index: EdgeIndex, is_tight: bool) {
-        debug_assert!(self.exists_edge(edge_index));
-        self.is_var_indices_outdated = true;
-        if is_tight {
-            self.tight_edges.insert(edge_index);
-        } else {
-            self.tight_edges.remove(&edge_index);
+cfg_if::cfg_if! {
+    if #[cfg(feature="pointer")] {
+        #[derive(Clone, Derivative)]
+        #[derivative(Default(new = "true"))]
+        pub struct Tight<M: MatrixView> {
+            base: M,
+            /// the set of tight edges: should be a relatively small set
+            tight_edges: BTreeSet<EdgeWeak>,
+            /// tight matrix gives a view of only tight edges, with sorted indices
+            #[derivative(Default(value = "true"))]
+            is_var_indices_outdated: bool,
+            /// the internal store of var indices
+            var_indices: Vec<VarIndex>,
         }
-    }
 
-    fn is_tight(&self, edge_index: usize) -> bool {
-        debug_assert!(self.exists_edge(edge_index));
-        self.tight_edges.contains(&edge_index)
-    }
-}
+        impl<M: MatrixView> Tight<M> {
+            pub fn get_base(&self) -> &M {
+                &self.base
+            }
+        }
 
-impl<M: MatrixView> MatrixBasic for Tight<M> {
-    fn add_variable(&mut self, edge_index: EdgeIndex) -> Option<VarIndex> {
-        self.base.add_variable(edge_index)
-    }
+        impl<M: MatrixView> MatrixTight for Tight<M> {
+            fn update_edge_tightness(&mut self, edge_weak: EdgeWeak, is_tight: bool) {
+                debug_assert!(self.exists_edge(edge_weak.clone()));
+                self.is_var_indices_outdated = true;
+                if is_tight {
+                    self.tight_edges.insert(edge_weak.clone());
+                } else {
+                    self.tight_edges.remove(&edge_weak);
+                }
+            }
 
-    fn add_constraint(
-        &mut self,
-        vertex_index: VertexIndex,
-        incident_edges: &[EdgeIndex],
-        parity: bool,
-    ) -> Option<Vec<VarIndex>> {
-        self.base.add_constraint(vertex_index, incident_edges, parity)
-    }
+            fn is_tight(&self, edge_weak: EdgeWeak) -> bool {
+                debug_assert!(self.exists_edge(edge_weak.clone()));
+                self.tight_edges.contains(&edge_weak)
+            }
+        }
 
-    fn xor_row(&mut self, target: RowIndex, source: RowIndex) {
-        self.base.xor_row(target, source)
-    }
-    fn swap_row(&mut self, a: RowIndex, b: RowIndex) {
-        self.base.swap_row(a, b)
-    }
-    fn get_lhs(&self, row: RowIndex, var_index: VarIndex) -> bool {
-        self.get_base().get_lhs(row, var_index)
-    }
-    fn get_rhs(&self, row: RowIndex) -> bool {
-        self.get_base().get_rhs(row)
-    }
-    fn var_to_edge_index(&self, var_index: VarIndex) -> EdgeIndex {
-        self.get_base().var_to_edge_index(var_index)
-    }
-    fn edge_to_var_index(&self, edge_index: EdgeIndex) -> Option<VarIndex> {
-        self.get_base().edge_to_var_index(edge_index)
-    }
-    fn get_vertices(&self) -> BTreeSet<VertexIndex> {
-        self.get_base().get_vertices()
-    }
-}
+        impl<M: MatrixView> MatrixBasic for Tight<M> {
+            fn add_variable(&mut self, edge_weak: EdgeWeak) -> Option<VarIndex> {
+                self.base.add_variable(edge_weak)
+            }
 
-impl<M: MatrixView> Tight<M> {
-    fn force_update_var_indices(&mut self) {
-        self.var_indices.clear();
-        for column in 0..self.base.columns() {
-            let var_index = self.base.column_to_var_index(column);
-            let edge_index = self.base.var_to_edge_index(var_index);
-            if self.is_tight(edge_index) {
-                self.var_indices.push(var_index);
+            fn add_constraint(
+                &mut self,
+                vertex_ptr: VertexPtr,
+                // incident_edges: &[EdgeWeak],
+                // parity: bool,
+            ) -> Option<Vec<VarIndex>> {
+                self.base.add_constraint(vertex_ptr)
+            }
+
+            fn xor_row(&mut self, target: RowIndex, source: RowIndex) {
+                self.base.xor_row(target, source)
+            }
+            fn swap_row(&mut self, a: RowIndex, b: RowIndex) {
+                self.base.swap_row(a, b)
+            }
+            fn get_lhs(&self, row: RowIndex, var_index: VarIndex) -> bool {
+                self.get_base().get_lhs(row, var_index)
+            }
+            fn get_rhs(&self, row: RowIndex) -> bool {
+                self.get_base().get_rhs(row)
+            }
+            fn var_to_edge_index(&self, var_index: VarIndex) -> EdgeWeak {
+                self.get_base().var_to_edge_index(var_index)
+            }
+            fn edge_to_var_index(&self, edge_weak: EdgeWeak) -> Option<VarIndex> {
+                self.get_base().edge_to_var_index(edge_weak)
+            }
+            fn get_vertices(&self) -> BTreeSet<VertexWeak> {
+                self.get_base().get_vertices()
+            }
+        }
+
+        impl<M: MatrixView> Tight<M> {
+            fn force_update_var_indices(&mut self) {
+                self.var_indices.clear();
+                for column in 0..self.base.columns() {
+                    let var_index = self.base.column_to_var_index(column);
+                    let edge_index = self.base.var_to_edge_index(var_index);
+                    if self.is_tight(edge_index) {
+                        self.var_indices.push(var_index);
+                    }
+                }
+            }
+
+            fn var_indices_lazy_update(&mut self) {
+                if self.is_var_indices_outdated {
+                    self.force_update_var_indices();
+                    self.is_var_indices_outdated = false;
+                }
+            }
+        }
+
+        impl<M: MatrixView> MatrixView for Tight<M> {
+            fn columns(&mut self) -> usize {
+                self.var_indices_lazy_update();
+                self.var_indices.len()
+            }
+
+            fn column_to_var_index(&self, column: ColumnIndex) -> VarIndex {
+                debug_assert!(!self.is_var_indices_outdated, "call `columns` first");
+                self.var_indices[column]
+            }
+
+            fn rows(&mut self) -> usize {
+                self.base.rows()
+            }
+        }
+
+        impl<M: MatrixView> VizTrait for Tight<M> {
+            fn viz_table(&mut self) -> VizTable {
+                VizTable::from(self)
+            }
+        }
+
+    } else {
+        #[derive(Clone, Derivative)]
+        #[derivative(Default(new = "true"))]
+        pub struct Tight<M: MatrixView> {
+            base: M,
+            /// the set of tight edges: should be a relatively small set
+            tight_edges: BTreeSet<EdgeIndex>,
+            /// tight matrix gives a view of only tight edges, with sorted indices
+            #[derivative(Default(value = "true"))]
+            is_var_indices_outdated: bool,
+            /// the internal store of var indices
+            var_indices: Vec<VarIndex>,
+        }
+        
+        impl<M: MatrixView> Tight<M> {
+            pub fn get_base(&self) -> &M {
+                &self.base
+            }
+        }
+        
+        impl<M: MatrixView> MatrixTight for Tight<M> {
+            fn update_edge_tightness(&mut self, edge_index: EdgeIndex, is_tight: bool) {
+                debug_assert!(self.exists_edge(edge_index));
+                self.is_var_indices_outdated = true;
+                if is_tight {
+                    self.tight_edges.insert(edge_index);
+                } else {
+                    self.tight_edges.remove(&edge_index);
+                }
+            }
+        
+            fn is_tight(&self, edge_index: usize) -> bool {
+                debug_assert!(self.exists_edge(edge_index));
+                self.tight_edges.contains(&edge_index)
+            }
+        }
+        
+        impl<M: MatrixView> MatrixBasic for Tight<M> {
+            fn add_variable(&mut self, edge_index: EdgeIndex) -> Option<VarIndex> {
+                self.base.add_variable(edge_index)
+            }
+        
+            fn add_constraint(
+                &mut self,
+                vertex_index: VertexIndex,
+                incident_edges: &[EdgeIndex],
+                parity: bool,
+            ) -> Option<Vec<VarIndex>> {
+                self.base.add_constraint(vertex_index, incident_edges, parity)
+            }
+        
+            fn xor_row(&mut self, target: RowIndex, source: RowIndex) {
+                self.base.xor_row(target, source)
+            }
+            fn swap_row(&mut self, a: RowIndex, b: RowIndex) {
+                self.base.swap_row(a, b)
+            }
+            fn get_lhs(&self, row: RowIndex, var_index: VarIndex) -> bool {
+                self.get_base().get_lhs(row, var_index)
+            }
+            fn get_rhs(&self, row: RowIndex) -> bool {
+                self.get_base().get_rhs(row)
+            }
+            fn var_to_edge_index(&self, var_index: VarIndex) -> EdgeIndex {
+                self.get_base().var_to_edge_index(var_index)
+            }
+            fn edge_to_var_index(&self, edge_index: EdgeIndex) -> Option<VarIndex> {
+                self.get_base().edge_to_var_index(edge_index)
+            }
+            fn get_vertices(&self) -> BTreeSet<VertexIndex> {
+                self.get_base().get_vertices()
+            }
+        }
+        
+        impl<M: MatrixView> Tight<M> {
+            fn force_update_var_indices(&mut self) {
+                self.var_indices.clear();
+                for column in 0..self.base.columns() {
+                    let var_index = self.base.column_to_var_index(column);
+                    let edge_index = self.base.var_to_edge_index(var_index);
+                    if self.is_tight(edge_index) {
+                        self.var_indices.push(var_index);
+                    }
+                }
+            }
+        
+            fn var_indices_lazy_update(&mut self) {
+                if self.is_var_indices_outdated {
+                    self.force_update_var_indices();
+                    self.is_var_indices_outdated = false;
+                }
+            }
+        }
+        
+        impl<M: MatrixView> MatrixView for Tight<M> {
+            fn columns(&mut self) -> usize {
+                self.var_indices_lazy_update();
+                self.var_indices.len()
+            }
+        
+            fn column_to_var_index(&self, column: ColumnIndex) -> VarIndex {
+                debug_assert!(!self.is_var_indices_outdated, "call `columns` first");
+                self.var_indices[column]
+            }
+        
+            fn rows(&mut self) -> usize {
+                self.base.rows()
+            }
+        }
+        
+        impl<M: MatrixView> VizTrait for Tight<M> {
+            fn viz_table(&mut self) -> VizTable {
+                VizTable::from(self)
             }
         }
     }
-
-    fn var_indices_lazy_update(&mut self) {
-        if self.is_var_indices_outdated {
-            self.force_update_var_indices();
-            self.is_var_indices_outdated = false;
-        }
-    }
 }
 
-impl<M: MatrixView> MatrixView for Tight<M> {
-    fn columns(&mut self) -> usize {
-        self.var_indices_lazy_update();
-        self.var_indices.len()
-    }
 
-    fn column_to_var_index(&self, column: ColumnIndex) -> VarIndex {
-        debug_assert!(!self.is_var_indices_outdated, "call `columns` first");
-        self.var_indices[column]
-    }
-
-    fn rows(&mut self) -> usize {
-        self.base.rows()
-    }
-}
-
-impl<M: MatrixView> VizTrait for Tight<M> {
-    fn viz_table(&mut self) -> VizTable {
-        VizTable::from(self)
-    }
-}
 
 #[cfg(test)]
+#[cfg(not(feature="pointer"))]
 pub mod tests {
     use super::super::basic::*;
     use super::*;

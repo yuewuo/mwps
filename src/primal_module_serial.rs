@@ -19,6 +19,13 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::fmt::Debug;
 use std::sync::Arc;
 use std::time::Instant;
+use std::cmp::Ordering;
+
+
+#[cfg(all(feature = "pointer", feature = "non-pq"))]
+use crate::dual_module_serial::{EdgeWeak, VertexWeak, EdgePtr, VertexPtr};
+#[cfg(all(feature = "pointer", not(feature = "non-pq")))]
+use crate::dual_module_pq::{EdgeWeak, VertexWeak, EdgePtr, VertexPtr};
 
 use crate::itertools::Itertools;
 #[cfg(feature = "incr_lp")]
@@ -39,6 +46,9 @@ pub struct PrimalModuleSerial {
     pub plugins: Arc<PluginVec>,
     /// how many plugins are actually executed for every cluster
     pub plugin_count: Arc<RwLock<usize>>,
+    #[cfg(feature="pointer")]
+    pub plugin_pending_clusters: Vec<PrimalClusterWeak>,
+    #[cfg(not(feature="pointer"))]
     pub plugin_pending_clusters: Vec<usize>,
     /// configuration
     pub config: PrimalModuleSerialConfig,
@@ -58,10 +68,21 @@ pub struct PrimalModuleSerial {
 
 #[derive(Eq, Debug)]
 pub struct ClusterAffinity {
+    #[cfg(feature="pointer")]
+    pub cluster_ptr: PrimalClusterPtr,
+    #[cfg(not(feature="pointer"))]
     pub cluster_index: NodeIndex,
     pub affinity: Affinity,
 }
 
+#[cfg(feature="pointer")]
+impl PartialEq for ClusterAffinity {
+    fn eq(&self, other: &Self) -> bool {
+        self.affinity == other.affinity && self.cluster_ptr.eq(&other.cluster_ptr) 
+    }
+}
+
+#[cfg(not(feature="pointer"))]
 impl PartialEq for ClusterAffinity {
     fn eq(&self, other: &Self) -> bool {
         self.affinity == other.affinity && self.cluster_index == other.cluster_index
@@ -69,6 +90,21 @@ impl PartialEq for ClusterAffinity {
 }
 
 // first sort by affinity in descending order, then by cluster_index in ascending order
+#[cfg(feature="pointer")]
+impl Ord for ClusterAffinity {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        // First, compare affinity in descending order
+        match other.affinity.cmp(&self.affinity) {
+            std::cmp::Ordering::Equal => {
+                // If affinities are equal, compare cluster_index in ascending order
+                self.cluster_ptr.read_recursive().cluster_index.cmp(&other.cluster_ptr.read_recursive().cluster_index)
+            }
+            other => other,
+        }
+    }
+}
+
+#[cfg(not(feature="pointer"))]
 impl Ord for ClusterAffinity {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         // First, compare affinity in descending order
@@ -129,14 +165,32 @@ pub struct PrimalModuleSerialNode {
 pub type PrimalModuleSerialNodePtr = ArcRwLock<PrimalModuleSerialNode>;
 pub type PrimalModuleSerialNodeWeak = WeakRwLock<PrimalModuleSerialNode>;
 
+impl std::fmt::Debug for PrimalModuleSerialNodePtr {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let primal_node = self.read_recursive(); // reading index is consistent
+        write!(
+            f,
+            "dual_node_ptr: {:?}\ncluster_index: {:?}",
+            primal_node.dual_node_ptr,
+            primal_node.cluster_weak.upgrade_force().read_recursive().cluster_index,
+        )
+    }
+}
+
 pub struct PrimalCluster {
     /// the index in the cluster
     pub cluster_index: NodeIndex,
     /// the nodes that belongs to this cluster
     pub nodes: Vec<PrimalModuleSerialNodePtr>,
     /// all the edges ever exists in any hair
+    #[cfg(feature="pointer")]
+    pub edges: BTreeSet<EdgePtr>,
+    #[cfg(not(feature="pointer"))]
     pub edges: BTreeSet<EdgeIndex>,
     /// all the vertices ever touched by any tight edge
+    #[cfg(feature="pointer")]
+    pub vertices: BTreeSet<VertexPtr>,
+    #[cfg(not(feature="pointer"))]
     pub vertices: BTreeSet<VertexIndex>,
     /// the parity matrix to determine whether it's a valid cluster and also find new ways to increase the dual
     pub matrix: EchelonMatrix,
@@ -153,6 +207,38 @@ pub struct PrimalCluster {
 
 pub type PrimalClusterPtr = ArcRwLock<PrimalCluster>;
 pub type PrimalClusterWeak = WeakRwLock<PrimalCluster>;
+
+impl std::fmt::Debug for PrimalClusterPtr {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let cluster = self.read_recursive(); // reading index is consistent
+        write!(
+            f,
+            "cluster_index: {:?}\tnodes: {:?}\tedges: {:?}\nvertices: {:?}\nsubgraph: {:?}",
+            cluster.cluster_index,
+            cluster.nodes,
+            cluster.edges,
+            cluster.vertices,
+            cluster.subgraph,
+        )
+    }
+}
+
+impl Ord for PrimalClusterPtr {
+    fn cmp(&self, other: &Self) -> Ordering {
+        // compare the pointer address 
+        let ptr1 = Arc::as_ptr(self.ptr());
+        let ptr2 = Arc::as_ptr(other.ptr());
+        // https://doc.rust-lang.org/reference/types/pointer.html
+        // "When comparing raw pointers they are compared by their address, rather than by what they point to."
+        ptr1.cmp(&ptr2)
+    }
+}
+
+impl PartialOrd for PrimalClusterPtr {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
 
 impl PrimalModuleImpl for PrimalModuleSerial {
     fn new_empty(_initializer: &SolverInitializer) -> Self {
@@ -210,6 +296,9 @@ impl PrimalModuleImpl for PrimalModuleSerial {
                 nodes: vec![],
                 edges: node.invalid_subgraph.hair.clone(),
                 vertices: node.invalid_subgraph.vertices.clone(),
+                #[cfg(feature="pointer")]
+                matrix: node.invalid_subgraph.generate_matrix(),
+                #[cfg(not(feature="pointer"))]
                 matrix: node.invalid_subgraph.generate_matrix(&interface.decoding_graph),
                 subgraph: None,
                 plugin_manager: PluginManager::new(self.plugins.clone(), self.plugin_count.clone()),
@@ -272,6 +361,33 @@ impl PrimalModuleImpl for PrimalModuleSerial {
         res
     }
 
+    #[cfg(feature="pointer")]
+    fn subgraph(
+        &mut self,
+        _interface: &DualModuleInterfacePtr,
+    ) -> Subgraph {
+        
+        let mut subgraph = vec![];
+        for cluster_ptr in self.clusters.iter() {
+            let cluster = cluster_ptr.read_recursive();
+            if cluster.nodes.is_empty() {
+                continue;
+            }
+            // println!("cluster.subgraph: {:?}", cluster.subgraph);
+            // println!("cluster: {:?}", cluster_ptr);
+        
+            subgraph.extend(
+                cluster
+                    .subgraph
+                    .clone()
+                    .unwrap_or_else(|| panic!("bug occurs: cluster should be solved, but the subgraph is not yet generated ")),
+            );
+        }
+        // println!("subgraph: {:?}", subgraph);
+        subgraph
+    }
+
+    #[cfg(not(feature="pointer"))]
     fn subgraph(&mut self, _interface: &DualModuleInterfacePtr, _dual_module: &mut impl DualModuleImpl) -> Subgraph {
         let mut subgraph = vec![];
         for cluster_ptr in self.clusters.iter() {
@@ -298,6 +414,7 @@ impl PrimalModuleImpl for PrimalModuleSerial {
         if self.time_resolve > self.config.timeout {
             return false;
         }
+        #[cfg(not(feature="pointer"))]
         return if *self.plugin_count.read_recursive() < self.plugins.len() {
             // increment the plugin count
             *self.plugin_count.write() += 1;
@@ -306,10 +423,25 @@ impl PrimalModuleImpl for PrimalModuleSerial {
         } else {
             false
         };
+        #[cfg(feature="pointer")]
+        return if *self.plugin_count.read_recursive() < self.plugins.len() {
+            // increment the plugin count
+            *self.plugin_count.write() += 1;
+            self.plugin_pending_clusters = self.clusters.iter().map(|c| c.downgrade()).collect::<Vec<_>>();
+            true
+        } else {
+            false
+        };
     }
 
     /// get the pending clusters
+    #[cfg(not(feature="pointer"))]
     fn pending_clusters(&mut self) -> Vec<usize> {
+        self.plugin_pending_clusters.clone()
+    }
+
+    #[cfg(feature="pointer")]
+    fn pending_clusters(&mut self) -> Vec<PrimalClusterWeak> {
         self.plugin_pending_clusters.clone()
     }
 
@@ -319,10 +451,14 @@ impl PrimalModuleImpl for PrimalModuleSerial {
     #[allow(clippy::unnecessary_cast)]
     fn resolve_cluster(
         &mut self,
+        #[cfg(feature="pointer")]
+        cluster_ptr: &PrimalClusterPtr,
+        #[cfg(not(feature="pointer"))]
         cluster_index: NodeIndex,
         interface_ptr: &DualModuleInterfacePtr,
         dual_module: &mut impl DualModuleImpl,
     ) -> bool {
+        #[cfg(not(feature="pointer"))]
         let cluster_ptr = self.clusters[cluster_index as usize].clone();
         let mut cluster = cluster_ptr.write();
         if cluster.nodes.is_empty() {
@@ -335,6 +471,13 @@ impl PrimalModuleImpl for PrimalModuleSerial {
         }
         // update the matrix with new tight edges
         let cluster = &mut *cluster;
+        #[cfg(feature="pointer")]
+        for edge_index in cluster.edges.iter() {
+            cluster
+                .matrix
+                .update_edge_tightness(edge_index.downgrade(), dual_module.is_edge_tight(edge_index.clone()));
+        }
+        #[cfg(not(feature="pointer"))]
         for &edge_index in cluster.edges.iter() {
             cluster
                 .matrix
@@ -342,6 +485,21 @@ impl PrimalModuleImpl for PrimalModuleSerial {
         }
 
         // find an executable relaxer from the plugin manager
+        #[cfg(feature="pointer")]
+        let relaxer = {
+            let positive_dual_variables: Vec<DualNodePtr> = cluster
+                .nodes
+                .iter()
+                .map(|p| p.read_recursive().dual_node_ptr.clone())
+                .filter(|dual_node_ptr| !dual_node_ptr.read_recursive().get_dual_variable().is_zero())
+                .collect::<Vec<_>>();
+            let cluster_mut = &mut *cluster; // must first get mutable reference
+            let plugin_manager = &mut cluster_mut.plugin_manager;
+            let matrix = &mut cluster_mut.matrix;
+            plugin_manager.find_relaxer( matrix, &positive_dual_variables)
+        };
+
+        #[cfg(not(feature="pointer"))]
         let relaxer = {
             let positive_dual_variables: Vec<DualNodePtr> = cluster
                 .nodes
@@ -358,9 +516,11 @@ impl PrimalModuleImpl for PrimalModuleSerial {
 
         // if a relaxer is found, execute it and return
         if let Some(relaxer) = relaxer {
+            // println!("relaxer.get_direction.len(): {:?}", relaxer.get_direction().len());
             for (invalid_subgraph, grow_rate) in relaxer.get_direction() {
                 let (existing, dual_node_ptr) = interface_ptr.find_or_create_node(invalid_subgraph, dual_module);
                 if !existing {
+                    // println!("invalid subgraph does not exist");
                     // create the corresponding primal node and add it to cluster
                     let primal_node_ptr = PrimalModuleSerialNodePtr::new_value(PrimalModuleSerialNode {
                         dual_node_ptr: dual_node_ptr.clone(),
@@ -376,14 +536,24 @@ impl PrimalModuleImpl for PrimalModuleSerial {
             return false;
         }
 
+        // println!("cluster.nodes len now: {:?}", cluster.nodes.len());
+
+
         // TODO idea: plugins can suggest subgraph (ideally, a global maximum), if so, then it will adopt th
         // subgraph with minimum weight from all plugins as the starting point to do local minimum
 
         // find a local minimum (hopefully a global minimum)
-        let interface = interface_ptr.read_recursive();
-        let initializer = interface.decoding_graph.model_graph.initializer.as_ref();
-        let weight_of = |edge_index: EdgeIndex| initializer.weighted_edges[edge_index].weight;
-        cluster.subgraph = Some(cluster.matrix.get_solution_local_minimum(weight_of).expect("satisfiable"));
+        #[cfg(not(feature="pointer"))] {
+            let interface = interface_ptr.read_recursive();
+            let initializer = interface.decoding_graph.model_graph.initializer.as_ref();
+            let weight_of = |edge_index: EdgeIndex| initializer.weighted_edges[edge_index].weight;
+            cluster.subgraph = Some(cluster.matrix.get_solution_local_minimum(weight_of).expect("satisfiable"));
+        }
+        #[cfg(feature="pointer")] {
+            let weight_of = |edge_weak: EdgeWeak| edge_weak.upgrade_force().read_recursive().weight;
+            cluster.subgraph = Some(cluster.matrix.get_solution_local_minimum(weight_of).expect("satisfiable"));
+        }
+        
         true
     }
 
@@ -391,16 +561,23 @@ impl PrimalModuleImpl for PrimalModuleSerial {
     #[allow(clippy::unnecessary_cast)]
     fn resolve_cluster_tune(
         &mut self,
+        #[cfg(feature="pointer")]
+        cluster_ptr: &PrimalClusterPtr,
+        #[cfg(not(feature="pointer"))]
         cluster_index: NodeIndex,
         interface_ptr: &DualModuleInterfacePtr,
         dual_module: &mut impl DualModuleImpl,
         // dual_node_deltas: &mut BTreeMap<OrderedDualNodePtr, Rational>,
+        #[cfg(feature="pointer")]
+        dual_node_deltas: &mut BTreeMap<OrderedDualNodePtr, (Rational, PrimalClusterPtr)>,
+        #[cfg(not(feature="pointer"))]
         dual_node_deltas: &mut BTreeMap<OrderedDualNodePtr, (Rational, NodeIndex)>,
     ) -> (bool, OptimizerResult) {
         let mut optimizer_result = OptimizerResult::default();
         #[cfg(feature = "incr_lp")]
         let mut cluster_ptr = self.clusters[cluster_index as usize].clone();
         #[cfg(not(feature = "incr_lp"))]
+        #[cfg(not(feature="pointer"))]
         let cluster_ptr = self.clusters[cluster_index as usize].clone();
         let mut cluster_temp = cluster_ptr.write();
         if cluster_temp.nodes.is_empty() {
@@ -409,6 +586,7 @@ impl PrimalModuleImpl for PrimalModuleSerial {
         #[cfg(feature = "cluster_size_limit")]
         if let Some(len_limit) = self.cluster_node_limit {
             if cluster_temp.nodes.len() >= len_limit {
+                // println!("cluster node size > len_limit");
                 return (true, optimizer_result);
             }
         }
@@ -418,6 +596,13 @@ impl PrimalModuleImpl for PrimalModuleSerial {
         #[cfg(not(feature = "incr_lp"))]
         let cluster = &mut *cluster_temp;
 
+        #[cfg(feature="pointer")]
+        for edge_index in cluster.edges.iter() {
+            cluster
+                .matrix
+                .update_edge_tightness(edge_index.downgrade(), dual_module.is_edge_tight_tune(edge_index.clone()));
+        }
+        #[cfg(not(feature="pointer"))]
         for &edge_index in cluster.edges.iter() {
             cluster
                 .matrix
@@ -425,7 +610,23 @@ impl PrimalModuleImpl for PrimalModuleSerial {
         }
 
         // find an executable relaxer from the plugin manager
+        #[cfg(feature="pointer")]
         let relaxer = {
+            // println!("cluster.nodes len: {:?}", cluster.nodes.len());
+            let positive_dual_variables: Vec<DualNodePtr> = cluster
+                .nodes
+                .iter()
+                .map(|p| p.read_recursive().dual_node_ptr.clone())
+                .filter(|dual_node_ptr| !dual_node_ptr.read_recursive().dual_variable_at_last_updated_time.is_zero())
+                .collect();
+            let cluster_mut = &mut *cluster; // must first get mutable reference
+            let plugin_manager = &mut cluster_mut.plugin_manager;
+            let matrix = &mut cluster_mut.matrix;
+            plugin_manager.find_relaxer(matrix, &positive_dual_variables)
+        };
+        #[cfg(not(feature="pointer"))]
+        let relaxer = {
+            println!("cluster.nodes len: {:?}", cluster.nodes.len());
             let positive_dual_variables: Vec<DualNodePtr> = cluster
                 .nodes
                 .iter()
@@ -458,6 +659,20 @@ impl PrimalModuleImpl for PrimalModuleSerial {
                             )
                         })
                         .collect();
+                    #[cfg(feature="pointer")]
+                    let edge_slacks: BTreeMap<EdgePtr, Rational> = dual_variables
+                        .keys()
+                        .flat_map(|invalid_subgraph: &Arc<InvalidSubgraph>| invalid_subgraph.hair.iter().cloned())
+                        .chain(
+                            relaxer
+                                .get_direction()
+                                .keys()
+                                .flat_map(|invalid_subgraph| invalid_subgraph.hair.iter().cloned()),
+                        )
+                        .unique()
+                        .map(|edge_index| (edge_index.clone(), dual_module.get_edge_slack_tune(edge_index.clone())))
+                        .collect();
+                    #[cfg(not(feature="pointer"))]
                     let edge_slacks: BTreeMap<EdgeIndex, Rational> = dual_variables
                         .keys()
                         .flat_map(|invalid_subgraph: &Arc<InvalidSubgraph>| invalid_subgraph.hair.iter().cloned())
@@ -624,6 +839,12 @@ impl PrimalModuleImpl for PrimalModuleSerial {
 
                     // Document the desired deltas
                     let index = dual_node_ptr.read_recursive().index;
+                    #[cfg(feature="pointer")]
+                    dual_node_deltas.insert(
+                        OrderedDualNodePtr::new(index, dual_node_ptr),
+                        (grow_rate.clone(), cluster_ptr.clone()),
+                    );
+                    #[cfg(not(feature="pointer"))]
                     dual_node_deltas.insert(
                         OrderedDualNodePtr::new(index, dual_node_ptr),
                         (grow_rate.clone(), cluster_index),
@@ -636,10 +857,17 @@ impl PrimalModuleImpl for PrimalModuleSerial {
         }
 
         // find a local minimum (hopefully a global minimum)
-        let interface = interface_ptr.read_recursive();
-        let initializer = interface.decoding_graph.model_graph.initializer.as_ref();
-        let weight_of = |edge_index: EdgeIndex| initializer.weighted_edges[edge_index].weight;
-        cluster.subgraph = Some(cluster.matrix.get_solution_local_minimum(weight_of).expect("satisfiable"));
+        #[cfg(not(feature="pointer"))] {
+            let interface = interface_ptr.read_recursive();
+            let initializer = interface.decoding_graph.model_graph.initializer.as_ref();
+            let weight_of = |edge_index: EdgeIndex| initializer.weighted_edges[edge_index].weight;
+            cluster.subgraph = Some(cluster.matrix.get_solution_local_minimum(weight_of).expect("satisfiable"));
+        }
+
+        #[cfg(feature="pointer")] {
+            let weight_of = |edge_weak: EdgeWeak| edge_weak.upgrade_force().read_recursive().weight;
+            cluster.subgraph = Some(cluster.matrix.get_solution_local_minimum(weight_of).expect("satisfiable"));
+        }
 
         (true, optimizer_result)
     }
@@ -650,10 +878,17 @@ impl PrimalModuleImpl for PrimalModuleSerial {
         let mut sorted_clusters_aff = BTreeSet::default();
 
         for cluster_index in pending_clusters.iter() {
+            #[cfg(not(feature="pointer"))]
             let cluster_ptr = self.clusters[*cluster_index].clone();
-            let affinity = dual_module.calculate_cluster_affinity(cluster_ptr);
+            #[cfg(feature="pointer")]
+            let cluster_ptr = cluster_index.upgrade_force();
+            
+            let affinity = dual_module.calculate_cluster_affinity(cluster_ptr.clone());
             if let Some(affinity) = affinity {
                 sorted_clusters_aff.insert(ClusterAffinity {
+                    #[cfg(feature="pointer")]
+                    cluster_ptr: cluster_ptr.clone(),
+                    #[cfg(not(feature="pointer"))]
                     cluster_index: *cluster_index,
                     affinity,
                 });
@@ -704,6 +939,7 @@ impl PrimalModuleSerial {
         &self,
         dual_node_ptr_1: &DualNodePtr,
         dual_node_ptr_2: &DualNodePtr,
+        #[cfg(not(feature="pointer"))]
         decoding_graph: &DecodingHyperGraph,
         _dual_module: &mut impl DualModuleImpl, // note: remove if not for cluster-based
     ) {
@@ -827,6 +1063,15 @@ impl PrimalModuleSerial {
             // cluster_1.subgraph = None; // mark as no subgraph
         }
 
+        #[cfg(feature="pointer")]
+        for vertex_index in cluster_2.vertices.iter() {
+            if !cluster_1.vertices.contains(&vertex_index) {
+                cluster_1.vertices.insert(vertex_index.clone());
+                cluster_1.matrix.add_constraint(vertex_index.clone());
+            }
+        }
+
+        #[cfg(not(feature="pointer"))]
         for &vertex_index in cluster_2.vertices.iter() {
             if !cluster_1.vertices.contains(&vertex_index) {
                 cluster_1.vertices.insert(vertex_index);
@@ -847,23 +1092,34 @@ impl PrimalModuleSerial {
         dual_module: &mut impl DualModuleImpl,
     ) -> bool {
         debug_assert!(!group_max_update_length.is_unbounded() && group_max_update_length.get_valid_growth().is_none());
+        #[cfg(not(feature="pointer"))]
         let mut active_clusters = BTreeSet::<NodeIndex>::new();
+        #[cfg(feature="pointer")]
+        let mut active_clusters = BTreeSet::<PrimalClusterPtr>::new();
         let interface = interface_ptr.read_recursive();
+        #[cfg(not(feature="pointer"))]
         let decoding_graph = &interface.decoding_graph;
         while let Some(conflict) = group_max_update_length.pop() {
             match conflict {
                 MaxUpdateLength::Conflicting(edge_index) => {
                     // union all the dual nodes in the edge index and create new dual node by adding this edge to `internal_edges`
-                    let dual_nodes = dual_module.get_edge_nodes(edge_index);
+                    let dual_nodes = dual_module.get_edge_nodes(edge_index.clone());
                     debug_assert!(
                         !dual_nodes.is_empty(),
                         "should not conflict if no dual nodes are contributing"
                     );
                     let dual_node_ptr_0 = &dual_nodes[0];
                     // first union all the dual nodes
-                    for dual_node_ptr in dual_nodes.iter().skip(1) {
-                        // self.union(dual_node_ptr_0, dual_node_ptr, &interface.decoding_graph);
-                        self.union(dual_node_ptr_0, dual_node_ptr, &interface.decoding_graph, dual_module);
+                    #[cfg(not(feature="pointer"))] {    
+                        for dual_node_ptr in dual_nodes.iter().skip(1) {
+                            // self.union(dual_node_ptr_0, dual_node_ptr, &interface.decoding_graph);
+                            self.union(dual_node_ptr_0, dual_node_ptr, &interface.decoding_graph, dual_module);
+                        }
+                    }
+                    #[cfg(feature="pointer")] {
+                        for dual_node_ptr in dual_nodes.iter().skip(1) {
+                            self.union(dual_node_ptr_0, dual_node_ptr, dual_module);
+                        }
                     }
                     let cluster_ptr = self.nodes[dual_node_ptr_0.read_recursive().index as usize]
                         .read_recursive()
@@ -871,18 +1127,34 @@ impl PrimalModuleSerial {
                         .upgrade_force();
                     let mut cluster = cluster_ptr.write();
                     // then add new constraints because these edges may touch new vertices
-                    let incident_vertices = decoding_graph.get_edge_neighbors(edge_index);
-                    for &vertex_index in incident_vertices.iter() {
-                        if !cluster.vertices.contains(&vertex_index) {
-                            cluster.vertices.insert(vertex_index);
-                            let incident_edges = decoding_graph.get_vertex_neighbors(vertex_index);
-                            let parity = decoding_graph.is_vertex_defect(vertex_index);
-                            cluster.matrix.add_constraint(vertex_index, incident_edges, parity);
+                    #[cfg(not(feature="pointer"))] {
+                        let incident_vertices = decoding_graph.get_edge_neighbors(edge_index);
+                        for &vertex_index in incident_vertices.iter() {
+                            if !cluster.vertices.contains(&vertex_index) {
+                                cluster.vertices.insert(vertex_index);
+                                let incident_edges = decoding_graph.get_vertex_neighbors(vertex_index);
+                                let parity = decoding_graph.is_vertex_defect(vertex_index);
+                                cluster.matrix.add_constraint(vertex_index, incident_edges, parity);
+                            }
                         }
                     }
+                    #[cfg(feature="pointer")] {
+                        let incident_vertices = &edge_index.read_recursive().vertices;
+                        for vertex_weak in incident_vertices.iter() {
+                            let vertex_ptr = vertex_weak.upgrade_force();
+                            if !cluster.vertices.contains(&vertex_ptr) {
+                                cluster.vertices.insert(vertex_ptr.clone());
+                                cluster.matrix.add_constraint(vertex_ptr.clone());
+                            }
+                        }
+                    }
+                   
                     cluster.edges.insert(edge_index);
                     // add to active cluster so that it's processed later
+                    #[cfg(not(feature="pointer"))]
                     active_clusters.insert(cluster.cluster_index);
+                    #[cfg(feature="pointer")]
+                    active_clusters.insert(cluster_ptr.clone());
                 }
                 MaxUpdateLength::ShrinkProhibited(dual_node_ptr) => {
                     let cluster_ptr = self.nodes[dual_node_ptr.index as usize]
@@ -890,7 +1162,10 @@ impl PrimalModuleSerial {
                         .cluster_weak
                         .upgrade_force();
                     let cluster_index = cluster_ptr.read_recursive().cluster_index;
+                    #[cfg(not(feature="pointer"))]
                     active_clusters.insert(cluster_index);
+                    #[cfg(feature="pointer")]
+                    active_clusters.insert(cluster_ptr.clone());
                 }
                 _ => {
                     unreachable!()
@@ -902,8 +1177,14 @@ impl PrimalModuleSerial {
             *self.plugin_count.write() = 0; // force only the first plugin
         }
         let mut all_solved = true;
+        #[cfg(not(feature="pointer"))]
         for &cluster_index in active_clusters.iter() {
             let solved = self.resolve_cluster(cluster_index, interface_ptr, dual_module);
+            all_solved &= solved;
+        }
+        #[cfg(feature="pointer")]
+        for cluster_ptr in active_clusters.iter() {
+            let solved = self.resolve_cluster(cluster_ptr, interface_ptr, dual_module);
             all_solved &= solved;
         }
         if !all_solved {
@@ -922,42 +1203,69 @@ impl PrimalModuleSerial {
         dual_module: &mut impl DualModuleImpl,
     ) -> bool {
         debug_assert!(!group_max_update_length.is_unbounded() && group_max_update_length.get_valid_growth().is_none());
+        #[cfg(not(feature="pointer"))]
         let mut active_clusters = BTreeSet::<NodeIndex>::new();
+        #[cfg(feature="pointer")]
+        let mut active_clusters = BTreeSet::<PrimalClusterPtr>::new();
         let interface = interface_ptr.read_recursive();
+        #[cfg(not(feature="pointer"))]
         let decoding_graph = &interface.decoding_graph;
         while let Some(conflict) = group_max_update_length.pop() {
             match conflict {
                 MaxUpdateLength::Conflicting(edge_index) => {
                     // union all the dual nodes in the edge index and create new dual node by adding this edge to `internal_edges`
-                    let dual_nodes = dual_module.get_edge_nodes(edge_index);
+                    let dual_nodes = dual_module.get_edge_nodes(edge_index.clone());
                     debug_assert!(
                         !dual_nodes.is_empty(),
                         "should not conflict if no dual nodes are contributing"
                     );
                     let dual_node_ptr_0 = &dual_nodes[0];
                     // first union all the dual nodes
-                    for dual_node_ptr in dual_nodes.iter().skip(1) {
-                        // self.union(dual_node_ptr_0, dual_node_ptr, &interface.decoding_graph);
-                        self.union(dual_node_ptr_0, dual_node_ptr, &interface.decoding_graph, dual_module);
+                    #[cfg(not(feature="pointer"))] {
+                        for dual_node_ptr in dual_nodes.iter().skip(1) {
+                            // self.union(dual_node_ptr_0, dual_node_ptr, &interface.decoding_graph);
+                            self.union(dual_node_ptr_0, dual_node_ptr, &interface.decoding_graph, dual_module);
+                        }
                     }
+                    #[cfg(feature="pointer")] {
+                        for dual_node_ptr in dual_nodes.iter().skip(1) {
+                            self.union(dual_node_ptr_0, dual_node_ptr, dual_module);
+                        }
+                    }
+                    
                     let cluster_ptr = self.nodes[dual_node_ptr_0.read_recursive().index as usize]
                         .read_recursive()
                         .cluster_weak
                         .upgrade_force();
                     let mut cluster = cluster_ptr.write();
                     // then add new constraints because these edges may touch new vertices
-                    let incident_vertices = decoding_graph.get_edge_neighbors(edge_index);
-                    for &vertex_index in incident_vertices.iter() {
-                        if !cluster.vertices.contains(&vertex_index) {
-                            cluster.vertices.insert(vertex_index);
-                            let incident_edges = decoding_graph.get_vertex_neighbors(vertex_index);
-                            let parity = decoding_graph.is_vertex_defect(vertex_index);
-                            cluster.matrix.add_constraint(vertex_index, incident_edges, parity);
+                    #[cfg(not(feature="pointer"))] {
+                        let incident_vertices = decoding_graph.get_edge_neighbors(edge_index);
+                        for &vertex_index in incident_vertices.iter() {
+                            if !cluster.vertices.contains(&vertex_index) {
+                                cluster.vertices.insert(vertex_index);
+                                let incident_edges = decoding_graph.get_vertex_neighbors(vertex_index);
+                                let parity = decoding_graph.is_vertex_defect(vertex_index);
+                                cluster.matrix.add_constraint(vertex_index, incident_edges, parity);
+                            }
                         }
                     }
-                    cluster.edges.insert(edge_index);
+                    #[cfg(feature="pointer")] {
+                        let incident_vertices = &edge_index.read_recursive().vertices;
+                        for vertex_weak in incident_vertices.iter() {
+                            let vertex_ptr = vertex_weak.upgrade_force();
+                            if !cluster.vertices.contains(&vertex_ptr) {
+                                cluster.vertices.insert(vertex_ptr.clone());
+                                cluster.matrix.add_constraint(vertex_ptr.clone());
+                            }
+                        }
+                    }
+                    cluster.edges.insert(edge_index.clone());
                     // add to active cluster so that it's processed later
+                    #[cfg(not(feature="pointer"))]
                     active_clusters.insert(cluster.cluster_index);
+                    #[cfg(feature="pointer")]
+                    active_clusters.insert(cluster_ptr.clone());
                 }
                 MaxUpdateLength::ShrinkProhibited(dual_node_ptr) => {
                     let cluster_ptr = self.nodes[dual_node_ptr.index as usize]
@@ -965,7 +1273,10 @@ impl PrimalModuleSerial {
                         .cluster_weak
                         .upgrade_force();
                     let cluster_index = cluster_ptr.read_recursive().cluster_index;
+                    #[cfg(not(feature="pointer"))]
                     active_clusters.insert(cluster_index);
+                    #[cfg(feature="pointer")]
+                    active_clusters.insert(cluster_ptr.clone());
                 }
                 _ => {
                     unreachable!()
@@ -977,8 +1288,14 @@ impl PrimalModuleSerial {
             *self.plugin_count.write() = 0; // force only the first plugin
         }
         let mut all_solved = true;
+        #[cfg(not(feature="pointer"))]
         for &cluster_index in active_clusters.iter() {
             let solved = self.resolve_cluster(cluster_index, interface_ptr, dual_module);
+            all_solved &= solved;
+        }
+        #[cfg(feature="pointer")]
+        for cluster_ptr in active_clusters.iter() {
+            let solved = self.resolve_cluster(cluster_ptr, interface_ptr, dual_module);
             all_solved &= solved;
         }
         if !all_solved {
@@ -999,12 +1316,21 @@ impl PrimalModuleSerial {
         }
         // check that all clusters have passed the plugins
         loop {
+            #[cfg(not(feature="pointer"))]
             while let Some(cluster_index) = self.plugin_pending_clusters.pop() {
                 let solved = self.resolve_cluster(cluster_index, interface_ptr, dual_module);
                 if !solved {
                     return false; // let the dual module to handle one
                 }
             }
+            #[cfg(feature="pointer")]
+            while let Some(cluster_ptr) = self.plugin_pending_clusters.pop() {
+                let solved = self.resolve_cluster(&cluster_ptr.upgrade_force(), interface_ptr, dual_module);
+                if !solved {
+                    return false; // let the dual module to handle one
+                }
+            }
+            #[cfg(not(feature="pointer"))]
             if *self.plugin_count.read_recursive() < self.plugins.len() {
                 // increment the plugin count
                 *self.plugin_count.write() += 1;
@@ -1012,6 +1338,16 @@ impl PrimalModuleSerial {
             } else {
                 break; // nothing more to check
             }
+
+            #[cfg(feature="pointer")]
+            if *self.plugin_count.read_recursive() < self.plugins.len() {
+                // increment the plugin count
+                *self.plugin_count.write() += 1;
+                self.plugin_pending_clusters = self.clusters.iter().map(|c| c.downgrade()).collect::<Vec<_>>();
+            } else {
+                break; // nothing more to check
+            }
+
         }
         true
     }
@@ -1024,15 +1360,19 @@ impl PrimalModuleSerial {
         interface_ptr: &DualModuleInterfacePtr,
         dual_module: &mut impl DualModuleImpl,
     ) -> (BTreeSet<MaxUpdateLength>, bool) {
+        #[cfg(not(feature="pointer"))]
         let mut active_clusters = BTreeSet::<NodeIndex>::new();
+        #[cfg(feature="pointer")]
+        let mut active_clusters = BTreeSet::<PrimalClusterPtr>::new();
         let interface = interface_ptr.read_recursive();
+        #[cfg(not(feature="pointer"))]
         let decoding_graph = &interface.decoding_graph;
 
         for conflict in group_max_update_length.into_iter() {
             match conflict {
                 MaxUpdateLength::Conflicting(edge_index) => {
                     // union all the dual nodes in the edge index and create new dual node by adding this edge to `internal_edges`
-                    let dual_nodes = dual_module.get_edge_nodes(edge_index);
+                    let dual_nodes = dual_module.get_edge_nodes(edge_index.clone());
                     debug_assert!(
                         !dual_nodes.is_empty(),
                         "should not conflict if no dual nodes are contributing"
@@ -1040,28 +1380,52 @@ impl PrimalModuleSerial {
 
                     let dual_node_ptr_0 = &dual_nodes[0];
                     // first union all the dual nodes
-                    for dual_node_ptr in dual_nodes.iter().skip(1) {
-                        // self.union(dual_node_ptr_0, dual_node_ptr, &interface.decoding_graph);
-                        self.union(dual_node_ptr_0, dual_node_ptr, &interface.decoding_graph, dual_module);
+                    #[cfg(not(feature="pointer"))] {
+                        for dual_node_ptr in dual_nodes.iter().skip(1) {
+                            // self.union(dual_node_ptr_0, dual_node_ptr, &interface.decoding_graph);
+                            self.union(dual_node_ptr_0, dual_node_ptr, &interface.decoding_graph, dual_module);
+                        }
                     }
+                    #[cfg(feature="pointer")] {
+                        for dual_node_ptr in dual_nodes.iter().skip(1) {
+                            self.union(dual_node_ptr_0, dual_node_ptr, dual_module);
+                        }
+                    }
+                    
                     let cluster_ptr = self.nodes[dual_node_ptr_0.read_recursive().index as usize]
                         .read_recursive()
                         .cluster_weak
                         .upgrade_force();
                     let mut cluster = cluster_ptr.write();
                     // then add new constraints because these edges may touch new vertices
-                    let incident_vertices = decoding_graph.get_edge_neighbors(edge_index);
-                    for &vertex_index in incident_vertices.iter() {
-                        if !cluster.vertices.contains(&vertex_index) {
-                            cluster.vertices.insert(vertex_index);
-                            let incident_edges = decoding_graph.get_vertex_neighbors(vertex_index);
-                            let parity = decoding_graph.is_vertex_defect(vertex_index);
-                            cluster.matrix.add_constraint(vertex_index, incident_edges, parity);
+                    #[cfg(not(feature="pointer"))] {
+                        let incident_vertices = decoding_graph.get_edge_neighbors(edge_index);
+                        for &vertex_index in incident_vertices.iter() {
+                            if !cluster.vertices.contains(&vertex_index) {
+                                cluster.vertices.insert(vertex_index);
+                                let incident_edges = decoding_graph.get_vertex_neighbors(vertex_index);
+                                let parity = decoding_graph.is_vertex_defect(vertex_index);
+                                cluster.matrix.add_constraint(vertex_index, incident_edges, parity);
+                            }
                         }
                     }
+                    #[cfg(feature="pointer")] {
+                        let incident_vertices = &edge_index.read_recursive().vertices;
+                        for vertex_weak in incident_vertices.iter() {
+                            let vertex_ptr = vertex_weak.upgrade_force();
+                            if !cluster.vertices.contains(&vertex_ptr) {
+                                cluster.vertices.insert(vertex_ptr.clone());
+                                cluster.matrix.add_constraint(vertex_ptr.clone());
+                            }
+                        }
+                    }
+                   
                     cluster.edges.insert(edge_index);
                     // add to active cluster so that it's processed later
+                    #[cfg(not(feature="pointer"))] 
                     active_clusters.insert(cluster.cluster_index);
+                    #[cfg(feature="pointer")]
+                    active_clusters.insert(cluster_ptr.clone());
                 }
                 MaxUpdateLength::ShrinkProhibited(dual_node_ptr) => {
                     let cluster_ptr = self.nodes[dual_node_ptr.index as usize]
@@ -1069,7 +1433,10 @@ impl PrimalModuleSerial {
                         .cluster_weak
                         .upgrade_force();
                     let cluster_index = cluster_ptr.read_recursive().cluster_index;
+                    #[cfg(not(feature="pointer"))] 
                     active_clusters.insert(cluster_index);
+                    #[cfg(feature="pointer")]
+                    active_clusters.insert(cluster_ptr.clone());
                 }
                 _ => {
                     unreachable!()
@@ -1084,9 +1451,13 @@ impl PrimalModuleSerial {
         let mut all_solved = true;
         let mut dual_node_deltas = BTreeMap::new();
         let mut optimizer_result = OptimizerResult::default();
-        for &cluster_index in active_clusters.iter() {
+        for cluster_index in active_clusters.iter() {
+            #[cfg(not(feature="pointer"))] 
             let (solved, other) =
-                self.resolve_cluster_tune(cluster_index, interface_ptr, dual_module, &mut dual_node_deltas);
+                self.resolve_cluster_tune(*cluster_index, interface_ptr, dual_module, &mut dual_node_deltas);
+            #[cfg(feature="pointer")]
+            let (solved, other) =
+                self.resolve_cluster_tune(&cluster_index, interface_ptr, dual_module, &mut dual_node_deltas);
             if !solved {
                 // todo: investigate more
                 return (dual_module.get_conflicts_tune(other, dual_node_deltas), false);
@@ -1124,7 +1495,7 @@ impl PrimalModuleSerial {
                 // print the overlapping vertices
                 println!("overlap: {:?}", vertices.intersection(&cluster.vertices).collect::<Vec<_>>());
             }
-            vertices.extend(cluster.vertices.iter());
+            vertices.extend(cluster.vertices.iter().cloned());
             // print edge overlaps
             if !edges.is_disjoint(&cluster.edges) {
                 println!("edges overlap");
@@ -1141,7 +1512,7 @@ impl PrimalModuleSerial {
                 invalid_subgraphs.insert(node.dual_node_ptr.read_recursive().invalid_subgraph.clone());
             }
 
-            edges.extend(cluster.edges.iter());
+            edges.extend(cluster.edges.iter().cloned());
             println!();
             println!("invalid subgraphs: {:?}", invalid_subgraphs.len());
         }
@@ -1157,6 +1528,7 @@ impl MWPSVisualizer for PrimalModuleSerial {
 #[cfg(test)]
 pub mod tests {
     use super::super::dual_module_pq::*;
+    #[cfg(feature="non-pq")]
     use super::super::dual_module_serial::*;
     use super::super::example_codes::*;
     use super::*;
@@ -1186,7 +1558,10 @@ pub mod tests {
         // primal_module.config = serde_json::from_value(json!({"timeout":1})).unwrap();
         // try to work on a simple syndrome
         let decoding_graph = DecodingHyperGraph::new_defects(model_graph, defect_vertices.clone());
+        #[cfg(not(feature="pointer"))]
         let interface_ptr = DualModuleInterfacePtr::new(decoding_graph.model_graph.clone());
+        #[cfg(feature="pointer")]
+        let interface_ptr = DualModuleInterfacePtr::new();
         primal_module.solve_visualizer(
             &interface_ptr,
             decoding_graph.syndrome_pattern.clone(),
@@ -1194,7 +1569,10 @@ pub mod tests {
             visualizer.as_mut(),
         );
 
+        #[cfg(not(feature="pointer"))] 
         let (subgraph, weight_range) = primal_module.subgraph_range(&interface_ptr, &mut dual_module);
+        #[cfg(feature="pointer")]
+        let (subgraph, weight_range) = primal_module.subgraph_range(&interface_ptr);
         if let Some(visualizer) = visualizer.as_mut() {
             visualizer
                 .snapshot_combined(
@@ -1222,6 +1600,7 @@ pub mod tests {
         (interface_ptr, primal_module, dual_module)
     }
 
+    
     pub fn primal_module_serial_basic_standard_syndrome(
         code: impl ExampleCode,
         visualize_filename: String,
@@ -1253,7 +1632,8 @@ pub mod tests {
             final_dual,
             plugins,
             growing_strategy,
-            DualModuleSerial::new_empty(&model_graph.initializer),
+            DualModulePQ::<FutureObstacleQueue<Rational>>::new_empty(&model_graph.initializer),
+            // DualModuleSerial::new_empty(&model_graph.initializer),
             model_graph,
             Some(visualizer),
         )
