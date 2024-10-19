@@ -29,12 +29,16 @@ extern crate urlencoding;
 #[cfg(feature = "wasm_binding")]
 extern crate wasm_bindgen;
 
+extern crate rayon;
+extern crate weak_table;
+
 #[cfg(feature = "cli")]
 pub mod cli;
 pub mod decoding_hypergraph;
 pub mod dual_module;
 pub mod dual_module_pq;
 pub mod dual_module_serial;
+pub mod dual_module_parallel;
 pub mod example_codes;
 pub mod invalid_subgraph;
 pub mod matrix;
