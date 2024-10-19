@@ -1,3 +1,5 @@
+#![cfg_attr(feature = "unsafe_pointer", feature(get_mut_unchecked))]
+#![cfg_attr(feature = "unsafe_pointer", allow(unused_mut))]
 #![cfg_attr(feature = "python_binding", feature(cfg_eval))]
 
 extern crate serde;

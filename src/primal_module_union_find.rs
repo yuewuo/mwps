@@ -243,7 +243,9 @@ pub mod tests {
     use super::super::dual_module_serial::*;
     use super::super::example_codes::*;
     use super::*;
+    #[cfg(not(feature="non-pq"))]
     use crate::dual_module_pq::DualModulePQ;
+    #[cfg(not(feature="non-pq"))]
     use crate::dual_module_pq::FutureObstacleQueue;
     // use crate::dual_module_pq::_FutureObstacleQueue;
     // use crate::dual_module_pq::PairingPQ;
@@ -337,7 +339,8 @@ pub mod tests {
         // create dual module
         let model_graph = code.get_model_graph();
 
-        primal_module_union_find_basic_standard_syndrome_optional_viz(
+        #[cfg(not(feature="non-pq"))]
+        return primal_module_union_find_basic_standard_syndrome_optional_viz(
             code,
             defect_vertices,
             final_dual,
@@ -345,7 +348,16 @@ pub mod tests {
             DualModulePQ::<FutureObstacleQueue<Rational>>::new_empty(&model_graph.initializer),
             model_graph,
             Some(visualizer),
-        )
+        );
+        #[cfg(feature="non-pq")]
+        return primal_module_union_find_basic_standard_syndrome_optional_viz(
+            code,
+            defect_vertices,
+            final_dual,
+            DualModuleSerial::new_empty(&model_graph.initializer),
+            model_graph,
+            Some(visualizer),
+        );
     }
 
     pub fn primal_module_union_find_basic_standard_syndrome_with_dual_pq_impl(
@@ -373,14 +385,24 @@ pub mod tests {
         // create dual module
         let model_graph = code.get_model_graph();
 
-        primal_module_union_find_basic_standard_syndrome_optional_viz(
+        #[cfg(not(feature="non-pq"))]
+        return primal_module_union_find_basic_standard_syndrome_optional_viz(
             code,
             defect_vertices,
             final_dual,
             DualModulePQ::<FutureObstacleQueue<Rational>>::new_empty(&model_graph.initializer),
             model_graph,
             Some(visualizer),
-        )
+        );
+        #[cfg(feature="non-pq")]
+        return primal_module_union_find_basic_standard_syndrome_optional_viz(
+            code,
+            defect_vertices,
+            final_dual,
+            DualModuleSerial::new_empty(&model_graph.initializer),
+            model_graph,
+            Some(visualizer),
+        );
     }
 
     /// test a simple case

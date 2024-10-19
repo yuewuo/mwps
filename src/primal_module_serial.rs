@@ -26,6 +26,8 @@ use std::cmp::Ordering;
 use crate::dual_module_serial::{EdgeWeak, VertexWeak, EdgePtr, VertexPtr};
 #[cfg(all(feature = "pointer", not(feature = "non-pq")))]
 use crate::dual_module_pq::{EdgeWeak, VertexWeak, EdgePtr, VertexPtr};
+#[cfg(feature="unsafe_pointer")]
+use crate::pointers::UnsafePtr;
 
 use crate::itertools::Itertools;
 #[cfg(feature = "incr_lp")]
@@ -162,8 +164,8 @@ pub struct PrimalModuleSerialNode {
     pub cluster_weak: PrimalClusterWeak,
 }
 
-pub type PrimalModuleSerialNodePtr = ArcRwLock<PrimalModuleSerialNode>;
-pub type PrimalModuleSerialNodeWeak = WeakRwLock<PrimalModuleSerialNode>;
+pub type PrimalModuleSerialNodePtr = ArcManualSafeLock<PrimalModuleSerialNode>;
+pub type PrimalModuleSerialNodeWeak = WeakManualSafeLock<PrimalModuleSerialNode>;
 
 impl std::fmt::Debug for PrimalModuleSerialNodePtr {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
@@ -205,8 +207,8 @@ pub struct PrimalCluster {
     pub incr_solution: Option<Arc<Mutex<IncrLPSolution>>>,
 }
 
-pub type PrimalClusterPtr = ArcRwLock<PrimalCluster>;
-pub type PrimalClusterWeak = WeakRwLock<PrimalCluster>;
+pub type PrimalClusterPtr = ArcManualSafeLock<PrimalCluster>;
+pub type PrimalClusterWeak = WeakManualSafeLock<PrimalCluster>;
 
 impl std::fmt::Debug for PrimalClusterPtr {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
@@ -626,7 +628,7 @@ impl PrimalModuleImpl for PrimalModuleSerial {
         };
         #[cfg(not(feature="pointer"))]
         let relaxer = {
-            println!("cluster.nodes len: {:?}", cluster.nodes.len());
+            // println!("cluster.nodes len: {:?}", cluster.nodes.len());
             let positive_dual_variables: Vec<DualNodePtr> = cluster
                 .nodes
                 .iter()
@@ -952,7 +954,7 @@ impl PrimalModuleSerial {
         }
         let primal_node_1 = self.nodes[node_index_1 as usize].read_recursive();
         let primal_node_2 = self.nodes[node_index_2 as usize].read_recursive();
-        if primal_node_1.cluster_weak.ptr_eq(&primal_node_2.cluster_weak) {
+        if primal_node_1.cluster_weak.eq(&primal_node_2.cluster_weak) {
             return; // already in the same cluster
         }
         let cluster_ptr_1 = primal_node_1.cluster_weak.upgrade_force();
@@ -1527,6 +1529,7 @@ impl MWPSVisualizer for PrimalModuleSerial {
 
 #[cfg(test)]
 pub mod tests {
+    #[cfg(not(feature="non-pq"))]
     use super::super::dual_module_pq::*;
     #[cfg(feature="non-pq")]
     use super::super::dual_module_serial::*;
@@ -1626,7 +1629,8 @@ pub mod tests {
         };
         // create dual module
         let model_graph = code.get_model_graph();
-        primal_module_serial_basic_standard_syndrome_optional_viz(
+        #[cfg(not(feature="non-pq"))]
+        return primal_module_serial_basic_standard_syndrome_optional_viz(
             code,
             defect_vertices,
             final_dual,
@@ -1636,7 +1640,18 @@ pub mod tests {
             // DualModuleSerial::new_empty(&model_graph.initializer),
             model_graph,
             Some(visualizer),
-        )
+        );
+        #[cfg(feature="non-pq")]
+        return primal_module_serial_basic_standard_syndrome_optional_viz(
+            code,
+            defect_vertices,
+            final_dual,
+            plugins,
+            growing_strategy,
+            DualModuleSerial::new_empty(&model_graph.initializer),
+            model_graph,
+            Some(visualizer),
+        );
     }
 
     pub fn primal_module_serial_basic_standard_syndrome_with_dual_pq_impl(
@@ -1664,7 +1679,8 @@ pub mod tests {
         };
         // create dual module
         let model_graph = code.get_model_graph();
-        primal_module_serial_basic_standard_syndrome_optional_viz(
+        #[cfg(not(feature="non-pq"))]
+        return primal_module_serial_basic_standard_syndrome_optional_viz(
             code,
             defect_vertices,
             final_dual,
@@ -1673,7 +1689,18 @@ pub mod tests {
             DualModulePQ::<FutureObstacleQueue<Rational>>::new_empty(&model_graph.initializer),
             model_graph,
             Some(visualizer),
-        )
+        );
+        #[cfg(feature="non-pq")]
+        return primal_module_serial_basic_standard_syndrome_optional_viz(
+            code,
+            defect_vertices,
+            final_dual,
+            plugins,
+            growing_strategy,
+            DualModuleSerial::new_empty(&model_graph.initializer),
+            model_graph,
+            Some(visualizer),
+        );
     }
 
     /// test a simple case

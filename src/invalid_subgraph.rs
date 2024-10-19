@@ -13,6 +13,8 @@ use std::sync::Arc;
 use crate::dual_module_serial::{EdgeWeak, VertexWeak, EdgePtr, VertexPtr};
 #[cfg(all(feature = "pointer", not(feature = "non-pq")))]
 use crate::dual_module_pq::{EdgeWeak, VertexWeak, EdgePtr, VertexPtr};
+#[cfg(feature="unsafe_pointer")]
+use crate::pointers::UnsafePtr;
 
 /// an invalid subgraph $S = (V_S, E_S)$, also store the hair $\delta(S)$
 #[cfg(feature = "pointer")]
@@ -262,6 +264,12 @@ impl InvalidSubgraph {
             matrix.add_constraint(vertex_index, incident_edges, parity);
         }
         matrix
+    }
+
+    pub fn clear(&mut self) {
+        self.edges.clear();
+        self.vertices.clear();
+        self.hair.clear();
     }
 }
 

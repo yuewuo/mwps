@@ -13,6 +13,8 @@ use std::collections::*;
 use crate::dual_module_serial::{EdgeWeak, VertexWeak, EdgePtr, VertexPtr};
 #[cfg(all(feature = "pointer", not(feature = "non-pq")))]
 use crate::dual_module_pq::{EdgeWeak, VertexWeak, EdgePtr, VertexPtr};
+#[cfg(feature="unsafe_pointer")]
+use crate::pointers::UnsafePtr;
 
 pub struct HairView<'a, M: MatrixTail + MatrixEchelon> {
     base: &'a mut M,

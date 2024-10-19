@@ -9,6 +9,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::dual_module_serial::{EdgeWeak, VertexWeak, EdgePtr, VertexPtr};
 #[cfg(all(feature = "pointer", not(feature = "non-pq")))]
 use crate::dual_module_pq::{EdgeWeak, VertexWeak, EdgePtr, VertexPtr};
+#[cfg(feature="unsafe_pointer")]
+use crate::pointers::UnsafePtr;
 
 /// complete matrix considers a predefined set of edges and won't consider any other edges
 #[cfg(feature="pointer")]

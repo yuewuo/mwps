@@ -15,6 +15,8 @@ use std::sync::Arc;
 use crate::dual_module_serial::{EdgeWeak, VertexWeak, EdgePtr, VertexPtr};
 #[cfg(all(feature = "pointer", not(feature = "non-pq")))]
 use crate::dual_module_pq::{EdgeWeak, VertexWeak, EdgePtr, VertexPtr};
+#[cfg(feature="unsafe_pointer")]
+use crate::pointers::UnsafePtr;
 
 pub type RelaxerVec = Vec<Relaxer>;
 

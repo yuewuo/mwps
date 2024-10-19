@@ -21,6 +21,8 @@ use std::sync::Arc;
 use crate::dual_module_serial::{EdgeWeak, VertexWeak, EdgePtr, VertexPtr};
 #[cfg(all(feature = "pointer", not(feature = "non-pq")))]
 use crate::dual_module_pq::{EdgeWeak, VertexWeak, EdgePtr, VertexPtr};
+#[cfg(feature="unsafe_pointer")]
+use crate::pointers::UnsafePtr;
 
 #[derive(Debug, Clone, Default)]
 pub struct PluginSingleHair {}
@@ -120,7 +122,10 @@ impl PluginImpl for PluginSingleHair {
         let mut relaxers = vec![];
         for dual_node_ptr in positive_dual_nodes.iter() {
             let dual_node = dual_node_ptr.read_recursive();
+            #[cfg(feature="pointer")]
             let mut hair_view = HairView::new(matrix, dual_node.invalid_subgraph.hair.iter().map(|e| e.downgrade()));
+            #[cfg(not(feature="pointer"))]
+            let mut hair_view = HairView::new(matrix, dual_node.invalid_subgraph.hair.iter().cloned());
             debug_assert!(hair_view.get_echelon_satisfiable());
             // hair_view.printstd();
             // optimization: check if there exists a single-hair solution, if not, clear the previous relaxers

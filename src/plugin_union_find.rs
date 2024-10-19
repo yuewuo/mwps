@@ -69,7 +69,7 @@ impl PluginImpl for PluginUnionFind {
         }
 
         #[cfg(not(feature="pointer"))]
-        if let Some(relaxer) = Self::find_single_relaxer(matrix) {
+        if let Some(relaxer) = Self::find_single_relaxer(decoding_graph,matrix) {
             vec![relaxer]
         } else {
             vec![]

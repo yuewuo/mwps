@@ -22,6 +22,9 @@ use crate::dual_module_serial::{EdgeWeak, VertexWeak, EdgePtr, VertexPtr};
 use crate::dual_module_pq::{EdgeWeak, VertexWeak, EdgePtr, VertexPtr};
 use crate::num_traits::Zero;
 
+#[cfg(feature="unsafe_pointer")]
+use crate::pointers::UnsafePtr;
+
 pub type Weight = usize; // only used as input, all internal weight representation will use `Rational`
 
 cfg_if::cfg_if! {
@@ -55,7 +58,7 @@ cfg_if::cfg_if! {
 
 cfg_if::cfg_if! {
     if #[cfg(feature="unsafe_pointer")] {
-        pub type KnownSafeRefCell<T> = ; // missing implementation
+        pub type KnownSafeRefCell<T> = std::cell::UnsafeCell<T>; // missing implementation
     } else {
         pub type KnownSafeRefCell<T> = std::cell::RefCell<T>;
     }

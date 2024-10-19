@@ -10,6 +10,8 @@
 use super::interface::*;
 use prettytable::format::TableFormat;
 use prettytable::*;
+#[cfg(feature="unsafe_pointer")]
+use crate::pointers::UnsafePtr;
 
 #[derive(Clone)]
 pub struct VizTable {

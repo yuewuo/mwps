@@ -36,7 +36,7 @@ debug = true
 
 [features]
 # to enable a feature, use `--features xxx`
-default = ["f64_weight", "cli", "qecp_integrate", "pointer"]
+default = ["f64_weight", "cli", "qecp_integrate", "pointer", "unsafe_pointer"]
 old_default = ["cli", "slp"]
 cli = ["pbr"]
 r64_weight = []                                   # use Rational64 instead of BigRational as weight type
@@ -52,6 +52,7 @@ incr_lp = []                                      # solve lp problems incrementa
 cluster_size_limit = []                           # allow configuration for limit on primal cluster size, for accrate benchmark timing.
 non-pq = []                                       # use edge/vertex definitions in dual_module_serial, default is dual_module_pq
 pointer = []                                      # use pointer implementation
+unsafe_pointer = []                               # use unsafe pointer implementation
 
 [dependencies]
 pyo3 = { version = "0.19.2", features = [
@@ -92,6 +93,7 @@ priority-queue = "2.0.3"
 heapz = { path = "src/heapz" }
 hashbrown = "0.14.5"
 pheap = { path = "src/pheap" }
+weak-table = "0.3.2"
 
 [dev-dependencies]
 test-case = "3.1.0"

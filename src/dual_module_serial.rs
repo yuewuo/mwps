@@ -40,8 +40,8 @@ pub struct DualModuleSerial {
     mode: DualModuleMode,
 }
 
-pub type DualModuleSerialPtr = ArcRwLock<DualModuleSerial>;
-pub type DualModuleSerialWeak = WeakRwLock<DualModuleSerial>;
+pub type DualModuleSerialPtr = ArcManualSafeLock<DualModuleSerial>;
+pub type DualModuleSerialWeak = WeakManualSafeLock<DualModuleSerial>;
 
 #[derive(Derivative)]
 #[derivative(Debug)]
@@ -55,8 +55,8 @@ pub struct Vertex {
     pub edges: Vec<EdgeWeak>,
 }
 
-pub type VertexPtr = ArcRwLock<Vertex>;
-pub type VertexWeak = WeakRwLock<Vertex>;
+pub type VertexPtr = ArcManualSafeLock<Vertex>;
+pub type VertexWeak = WeakManualSafeLock<Vertex>;
 
 impl std::fmt::Debug for VertexPtr {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
@@ -73,6 +73,7 @@ impl std::fmt::Debug for VertexWeak {
     }
 }
 
+#[cfg(feature = "pointer")]
 impl Ord for VertexPtr {
     fn cmp(&self, other: &Self) -> Ordering {
         // compare the pointer address 
@@ -84,12 +85,14 @@ impl Ord for VertexPtr {
     }
 }
 
+#[cfg(feature = "pointer")]
 impl PartialOrd for VertexPtr {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
+#[cfg(feature = "pointer")]
 impl Ord for VertexWeak {
     fn cmp(&self, other: &Self) -> Ordering {
         // compare the pointer address 
@@ -101,6 +104,7 @@ impl Ord for VertexWeak {
     }
 }
 
+#[cfg(feature = "pointer")]
 impl PartialOrd for VertexWeak {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
@@ -128,8 +132,8 @@ pub struct Edge {
     pub cluster_weights: hashbrown::HashMap<usize, Rational>,
 }
 
-pub type EdgePtr = ArcRwLock<Edge>;
-pub type EdgeWeak = WeakRwLock<Edge>;
+pub type EdgePtr = ArcManualSafeLock<Edge>;
+pub type EdgeWeak = WeakManualSafeLock<Edge>;
 
 impl std::fmt::Debug for EdgePtr {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
@@ -168,6 +172,7 @@ impl std::fmt::Debug for EdgeWeak {
     }
 }
 
+#[cfg(feature = "pointer")]
 impl Ord for EdgePtr {
     fn cmp(&self, other: &Self) -> Ordering {
         // let edge_1 = self.read_recursive();
@@ -182,12 +187,14 @@ impl Ord for EdgePtr {
     }
 }
 
+#[cfg(feature = "pointer")]
 impl PartialOrd for EdgePtr {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
+#[cfg(feature = "pointer")]
 impl Ord for EdgeWeak {
     fn cmp(&self, other: &Self) -> Ordering {
         // let edge_1 = self.upgrade_force().read_recursive();
@@ -205,6 +212,7 @@ impl Ord for EdgeWeak {
     }
 }
 
+#[cfg(feature = "pointer")]
 impl PartialOrd for EdgeWeak {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))

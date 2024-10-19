@@ -246,8 +246,8 @@ impl Vertex {
     }
 }
 
-pub type VertexPtr = ArcRwLock<Vertex>;
-pub type VertexWeak = WeakRwLock<Vertex>;
+pub type VertexPtr = ArcManualSafeLock<Vertex>;
+pub type VertexWeak = WeakManualSafeLock<Vertex>;
 
 impl std::fmt::Debug for VertexPtr {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
@@ -264,6 +264,7 @@ impl std::fmt::Debug for VertexWeak {
     }
 }
 
+#[cfg(feature="pointer")]
 impl Ord for VertexPtr {
     fn cmp(&self, other: &Self) -> Ordering {
         // compare the pointer address 
@@ -275,12 +276,14 @@ impl Ord for VertexPtr {
     }
 }
 
+#[cfg(feature="pointer")]
 impl PartialOrd for VertexPtr {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
+#[cfg(feature="pointer")]
 impl Ord for VertexWeak {
     fn cmp(&self, other: &Self) -> Ordering {
         // compare the pointer address 
@@ -292,6 +295,7 @@ impl Ord for VertexWeak {
     }
 }
 
+#[cfg(feature="pointer")]
 impl PartialOrd for VertexWeak {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
@@ -340,13 +344,15 @@ impl Edge {
         self.growth_at_last_updated_time = Rational::zero();
         self.last_updated_time = Rational::zero();
         self.dual_nodes.clear();
+        // self.vertices.clear();
+
         #[cfg(feature = "incr_lp")]
         self.cluster_weights.clear();
     }
 }
 
-pub type EdgePtr = ArcRwLock<Edge>;
-pub type EdgeWeak = WeakRwLock<Edge>;
+pub type EdgePtr = ArcManualSafeLock<Edge>;
+pub type EdgeWeak = WeakManualSafeLock<Edge>;
 
 impl std::fmt::Debug for EdgePtr {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
@@ -382,6 +388,7 @@ impl std::fmt::Debug for EdgeWeak {
     }
 }
 
+#[cfg(feature="pointer")]
 impl Ord for EdgePtr {
     fn cmp(&self, other: &Self) -> Ordering {
         // let edge_1 = self.read_recursive();
@@ -396,12 +403,14 @@ impl Ord for EdgePtr {
     }
 }
 
+#[cfg(feature="pointer")]
 impl PartialOrd for EdgePtr {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
+#[cfg(feature="pointer")]
 impl Ord for EdgeWeak {
     fn cmp(&self, other: &Self) -> Ordering {
         // let edge_1 = self.upgrade_force().read_recursive();
@@ -419,6 +428,7 @@ impl Ord for EdgeWeak {
     }
 }
 
+#[cfg(feature="pointer")]
 impl PartialOrd for EdgeWeak {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
@@ -439,7 +449,7 @@ where
     obstacle_queue: Queue,
     /// the global time of this dual module
     ///     Note: Wrap-around edge case is not currently considered
-    global_time: ArcRwLock<Rational>,
+    global_time: ArcManualSafeLock<Rational>,
 
     /// the current mode of the dual module
     mode: DualModuleMode,
@@ -455,7 +465,10 @@ where
     // pub all_defect_vertices: Vec<usize>,
 
     /// unit is active if it has an edge connected to a boundary vertex with non-zero growth 
-    pub unit_active: ArcRwLock<bool>, 
+    pub unit_active: ArcManualSafeLock<bool>, 
+
+    /// for fast clear in constant time
+    pub active_timestamp: usize,
 
     tuning_start_time: Option<Instant>,
     total_tuning_time: Option<f64>,
@@ -466,7 +479,8 @@ where
     Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug + Clone,
 {
     /// helper function to bring an edge update to speed with current time if needed
-    fn update_edge_if_necessary(&self, edge: &mut RwLockWriteGuard<RawRwLock, Edge>) {
+    fn update_edge_if_necessary(&self, edge_ptr: &EdgePtr) {
+        let mut edge = edge_ptr.write();
         let global_time = self.global_time.read_recursive();
         if global_time.eq(&edge.last_updated_time) {
             // the edge is not behind
@@ -491,10 +505,12 @@ where
             edge.growth_at_last_updated_time <= edge.weight,
             "growth larger than weight: check if events are 1) inserted and 2) handled correctly"
         );
+        drop(edge);
     }
 
     /// helper function to bring a dual node update to speed with current time if needed
-    fn update_dual_node_if_necessary(&mut self, node: &mut RwLockWriteGuard<RawRwLock, DualNode>) {
+    fn update_dual_node_if_necessary(&mut self, node_ptr: &DualNodePtr) {
+        let mut node = node_ptr.write();
         let global_time = self.global_time.read_recursive();
         if global_time.eq(&node.last_updated_time) {
             // the edge is not behind
@@ -513,6 +529,7 @@ where
             !node.get_dual_variable().is_negative(),
             "negative dual variable: check if events are 1) inserted and 2) handled correctly"
         );
+        drop(node);
     }
 
     /// debugging function
@@ -520,19 +537,46 @@ where
     fn debug_update_all(&mut self, dual_node_ptrs: &[DualNodePtr]) {
         // updating all edges
         for edge in self.edges.iter() {
-            let mut edge = edge.write();
-            self.update_edge_if_necessary(&mut edge);
+            // let mut edge = edge.write();
+            self.update_edge_if_necessary(edge);
         }
         // updating all dual nodes
         for dual_node_ptr in dual_node_ptrs.iter() {
-            let mut dual_node = dual_node_ptr.write();
-            self.update_dual_node_if_necessary(&mut dual_node);
+            // let mut dual_node = dual_node_ptr.write();
+            self.update_dual_node_if_necessary(dual_node_ptr);
         }
+    }
+
+    /// hard clear all growth (manual call not recommended due to performance drawback)
+    pub fn hard_clear_graph(&mut self) {
+        for edge in self.edges.iter() {
+            // let mut edge = edge.write_force();
+            let mut edge = edge.write();
+            edge.clear();
+            // edge.timestamp = 0;
+        }
+        for vertex in self.vertices.iter() {
+            // let mut vertex = vertex.write_force();
+            let mut vertex = vertex.write();
+            vertex.clear();
+            // vertex.timestamp = 0;
+        }
+        self.active_timestamp = 0;
+    }
+
+    /// soft clear all growth
+    pub fn clear_graph(&mut self) {
+        if self.active_timestamp == usize::MAX {
+            println!("hard clear");
+            // rarely happens
+            self.hard_clear_graph();
+        }
+        self.active_timestamp += 1; // implicitly clear all edges growth
     }
 }
 
-pub type DualModulePQlPtr<Queue> = ArcRwLock<DualModulePQ<Queue>>;
-pub type DualModulePQWeak<Queue> = WeakRwLock<DualModulePQ<Queue>>;
+pub type DualModulePQlPtr<Queue> = ArcManualSafeLock<DualModulePQ<Queue>>;
+pub type DualModulePQWeak<Queue> = WeakManualSafeLock<DualModulePQ<Queue>>;
 
 impl<Queue> DualModuleImpl for DualModulePQ<Queue>
 where
@@ -582,19 +626,21 @@ where
             vertices,
             edges,
             obstacle_queue: Queue::default(),
-            global_time: ArcRwLock::new_value(Rational::zero()),
+            global_time: ArcManualSafeLock::new_value(Rational::zero()),
             mode: DualModuleMode::default(),
             tuning_start_time: None,
             total_tuning_time: None,
             vertex_num: initializer.vertex_num,
             edge_num: initializer.weighted_edges.len(),
             all_mirrored_vertices: vec![],
-            unit_active: ArcRwLock::new_value(false),
+            unit_active: ArcManualSafeLock::new_value(false),
+            active_timestamp: 0,
         }
     }
 
     /// clear all growth and existing dual nodes
     fn clear(&mut self) {
+        // self.clear_graph();
         // todo: try parallel clearing, if a core supports hyper-threading then this may benefit
         self.vertices.iter().for_each(|p| p.write().clear());
         self.edges.iter().for_each(|p| p.write().clear());
@@ -658,13 +704,16 @@ where
         }
 
         for edge_index in dual_node.invalid_subgraph.hair.iter() {
+            // should make sure the edge is up-to-speed before making its variables change
+            #[cfg(feature="pointer")]
+            self.update_edge_if_necessary(edge_index);
+            #[cfg(not(feature="pointer"))]
+            self.update_edge_if_necessary(self.edges[*edge_index as usize]);
+
             #[cfg(feature="pointer")]
             let mut edge = edge_index.write();
             #[cfg(not(feature="pointer"))]
-            let mut edge = self.edges[edge_index as usize].write();
-
-            // should make sure the edge is up-to-speed before making its variables change
-            self.update_edge_if_necessary(&mut edge);
+            let mut edge = self.edges[*edge_index as usize].write();
 
             edge.grow_rate += &dual_node.grow_rate;
             edge.dual_nodes
@@ -676,7 +725,7 @@ where
                     // it is okay to use global_time now, as this must be up-to-speed
                     (edge.weight.clone() - edge.growth_at_last_updated_time.clone()) / edge.grow_rate.clone()
                         + global_time.clone(),
-                    Obstacle::Conflict { edge_index },
+                    Obstacle::Conflict { edge_index: *edge_index },
                 );
 
                 #[cfg(feature="pointer")]
@@ -699,7 +748,7 @@ where
             #[cfg(feature="pointer")]
             let mut edge = edge_index.write();
             #[cfg(not(feature="pointer"))]
-            let mut edge = self.edges[edge_index as usize].write();
+            let mut edge = self.edges[*edge_index as usize].write();
 
             edge.dual_nodes
                 .push(OrderedDualNodeWeak::new(dual_node.index, dual_node_weak.clone()));
@@ -708,10 +757,9 @@ where
 
     #[allow(clippy::unnecessary_cast)]
     fn set_grow_rate(&mut self, dual_node_ptr: &DualNodePtr, grow_rate: Rational) {
+        self.update_dual_node_if_necessary(dual_node_ptr);
+
         let mut dual_node = dual_node_ptr.write();
-
-        self.update_dual_node_if_necessary(&mut dual_node);
-
         let global_time = self.global_time.read_recursive();
         let grow_rate_diff = &grow_rate - &dual_node.grow_rate;
 
@@ -729,11 +777,14 @@ where
         // don't reacquire the read guard
         for edge_index in dual_node.invalid_subgraph.hair.iter() {
             #[cfg(feature="pointer")]
+            self.update_edge_if_necessary(edge_index);
+            #[cfg(not(feature="pointer"))]
+            self.update_edge_if_necessary(self.edges[*edge_index as usize]);
+
+            #[cfg(feature="pointer")]
             let mut edge = edge_index.write();
             #[cfg(not(feature="pointer"))]
-            let mut edge = self.edges[edge_index as usize].write();
-
-            self.update_edge_if_necessary(&mut edge);
+            let mut edge = self.edges[*edge_index as usize].write();
 
             edge.grow_rate += &grow_rate_diff;
             if edge.grow_rate.is_positive() {
@@ -750,7 +801,7 @@ where
                     // it is okay to use global_time now, as this must be up-to-speed
                     (edge.weight.clone() - edge.growth_at_last_updated_time.clone()) / edge.grow_rate.clone()
                         + global_time.clone(),
-                    Obstacle::Conflict { edge_index },
+                    Obstacle::Conflict { edge_index: *edge_index },
                 );
             }
         }
@@ -993,7 +1044,7 @@ where
                     );
 
                     drop(node);
-                    let mut node: RwLockWriteGuard<RawRwLock, DualNode> = _dual_node_ptr.ptr.write();
+                    let mut node = _dual_node_ptr.ptr.write();
 
                     let dual_variable = node.get_dual_variable();
                     node.set_dual_variable(dual_variable);
