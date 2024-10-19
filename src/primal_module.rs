@@ -17,6 +17,7 @@ use crate::primal_module_serial::{ClusterAffinity, PrimalClusterPtr, PrimalClust
 use crate::relaxer_optimizer::OptimizerResult;
 use crate::util::*;
 use crate::visualize::*;
+use crate::pointers::FastClearUnsafePtr;
 
 pub type Affinity = OrderedFloat;
 
@@ -254,7 +255,7 @@ pub trait PrimalModuleImpl {
         let subgraph = self.subgraph(interface);
         let mut upper = Rational::zero();
         for (i, edge_weak) in subgraph.iter().enumerate() {
-            upper += edge_weak.upgrade_force().read_recursive().weight;
+            upper += edge_weak.upgrade_force().read_recursive_force().weight;
         }
         let weight_range = WeightRange::new(
             interface.sum_dual_variables(),

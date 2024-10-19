@@ -4,7 +4,7 @@ use super::visualize::*;
 use crate::util::*;
 use derivative::Derivative;
 use std::collections::{BTreeMap, BTreeSet};
-
+use crate::pointers::FastClearUnsafePtr;
 
 #[cfg(all(feature = "pointer", feature = "non-pq"))]
 use crate::dual_module_serial::{EdgeWeak, VertexWeak, EdgePtr, VertexPtr};
@@ -63,7 +63,7 @@ impl MatrixBasic for BasicMatrix {
         }
         let mut var_indices = None;
         self.vertices.insert(vertex_ptr.downgrade());
-        let vertex = vertex_ptr.read_recursive();
+        let vertex = vertex_ptr.read_recursive_force();
         for edge_weak in vertex.edges.iter() {
             if let Some(var_index) = self.add_variable(edge_weak.clone()) {
                 // this is a newly added edge

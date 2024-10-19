@@ -122,7 +122,7 @@ impl Obstacle {
         return match self {
             Obstacle::Conflict { edge_index } => {
                 #[cfg(feature="pointer")]
-                let edge = edge_index.read_recursive();
+                let edge = edge_index.read_recursive(*dual_module_pq.global_time.clone());
                 #[cfg(not(feature="pointer"))]
                 let edge = dual_module_pq.edges[*edge_index as usize].read_recursive();
                 // not changing, cannot have conflict
@@ -238,6 +238,8 @@ pub struct Vertex {
     /// if this vertex is in boundary unit, find its corresponding mirror vertices in the other units. If this vertex is in non-boundary unit but a mirrored vertex, 
     /// find its other mirrored vertices in other units (both boundary and non-boundary units)
     pub mirrored_vertices: Vec<VertexWeak>,
+    /// for fast clear
+    pub last_updated_time: FastClearTimestamp,
 }
 
 impl Vertex {
@@ -246,12 +248,12 @@ impl Vertex {
     }
 }
 
-pub type VertexPtr = ArcManualSafeLock<Vertex>;
-pub type VertexWeak = WeakManualSafeLock<Vertex>;
+pub type VertexPtr = FastClearArcManualSafeLock<Vertex>;
+pub type VertexWeak = FastClearWeakManualSafeLock<Vertex>;
 
 impl std::fmt::Debug for VertexPtr {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        let vertex = self.read_recursive();
+        let vertex = self.read_recursive_force();
         write!(f, "{}", vertex.vertex_index)
     }
 }
@@ -259,8 +261,46 @@ impl std::fmt::Debug for VertexPtr {
 impl std::fmt::Debug for VertexWeak {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         let vertex_ptr = self.upgrade_force();
-        let vertex = vertex_ptr.read_recursive();
+        let vertex = vertex_ptr.read_recursive_force();
         write!(f, "{}", vertex.vertex_index)
+    }
+}
+
+impl FastClear for Vertex {
+    /// need revise later
+    fn hard_clear(&mut self) {
+        self.clear();
+        // self.is_defect = false;
+        // // self.edges.clear();
+        // self.mirrored_vertices.clear();
+    }
+
+    #[inline(always)]
+    fn get_timestamp(&self) -> FastClearTimestamp {
+        self.last_updated_time
+    }
+    #[inline(always)]
+    fn set_timestamp(&mut self, timestamp: FastClearTimestamp) {
+        self.last_updated_time = timestamp;
+    }
+}
+
+impl FastClear for Edge {
+    fn hard_clear(&mut self) {
+        // self.growth_at_last_updated_time = Rational::zero();
+        // self.last_updated_time = Rational::zero();
+        // self.dual_nodes.clear();
+        // // self.vertices.clear();
+        self.clear();
+    }
+
+    #[inline(always)]
+    fn get_timestamp(&self) -> FastClearTimestamp {
+        self.last_updated_time
+    }
+    #[inline(always)]
+    fn set_timestamp(&mut self, timestamp: FastClearTimestamp) {
+        self.last_updated_time = timestamp;
     }
 }
 
@@ -351,12 +391,12 @@ impl Edge {
     }
 }
 
-pub type EdgePtr = ArcManualSafeLock<Edge>;
-pub type EdgeWeak = WeakManualSafeLock<Edge>;
+pub type EdgePtr = FastClearArcManualSafeLock<Edge>;
+pub type EdgeWeak = FastClearWeakManualSafeLock<Edge>;
 
 impl std::fmt::Debug for EdgePtr {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        let edge = self.read_recursive();
+        let edge = self.read_recursive_force();
         write!(f, "[edge: {}", edge.edge_index)
         // write!(
         //     f,
@@ -374,7 +414,7 @@ impl std::fmt::Debug for EdgePtr {
 impl std::fmt::Debug for EdgeWeak {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         let edge_ptr = self.upgrade_force();
-        let edge = edge_ptr.read_recursive();
+        let edge = edge_ptr.read_recursive_force();
         write!(
             f,
             "[edge: {}]: weight: {}, grow_rate: {}, growth_at_last_updated_time: {}, last_updated_time: {}\n\tdual_nodes: {:?}\n",
@@ -480,7 +520,7 @@ where
 {
     /// helper function to bring an edge update to speed with current time if needed
     fn update_edge_if_necessary(&self, edge_ptr: &EdgePtr) {
-        let mut edge = edge_ptr.write();
+        let mut edge = edge_ptr.write(*self.global_time.clone());
         let global_time = self.global_time.read_recursive();
         if global_time.eq(&edge.last_updated_time) {
             // the edge is not behind
@@ -551,13 +591,13 @@ where
     pub fn hard_clear_graph(&mut self) {
         for edge in self.edges.iter() {
             // let mut edge = edge.write_force();
-            let mut edge = edge.write();
+            let mut edge = edge.write(*self.global_time.clone());
             edge.clear();
             // edge.timestamp = 0;
         }
         for vertex in self.vertices.iter() {
             // let mut vertex = vertex.write_force();
-            let mut vertex = vertex.write();
+            let mut vertex = vertex.write(*self.global_time.clone());
             vertex.clear();
             // vertex.timestamp = 0;
         }
@@ -594,6 +634,7 @@ where
                     is_defect: false,
                     edges: vec![],
                     mirrored_vertices: vec![], // set to empty for non-parallel implementation
+                    last_updated_time: Rational::zero(),
                 })
             })
             .collect();
@@ -618,7 +659,7 @@ where
                 cluster_weights: hashbrown::HashMap::new(),
             });
             for &vertex_index in hyperedge.vertices.iter() {
-                vertices[vertex_index as usize].write().edges.push(edge_ptr.downgrade());
+                vertices[vertex_index as usize].write(Rational::zero()).edges.push(edge_ptr.downgrade());
             }
             edges.push(edge_ptr);
         }
@@ -642,8 +683,8 @@ where
     fn clear(&mut self) {
         // self.clear_graph();
         // todo: try parallel clearing, if a core supports hyper-threading then this may benefit
-        self.vertices.iter().for_each(|p| p.write().clear());
-        self.edges.iter().for_each(|p| p.write().clear());
+        self.vertices.iter().for_each(|p| p.write(*self.global_time.clone()).clear());
+        self.edges.iter().for_each(|p| p.write(*self.global_time.clone()).clear());
 
         self.obstacle_queue.clear();
         self.global_time.write().set_zero();
@@ -711,7 +752,7 @@ where
             self.update_edge_if_necessary(self.edges[*edge_index as usize]);
 
             #[cfg(feature="pointer")]
-            let mut edge = edge_index.write();
+            let mut edge = edge_index.write(*self.global_time.clone());
             #[cfg(not(feature="pointer"))]
             let mut edge = self.edges[*edge_index as usize].write();
 
@@ -746,7 +787,7 @@ where
 
         for edge_index in dual_node.invalid_subgraph.hair.iter() {
             #[cfg(feature="pointer")]
-            let mut edge = edge_index.write();
+            let mut edge = edge_index.write(*self.global_time.clone());
             #[cfg(not(feature="pointer"))]
             let mut edge = self.edges[*edge_index as usize].write();
 
@@ -782,7 +823,7 @@ where
             self.update_edge_if_necessary(self.edges[*edge_index as usize]);
 
             #[cfg(feature="pointer")]
-            let mut edge = edge_index.write();
+            let mut edge = edge_index.write(*self.global_time.clone());
             #[cfg(not(feature="pointer"))]
             let mut edge = self.edges[*edge_index as usize].write();
 
@@ -882,7 +923,7 @@ where
     #[cfg(feature="pointer")]
     #[allow(clippy::unnecessary_cast)]
     fn get_edge_nodes(&self, edge_ptr: EdgePtr) -> Vec<DualNodePtr> {
-        edge_ptr.read_recursive()
+        edge_ptr.read_recursive(*self.global_time.clone())
                 .dual_nodes
                 .iter()
                 .map(|x| x.upgrade_force().ptr)
@@ -905,7 +946,7 @@ where
     #[allow(clippy::unnecessary_cast)]
     /// how much away from saturated is the edge
     fn get_edge_slack(&self, edge_ptr: EdgePtr) -> Rational {
-        let edge = edge_ptr.read_recursive();
+        let edge = edge_ptr.read_recursive(*self.global_time.clone());
         edge.weight.clone()
             - (self.global_time.read_recursive().clone() - edge.last_updated_time.clone()) * edge.grow_rate.clone()
             - edge.growth_at_last_updated_time.clone()
@@ -940,7 +981,7 @@ where
     /// is the edge tight, but for tuning mode
     #[cfg(feature="pointer")]
     fn is_edge_tight_tune(&self, edge_ptr: EdgePtr) -> bool {
-        let edge = edge_ptr.read_recursive();
+        let edge = edge_ptr.read_recursive(*self.global_time.clone());
         edge.weight == edge.growth_at_last_updated_time
     }
 
@@ -952,7 +993,7 @@ where
 
     #[cfg(feature="pointer")]
     fn get_edge_slack_tune(&self, edge_ptr: EdgePtr) -> Rational {
-        let edge = edge_ptr.read_recursive();
+        let edge = edge_ptr.read_recursive(*self.global_time.clone());
         edge.weight.clone() - edge.growth_at_last_updated_time.clone()
     }
 
@@ -988,7 +1029,7 @@ where
     /// grow specific amount for a specific edge
     #[cfg(feature="pointer")]
     fn grow_edge(&self, edge_ptr: EdgePtr, amount: &Rational) {
-        let mut edge = edge_ptr.write();
+        let mut edge = edge_ptr.write(*self.global_time.clone());
         edge.growth_at_last_updated_time += amount;
     }
 
@@ -1005,7 +1046,7 @@ where
         let mut nodes_touched = BTreeSet::new();
 
         for edges in self.edges.iter_mut() {
-            let mut edge = edges.write();
+            let mut edge = edges.write(*self.global_time.clone());
 
             // update if necessary
             let global_time = self.global_time.read_recursive();
@@ -1066,7 +1107,7 @@ where
             "edges: {:?}",
             self.edges
                 .iter()
-                .filter(|e| !e.read_recursive().grow_rate.is_zero())
+                .filter(|e| !e.read_recursive_force().grow_rate.is_zero())
                 .collect::<Vec<&EdgePtr>>()
         );
         if self.obstacle_queue.len() > 0 {
@@ -1075,7 +1116,7 @@ where
 
         let mut all_nodes = BTreeSet::default();
         for edge in self.edges.iter() {
-            let edge = edge.read_recursive();
+            let edge = edge.read_recursive_force();
             for node in edge.dual_nodes.iter() {
                 let node = node.upgrade_force();
                 if node.ptr.read_recursive().grow_rate.is_zero() {
@@ -1101,7 +1142,7 @@ where
         }
         #[cfg(feature="pointer")]
         for edge_ptr in cluster.edges.iter() {
-            let edge = edge_ptr.read_recursive();
+            let edge = edge_ptr.read_recursive(*self.global_time.clone());
             weight += &edge.weight - &edge.growth_at_last_updated_time;
         }
         for node in cluster.nodes.iter() {
@@ -1121,7 +1162,7 @@ where
         edge_ptr: EdgePtr,
         participating_dual_variables: &hashbrown::HashSet<usize>,
     ) -> Rational {
-        let edge = edge_ptr.read_recursive();
+        let edge = edge_ptr.read_recursive(*self.global_time.clone());
         let mut free_weight = edge.weight.clone();
         for dual_node in edge.dual_nodes.iter() {
             if participating_dual_variables.contains(&dual_node.index) {
@@ -1213,21 +1254,21 @@ where
     fn snapshot(&self, abbrev: bool) -> serde_json::Value {
         let mut vertices: Vec<serde_json::Value> = vec![];
         for vertex_ptr in self.vertices.iter() {
-            let vertex = vertex_ptr.read_recursive();
+            let vertex = vertex_ptr.read_recursive(*self.global_time.clone());
             vertices.push(json!({
                 if abbrev { "s" } else { "is_defect" }: i32::from(vertex.is_defect),
             }));
         }
         let mut edges: Vec<serde_json::Value> = vec![];
         for edge_ptr in self.edges.iter() {
-            let edge = edge_ptr.read_recursive();
+            let edge = edge_ptr.read_recursive(*self.global_time.clone());
             let current_growth = &edge.growth_at_last_updated_time
                 + (&self.global_time.read_recursive().clone() - &edge.last_updated_time) * &edge.grow_rate;
 
             let unexplored = &edge.weight - &current_growth;
             edges.push(json!({
                 if abbrev { "w" } else { "weight" }: edge.weight.to_f64(),
-                if abbrev { "v" } else { "vertices" }: edge.vertices.iter().map(|x| x.upgrade_force().read_recursive().vertex_index).collect::<Vec<_>>(),
+                if abbrev { "v" } else { "vertices" }: edge.vertices.iter().map(|x| x.upgrade_force().read_recursive(*self.global_time.clone()).vertex_index).collect::<Vec<_>>(),
                 if abbrev { "g" } else { "growth" }: current_growth.to_f64(),
                 "gn": numer_of(&current_growth),
                 "gd": current_growth.denom().to_i64(),

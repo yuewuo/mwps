@@ -20,6 +20,7 @@ use std::fmt::Debug;
 use std::sync::Arc;
 use std::time::Instant;
 use std::cmp::Ordering;
+use crate::pointers::FastClearUnsafePtr;
 
 
 #[cfg(all(feature = "pointer", feature = "non-pq"))]
@@ -552,7 +553,7 @@ impl PrimalModuleImpl for PrimalModuleSerial {
             cluster.subgraph = Some(cluster.matrix.get_solution_local_minimum(weight_of).expect("satisfiable"));
         }
         #[cfg(feature="pointer")] {
-            let weight_of = |edge_weak: EdgeWeak| edge_weak.upgrade_force().read_recursive().weight;
+            let weight_of = |edge_weak: EdgeWeak| edge_weak.upgrade_force().read_recursive_force().weight;
             cluster.subgraph = Some(cluster.matrix.get_solution_local_minimum(weight_of).expect("satisfiable"));
         }
         
@@ -867,7 +868,7 @@ impl PrimalModuleImpl for PrimalModuleSerial {
         }
 
         #[cfg(feature="pointer")] {
-            let weight_of = |edge_weak: EdgeWeak| edge_weak.upgrade_force().read_recursive().weight;
+            let weight_of = |edge_weak: EdgeWeak| edge_weak.upgrade_force().read_recursive_force().weight;
             cluster.subgraph = Some(cluster.matrix.get_solution_local_minimum(weight_of).expect("satisfiable"));
         }
 
@@ -1141,7 +1142,7 @@ impl PrimalModuleSerial {
                         }
                     }
                     #[cfg(feature="pointer")] {
-                        let incident_vertices = &edge_index.read_recursive().vertices;
+                        let incident_vertices = &edge_index.read_recursive_force().vertices;
                         for vertex_weak in incident_vertices.iter() {
                             let vertex_ptr = vertex_weak.upgrade_force();
                             if !cluster.vertices.contains(&vertex_ptr) {
@@ -1253,7 +1254,7 @@ impl PrimalModuleSerial {
                         }
                     }
                     #[cfg(feature="pointer")] {
-                        let incident_vertices = &edge_index.read_recursive().vertices;
+                        let incident_vertices = &edge_index.read_recursive_force().vertices;
                         for vertex_weak in incident_vertices.iter() {
                             let vertex_ptr = vertex_weak.upgrade_force();
                             if !cluster.vertices.contains(&vertex_ptr) {
@@ -1412,7 +1413,7 @@ impl PrimalModuleSerial {
                         }
                     }
                     #[cfg(feature="pointer")] {
-                        let incident_vertices = &edge_index.read_recursive().vertices;
+                        let incident_vertices = &edge_index.read_recursive_force().vertices;
                         for vertex_weak in incident_vertices.iter() {
                             let vertex_ptr = vertex_weak.upgrade_force();
                             if !cluster.vertices.contains(&vertex_ptr) {

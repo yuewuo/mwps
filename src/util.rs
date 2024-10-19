@@ -15,6 +15,7 @@ use std::collections::BTreeSet;
 use std::fs::File;
 use std::io::prelude::*;
 use std::time::Instant;
+use crate::pointers::FastClearUnsafePtr;
 
 #[cfg(all(feature = "pointer", feature = "non-pq"))]
 use crate::dual_module_serial::{EdgeWeak, VertexWeak, EdgePtr, VertexPtr};
@@ -172,7 +173,7 @@ impl SolverInitializer {
         let mut weight = Rational::zero();
         for edge_weak in subgraph.iter() {
             // weight += self.weighted_edges[edge_index as usize].weight;
-            weight += edge_weak.upgrade_force().read_recursive().weight;
+            weight += edge_weak.upgrade_force().read_recursive_force().weight;
         }
         weight
     }
@@ -194,8 +195,8 @@ impl SolverInitializer {
         let mut defect_vertices = BTreeSet::new();
         for edge_weak in subgraph.iter() {
             let edge_ptr = edge_weak.upgrade_force();
-            let vertices = &edge_ptr.read_recursive().vertices;
-            let unique_vertices = vertices.into_iter().map(|v| v.upgrade_force().read_recursive().vertex_index).collect::<Vec<_>>();
+            let vertices = &edge_ptr.read_recursive_force().vertices;
+            let unique_vertices = vertices.into_iter().map(|v| v.upgrade_force().read_recursive_force().vertex_index).collect::<Vec<_>>();
             for vertex_index in unique_vertices.iter() {
                 if defect_vertices.contains(vertex_index) {
                     defect_vertices.remove(vertex_index);
@@ -327,7 +328,7 @@ pub type Subgraph = Vec<EdgeIndex>;
 impl MWPSVisualizer for Subgraph {
     #[cfg(feature="pointer")]
     fn snapshot(&self, _abbrev: bool) -> serde_json::Value {
-        let subgraph_by_index: Vec<usize> = self.into_iter().map(|e| e.upgrade_force().read_recursive().edge_index).collect();
+        let subgraph_by_index: Vec<usize> = self.into_iter().map(|e| e.upgrade_force().read_recursive_force().edge_index).collect();
         json!({
             "subgraph": subgraph_by_index,
         })
