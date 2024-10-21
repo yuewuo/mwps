@@ -689,8 +689,7 @@ impl CodeCapacityDepolarizePlanarCode {
         code
     }
 
-    #[cfg_attr(feature = "python_binding", new)]
-    #[cfg_attr(feature = "python_binding", pyo3(signature = (d, p, weight_upper_limit=1000)))]
+    #[cfg_attr(feature = "python_binding", staticmethod)]
     pub fn new_no_y(d: VertexNum, p: f64, weight_upper_limit: Weight) -> Self {
         let mut code = Self::create_code(d, false);
         code.set_probability(p);
