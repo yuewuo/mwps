@@ -16,6 +16,7 @@ use crate::util::*;
 use crate::visualize::*;
 #[cfg(feature = "python_binding")]
 use pyo3::prelude::*;
+use std::collections::BTreeMap;
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::{self, BufRead};
@@ -642,6 +643,133 @@ impl CodeCapacityPlanarCode {
                 positions.push(VisualizePosition::new(row as f64, i as f64, 0.));
             }
         }
+        for (i, position) in positions.into_iter().enumerate() {
+            code.vertices[i].position = position;
+        }
+        code
+    }
+}
+
+/// code capacity noise model is a single measurement round with perfect stabilizer measurements;
+/// e.g. this is the decoding graph of a CSS surface code (standard one, not rotated one) with both stabilizers and
+/// depolarizing noise model (X, Y, Z)
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "python_binding", cfg_eval)]
+#[cfg_attr(feature = "python_binding", pyclass)]
+pub struct CodeCapacityDepolarizePlanarCode {
+    /// vertices in the code
+    #[cfg_attr(feature = "python_binding", pyo3(get, set))]
+    pub vertices: Vec<CodeVertex>,
+    /// nearest-neighbor edges in the decoding graph
+    #[cfg_attr(feature = "python_binding", pyo3(get, set))]
+    pub edges: Vec<CodeEdge>,
+}
+
+impl ExampleCode for CodeCapacityDepolarizePlanarCode {
+    fn vertices_edges(&mut self) -> (&mut Vec<CodeVertex>, &mut Vec<CodeEdge>) {
+        (&mut self.vertices, &mut self.edges)
+    }
+    fn immutable_vertices_edges(&self) -> (&Vec<CodeVertex>, &Vec<CodeEdge>) {
+        (&self.vertices, &self.edges)
+    }
+}
+
+#[cfg(feature = "python_binding")]
+bind_trait_example_code! {CodeCapacityDepolarizePlanarCode}
+
+#[cfg_attr(feature = "python_binding", cfg_eval)]
+#[cfg_attr(feature = "python_binding", pymethods)]
+impl CodeCapacityDepolarizePlanarCode {
+    #[cfg_attr(feature = "python_binding", new)]
+    #[cfg_attr(feature = "python_binding", pyo3(signature = (d, p, weight_upper_limit=1000)))]
+    pub fn new(d: VertexNum, p: f64, weight_upper_limit: Weight) -> Self {
+        let mut code = Self::create_code(d, true);
+        code.set_probability(p);
+        code.compute_weights(weight_upper_limit);
+        code
+    }
+
+    #[cfg_attr(feature = "python_binding", new)]
+    #[cfg_attr(feature = "python_binding", pyo3(signature = (d, p, weight_upper_limit=1000)))]
+    pub fn new_no_y(d: VertexNum, p: f64, weight_upper_limit: Weight) -> Self {
+        let mut code = Self::create_code(d, false);
+        code.set_probability(p);
+        code.compute_weights(weight_upper_limit);
+        code
+    }
+
+    #[cfg_attr(feature = "python_binding", staticmethod)]
+    pub fn create_code(d: VertexNum, with_y: bool) -> Self {
+        assert!(d >= 3 && d % 2 == 1, "d must be odd integer >= 3");
+        let row_vertex_num = d - 1;
+        // `d` rows
+        let vertex_num = 2 * row_vertex_num * d;
+        // first iterate all vertices
+        let mut positions = Vec::new();
+        let mut vertices: BTreeMap<(isize, isize), usize> = BTreeMap::new();
+        // X and Z stabilizer vertices
+        for is_z in [false, true] {
+            for row in 0..d {
+                for i in 0..row_vertex_num {
+                    let vertex_index = vertices.len();
+                    let a = row as isize * 2 - (d - 1) as isize;
+                    let b = i as isize * 2 - (row_vertex_num - 1) as isize;
+                    let vertex_position = if is_z { (a, b) } else { (b, a) };
+                    vertices.insert(vertex_position, vertex_index);
+                    positions.push(VisualizePosition::new(
+                        vertex_position.0 as f64 / 1.6,
+                        vertex_position.1 as f64 / 1.6,
+                        0.,
+                    ));
+                }
+            }
+        }
+        // create edges
+        let mut edges = Vec::new();
+        let is_in_range = |i: isize, j: isize| -> bool {
+            for v in [i, j] {
+                if v < -((d - 1) as isize) || v > (d - 1) as isize {
+                    return false;
+                }
+            }
+            true
+        };
+        let mut add_edge = |pos_vec: &[(isize, isize)]| {
+            let mut edge_vertices = vec![];
+            for &(i, j) in pos_vec {
+                if is_in_range(i, j) {
+                    edge_vertices.push(*vertices.get(&(i, j)).unwrap());
+                }
+            }
+            edges.push(CodeEdge::new(edge_vertices));
+        };
+        let mut add_depolarize = |a: isize, b: isize| {
+            add_edge(&[(a + 1, b), (a - 1, b)]);
+            add_edge(&[(a, b + 1), (a, b - 1)]);
+            if with_y {
+                add_edge(&[(a, b + 1), (a, b - 1), (a + 1, b), (a - 1, b)]);
+            }
+        };
+        for i in 0..d {
+            for j in 0..d {
+                let a = 2 * i as isize - (d - 1) as isize;
+                let b = 2 * j as isize - (d - 1) as isize;
+                add_depolarize(a, b)
+            }
+        }
+        for i in 0..(d - 1) {
+            for j in 0..(d - 1) {
+                let a = 2 * i as isize - (d - 1) as isize + 1;
+                let b = 2 * j as isize - (d - 1) as isize + 1;
+                add_depolarize(a, b)
+            }
+        }
+        let mut code = Self {
+            vertices: Vec::new(),
+            edges,
+        };
+        // create vertices
+        code.fill_vertices(vertex_num);
         for (i, position) in positions.into_iter().enumerate() {
             code.vertices[i].position = position;
         }
@@ -1280,6 +1408,20 @@ mod tests {
         let mut code = CodeCapacityPlanarCode::new(7, 0.1, 1000);
         code.sanity_check().unwrap();
         visualize_code(&mut code, "example_code_capacity_planar_code.json".to_string());
+    }
+
+    #[test]
+    fn example_code_capacity_depolarize_planar_code() {
+        // cargo test example_code_capacity_depolarize_planar_code -- --nocapture
+        let mut code = CodeCapacityDepolarizePlanarCode::new(5, 0.1, 1000);
+        code.sanity_check().unwrap();
+        visualize_code(&mut code, "example_code_capacity_depolarize_planar_code.json".to_string());
+        let mut code_no_y = CodeCapacityDepolarizePlanarCode::new_no_y(5, 0.1, 1000);
+        code_no_y.sanity_check().unwrap();
+        visualize_code(
+            &mut code_no_y,
+            "example_code_capacity_depolarize_planar_code_no_y.json".to_string(),
+        );
     }
 
     #[test]
