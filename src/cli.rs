@@ -694,7 +694,7 @@ impl ResultVerifier for VerifierActualError {
             #[cfg(not(feature="pointer"))]
             let subgraph_weight = Rational::from_usize(self.initializer.get_subgraph_total_weight(&subgraph)).unwrap();
             #[cfg(feature="pointer")]
-            let subgraph_weight = self.initializer.get_subgraph_total_weight(&subgraph);
+            let subgraph_weight = self.initializer.get_subgraph_index_total_weight(&subgraph);
             assert_le!(subgraph_weight, actual_weight, "it's not a minimum-weight parity subgraph: the actual error pattern has smaller weight, range: {weight_range:?}");
             assert_eq!(
                 weight_range.lower, weight_range.upper,

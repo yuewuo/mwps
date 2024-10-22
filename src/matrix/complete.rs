@@ -4,6 +4,7 @@ use super::visualize::*;
 use crate::util::*;
 use derivative::Derivative;
 use std::collections::{BTreeMap, BTreeSet};
+#[cfg(feature="pointer")]
 use crate::pointers::FastClearUnsafePtr;
 
 #[cfg(all(feature = "pointer", feature = "non-pq"))]
@@ -69,7 +70,7 @@ impl MatrixBasic for CompleteMatrix {
         }
         self.vertices.insert(vertex_ptr.downgrade());
         let mut row = ParityRow::new_length(self.variables.len());
-        let vertex = vertex_ptr.read_recursive_force();
+        let vertex = vertex_ptr.read_recursive();
         // let incident_edges = &vertex.edges;
         for edge_index in vertex.edges.iter() {
             if self.exists_edge(edge_index.clone()) {

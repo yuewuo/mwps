@@ -16,6 +16,7 @@ use crate::util::*;
 use num_traits::One;
 use std::collections::BTreeSet;
 use std::sync::Arc;
+#[cfg(feature="pointer")]
 use crate::pointers::FastClearUnsafePtr;
 
 #[cfg(all(feature = "pointer", feature = "non-pq"))]
@@ -86,7 +87,7 @@ impl PluginImpl for PluginSingleHair {
                     for edge_ptr in unnecessary_edges.iter() {
                         let edge_ptr = edge_ptr.upgrade_force();
                         edges.insert(edge_ptr.clone());
-                        for vertex in edge_ptr.read_recursive_force().vertices.iter() {
+                        for vertex in edge_ptr.read_recursive().vertices.iter() {
                             vertices.insert(vertex.upgrade_force());
                         }
                     }

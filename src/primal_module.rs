@@ -17,6 +17,7 @@ use crate::primal_module_serial::{ClusterAffinity, PrimalClusterPtr, PrimalClust
 use crate::relaxer_optimizer::OptimizerResult;
 use crate::util::*;
 use crate::visualize::*;
+#[cfg(feature="pointer")]
 use crate::pointers::FastClearUnsafePtr;
 
 pub type Affinity = OrderedFloat;
@@ -242,7 +243,7 @@ pub trait PrimalModuleImpl {
     }
 
     #[cfg(feature="pointer")]
-    fn subgraph(&mut self, interface: &DualModuleInterfacePtr) -> Subgraph;
+    fn subgraph(&mut self, interface: &DualModuleInterfacePtr) -> InternalSubgraph;
 
     #[cfg(not(feature="pointer"))]
     fn subgraph(&mut self, interface: &DualModuleInterfacePtr, dual_module: &mut impl DualModuleImpl) -> Subgraph;
@@ -251,18 +252,18 @@ pub trait PrimalModuleImpl {
     fn subgraph_range(
         &mut self,
         interface: &DualModuleInterfacePtr,
-    ) -> (Subgraph, WeightRange) {
-        let subgraph = self.subgraph(interface);
+    ) -> (InternalSubgraph, WeightRange) {
+        let internal_subgraph = self.subgraph(interface);
         let mut upper = Rational::zero();
-        for (i, edge_weak) in subgraph.iter().enumerate() {
-            upper += edge_weak.upgrade_force().read_recursive_force().weight;
+        for (i, edge_weak) in internal_subgraph.iter().enumerate() {
+            upper += edge_weak.upgrade_force().read_recursive().weight;
         }
         let weight_range = WeightRange::new(
             interface.sum_dual_variables(),
             upper
         );
 
-        (subgraph, weight_range)
+        (internal_subgraph, weight_range)
     }
 
     #[cfg(not(feature="pointer"))]

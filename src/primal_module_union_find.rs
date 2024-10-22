@@ -200,7 +200,7 @@ impl PrimalModuleImpl for PrimalModuleUnionFind {
         interface_ptr: &DualModuleInterfacePtr, 
         #[cfg(not(feature="pointer"))]
         _dual_module: &mut impl DualModuleImpl
-    ) -> Subgraph {
+    ) -> InternalSubgraph {
         let mut valid_clusters = BTreeSet::new();
         let mut subgraph = vec![];
         for i in 0..self.union_find.size() {
@@ -284,6 +284,8 @@ pub mod tests {
         let (subgraph, weight_range) = primal_module.subgraph_range(&interface_ptr, &mut dual_module);
         #[cfg(feature="pointer")]
         let (subgraph, weight_range) = primal_module.subgraph_range(&interface_ptr);
+        #[cfg(feature="pointer")]
+        let subgraph_by_index: Vec<usize> = subgraph.iter().map(|e| e.upgrade_force().read_recursive().edge_index).collect();
         if let Some(visualizer) = visualizer.as_mut() {
             visualizer
                 .snapshot_combined(
@@ -292,8 +294,14 @@ pub mod tests {
                 )
                 .unwrap();
         }
+        #[cfg(not(feature="pointer"))]
         assert!(
             model_graph.initializer.matches_subgraph_syndrome(&subgraph, &defect_vertices),
+            "the result subgraph is invalid"
+        );
+        #[cfg(feature="pointer")]
+        assert!(
+            model_graph.initializer.matches_subgraph_syndrome(&subgraph_by_index, &defect_vertices),
             "the result subgraph is invalid"
         );
         assert_le!(

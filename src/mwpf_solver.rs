@@ -25,6 +25,10 @@ use std::fs::File;
 use std::io::prelude::*;
 use std::io::BufWriter;
 use std::sync::Arc;
+#[cfg(feature="pointer")]
+use crate::pointers::FastClearUnsafePtr;
+#[cfg(all(feature="pointer", feature="unsafe_pointer"))]
+use crate::pointers::UnsafePtr;
 
 pub trait PrimalDualSolver {
     fn clear(&mut self);
@@ -181,7 +185,9 @@ impl PrimalDualSolver for SolverSerialPlugins {
     }
     fn subgraph_range_visualizer(&mut self, visualizer: Option<&mut Visualizer>) -> (Subgraph, WeightRange) {
         #[cfg(feature="pointer")]
-        let (subgraph, weight_range) = self.primal_module.subgraph_range(&self.interface_ptr);
+        let (internal_subgraph, weight_range) = self.primal_module.subgraph_range(&self.interface_ptr);
+        #[cfg(feature="pointer")]
+        let subgraph = internal_subgraph.iter().map(|x| x.upgrade_force().read_recursive().edge_index).collect();
         #[cfg(not(feature="pointer"))]
         let (subgraph, weight_range) = self.primal_module.subgraph_range(&self.interface_ptr, &mut self.dual_module);
         if let Some(visualizer) = visualizer {

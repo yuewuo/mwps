@@ -20,6 +20,7 @@ use std::fmt::Debug;
 use std::sync::Arc;
 use std::time::Instant;
 use std::cmp::Ordering;
+#[cfg(feature="pointer")]
 use crate::pointers::FastClearUnsafePtr;
 
 
@@ -198,7 +199,7 @@ pub struct PrimalCluster {
     /// the parity matrix to determine whether it's a valid cluster and also find new ways to increase the dual
     pub matrix: EchelonMatrix,
     /// the parity subgraph result, only valid when it's solved
-    pub subgraph: Option<Subgraph>,
+    pub subgraph: Option<InternalSubgraph>,
     /// plugin manager helps to execute the plugin and find an executable relaxer
     pub plugin_manager: PluginManager,
     /// optimizing the direction of relaxers
@@ -368,7 +369,7 @@ impl PrimalModuleImpl for PrimalModuleSerial {
     fn subgraph(
         &mut self,
         _interface: &DualModuleInterfacePtr,
-    ) -> Subgraph {
+    ) -> InternalSubgraph {
         
         let mut subgraph = vec![];
         for cluster_ptr in self.clusters.iter() {
@@ -553,7 +554,7 @@ impl PrimalModuleImpl for PrimalModuleSerial {
             cluster.subgraph = Some(cluster.matrix.get_solution_local_minimum(weight_of).expect("satisfiable"));
         }
         #[cfg(feature="pointer")] {
-            let weight_of = |edge_weak: EdgeWeak| edge_weak.upgrade_force().read_recursive_force().weight;
+            let weight_of = |edge_weak: EdgeWeak| edge_weak.upgrade_force().read_recursive().weight;
             cluster.subgraph = Some(cluster.matrix.get_solution_local_minimum(weight_of).expect("satisfiable"));
         }
         
@@ -868,7 +869,7 @@ impl PrimalModuleImpl for PrimalModuleSerial {
         }
 
         #[cfg(feature="pointer")] {
-            let weight_of = |edge_weak: EdgeWeak| edge_weak.upgrade_force().read_recursive_force().weight;
+            let weight_of = |edge_weak: EdgeWeak| edge_weak.upgrade_force().read_recursive().weight;
             cluster.subgraph = Some(cluster.matrix.get_solution_local_minimum(weight_of).expect("satisfiable"));
         }
 
@@ -1142,7 +1143,7 @@ impl PrimalModuleSerial {
                         }
                     }
                     #[cfg(feature="pointer")] {
-                        let incident_vertices = &edge_index.read_recursive_force().vertices;
+                        let incident_vertices = &edge_index.read_recursive().vertices;
                         for vertex_weak in incident_vertices.iter() {
                             let vertex_ptr = vertex_weak.upgrade_force();
                             if !cluster.vertices.contains(&vertex_ptr) {
@@ -1254,7 +1255,7 @@ impl PrimalModuleSerial {
                         }
                     }
                     #[cfg(feature="pointer")] {
-                        let incident_vertices = &edge_index.read_recursive_force().vertices;
+                        let incident_vertices = &edge_index.read_recursive().vertices;
                         for vertex_weak in incident_vertices.iter() {
                             let vertex_ptr = vertex_weak.upgrade_force();
                             if !cluster.vertices.contains(&vertex_ptr) {
@@ -1413,7 +1414,7 @@ impl PrimalModuleSerial {
                         }
                     }
                     #[cfg(feature="pointer")] {
-                        let incident_vertices = &edge_index.read_recursive_force().vertices;
+                        let incident_vertices = &edge_index.read_recursive().vertices;
                         for vertex_weak in incident_vertices.iter() {
                             let vertex_ptr = vertex_weak.upgrade_force();
                             if !cluster.vertices.contains(&vertex_ptr) {
@@ -1577,6 +1578,8 @@ pub mod tests {
         let (subgraph, weight_range) = primal_module.subgraph_range(&interface_ptr, &mut dual_module);
         #[cfg(feature="pointer")]
         let (subgraph, weight_range) = primal_module.subgraph_range(&interface_ptr);
+        #[cfg(feature="pointer")]
+        let subgraph_by_index: Vec<usize> = subgraph.iter().map(|e| e.upgrade_force().read_recursive().edge_index).collect();
         if let Some(visualizer) = visualizer.as_mut() {
             visualizer
                 .snapshot_combined(
@@ -1585,10 +1588,18 @@ pub mod tests {
                 )
                 .unwrap();
         }
+        #[cfg(not(feature="pointer"))] 
         assert!(
             decoding_graph
                 .model_graph
                 .matches_subgraph_syndrome(&subgraph, &defect_vertices),
+            "the result subgraph is invalid"
+        );
+        #[cfg(feature="pointer")]
+        assert!(
+            decoding_graph
+                .model_graph
+                .matches_subgraph_syndrome(&subgraph_by_index, &defect_vertices),
             "the result subgraph is invalid"
         );
         assert_eq!(

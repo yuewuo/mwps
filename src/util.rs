@@ -19,6 +19,7 @@ use std::collections::BTreeSet;
 use std::fs::File;
 use std::io::prelude::*;
 use std::time::Instant;
+#[cfg(feature="pointer")]
 use crate::pointers::FastClearUnsafePtr;
 
 #[cfg(all(feature = "pointer", feature = "non-pq"))]
@@ -175,11 +176,11 @@ impl SolverInitializer {
 
     #[cfg(feature="pointer")]
     #[allow(clippy::unnecessary_cast)]
-    pub fn get_subgraph_total_weight(&self, subgraph: &Subgraph) -> Rational {
+    pub fn get_subgraph_total_weight(&self, internal_subgraph: &InternalSubgraph) -> Rational {
         let mut weight = Rational::zero();
-        for edge_weak in subgraph.iter() {
+        for edge_weak in internal_subgraph.iter() {
             // weight += self.weighted_edges[edge_index as usize].weight;
-            weight += edge_weak.upgrade_force().read_recursive_force().weight;
+            weight += edge_weak.upgrade_force().read_recursive().weight;
         }
         weight
     }
@@ -195,26 +196,26 @@ impl SolverInitializer {
         weight
     }
 
-    #[cfg(feature="pointer")]
-    #[allow(clippy::unnecessary_cast)]
-    pub fn get_subgraph_syndrome(&self, subgraph: &Subgraph) -> BTreeSet<usize> {
-        let mut defect_vertices = BTreeSet::new();
-        for edge_weak in subgraph.iter() {
-            let edge_ptr = edge_weak.upgrade_force();
-            let vertices = &edge_ptr.read_recursive_force().vertices;
-            let unique_vertices = vertices.into_iter().map(|v| v.upgrade_force().read_recursive_force().vertex_index).collect::<Vec<_>>();
-            for vertex_index in unique_vertices.iter() {
-                if defect_vertices.contains(vertex_index) {
-                    defect_vertices.remove(vertex_index);
-                } else {
-                    defect_vertices.insert(*vertex_index);
-                }
-            }
-        }
-        defect_vertices
-    }
+    // #[cfg(feature="pointer")]
+    // #[allow(clippy::unnecessary_cast)]
+    // pub fn get_subgraph_syndrome(&self, internal_subgraph: &InternalSubgraph) -> BTreeSet<usize> {
+    //     let mut defect_vertices = BTreeSet::new();
+    //     for edge_weak in internal_subgraph.iter() {
+    //         let edge_ptr = edge_weak.upgrade_force();
+    //         let vertices = &edge_ptr.read_recursive_force().vertices;
+    //         let unique_vertices = vertices.into_iter().map(|v| v.upgrade_force().read_recursive_force().vertex_index).collect::<Vec<_>>();
+    //         for vertex_index in unique_vertices.iter() {
+    //             if defect_vertices.contains(vertex_index) {
+    //                 defect_vertices.remove(vertex_index);
+    //             } else {
+    //                 defect_vertices.insert(*vertex_index);
+    //             }
+    //         }
+    //     }
+    //     defect_vertices
+    // }
 
-    #[cfg(not(feature="pointer"))]
+    // #[cfg(not(feature="pointer"))]
     #[allow(clippy::unnecessary_cast)]
     pub fn get_subgraph_syndrome(&self, subgraph: &Subgraph) -> BTreeSet<VertexIndex> {
         let mut defect_vertices = BTreeSet::new();
@@ -327,16 +328,28 @@ impl F64Rng for DeterministicRng {
 /// the result of MWPF algorithm: a parity subgraph (defined by some edges that,
 /// if are selected, will generate the parity result in the syndrome)
 #[cfg(feature = "pointer")]
-pub type Subgraph = Vec<EdgeWeak>;
-#[cfg(not(feature = "pointer"))]
+pub type InternalSubgraph = Vec<EdgeWeak>;
 pub type Subgraph = Vec<EdgeIndex>;
+#[cfg(not(feature = "pointer"))]
+pub type InternalSubgraph = Vec<EdgeIndex>;
+// pub type Subgraph = Vec<EdgeIndex>;
+
+#[cfg(feature = "pointer")]
+impl MWPSVisualizer for InternalSubgraph {
+    #[cfg(feature="pointer")]
+    fn snapshot(&self, _abbrev: bool) -> serde_json::Value {
+        let subgraph_by_index: Vec<usize> = self.into_iter().map(|e| e.upgrade_force().read_recursive().edge_index).collect();
+        json!({
+            "subgraph": subgraph_by_index,
+        })
+    }
+}
 
 impl MWPSVisualizer for Subgraph {
     #[cfg(feature="pointer")]
     fn snapshot(&self, _abbrev: bool) -> serde_json::Value {
-        let subgraph_by_index: Vec<usize> = self.into_iter().map(|e| e.upgrade_force().read_recursive_force().edge_index).collect();
         json!({
-            "subgraph": subgraph_by_index,
+            "subgraph": self,
         })
     }
 

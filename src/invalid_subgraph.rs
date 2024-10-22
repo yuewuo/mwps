@@ -8,6 +8,7 @@ use std::collections::hash_map::DefaultHasher;
 use std::collections::BTreeSet;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
+#[cfg(feature="pointer")]
 use crate::pointers::FastClearUnsafePtr;
 
 #[cfg(all(feature = "pointer", feature = "non-pq"))]
@@ -82,7 +83,7 @@ impl InvalidSubgraph {
     pub fn new(edges: &BTreeSet<EdgePtr>) -> Self {
         let mut vertices: BTreeSet<VertexPtr> = BTreeSet::new();
         for edge_ptr in edges.iter() {
-            for vertex_ptr in edge_ptr.read_recursive_force().vertices.iter() {
+            for vertex_ptr in edge_ptr.read_recursive().vertices.iter() {
                 vertices.insert(vertex_ptr.upgrade_force().clone());
             }
         }
@@ -97,7 +98,7 @@ impl InvalidSubgraph {
     ) -> Self {
         let mut hair = BTreeSet::new();
         for vertex_ptr in vertices.iter() {
-            for edge_weak in vertex_ptr.read_recursive_force().edges.iter() {
+            for edge_weak in vertex_ptr.read_recursive().edges.iter() {
                 let edge_ptr = edge_weak.upgrade_force();
                 if !edges.contains(&edge_ptr) {
                     hair.insert(edge_ptr);
@@ -139,14 +140,14 @@ impl InvalidSubgraph {
         }
         // check if all vertices are valid
         for vertex_ptr in self.vertices.iter() {
-            let vertex_index = vertex_ptr.read_recursive_force().vertex_index;
+            let vertex_index = vertex_ptr.read_recursive().vertex_index;
             if vertex_index >= decoding_graph.model_graph.initializer.vertex_num {
                 return Err(format!("vertex {vertex_index} is not a vertex in the model graph"));
             }
         }
         // check if every edge is subset of its vertices
         for edge_ptr in self.edges.iter() {
-            let edge = edge_ptr.read_recursive_force();
+            let edge = edge_ptr.read_recursive();
             let edge_index = edge.edge_index;
             if edge_index as usize >= decoding_graph.model_graph.initializer.weighted_edges.len() {
                 return Err(format!("edge {edge_index} is not an edge in the model graph"));
@@ -157,7 +158,7 @@ impl InvalidSubgraph {
                     return Err(format!(
                         "hyperedge {edge_index} connects vertices {:?}, \
                     but vertex {:?} is not in the invalid subgraph vertices {:?}", 
-                        edge.vertices, vertex_weak.upgrade_force().read_recursive_force().vertex_index, self.vertices
+                        edge.vertices, vertex_weak.upgrade_force().read_recursive().vertex_index, self.vertices
                     ));
                 }
             }
@@ -174,12 +175,12 @@ impl InvalidSubgraph {
             matrix.add_constraint(vertex_ptr.clone());
         }
         if matrix.get_echelon_info().satisfiable {
-            let temp = matrix.get_solution().unwrap().into_iter().map(|e| e.upgrade_force().read_recursive_force().edge_index).collect::<Vec<_>>();
+            let temp = matrix.get_solution().unwrap().into_iter().map(|e| e.upgrade_force().read_recursive().edge_index).collect::<Vec<_>>();
             return Err(format!(
                 "it's a valid subgraph because edges {:?} ⊆ {:?} can satisfy the parity requirement from vertices {:?}",
                 temp,
-                self.edges.iter().map(|e| e.read_recursive_force().edge_index).collect::<Vec<_>>(),
-                self.vertices.iter().map(|e| e.read_recursive_force().vertex_index).collect::<Vec<_>>(),
+                self.edges.iter().map(|e| e.read_recursive().edge_index).collect::<Vec<_>>(),
+                self.vertices.iter().map(|e| e.read_recursive().vertex_index).collect::<Vec<_>>(),
             ));
         }
         Ok(())

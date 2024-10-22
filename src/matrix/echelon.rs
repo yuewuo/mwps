@@ -5,6 +5,7 @@ use core::panic;
 use derivative::Derivative;
 use prettytable::*;
 use std::collections::BTreeSet;
+#[cfg(feature="pointer")]
 use crate::pointers::FastClearUnsafePtr;
 
 #[cfg(all(feature = "pointer", feature = "non-pq"))]
@@ -320,7 +321,7 @@ impl<M: MatrixView> VizTrait for Echelon<M> {
         for (row, row_info) in info.rows.iter().enumerate() {
             #[cfg(feature="pointer")] {
                 let cell = if row_info.has_leading() {
-                    Cell::new(self.column_to_edge_index(row_info.column).upgrade_force().read_recursive_force().edge_index
+                    Cell::new(self.column_to_edge_index(row_info.column).upgrade_force().read_recursive().edge_index
                     .to_string().as_str()).style_spec("irFm") 
                 } else {
                     Cell::new("*").style_spec("rFr")

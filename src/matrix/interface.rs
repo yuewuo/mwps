@@ -148,7 +148,7 @@ pub trait MatrixEchelon: MatrixView {
     fn get_echelon_info(&mut self) -> &EchelonInfo;
     fn get_echelon_info_immutable(&self) -> &EchelonInfo;
 
-    fn get_solution(&mut self) -> Option<Subgraph> {
+    fn get_solution(&mut self) -> Option<InternalSubgraph> {
         self.get_echelon_info(); // make sure it's in echelon form
         let info = self.get_echelon_info_immutable();
         if !info.satisfiable {
@@ -168,7 +168,7 @@ pub trait MatrixEchelon: MatrixView {
     }
 
     /// try every independent variables and try to minimize the total weight of the solution
-    fn get_solution_local_minimum<F>(&mut self, weight_of: F) -> Option<Subgraph>
+    fn get_solution_local_minimum<F>(&mut self, weight_of: F) -> Option<InternalSubgraph>
     where
         F: Fn(EdgeWeak) -> Rational,
     {

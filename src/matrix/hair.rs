@@ -8,6 +8,7 @@ use super::visualize::*;
 use crate::util::*;
 use prettytable::*;
 use std::collections::*;
+#[cfg(feature="pointer")]
 use crate::pointers::FastClearUnsafePtr;
 
 #[cfg(all(feature = "pointer", feature = "non-pq"))]
@@ -175,7 +176,7 @@ cfg_if::cfg_if! {
                     let row_info = self.get_echelon_row_info(row);
                     let cell = if row_info.has_leading() {
                         Cell::new(
-                            self.column_to_edge_index(row_info.column - self.column_bias).upgrade_force().read_recursive_force().edge_index
+                            self.column_to_edge_index(row_info.column - self.column_bias).upgrade_force().read_recursive().edge_index
                                 .to_string()
                                 .as_str(),
                         )

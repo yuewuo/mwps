@@ -161,7 +161,7 @@ impl std::fmt::Debug for DualNodePtr {
             dual_node.get_dual_variable(),
             dual_node.dual_variable_at_last_updated_time,
             dual_node.last_updated_time,
-            dual_node.invalid_subgraph.hair.iter().map(|e| e.read_recursive_force().edge_index).collect::<Vec<_>>(),
+            dual_node.invalid_subgraph.hair.iter().map(|e| e.read_recursive().edge_index).collect::<Vec<_>>(),
         );
 
         #[cfg(not(feature = "pointer"))]
@@ -1033,7 +1033,7 @@ impl DualModuleInterfacePtr {
     fn create_defect_node(&self, vertex_idx: VertexIndex, dual_module: &mut impl DualModuleImpl) -> DualNodePtr {
         let mut interface = self.write();
         let vertex_ptr = dual_module.get_vertex_ptr(vertex_idx);
-        vertex_ptr.write(Rational::zero()).is_defect = true;
+        vertex_ptr.write().is_defect = true;
         let mut vertices = BTreeSet::new();
         vertices.insert(vertex_ptr);
         let invalid_subgraph: Arc<InvalidSubgraph> = Arc::new(
@@ -1187,11 +1187,11 @@ impl DualModuleInterfacePtr {
     }
 
     #[cfg(feature = "pointer")]
-    pub fn find_valid_subgraph_auto_vertices(&self, edges: &BTreeSet<EdgePtr>) -> Option<Subgraph> {
+    pub fn find_valid_subgraph_auto_vertices(&self, edges: &BTreeSet<EdgePtr>) -> Option<InternalSubgraph> {
         let mut vertices: BTreeSet<VertexPtr> = BTreeSet::new();
         for edge_ptr in edges.iter() {
             // let local_vertices = &edge_ptr.get_vertex_neighbors();
-            let local_vertices = &edge_ptr.read_recursive_force().vertices;
+            let local_vertices = &edge_ptr.read_recursive().vertices;
             for vertex in local_vertices {
                 vertices.insert(vertex.upgrade_force());
             }
@@ -1201,7 +1201,7 @@ impl DualModuleInterfacePtr {
     }
 
     #[cfg(feature = "pointer")]
-    pub fn find_valid_subgraph(&self, edges: &BTreeSet<EdgePtr>, vertices: &BTreeSet<VertexPtr>) -> Option<Subgraph> {
+    pub fn find_valid_subgraph(&self, edges: &BTreeSet<EdgePtr>, vertices: &BTreeSet<VertexPtr>) -> Option<InternalSubgraph> {
         let mut matrix = Echelon::<CompleteMatrix>::new();
         for edge_index in edges.iter() {
             matrix.add_variable(edge_index.downgrade());
@@ -1301,9 +1301,9 @@ impl MWPSVisualizer for DualModuleInterfacePtr {
         let mut dual_nodes = Vec::<serde_json::Value>::new();
         for dual_node_ptr in interface.nodes.iter() {
             let dual_node = dual_node_ptr.read_recursive();
-            let edges: Vec<usize> = dual_node.invalid_subgraph.edges.iter().map(|e|e.read_recursive_force().edge_index).collect();
-            let vertices: Vec<usize> = dual_node.invalid_subgraph.vertices.iter().map(|e|e.read_recursive_force().vertex_index).collect();
-            let hair: Vec<usize>  = dual_node.invalid_subgraph.hair.iter().map(|e|e.read_recursive_force().edge_index).collect();
+            let edges: Vec<usize> = dual_node.invalid_subgraph.edges.iter().map(|e|e.read_recursive().edge_index).collect();
+            let vertices: Vec<usize> = dual_node.invalid_subgraph.vertices.iter().map(|e|e.read_recursive().vertex_index).collect();
+            let hair: Vec<usize>  = dual_node.invalid_subgraph.hair.iter().map(|e|e.read_recursive().edge_index).collect();
             dual_nodes.push(json!({
                 if abbrev { "e" } else { "edges" }: edges,
                 if abbrev { "v" } else { "vertices" }: vertices,

@@ -12,6 +12,7 @@ use prettytable::format::TableFormat;
 use prettytable::*;
 #[cfg(feature="unsafe_pointer")]
 use crate::pointers::UnsafePtr;
+#[cfg(feature="pointer")]
 use crate::pointers::FastClearUnsafePtr;
 
 #[derive(Clone)]
@@ -59,7 +60,7 @@ impl<M: MatrixView> From<&mut M> for VizTable {
             #[cfg(feature="pointer")] {
                 let var_index = matrix.column_to_var_index(column);
                 let edge_weak = matrix.var_to_edge_index(var_index);
-                let edge_index_str = Self::force_single_column(edge_weak.upgrade_force().read_recursive_force().edge_index.to_string().as_str());
+                let edge_index_str = Self::force_single_column(edge_weak.upgrade_force().read_recursive().edge_index.to_string().as_str());
                 title.add_cell(Cell::new(edge_index_str.as_str()).style_spec("brFm"));
             } 
             #[cfg(not(feature="pointer"))] {

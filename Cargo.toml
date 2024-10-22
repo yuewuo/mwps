@@ -53,6 +53,7 @@ cluster_size_limit = []                           # allow configuration for limi
 non-pq = []                                       # use edge/vertex definitions in dual_module_serial, default is dual_module_pq
 pointer = []                                      # use pointer implementation
 unsafe_pointer = []                               # use unsafe pointer implementation
+parallel = []                                     # use parallel implementation
 
 [dependencies]
 pyo3 = { version = "0.19.2", features = [

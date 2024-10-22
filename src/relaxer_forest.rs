@@ -17,6 +17,7 @@ use crate::dual_module_serial::{EdgeWeak, VertexWeak, EdgePtr, VertexPtr};
 use crate::dual_module_pq::{EdgeWeak, VertexWeak, EdgePtr, VertexPtr};
 #[cfg(feature="unsafe_pointer")]
 use crate::pointers::UnsafePtr;
+#[cfg(feature="pointer")]
 use crate::pointers::FastClearUnsafePtr;
 
 pub type RelaxerVec = Vec<Relaxer>;
@@ -98,7 +99,7 @@ impl RelaxerForest {
         for (edge_index, _) in relaxer.get_growing_edges().iter() {
             if self.tight_edges.contains(edge_index) && !self.edge_untightener.contains_key(edge_index) {
                 #[cfg(feature="pointer")]
-                return Err(format!("{FOREST_ERR_MSG_GROW_TIGHT_EDGE}: {:?}", edge_index.read_recursive_force().edge_index));
+                return Err(format!("{FOREST_ERR_MSG_GROW_TIGHT_EDGE}: {:?}", edge_index.read_recursive().edge_index));
                 #[cfg(not(feature="pointer"))]
                 return Err(format!("{FOREST_ERR_MSG_GROW_TIGHT_EDGE}: {edge_index}"));
             }

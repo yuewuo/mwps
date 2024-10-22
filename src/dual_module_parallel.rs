@@ -1,3 +1,4 @@
+#![cfg(all(feature = "pointer", feature="parallel"))]
 /// Parallel Implementation of Dual Module PQ
 
 
@@ -595,6 +596,7 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
     }
 
     /// come back later to fix the owning_edge_range contains
+    #[cfg(feature="pointer")]
     fn get_edge_nodes(&self, edge_ptr: EdgePtr) -> Vec<DualNodePtr> {
         edge_ptr.read_recursive_force()
                 .dual_nodes
@@ -602,6 +604,7 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
                 .map(|x| x.upgrade_force().ptr)
                 .collect::<Vec<_>>()
     }
+    #[cfg(feature="pointer")]
     fn get_edge_slack(&self, edge_ptr: EdgePtr) -> Rational {
         let edge = edge_ptr.read_recursive_force();
         let unit_ptr = &self.units[edge.unit_index.unwrap()];
@@ -614,6 +617,7 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
         //     - (self.global_time.read_recursive().clone() - edge.last_updated_time.clone()) * edge.grow_rate.clone()
         //     - edge.growth_at_last_updated_time.clone()
     }
+    #[cfg(feature="pointer")]
     fn is_edge_tight(&self, edge_ptr: EdgePtr) -> bool {
         self.get_edge_slack(edge_ptr).is_zero()
     }
@@ -679,7 +683,7 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
         let mut weight = Rational::zero();
         for edge_ptr in cluster.edges.iter() {
             // let edge_ptr = self.edges[edge_index].read_recursive();
-            let edge = edge_ptr.read_recursive_force();
+            let edge = edge_ptr.read_recursive();
             weight += &edge.weight - &edge.growth_at_last_updated_time;
         }
         for node in cluster.nodes.iter() {
