@@ -1,4 +1,6 @@
-// gf2sparse.rs
+//! gf2sparse.rs
+//!
+//! gf2 implementation of the base matrix
 
 use crate::sparse_matrix_base::SparseMatrixBase;
 use std::collections::HashSet;
@@ -58,12 +60,18 @@ impl GF2Entry {
 }
 
 /// A sparse matrix over GF(2)
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct GF2Sparse<EntryObj = GF2Entry>
 where
     EntryObj: Default + Clone,
 {
     pub base: SparseMatrixBase<EntryObj>,
+}
+
+impl<T: Default + Clone> Clone for GF2Sparse<T> {
+    fn clone(&self) -> Self {
+        Self { base: self.base.clone() }
+    }
 }
 
 impl<EntryObj> GF2Sparse<EntryObj>
@@ -186,42 +194,7 @@ where
         output_mat
     }
 
-    /// Adds two rows together
-    // pub fn add_rows(&mut self, i: usize, j: usize) {
-    //     let mut entries_to_remove = Vec::new();
-    //     let mut entries_to_add = Vec::new();
-
-    //     let mut row_i_cols = HashSet::new();
-    //     for e_ptr in self.base.iterate_row(i) {
-    //         unsafe {
-    //             let e = &*e_ptr;
-    //             row_i_cols.insert(e.col_index as usize);
-    //         }
-    //     }
-
-    //     for e_ptr in self.base.iterate_row(j) {
-    //         unsafe {
-    //             let e = &*e_ptr;
-    //             if row_i_cols.contains(&(e.col_index as usize)) {
-    //                 // Mark for removal
-    //                 let entry = self.base.get_entry_mut(i, e.col_index as usize);
-    //                 entries_to_remove.push(entry);
-    //             } else {
-    //                 entries_to_add.push(e.col_index as usize);
-    //             }
-    //         }
-    //     }
-
-    //     for &e_ptr in &entries_to_remove {
-    //         unsafe {
-    //             self.base.remove(e_ptr);
-    //         }
-    //     }
-
-    //     for &col_index in &entries_to_add {
-    //         self.insert_entry(i, col_index);
-    //     }
-    // }
+    /// Adds a row to another row
     pub fn add_rows(&mut self, i: usize, j: usize) {
         let mut entries_to_remove = Vec::new();
         let mut entries_to_add = Vec::new();
@@ -344,8 +317,7 @@ where
                 for e_ptr in mat.base.iterate_row(i) {
                     unsafe {
                         let e = &*e_ptr;
-                        stacked_mat
-                            .insert_entry(row_offset + e.row_index as usize, e.col_index as usize);
+                        stacked_mat.insert_entry(row_offset + e.row_index as usize, e.col_index as usize);
                     }
                 }
             }
@@ -374,8 +346,7 @@ where
                 for e_ptr in mat.base.iterate_row(i) {
                     unsafe {
                         let e = &*e_ptr;
-                        stacked_mat
-                            .insert_entry(e.row_index as usize, col_offset + e.col_index as usize);
+                        stacked_mat.insert_entry(e.row_index as usize, col_offset + e.col_index as usize);
                     }
                 }
             }
@@ -404,10 +375,7 @@ where
                     for i2 in 0..m2 {
                         for e_ptr2 in mat2.base.iterate_row(i2) {
                             let e2 = &*e_ptr2;
-                            kron_mat.insert_entry(
-                                row_offset + e2.row_index as usize,
-                                col_offset + e2.col_index as usize,
-                            );
+                            kron_mat.insert_entry(row_offset + e2.row_index as usize, col_offset + e2.col_index as usize);
                         }
                     }
                 }
@@ -440,9 +408,7 @@ where
             for e_ptr in mat2.base.iterate_row(i) {
                 unsafe {
                     let e = &*e_ptr;
-                    let entry = sum_mat
-                        .base
-                        .get_entry_mut(e.row_index as usize, e.col_index as usize);
+                    let entry = sum_mat.base.get_entry_mut(e.row_index as usize, e.col_index as usize);
                     if !(*entry).at_end() {
                         sum_mat.base.remove(entry);
                     } else {
@@ -503,7 +469,3 @@ where
         gf2sparse_mat
     }
 }
-
-// Type aliases for convenience
-pub type CyGF2Entry = GF2Entry;
-pub type CyGF2Sparse = GF2Sparse<GF2Entry>;

@@ -1,4 +1,6 @@
-// bp.rs
+//! bp.rs
+//!
+//! Belief Propagation (BP) decoder implementation.
 
 use std::error::Error;
 use std::f64;
@@ -10,35 +12,36 @@ use crate::sparse_matrix_base::EntryBase;
 pub type BpEntry = EntryBase<_BpEntry>;
 pub type BpSparse = GF2Sparse<_BpEntry>;
 
-// Placeholder types for external modules (to be implemented separately)
-#[derive(Clone, Default)]
+// Placeholder types for external modules (to add the fields to the struct, in place of C++ derivation)
+#[derive(Clone, Default, Debug)]
 pub struct _BpEntry {
     pub bit_to_check_msg: f64,
     pub check_to_bit_msg: f64,
 }
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Clone, Debug)]
 pub enum BpMethod {
     ProductSum = 0,
     MinimumSum = 1,
 }
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Clone, Debug)]
 pub enum BpSchedule {
     Serial = 0,
     Parallel = 1,
     SerialRelative = 2,
 }
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Clone, Debug)]
 pub enum BpInputType {
     Syndrome = 0,
     ReceivedVector = 1,
     Auto = 2,
 }
 
-pub struct BpDecoder<'a> {
-    pub pcm: &'a mut BpSparse,
+#[derive(Clone, Debug)]
+pub struct BpDecoder {
+    pub pcm: BpSparse,
     pub channel_probabilities: Vec<f64>,
     pub check_count: usize,
     pub bit_count: usize,
@@ -61,9 +64,10 @@ pub struct BpDecoder<'a> {
     pub rng_list_shuffle: RandomListShuffle<usize>,
 }
 
-impl<'a> BpDecoder<'a> {
+impl<'a> BpDecoder {
+    /// Create a new BP decoder instance.
     pub fn new(
-        parity_check_matrix: &'a mut BpSparse,
+        parity_check_matrix: BpSparse,
         channel_probabilities: Vec<f64>,
         maximum_iterations: usize,
         method: BpMethod,
@@ -74,9 +78,8 @@ impl<'a> BpDecoder<'a> {
         mut random_schedule_seed: i32,
         random_schedule_at_every_iteration: bool,
         bp_input_type: BpInputType,
-    ) -> Result<BpDecoder<'a>, Box<dyn Error>> {
+    ) -> Result<BpDecoder, Box<dyn Error>> {
         let pcm = parity_check_matrix;
-        // let channel_probabilities = channel_probabilities;
         let check_count = pcm.base.m;
         let bit_count = pcm.base.n;
 
@@ -90,9 +93,7 @@ impl<'a> BpDecoder<'a> {
         let iterations = 0;
 
         if channel_probabilities.len() != bit_count {
-            return Err(
-                "Channel probabilities vector must have length equal to the number of bits".into(),
-            );
+            return Err("Channel probabilities vector must have length equal to the number of bits".into());
         }
 
         let serial_schedule_order: Vec<usize>;
@@ -131,15 +132,16 @@ impl<'a> BpDecoder<'a> {
         })
     }
 
+    /// Create a new BP decoder instance with some default parameters.
     pub fn new_3(
-        parity_check_matrix: &'a mut BpSparse,
+        parity_check_matrix: BpSparse,
         channel_probabilities: Vec<f64>,
         maximum_iterations: usize,
-    ) -> Result<BpDecoder<'a>, Box<dyn Error>> {
+    ) -> Result<BpDecoder, Box<dyn Error>> {
         let method = BpMethod::ProductSum;
         let schedule = BpSchedule::Parallel;
         let min_sum_scaling_factor = 0.625;
-        let omp_threads = 1;
+        let omp_threads = 16;
         let serial_schedule = None;
         let random_schedule_seed = -1;
         let random_schedule_at_every_iteration = true;
@@ -160,21 +162,32 @@ impl<'a> BpDecoder<'a> {
         )
     }
 
+    /// Set the number of threads to use for OpenMP parallelization.
     pub fn set_omp_thread_count(&mut self, count: usize) {
         self.omp_thread_count = count;
-        // Implement threading control if needed
     }
 
+    /// Set initial log domain BP messages and log probabilities.
     pub fn initialise_log_domain_bp(&mut self) {
         for i in 0..self.bit_count {
-            self.initial_log_prob_ratios[i] =
-                ((1.0 - self.channel_probabilities[i]) / self.channel_probabilities[i]).ln();
+            self.initial_log_prob_ratios[i] = ((1.0 - self.channel_probabilities[i]) / self.channel_probabilities[i]).ln();
             for e in self.pcm.base.iterate_column_mut(i) {
                 unsafe { (*e).inner.bit_to_check_msg = self.initial_log_prob_ratios[i] };
             }
         }
     }
 
+    /// update the log domain BP messages and log probabilities.
+    pub fn set_log_domain_bp(&mut self, input_vector: &Vec<f64>) {
+        for i in 0..self.bit_count {
+            self.initial_log_prob_ratios[i] = input_vector[i];
+            for e in self.pcm.base.iterate_column_mut(i) {
+                unsafe { (*e).inner.bit_to_check_msg = self.initial_log_prob_ratios[i] };
+            }
+        }
+    }
+
+    /// Decode
     pub fn decode(&mut self, input_vector: &Vec<u8>) -> Vec<u8> {
         if (self.bp_input_type == BpInputType::Auto && input_vector.len() == self.bit_count)
             || (self.bp_input_type == BpInputType::ReceivedVector)
@@ -183,9 +196,7 @@ impl<'a> BpDecoder<'a> {
             let syndrome = self.pcm.mulvec(input_vector);
             let rv_decoding = if self.schedule == BpSchedule::Parallel {
                 self.bp_decode_parallel(&syndrome)
-            } else if self.schedule == BpSchedule::Serial
-                || self.schedule == BpSchedule::SerialRelative
-            {
+            } else if self.schedule == BpSchedule::Serial || self.schedule == BpSchedule::SerialRelative {
                 self.bp_decode_serial(&syndrome)
             } else {
                 panic!("Invalid BP schedule");
@@ -199,21 +210,17 @@ impl<'a> BpDecoder<'a> {
         }
 
         if self.schedule == BpSchedule::Parallel {
-            println!("this is other");
             return self.bp_decode_parallel(input_vector);
-        } else if self.schedule == BpSchedule::Serial || self.schedule == BpSchedule::SerialRelative
-        {
-            println!("other one");
+        } else if self.schedule == BpSchedule::Serial || self.schedule == BpSchedule::SerialRelative {
             return self.bp_decode_serial(input_vector);
         } else {
             panic!("Invalid BP schedule");
         }
     }
 
+    /// Decode parallelly
     pub fn bp_decode_parallel(&mut self, syndrome: &Vec<u8>) -> Vec<u8> {
         self.converge = false;
-
-        self.initialise_log_domain_bp();
 
         for it in 1..=self.maximum_iterations {
             if self.method == BpMethod::ProductSum {
@@ -234,9 +241,7 @@ impl<'a> BpDecoder<'a> {
                             (*e).inner.check_to_bit_msg *= temp;
                             let message_sign = if syndrome[i] != 0 { -1.0 } else { 1.0 };
                             (*e).inner.check_to_bit_msg = message_sign
-                                * ((1.0 + (*e).inner.check_to_bit_msg)
-                                    / (1.0 - (*e).inner.check_to_bit_msg))
-                                    .ln();
+                                * ((1.0 + (*e).inner.check_to_bit_msg) / (1.0 - (*e).inner.check_to_bit_msg)).ln();
                             temp *= ((*e).inner.bit_to_check_msg / 2.0).tanh();
                         }
                     }
@@ -329,14 +334,12 @@ impl<'a> BpDecoder<'a> {
         self.decoding.clone()
     }
 
+    /// Decode serially
     pub fn bp_decode_serial(&mut self, syndrome: &Vec<u8>) -> Vec<u8> {
         self.converge = false;
-        self.initialise_log_domain_bp();
-
         for it in 1..=self.maximum_iterations {
             if self.random_schedule_seed > -1 {
-                self.rng_list_shuffle
-                    .shuffle(&mut self.serial_schedule_order);
+                self.rng_list_shuffle.shuffle(&mut self.serial_schedule_order);
             } else if self.schedule == BpSchedule::SerialRelative {
                 self.serial_schedule_order.sort_by(|&bit1, &bit2| {
                     if it != 1 {
@@ -346,10 +349,8 @@ impl<'a> BpDecoder<'a> {
                             .partial_cmp(&self.log_prob_ratios[bit1])
                             .unwrap_or(std::cmp::Ordering::Equal)
                     } else {
-                        let prob1 = (1.0 - self.channel_probabilities[bit1])
-                            / self.channel_probabilities[bit1];
-                        let prob2 = (1.0 - self.channel_probabilities[bit2])
-                            / self.channel_probabilities[bit2];
+                        let prob1 = (1.0 - self.channel_probabilities[bit1]) / self.channel_probabilities[bit1];
+                        let prob2 = (1.0 - self.channel_probabilities[bit2]) / self.channel_probabilities[bit2];
 
                         // Calculate logs and compare, reversing for descending order.
                         prob2
@@ -362,9 +363,8 @@ impl<'a> BpDecoder<'a> {
 
             for &bit_index in &self.serial_schedule_order {
                 // Initialize log probabilities for each bit
-                self.log_prob_ratios[bit_index] = ((1.0 - self.channel_probabilities[bit_index])
-                    / self.channel_probabilities[bit_index])
-                    .ln();
+                self.log_prob_ratios[bit_index] =
+                    ((1.0 - self.channel_probabilities[bit_index]) / self.channel_probabilities[bit_index]).ln();
 
                 // First, gather all check information for the current bit
                 let mut checks = Vec::new();
@@ -386,10 +386,7 @@ impl<'a> BpDecoder<'a> {
                 for (e, check_index, check_messages) in checks {
                     unsafe {
                         if self.method == BpMethod::ProductSum {
-                            let product_sum = check_messages
-                                .iter()
-                                .map(|&msg| (msg / 2.0).tanh())
-                                .product::<f64>();
+                            let product_sum = check_messages.iter().map(|&msg| (msg / 2.0).tanh()).product::<f64>();
                             let check_msg = ((-1.0f64).powi(syndrome[check_index] as i32))
                                 * ((1.0 + product_sum) / (1.0 - product_sum)).ln();
                             (*e).inner.check_to_bit_msg = check_msg;
@@ -403,8 +400,7 @@ impl<'a> BpDecoder<'a> {
                                 min_abs_msg = min_abs_msg.min(msg.abs());
                             }
                             let message_sign = if sgn % 2 == 0 { 1.0 } else { -1.0 };
-                            (*e).inner.check_to_bit_msg =
-                                self.ms_scaling_factor * message_sign * min_abs_msg;
+                            (*e).inner.check_to_bit_msg = self.ms_scaling_factor * message_sign * min_abs_msg;
                         }
                         (*e).inner.bit_to_check_msg = self.log_prob_ratios[bit_index];
                         self.log_prob_ratios[bit_index] += (*e).inner.check_to_bit_msg;
@@ -440,6 +436,7 @@ impl<'a> BpDecoder<'a> {
         self.decoding.clone()
     }
 
+    /// Decode single scan
     pub fn bp_decode_single_scan(&mut self, syndrome: &Vec<u8>) -> Vec<u8> {
         self.converge = false;
         let mut converged = false;
@@ -447,8 +444,7 @@ impl<'a> BpDecoder<'a> {
         let mut log_prob_ratios_old = vec![0.0; self.bit_count];
 
         for i in 0..self.bit_count {
-            self.initial_log_prob_ratios[i] =
-                ((1.0 - self.channel_probabilities[i]) / self.channel_probabilities[i]).ln();
+            self.initial_log_prob_ratios[i] = ((1.0 - self.channel_probabilities[i]) / self.channel_probabilities[i]).ln();
             self.log_prob_ratios[i] = self.initial_log_prob_ratios[i];
         }
 
@@ -460,8 +456,7 @@ impl<'a> BpDecoder<'a> {
             log_prob_ratios_old.clone_from_slice(&self.log_prob_ratios);
 
             if it != 1 {
-                self.log_prob_ratios
-                    .clone_from_slice(&self.initial_log_prob_ratios);
+                self.log_prob_ratios.clone_from_slice(&self.initial_log_prob_ratios);
             }
 
             for i in 0..self.check_count {
@@ -476,8 +471,7 @@ impl<'a> BpDecoder<'a> {
                         if it == 1 {
                             (*e).inner.check_to_bit_msg = 0.0;
                         }
-                        bit_to_check_msg = log_prob_ratios_old[(*e).col_index as usize]
-                            - (*e).inner.check_to_bit_msg;
+                        bit_to_check_msg = log_prob_ratios_old[(*e).col_index as usize] - (*e).inner.check_to_bit_msg;
                         if bit_to_check_msg <= 0.0 {
                             total_sgn += 1;
                         }
@@ -497,8 +491,7 @@ impl<'a> BpDecoder<'a> {
                         if it == 1 {
                             (*e).inner.check_to_bit_msg = 0.0;
                         }
-                        bit_to_check_msg = log_prob_ratios_old[(*e).col_index as usize]
-                            - (*e).inner.check_to_bit_msg;
+                        bit_to_check_msg = log_prob_ratios_old[(*e).col_index as usize] - (*e).inner.check_to_bit_msg;
                         if bit_to_check_msg <= 0.0 {
                             sgn += 1;
                         }
@@ -506,10 +499,8 @@ impl<'a> BpDecoder<'a> {
                             (*e).inner.bit_to_check_msg = temp;
                         }
                         let message_sign = if sgn % 2 == 0 { 1.0 } else { -1.0 };
-                        (*e).inner.check_to_bit_msg =
-                            message_sign * self.ms_scaling_factor * (*e).inner.bit_to_check_msg;
-                        self.log_prob_ratios[(*e).col_index as usize] +=
-                            (*e).inner.check_to_bit_msg;
+                        (*e).inner.check_to_bit_msg = message_sign * self.ms_scaling_factor * (*e).inner.bit_to_check_msg;
+                        self.log_prob_ratios[(*e).col_index as usize] += (*e).inner.check_to_bit_msg;
 
                         let abs_bit_to_check_msg = bit_to_check_msg.abs();
                         if abs_bit_to_check_msg < temp {
@@ -545,12 +536,8 @@ impl<'a> BpDecoder<'a> {
         self.decoding.clone()
     }
 
-    pub fn soft_info_decode_serial(
-        &mut self,
-        soft_info_syndrome: &Vec<f64>,
-        cutoff: f64,
-        sigma: f64,
-    ) -> Vec<u8> {
+    /// Decode with soft information
+    pub fn soft_info_decode_serial(&mut self, soft_info_syndrome: &Vec<f64>, cutoff: f64, sigma: f64) -> Vec<u8> {
         let mut syndrome = Vec::with_capacity(self.check_count);
         self.soft_syndrome = soft_info_syndrome.clone();
 
@@ -571,14 +558,12 @@ impl<'a> BpDecoder<'a> {
 
             if self.random_schedule_at_every_iteration && self.omp_thread_count == 1 {
                 // Reorder schedule elements randomly
-                self.rng_list_shuffle
-                    .shuffle(&mut self.serial_schedule_order);
+                self.rng_list_shuffle.shuffle(&mut self.serial_schedule_order);
             }
 
             for &bit_index in &self.serial_schedule_order {
-                self.log_prob_ratios[bit_index] = ((1.0 - self.channel_probabilities[bit_index])
-                    / self.channel_probabilities[bit_index])
-                    .ln();
+                self.log_prob_ratios[bit_index] =
+                    ((1.0 - self.channel_probabilities[bit_index]) / self.channel_probabilities[bit_index]).ln();
 
                 let mut checks = Vec::new();
                 for e in self.pcm.base.iterate_column(bit_index) {
@@ -598,10 +583,7 @@ impl<'a> BpDecoder<'a> {
                 for (e, check_index, check_messages) in checks {
                     unsafe {
                         let mut sgn = syndrome[check_index] as i32;
-                        let temp = check_messages
-                            .iter()
-                            .map(|&msg| msg.abs())
-                            .fold(f64::MAX, f64::min);
+                        let temp = check_messages.iter().map(|&msg| msg.abs()).fold(f64::MAX, f64::min);
 
                         for &msg in &check_messages {
                             if msg <= 0.0 {
@@ -610,16 +592,14 @@ impl<'a> BpDecoder<'a> {
                         }
 
                         let soft_syndrome_magnitude = self.soft_syndrome[check_index].abs();
-                        let propagated_msg =
-                            if soft_syndrome_magnitude < cutoff && soft_syndrome_magnitude < temp {
-                                soft_syndrome_magnitude
-                            } else {
-                                temp
-                            };
+                        let propagated_msg = if soft_syndrome_magnitude < cutoff && soft_syndrome_magnitude < temp {
+                            soft_syndrome_magnitude
+                        } else {
+                            temp
+                        };
 
                         let message_sign = if sgn % 2 == 0 { 1.0 } else { -1.0 };
-                        (*e).inner.check_to_bit_msg =
-                            self.ms_scaling_factor * message_sign * propagated_msg;
+                        (*e).inner.check_to_bit_msg = self.ms_scaling_factor * message_sign * propagated_msg;
                         (*e).inner.bit_to_check_msg = self.log_prob_ratios[bit_index];
                         self.log_prob_ratios[bit_index] += (*e).inner.check_to_bit_msg;
                     }

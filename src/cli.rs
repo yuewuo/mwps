@@ -3,6 +3,7 @@ use crate::matrix::*;
 use crate::mwpf_solver::*;
 use crate::util::*;
 use crate::visualize::*;
+use bp::bp::{BpDecoder, BpSparse};
 use clap::builder::{StringValueParser, TypedValueParser, ValueParser};
 use clap::error::{ContextKind, ContextValue, ErrorKind};
 use clap::{Parser, Subcommand, ValueEnum};
@@ -107,6 +108,9 @@ pub struct BenchmarkParameters {
     /// only execute a single seed for debugging purposes
     #[clap(long, action)]
     single_seed: Option<u64>,
+    /// to use bp or not
+    #[clap(long, action)]
+    use_bp: bool,
 }
 
 #[derive(Subcommand, Clone, Debug)]
@@ -297,10 +301,32 @@ impl Cli {
                 print_error_pattern,
                 apply_deterministic_seed,
                 single_seed,
+                use_bp,
             }) => {
                 // whether to disable progress bar, useful when running jobs in background
                 let disable_progress_bar = env::var("DISABLE_PROGRESS_BAR").is_ok();
                 let mut code: Box<dyn ExampleCode> = code_type.build(d, p, noisy_measurements, max_weight, code_config);
+
+                // setting up the BP decoder
+                let mut pcm = BpSparse::new(code.vertex_num(), code.edge_num(), 0);
+                for (col_index, edge) in code.edges().iter().enumerate() {
+                    for &row_index in edge.vertices.iter() {
+                        pcm.insert_entry(row_index, col_index);
+                    }
+                }
+
+                let mut bp_decoder_option = None;
+                let mut initial_log_ratios_option = None;
+
+                if use_bp {
+                    let channel_probabilities = vec![p; code.edge_num()];
+                    let initial_log_ratios = code.edges().iter().map(|edge| edge.weight as f64).collect();
+                    let mut bp_decoder = BpDecoder::new_3(pcm, channel_probabilities, 1).unwrap();
+                    bp_decoder.set_log_domain_bp(&initial_log_ratios);
+                    bp_decoder_option = Some(bp_decoder);
+                    initial_log_ratios_option = Some(initial_log_ratios);
+                }
+
                 if pe != 0. {
                     code.set_erasure_probability(pe);
                 }
@@ -310,7 +336,7 @@ impl Cli {
                 }
                 // create initializer and solver
                 let initializer = code.get_initializer();
-                let mut primal_dual_solver = primal_dual_type.build(&initializer, &*code, primal_dual_config);
+                let mut primal_dual_solver = primal_dual_type.build(&initializer, &*code, primal_dual_config.clone());
                 let mut result_verifier = verifier.build(&initializer);
                 // prepare progress bar display
                 let mut pb = if !disable_progress_bar {
@@ -327,6 +353,27 @@ impl Cli {
                 // single seed mode, intended only execute a single failing round
                 if let Some(seed) = single_seed {
                     let (syndrome_pattern, error_pattern) = code.generate_random_errors(seed);
+
+                    if use_bp {
+                        let mut syndrome_array = vec![0; code.vertex_num()];
+                        for &dv in syndrome_pattern.defect_vertices.iter() {
+                            syndrome_array[dv] = 1;
+                        }
+                        let bp_decoder = bp_decoder_option.as_mut().unwrap();
+                        let initial_log_ratios = initial_log_ratios_option.as_ref().unwrap();
+
+                        bp_decoder.set_log_domain_bp(initial_log_ratios);
+                        bp_decoder.decode(&syndrome_array);
+                        let llrs = &bp_decoder.log_prob_ratios;
+                        code.update_weights(llrs);
+
+                        primal_dual_solver.update_weights(llrs);
+
+                        // note: may/may not be needed
+                        // initializer = code.get_initializer();
+                        // let mut result_verifier = verifier.build(&initializer);
+                    }
+
                     if print_syndrome_pattern {
                         println!("syndrome_pattern: {:?}", syndrome_pattern);
                     }
@@ -367,6 +414,27 @@ impl Cli {
                     pb.as_mut().map(|pb| pb.set(round));
                     seed = if use_deterministic_seed { round } else { rng.next_u64() };
                     let (syndrome_pattern, error_pattern) = code.generate_random_errors(seed);
+
+                    if use_bp {
+                        let mut syndrome_array = vec![0; code.vertex_num()];
+                        for &dv in syndrome_pattern.defect_vertices.iter() {
+                            syndrome_array[dv] = 1;
+                        }
+                        let bp_decoder = bp_decoder_option.as_mut().unwrap();
+                        let initial_log_ratios = initial_log_ratios_option.as_ref().unwrap();
+
+                        bp_decoder.set_log_domain_bp(initial_log_ratios);
+                        bp_decoder.decode(&syndrome_array);
+                        let llrs = &bp_decoder.log_prob_ratios;
+                        code.update_weights(llrs);
+
+                        primal_dual_solver.update_weights(llrs);
+
+                        // note: may/may not be needed
+                        // initializer = code.get_initializer();
+                        // let mut result_verifier = verifier.build(&initializer);
+                    }
+
                     if print_syndrome_pattern {
                         println!("syndrome_pattern: {:?}", syndrome_pattern);
                     }

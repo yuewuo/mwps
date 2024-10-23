@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use bp_decoder::{bp::*, sparse_matrix_util::print_sparse_matrix};
+    use bp::{bp::*, sparse_matrix_util::print_sparse_matrix};
 
     #[test]
     fn bp_entry_init() {
@@ -34,12 +34,7 @@ mod tests {
             pcm.insert_entry(i, (i + 1) % n);
         }
         let channel_probabilities = vec![0.1; n];
-        let decoder = BpDecoder::new_3(
-            &mut pcm,
-            channel_probabilities,
-            pcm_n, // maximum iterations
-        )
-        .unwrap();
+        let decoder = BpDecoder::new_3(pcm, channel_probabilities, pcm_n).unwrap();
 
         assert_eq!(decoder.pcm.base.m, decoder.check_count);
         assert_eq!(decoder.pcm.base.n, decoder.bit_count);
@@ -61,16 +56,16 @@ mod tests {
         }
         let channel_probabilities = vec![0.1, 0.2, 0.3, 0.4];
         let decoder = BpDecoder::new(
-            &mut pcm,
+            pcm,
             channel_probabilities,
-            10, // maximum_iterations
+            10,
             BpMethod::MinimumSum,
             BpSchedule::Serial,
-            0.5,                     // min_sum_scaling_factor
-            4,                       // omp_threads
-            Some(&vec![1, 3, 0, 2]), // serial_schedule
-            -1,                      // random_schedule_seed
-            true,                    // random_schedule_at_every_iteration
+            0.5,
+            4,
+            Some(&vec![1, 3, 0, 2]),
+            -1,
+            true,
             BpInputType::Auto,
         )
         .unwrap();
@@ -96,17 +91,14 @@ mod tests {
             pcm.insert_entry(i, (i + 1) % n);
         }
         let channel_probabilities = vec![0.1, 0.2, 0.3];
-        let mut decoder = BpDecoder::new_3(&mut pcm, channel_probabilities, 100).unwrap();
+        let mut decoder = BpDecoder::new_3(pcm, channel_probabilities, 100).unwrap();
         decoder.initialise_log_domain_bp();
         for (i, prob) in decoder.channel_probabilities.iter().enumerate() {
             let expected_log_prob = ((1.0 - prob) / prob).ln();
             assert_eq!(decoder.initial_log_prob_ratios[i], expected_log_prob);
 
             for e in decoder.pcm.base.iterate_column(i) {
-                assert_eq!(
-                    unsafe { (*e).inner.bit_to_check_msg },
-                    decoder.initial_log_prob_ratios[i]
-                );
+                assert_eq!(unsafe { (*e).inner.bit_to_check_msg }, decoder.initial_log_prob_ratios[i]);
             }
         }
     }
@@ -121,9 +113,9 @@ mod tests {
         }
         let channel_probabilities = vec![0.1; n];
         let mut decoder = BpDecoder::new(
-            &mut pcm,
+            pcm,
             channel_probabilities,
-            n, // Using n as the number of maximum iterations
+            n,
             BpMethod::ProductSum,
             BpSchedule::Parallel,
             79879879.0,
@@ -134,6 +126,8 @@ mod tests {
             BpInputType::Auto,
         )
         .unwrap();
+
+        decoder.initialise_log_domain_bp();
 
         assert_eq!(decoder.pcm.base.m, decoder.check_count);
         assert_eq!(decoder.pcm.base.n, decoder.bit_count);
@@ -162,9 +156,9 @@ mod tests {
         }
         let channel_probabilities = vec![0.1; n];
         let mut decoder = BpDecoder::new(
-            &mut pcm,
+            pcm,
             channel_probabilities,
-            n, // Using n as the number of maximum iterations
+            n,
             BpMethod::ProductSum,
             BpSchedule::Parallel,
             4324234.0,
@@ -175,6 +169,8 @@ mod tests {
             BpInputType::Auto,
         )
         .unwrap();
+
+        decoder.initialise_log_domain_bp();
 
         let input_vectors = [
             vec![0, 0, 0, 0],
@@ -194,9 +190,6 @@ mod tests {
             let decoded = decoder.decode(&input_vector);
             assert_eq!(decoded, expected_resutls[index]);
         }
-
-        // let decoding = decoder.decode(&input_vector);
-        // assert_eq!(decoding, vec![0, 1, 0, 1, 0]);
     }
 
     #[test]
@@ -209,7 +202,7 @@ mod tests {
         }
         let channel_probabilities = vec![0.1; n];
         let mut decoder = BpDecoder::new(
-            &mut pcm,
+            pcm,
             channel_probabilities,
             n,
             BpMethod::MinimumSum,
@@ -222,6 +215,8 @@ mod tests {
             BpInputType::Auto,
         )
         .unwrap();
+
+        decoder.initialise_log_domain_bp();
 
         let input_vectors: Vec<Vec<u8>> = vec![
             vec![0, 0, 0, 0],
@@ -238,14 +233,11 @@ mod tests {
             vec![0, 1, 1, 0, 0],
             vec![0, 1, 0, 1, 0],
         ];
-        // let decoding = decoder.decode(&input_vector);
+
         for (index, input_vector) in input_vectors.iter().enumerate() {
             let decoded = decoder.decode(input_vector);
-            // assert_eq!(decoded, vec![1, 0, 1, 0, 1]); // bad
             assert_eq!(decoded, expected_resutls[index]);
-            // println!("decoding: {:?}", decoded);
         }
-        // assert_eq!(decoding, vec![1, 0, 1, 0, 1]);
     }
 
     #[test]
@@ -258,9 +250,9 @@ mod tests {
         }
         let channel_probabilities = vec![0.1; n];
         let mut decoder = BpDecoder::new(
-            &mut pcm,
+            pcm,
             channel_probabilities,
-            n, // Using n as the number of maximum iterations
+            n,
             BpMethod::ProductSum,
             BpSchedule::Serial,
             4324234.0,
@@ -302,7 +294,7 @@ mod tests {
         }
         let channel_probabilities = vec![0.1; n];
         let mut decoder = BpDecoder::new(
-            &mut pcm,
+            pcm,
             channel_probabilities,
             n,
             BpMethod::MinimumSum,
@@ -346,7 +338,7 @@ mod tests {
         }
         let channel_probabilities = vec![0.1; n];
         let mut decoder = BpDecoder::new(
-            &mut pcm,
+            pcm,
             channel_probabilities,
             n,
             BpMethod::MinimumSum,
@@ -359,6 +351,8 @@ mod tests {
             BpInputType::Auto,
         )
         .unwrap();
+
+        decoder.initialise_log_domain_bp();
 
         let input_vectors = [vec![0, 0], vec![0, 1], vec![1, 0], vec![1, 1]];
         let expected_results = [vec![0, 0, 0], vec![0, 0, 1], vec![1, 0, 0], vec![0, 1, 0]];
@@ -379,7 +373,7 @@ mod tests {
         }
         let channel_probabilities = vec![0.1; n];
         let mut decoder = BpDecoder::new(
-            &mut pcm,
+            pcm,
             channel_probabilities,
             n,
             BpMethod::MinimumSum,
@@ -413,7 +407,7 @@ mod tests {
         }
         let channel_probabilities = vec![0.1; n];
         let mut decoder = BpDecoder::new(
-            &mut pcm,
+            pcm,
             channel_probabilities,
             100,
             BpMethod::MinimumSum,
@@ -448,7 +442,7 @@ mod tests {
             let serial_schedule = vec![2, 3, 1, 0];
 
             let decoder = BpDecoder::new(
-                &mut pcm,
+                pcm,
                 channel_probabilities,
                 100,
                 BpMethod::MinimumSum,
@@ -462,7 +456,6 @@ mod tests {
             )
             .unwrap();
 
-            // Test if decoder serial schedule is initialized correctly with the seed
             assert_eq!(decoder.serial_schedule_order, vec![2, 3, 1, 0]);
             assert_eq!(decoder.random_schedule_seed, -1);
         }
@@ -477,7 +470,7 @@ mod tests {
             let expected_serial_schedule = vec![0, 1, 2, 3];
 
             let decoder = BpDecoder::new(
-                &mut pcm,
+                pcm,
                 channel_probabilities,
                 100,
                 BpMethod::MinimumSum,
@@ -491,7 +484,6 @@ mod tests {
             )
             .unwrap();
 
-            // Test if decoder serial schedule is initialized correctly with the seed
             assert_eq!(decoder.serial_schedule_order, expected_serial_schedule);
             assert_eq!(decoder.random_schedule_seed, 0);
         }
@@ -503,10 +495,9 @@ mod tests {
                 pcm.insert_entry(i, (i + 1) % n);
             }
             let channel_probabilities = vec![0.1, 0.2, 0.3, 0.4];
-            // let expected_serial_schedule = vec![2, 3, 1, 0];
 
             let decoder = BpDecoder::new(
-                &mut pcm,
+                pcm,
                 channel_probabilities,
                 100,
                 BpMethod::MinimumSum,
@@ -533,10 +524,10 @@ mod tests {
                 pcm.insert_entry(i, i);
                 pcm.insert_entry(i, (i + 1) % n);
             }
-            let channel_probabilities = vec![0.2, 0.3, 0.1]; // Set such that bit index 2 has the highest likelihood
+            let channel_probabilities = vec![0.2, 0.3, 0.1];
 
             let mut decoder = BpDecoder::new(
-                &mut pcm,
+                pcm,
                 channel_probabilities,
                 1,
                 BpMethod::MinimumSum,
@@ -550,11 +541,11 @@ mod tests {
             )
             .unwrap();
 
-            // decoder.initialise_log_domain_bp();
-            decoder.decode(&vec![0, 0]); // Running decode to potentially trigger schedule update
+            decoder.initialise_log_domain_bp();
 
-            // Ensure that the bits are ordered correctly after scheduling (mock or actual scheduling logic)
-            assert_eq!(decoder.serial_schedule_order, vec![2, 0, 1]); // Expect bit index 2 to be first given its probabilities
+            decoder.decode(&vec![0, 0]);
+
+            assert_eq!(decoder.serial_schedule_order, vec![2, 0, 1]);
             assert_eq!(decoder.random_schedule_seed, -1);
         }
 
@@ -565,10 +556,10 @@ mod tests {
                 pcm.insert_entry(i, i);
                 pcm.insert_entry(i, (i + 1) % n);
             }
-            let channel_probabilities = vec![0.3, 0.2, 0.1]; // Set such that bit index 2 has the highest likelihood
+            let channel_probabilities = vec![0.3, 0.2, 0.1];
 
             let mut decoder = BpDecoder::new(
-                &mut pcm,
+                pcm,
                 channel_probabilities,
                 1,
                 BpMethod::MinimumSum,
@@ -582,11 +573,10 @@ mod tests {
             )
             .unwrap();
 
-            // decoder.initialise_log_domain_bp();
-            decoder.decode(&vec![0, 0]); // Running decode to potentially trigger schedule update
+            decoder.initialise_log_domain_bp();
+            decoder.decode(&vec![0, 0]);
 
-            // Ensure that the bits are ordered correctly after scheduling (mock or actual scheduling logic)
-            assert_eq!(decoder.serial_schedule_order, vec![2, 1, 0]); // Expect bit index 2 to be first given its probabilities
+            assert_eq!(decoder.serial_schedule_order, vec![2, 1, 0]);
             assert_eq!(decoder.random_schedule_seed, -1);
         }
 
@@ -597,10 +587,10 @@ mod tests {
                 pcm.insert_entry(i, i);
                 pcm.insert_entry(i, (i + 1) % n);
             }
-            let channel_probabilities = vec![0.1, 0.01, 0.01]; // Set such that bit index 2 has the highest likelihood
+            let channel_probabilities = vec![0.1, 0.01, 0.01];
 
             let mut decoder = BpDecoder::new(
-                &mut pcm,
+                pcm,
                 channel_probabilities,
                 2,
                 BpMethod::MinimumSum,
@@ -614,11 +604,10 @@ mod tests {
             )
             .unwrap();
 
-            // decoder.initialise_log_domain_bp();
-            decoder.decode(&vec![1, 0]); // Running decode to potentially trigger schedule update
+            decoder.initialise_log_domain_bp();
+            decoder.decode(&vec![1, 0]);
 
-            // Ensure that the bits are ordered correctly after scheduling (mock or actual scheduling logic)
-            assert_eq!(decoder.serial_schedule_order, vec![1, 2, 0]); // Expect bit index 2 to be first given its probabilities
+            assert_eq!(decoder.serial_schedule_order, vec![1, 2, 0]);
             assert_eq!(decoder.random_schedule_seed, -1);
         }
     }
@@ -634,7 +623,7 @@ mod tests {
         let channel_probabilities = vec![0.1; n];
 
         let mut decoder = BpDecoder::new(
-            &mut pcm,
+            pcm,
             channel_probabilities,
             n,
             BpMethod::ProductSum,
@@ -648,16 +637,8 @@ mod tests {
         )
         .unwrap();
 
-        let input_vectors = [
-            vec![0, 0, 0, 0, 1],
-            vec![0, 1, 1, 0, 0],
-            vec![1, 0, 0, 1, 1],
-        ]; // Received vector
-        let expcted_results = [
-            vec![0, 0, 0, 0, 0],
-            vec![0, 0, 0, 0, 0],
-            vec![1, 1, 1, 1, 1],
-        ];
+        let input_vectors = [vec![0, 0, 0, 0, 1], vec![0, 1, 1, 0, 0], vec![1, 0, 0, 1, 1]];
+        let expcted_results = [vec![0, 0, 0, 0, 0], vec![0, 0, 0, 0, 0], vec![1, 1, 1, 1, 1]];
 
         for (index, input_vector) in input_vectors.iter().enumerate() {
             let decoded = decoder.decode(input_vector);

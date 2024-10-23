@@ -1,10 +1,11 @@
+//! sparse_matrix_util.rs
+//!
+//! Utility functions for sparse matrix
+
 use crate::sparse_matrix_base::SparseMatrixBase;
 use std::fmt::Write;
 
-pub fn print_sparse_matrix<M: Clone + Default>(
-    matrix: &SparseMatrixBase<M>,
-    silent: bool,
-) -> String {
+pub fn print_sparse_matrix<M: Clone + Default>(matrix: &SparseMatrixBase<M>, silent: bool) -> String {
     let mut ss = String::new();
     let m = matrix.m;
     let n = matrix.n;

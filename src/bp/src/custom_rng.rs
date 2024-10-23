@@ -1,4 +1,6 @@
-// rng.rs
+//! custom_rng.rs
+//!
+//! This module contains a custom random number generator that can be used to generate random double values between 0 and 1.
 
 use rand::distributions::{Distribution, Uniform};
 use rand::rngs::StdRng;
@@ -43,6 +45,7 @@ impl CustomRNG {
 }
 
 /// A templated class for shuffling lists of data.
+#[derive(Clone, Debug)]
 pub struct RandomListShuffle<T> {
     generator: StdRng,
     _marker: std::marker::PhantomData<T>,
@@ -54,14 +57,15 @@ impl Default for RandomListShuffle<usize> {
     }
 }
 impl<T> RandomListShuffle<T> {
-    /// Default constructor.
+    /// Default constructor
     pub fn new() -> Self {
         RandomListShuffle {
             generator: StdRng::from_entropy(),
             _marker: std::marker::PhantomData,
         }
     }
-    /// Constructor that allows specifying a seed.
+
+    /// Constructor that allows specifying a seed
     pub fn with_seed(seed: Option<u64>) -> Self {
         let generator = match seed {
             Some(s) => StdRng::seed_from_u64(s),
@@ -79,12 +83,12 @@ impl<T> RandomListShuffle<T> {
         }
     }
 
-    /// Set the seed for the random number generator.
+    /// Set the seed for the random number generator
     pub fn seed(&mut self, seed: u64) {
         self.generator = StdRng::seed_from_u64(seed);
     }
 
-    /// Shuffle a vector of data.
+    /// Shuffle a vector of data
     pub fn shuffle(&mut self, data: &mut Vec<T>) {
         let rng = &mut self.generator;
         let slice = data.as_mut_slice();

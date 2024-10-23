@@ -1,6 +1,72 @@
-// sparse_matrix_base.rs
+//! sparse_matrix_base.rs
+//!
+//! Base Sparse Matrix Implementation
 
-use std::fmt;
+use std::{
+    collections::HashMap,
+    fmt,
+    ops::{Deref, DerefMut},
+};
+
+/// Wrapper for a mutable pointer to `EntryBase` that implements `Send`.
+#[derive(Clone, Debug)]
+pub struct EntryBasePtr<T: Clone + Default> {
+    ptr: *mut EntryBase<T>,
+}
+
+unsafe impl<T: Clone + Default> Send for EntryBasePtr<T> {}
+
+impl<T: Clone + Default> Deref for EntryBasePtr<T> {
+    type Target = EntryBase<T>;
+
+    fn deref(&self) -> &Self::Target {
+        unsafe { &*self.ptr }
+    }
+}
+
+impl<T: Clone + Default> DerefMut for EntryBasePtr<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        unsafe { &mut *self.ptr }
+    }
+}
+
+impl<T: Clone + Default> Copy for EntryBasePtr<T> {}
+
+unsafe impl<T: Clone + Default + Send> Send for EntryBase<T> {}
+
+impl<T: Clone + Default> EntryBasePtr<T> {
+    pub fn null_mut() -> Self {
+        EntryBasePtr {
+            ptr: std::ptr::null_mut(),
+        }
+    }
+
+    pub fn from_raw(ptr: *mut EntryBase<T>) -> Self {
+        EntryBasePtr { ptr }
+    }
+
+    pub fn as_ref(&self) -> Option<&EntryBase<T>> {
+        if self.ptr.is_null() {
+            None
+        } else {
+            Some(unsafe { &*self.ptr })
+        }
+    }
+
+    pub fn as_mut(&mut self) -> Option<&mut EntryBase<T>> {
+        if self.ptr.is_null() {
+            None
+        } else {
+            Some(unsafe { &mut *self.ptr })
+        }
+    }
+}
+
+impl<T: Clone + Default> Default for EntryBasePtr<T> {
+    fn default() -> Self {
+        EntryBasePtr::null_mut()
+    }
+}
 
 /// Base class for defining the node types for Sparse Matrices.
 ///
@@ -75,6 +141,7 @@ impl<T: Clone + Default> EntryBase<T> {
     }
 
     /// Returns a string representation of the entry.
+    ///     only returns 1 because other wise an entry doesn't exsit, and will be 0
     pub fn str(&self) -> &str {
         "1"
     }
@@ -82,11 +149,7 @@ impl<T: Clone + Default> EntryBase<T> {
 
 impl<T: Clone + Default> fmt::Debug for EntryBase<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "EntryBase(row_index: {}, col_index: {})",
-            self.row_index, self.col_index
-        )
+        write!(f, "EntryBase(row_index: {}, col_index: {})", self.row_index, self.col_index)
     }
 }
 
@@ -104,8 +167,8 @@ pub struct CsrMatrix {
 /// doubly linked list, where each row and column is represented by a linked list of entries.
 /// Each entry contains a reference to the next and previous entries in its row and column,
 /// respectively.
-#[derive(Default)]
-pub struct SparseMatrixBase<T: Clone + Default, E = EntryBase<T>> {
+#[derive(Default, Debug)]
+pub struct SparseMatrixBase<T: Clone + Default, E = EntryBase<T>, P = EntryBasePtr<T>> {
     pub m: usize, // Number of rows (checks)
     pub n: usize, // Number of columns (bits)
     pub node_count: usize,
@@ -115,11 +178,99 @@ pub struct SparseMatrixBase<T: Clone + Default, E = EntryBase<T>> {
     pub block_position: usize,
     pub block_idx: isize,
     pub entries: Vec<Vec<E>>,
-    pub removed_entries: Vec<*mut E>,
-    pub row_heads: Vec<*mut E>,
-    pub column_heads: Vec<*mut E>,
+    pub removed_entries: Vec<P>,
+    pub row_heads: Vec<P>,
+    pub column_heads: Vec<P>,
     pub memory_allocated: bool,
     pub _marker: std::marker::PhantomData<T>,
+}
+
+impl<T: Clone + Default> Clone for SparseMatrixBase<T> {
+    fn clone(&self) -> Self {
+        // Create a new SparseMatrixBase<T>
+        let mut new_matrix = SparseMatrixBase::new();
+
+        // Copy over the primitive fields
+        new_matrix.m = self.m;
+        new_matrix.n = self.n;
+        new_matrix.node_count = self.node_count;
+        new_matrix.entry_block_size = self.entry_block_size;
+        new_matrix.allocated_entry_count = self.allocated_entry_count;
+        new_matrix.released_entry_count = self.released_entry_count;
+        new_matrix.block_position = self.block_position;
+        new_matrix.block_idx = self.block_idx;
+        new_matrix.memory_allocated = self.memory_allocated;
+        new_matrix._marker = std::marker::PhantomData;
+
+        // Map to track old pointers to new pointers
+        let mut entry_map = HashMap::new();
+
+        // Clone the entries and build the mapping
+        for block in &self.entries {
+            let mut new_block = Vec::with_capacity(block.capacity());
+            for entry in block {
+                new_block.push(entry.clone());
+            }
+            new_matrix.entries.push(new_block);
+        }
+
+        // build mapping
+        for (old_block, new_block) in self.entries.iter().zip(new_matrix.entries.iter_mut()) {
+            for (old_entry, new_entry) in old_block.iter().zip(new_block.iter_mut()) {
+                let old_ptr = old_entry as *const EntryBase<T> as *mut EntryBase<T>;
+                let new_ptr = new_entry as *mut EntryBase<T>;
+                entry_map.insert(old_ptr, new_ptr);
+            }
+        }
+
+        // set the pointers to point to new entries
+        for block in new_matrix.entries.iter_mut() {
+            for entry in block.iter_mut() {
+                if entry.row_index == -100 && entry.col_index == -100 {
+                    // set all pointers to point to self, if is an invalid pointer
+                    entry.left = entry as *mut EntryBase<T>;
+                    entry.right = entry as *mut EntryBase<T>;
+                    entry.up = entry as *mut EntryBase<T>;
+                    entry.down = entry as *mut EntryBase<T>;
+                } else {
+                    entry.left = *entry_map
+                        .get(&entry.left)
+                        .expect(format!("left: {:p}, entry: {:?}", entry.left, unsafe { &*(entry.left) }).as_str());
+                    entry.right = *entry_map.get(&entry.right).unwrap();
+                    entry.up = *entry_map.get(&entry.up).unwrap();
+                    entry.down = *entry_map.get(&entry.down).unwrap();
+                }
+            }
+        }
+        new_matrix.row_heads = Vec::with_capacity(self.row_heads.capacity());
+        for old_head in self.row_heads.iter() {
+            let old_head_ptr = old_head.ptr;
+            let new_head = EntryBasePtr {
+                ptr: *entry_map.get(&old_head_ptr).unwrap(),
+            };
+            new_matrix.row_heads.push(new_head);
+        }
+        new_matrix.column_heads = Vec::with_capacity(self.column_heads.capacity());
+        for old_head in self.column_heads.iter() {
+            let old_head_ptr = old_head.ptr;
+            let new_head = EntryBasePtr {
+                ptr: *entry_map.get(&old_head_ptr).unwrap(),
+            };
+            new_matrix.column_heads.push(new_head);
+        }
+        new_matrix.removed_entries = Vec::with_capacity(self.removed_entries.capacity());
+        for old_removed_ptr in self.removed_entries.iter() {
+            let old_ptr = old_removed_ptr.ptr;
+            let new_ptr = if old_ptr.is_null() {
+                std::ptr::null_mut()
+            } else {
+                *entry_map.get(&old_ptr).unwrap()
+            };
+            new_matrix.removed_entries.push(EntryBasePtr { ptr: new_ptr });
+        }
+
+        new_matrix
+    }
 }
 
 impl<T: Clone + Default> SparseMatrixBase<T> {
@@ -144,12 +295,7 @@ impl<T: Clone + Default> SparseMatrixBase<T> {
     }
 
     /// Constructs a sparse matrix with the given dimensions.
-    pub fn initialise_sparse_matrix(
-        &mut self,
-        check_count: usize,
-        bit_count: usize,
-        entry_count: usize,
-    ) {
+    pub fn initialise_sparse_matrix(&mut self, check_count: usize, bit_count: usize, entry_count: usize) {
         self.reset_matrix();
         self.m = check_count;
         self.n = bit_count;
@@ -185,8 +331,8 @@ impl<T: Clone + Default> SparseMatrixBase<T> {
     pub fn allocate_memory(&mut self) {
         self.memory_allocated = true;
 
-        self.row_heads.resize(self.m, std::ptr::null_mut());
-        self.column_heads.resize(self.n, std::ptr::null_mut());
+        self.row_heads.resize(self.m, EntryBasePtr::null_mut());
+        self.column_heads.resize(self.n, EntryBasePtr::null_mut());
 
         for i in 0..self.m {
             let row_entry_ptr = self.allocate_new_entry();
@@ -198,7 +344,7 @@ impl<T: Clone + Default> SparseMatrixBase<T> {
                 (*row_entry_ptr).left = row_entry_ptr;
                 (*row_entry_ptr).right = row_entry_ptr;
             }
-            self.row_heads[i] = row_entry_ptr;
+            self.row_heads[i] = EntryBasePtr::from_raw(row_entry_ptr);
         }
 
         for i in 0..self.n {
@@ -211,14 +357,14 @@ impl<T: Clone + Default> SparseMatrixBase<T> {
                 (*col_entry_ptr).left = col_entry_ptr;
                 (*col_entry_ptr).right = col_entry_ptr;
             }
-            self.column_heads[i] = col_entry_ptr;
+            self.column_heads[i] = EntryBasePtr::from_raw(col_entry_ptr);
         }
     }
 
     /// Allocates a new entry object and returns a pointer to it.
     pub fn allocate_new_entry(&mut self) -> *mut EntryBase<T> {
         if !self.removed_entries.is_empty() {
-            return self.removed_entries.pop().unwrap();
+            return self.removed_entries.pop().unwrap().ptr;
         }
 
         if self.released_entry_count == self.allocated_entry_count {
@@ -229,8 +375,7 @@ impl<T: Clone + Default> SparseMatrixBase<T> {
             self.block_position = 0;
         }
 
-        let e_ptr =
-            &mut self.entries[self.block_idx as usize][self.block_position] as *mut EntryBase<T>;
+        let e_ptr = &mut self.entries[self.block_idx as usize][self.block_position] as *mut EntryBase<T>;
         self.block_position += 1;
         self.released_entry_count += 1;
         e_ptr
@@ -291,12 +436,12 @@ impl<T: Clone + Default> SparseMatrixBase<T> {
 
     /// Gets the number of non-zero entries in a row of the matrix.
     pub fn get_row_degree(&self, row: usize) -> isize {
-        unsafe { self.row_heads[row].as_ref().unwrap().col_index.abs() - 100 }
+        self.row_heads[row].as_ref().unwrap().col_index.abs() - 100
     }
 
     /// Gets the number of non-zero entries in a column of the matrix.
     pub fn get_col_degree(&self, col: usize) -> isize {
-        unsafe { self.column_heads[col].as_ref().unwrap().col_index.abs() - 100 }
+        self.column_heads[col].as_ref().unwrap().col_index.abs() - 100
     }
 
     /// Removes an entry from the matrix.
@@ -319,22 +464,16 @@ impl<T: Clone + Default> SparseMatrixBase<T> {
                 (*e_up_ptr).down = e_down_ptr;
                 (*e_down_ptr).up = e_up_ptr;
 
-                self.row_heads[(*e_ptr).row_index as usize]
-                    .as_mut()
-                    .unwrap()
-                    .col_index += 1;
-                self.column_heads[(*e_ptr).col_index as usize]
-                    .as_mut()
-                    .unwrap()
-                    .col_index += 1;
+                self.row_heads[(*e_ptr).row_index as usize].as_mut().unwrap().col_index += 1;
+                self.column_heads[(*e_ptr).col_index as usize].as_mut().unwrap().col_index += 1;
 
                 (*e_ptr).reset();
             }
-            self.removed_entries.push(e_ptr);
+            self.removed_entries.push(EntryBasePtr::from_raw(e_ptr));
         }
     }
 
-    /// Inserts a new entry in the matrix at position (j, i).
+    /// Inserts a new entry in the matrix at position (i, j).
     pub fn insert_entry(&mut self, j: usize, i: usize) -> *mut EntryBase<T> {
         // println!("new invokation, {i}, {j}");
         if j >= self.m || i >= self.n {
@@ -345,48 +484,40 @@ impl<T: Clone + Default> SparseMatrixBase<T> {
         let mut right_entry_ptr = self.row_heads[j];
         for e in self.reverse_iterate_row_mut(j) {
             let index = unsafe { (*e).col_index as usize };
-            // print!("index[{}] :", index);
             if index == i {
-                // print!("here1 ");
                 return e;
             }
             if index > i {
-                // print!("here2 ");
-                right_entry_ptr = e;
+                right_entry_ptr = EntryBasePtr::from_raw(e);
             }
             if index < i {
-                // print!("here3 ");
-                left_entry_ptr = e;
+                left_entry_ptr = EntryBasePtr::from_raw(e);
                 break;
             }
         }
-        // println!();
 
         let mut up_entry_ptr = self.column_heads[i];
         let mut down_entry_ptr = self.column_heads[i];
         for e in self.reverse_iterate_column_mut(i) {
             let row_index = unsafe { (*e).row_index as usize };
             if row_index > j {
-                // print!("here4 ");
-                down_entry_ptr = e;
+                down_entry_ptr = EntryBasePtr::from_raw(e);
             }
             if row_index < j {
-                // print!("here5 ");
-                up_entry_ptr = e;
+                up_entry_ptr = EntryBasePtr::from_raw(e);
                 break;
             }
         }
-        // println!();
 
         let e_ptr = self.allocate_new_entry();
         self.node_count += 1;
         unsafe {
             (*e_ptr).row_index = j as isize;
             (*e_ptr).col_index = i as isize;
-            (*e_ptr).right = right_entry_ptr;
-            (*e_ptr).left = left_entry_ptr;
-            (*e_ptr).up = up_entry_ptr;
-            (*e_ptr).down = down_entry_ptr;
+            (*e_ptr).right = right_entry_ptr.ptr;
+            (*e_ptr).left = left_entry_ptr.ptr;
+            (*e_ptr).up = up_entry_ptr.ptr;
+            (*e_ptr).down = down_entry_ptr.ptr;
             (*left_entry_ptr).right = e_ptr;
             (*right_entry_ptr).left = e_ptr;
             (*up_entry_ptr).down = e_ptr;
@@ -394,14 +525,6 @@ impl<T: Clone + Default> SparseMatrixBase<T> {
 
             (*self.row_heads[(*e_ptr).row_index as usize]).col_index -= 1;
             (*self.column_heads[(*e_ptr).col_index as usize]).col_index -= 1;
-            // println!(
-            //     "{}",
-            //     (*self.row_heads[(*e_ptr).row_index as usize]).col_index
-            // );
-            // println!(
-            //     "{}",
-            //     (*self.column_heads[(*e_ptr).col_index as usize]).col_index
-            // );
         }
         e_ptr
     }
@@ -419,7 +542,7 @@ impl<T: Clone + Default> SparseMatrixBase<T> {
                 }
             }
         }
-        self.column_heads[i]
+        self.column_heads[i].ptr
     }
 
     pub fn get_entry(&self, j: usize, i: usize) -> *const EntryBase<T> {
@@ -434,7 +557,7 @@ impl<T: Clone + Default> SparseMatrixBase<T> {
                 }
             }
         }
-        self.column_heads[i]
+        self.column_heads[i].ptr
     }
 
     /// Inserts a new row at row_index with entries at column indices col_indices.
@@ -442,7 +565,7 @@ impl<T: Clone + Default> SparseMatrixBase<T> {
         for &j in col_indices {
             self.insert_entry(row_index, j);
         }
-        self.row_heads[row_index]
+        self.row_heads[row_index].ptr
     }
 
     /// Returns the coordinates of all non-zero entries in the matrix.
@@ -603,7 +726,7 @@ impl<'a, T: Clone + Default> RowIterator<'a, T> {
             _matrix: matrix,
             it_count: 0,
             entry_count: matrix.get_row_degree(i),
-            e: matrix.row_heads[i],
+            e: matrix.row_heads[i].ptr,
         }
     }
 }
@@ -637,7 +760,7 @@ impl<'a, T: Clone + Default> ReverseRowIterator<'a, T> {
             _matrix: matrix,
             it_count: 0,
             entry_count: matrix.get_row_degree(i),
-            e: matrix.row_heads[i],
+            e: matrix.row_heads[i].ptr,
         }
     }
 }
@@ -657,78 +780,6 @@ impl<'a, T: Clone + Default> Iterator for ReverseRowIterator<'a, T> {
     }
 }
 
-// // Corrected RowIterator
-// pub struct RowIterator<'a, T: Clone + Default> {
-//     matrix: &'a SparseMatrixBase<T>,
-//     current: *mut EntryBase<T>,
-//     row_head: *mut EntryBase<T>,
-// }
-
-// impl<'a, T: Clone + Default> RowIterator<'a, T> {
-//     fn new(matrix: &'a SparseMatrixBase<T>, i: usize) -> Self {
-//         let row_head = matrix.row_heads[i];
-//         unsafe {
-//             RowIterator {
-//                 matrix,
-//                 current: (*row_head).right, // Start from the first entry
-//                 row_head,
-//             }
-//         }
-//     }
-// }
-
-// impl<'a, T: Clone + Default> Iterator for RowIterator<'a, T> {
-//     type Item = *mut EntryBase<T>;
-
-//     fn next(&mut self) -> Option<Self::Item> {
-//         if self.current == self.row_head {
-//             None // Traversal complete
-//         } else {
-//             let result = self.current;
-//             unsafe {
-//                 self.current = (*self.current).right;
-//             }
-//             Some(result)
-//         }
-//     }
-// }
-
-// // Corrected ReverseRowIterator
-// pub struct ReverseRowIterator<'a, T: Clone + Default> {
-//     matrix: &'a SparseMatrixBase<T>,
-//     current: *mut EntryBase<T>,
-//     row_head: *mut EntryBase<T>,
-// }
-
-// impl<'a, T: Clone + Default> ReverseRowIterator<'a, T> {
-//     fn new(matrix: &'a SparseMatrixBase<T>, i: usize) -> Self {
-//         let row_head = matrix.row_heads[i];
-//         unsafe {
-//             ReverseRowIterator {
-//                 matrix,
-//                 current: (*row_head).left, // Start from the last entry
-//                 row_head,
-//             }
-//         }
-//     }
-// }
-
-// impl<'a, T: Clone + Default> Iterator for ReverseRowIterator<'a, T> {
-//     type Item = *mut EntryBase<T>;
-
-//     fn next(&mut self) -> Option<Self::Item> {
-//         if self.current == self.row_head {
-//             None // Traversal complete
-//         } else {
-//             let result = self.current;
-//             unsafe {
-//                 self.current = (*self.current).left;
-//             }
-//             Some(result)
-//         }
-//     }
-// }
-
 /// Iterator for iterating over columns in a sparse matrix.
 pub struct ColumnIterator<'a, T: Clone + Default> {
     _matrix: &'a SparseMatrixBase<T>,
@@ -743,7 +794,7 @@ impl<'a, T: Clone + Default> ColumnIterator<'a, T> {
             _matrix: matrix,
             it_count: 0,
             entry_count: matrix.get_col_degree(i),
-            e: matrix.column_heads[i],
+            e: matrix.column_heads[i].ptr,
         }
     }
 }
@@ -777,7 +828,7 @@ impl<'a, T: Clone + Default> ReverseColumnIterator<'a, T> {
             _matrix: matrix,
             it_count: 0,
             entry_count: matrix.get_col_degree(i),
-            e: matrix.column_heads[i],
+            e: matrix.column_heads[i].ptr,
         }
     }
 }

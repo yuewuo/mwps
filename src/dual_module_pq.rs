@@ -865,6 +865,13 @@ where
             }
         }
     }
+
+    fn update_weights(&mut self, _log_prob_ratios: &[f64]) {
+        for (edge, log_prob_ratio) in self.edges.iter().zip(_log_prob_ratios.iter()) {
+            let mut edge = edge.write();
+            edge.weight = Rational::from_f64(*log_prob_ratio).unwrap();
+        }
+    }
 }
 
 impl<Queue> MWPSVisualizer for DualModulePQ<Queue>

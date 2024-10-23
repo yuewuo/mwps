@@ -30,6 +30,10 @@ impl OrderedFloat {
     pub fn new_raw(numer: i32, denom: i32) -> Self {
         Self::new(numer as BaseFloat / denom as BaseFloat)
     }
+
+    pub fn is_number(&self) -> bool {
+        self.0.is_finite()
+    }
 }
 
 // Implement num_traits

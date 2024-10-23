@@ -106,6 +106,21 @@ pub trait ExampleCode {
         self.immutable_vertices_edges().0.len() as VertexNum
     }
 
+    /// get the number of edges
+    fn edge_num(&self) -> usize {
+        self.immutable_vertices_edges().1.len()
+    }
+
+    /// get edges for iteration
+    fn edges(&self) -> &Vec<CodeEdge> {
+        self.immutable_vertices_edges().1
+    }
+
+    /// get mutable edges for iteration
+    fn edges_mut(&mut self) -> &mut Vec<CodeEdge> {
+        self.vertices_edges().1
+    }
+
     /// generic method that automatically computes integer weights from probabilities,
     /// scales such that the maximum integer weight is 10000 and the minimum is 1
     fn compute_weights(&mut self, weight_upper_limit: Weight) {
@@ -391,6 +406,13 @@ pub trait ExampleCode {
     fn is_defect(&self, vertex_idx: usize) -> bool {
         let (vertices, _edges) = self.immutable_vertices_edges();
         vertices[vertex_idx].is_defect
+    }
+
+    /// update code's weights based on the log probability ratios, this is majorly used for maintaining up-to-date initializer (for generating corret result-verifier)
+    fn update_weights(&mut self, _log_prob_ratios: &[f64]) {
+        for (edge, &new_weight) in self.edges_mut().iter_mut().zip(_log_prob_ratios.iter()) {
+            edge.weight = new_weight.round() as usize;
+        }
     }
 }
 
@@ -943,92 +965,6 @@ impl ExampleCode for QECPlaygroundCode {
     }
 }
 
-#[cfg(all(feature = "python_binding", feature = "qecp_integrate"))]
-bind_trait_example_code! {QECPlaygroundCode}
-
-#[cfg(feature = "qecp_integrate")]
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct QECPlaygroundCodeConfig {
-    // default to d
-    pub di: Option<usize>,
-    pub dj: Option<usize>,
-    pub nm: Option<usize>,
-    #[serde(default = "qec_playground_default_configs::pe")]
-    pub pe: f64,
-    pub noise_model_modifier: Option<serde_json::Value>,
-    #[serde(default = "qec_playground_default_configs::code_type")]
-    pub code_type: qecp::code_builder::CodeType,
-    #[serde(default = "qec_playground_default_configs::bias_eta")]
-    pub bias_eta: f64,
-    pub noise_model: Option<qecp::noise_model_builder::NoiseModelBuilder>,
-    #[serde(default = "qec_playground_default_configs::noise_model_configuration")]
-    pub noise_model_configuration: serde_json::Value,
-    #[serde(default = "qec_playground_default_configs::parallel_init")]
-    pub parallel_init: usize,
-    #[serde(default = "qec_playground_default_configs::use_brief_edge")]
-    pub use_brief_edge: bool,
-    // specify the target qubit type
-    pub qubit_type: Option<qecp::types::QubitType>,
-    #[serde(default = "qec_playground_default_configs::max_weight")]
-    pub max_weight: usize,
-}
-
-#[cfg(feature = "qecp_integrate")]
-pub mod qec_playground_default_configs {
-    pub fn pe() -> f64 {
-        0.
-    }
-    pub fn bias_eta() -> f64 {
-        0.5
-    }
-    pub fn noise_model_configuration() -> serde_json::Value {
-        json!({})
-    }
-    pub fn code_type() -> qecp::code_builder::CodeType {
-        qecp::code_builder::CodeType::StandardPlanarCode
-    }
-    pub fn parallel_init() -> usize {
-        1
-    }
-    pub fn use_brief_edge() -> bool {
-        false
-    }
-    pub fn max_weight() -> usize {
-        1000000
-    }
-}
-
-#[cfg(feature = "qecp_integrate")]
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct HyperionDecoderConfig {
-    /// weight function, by default using [`WeightFunction::AutotuneImproved`]
-    #[serde(alias = "wf")] // abbreviation
-    #[serde(default = "hyperion_default_configs::weight_function")]
-    pub weight_function: qecp::model_graph::WeightFunction,
-    /// combined probability can improve accuracy, but will cause probabilities differ a lot even in the case of i.i.d. noise model
-    #[serde(alias = "ucp")] // abbreviation
-    #[serde(default = "hyperion_default_configs::use_combined_probability")]
-    pub use_combined_probability: bool,
-    #[serde(default = "hyperion_default_configs::default_hyperion_config")]
-    pub hyperion_config: serde_json::Value,
-}
-
-#[cfg(feature = "qecp_integrate")]
-pub mod hyperion_default_configs {
-    use super::*;
-    pub fn default_hyperion_config() -> serde_json::Value {
-        json!({})
-    }
-    pub fn weight_function() -> qecp::model_graph::WeightFunction {
-        qecp::model_graph::WeightFunction::AutotuneImproved
-    }
-    pub fn use_combined_probability() -> bool {
-        true
-    } // default use combined probability for better accuracy
-}
-
 #[cfg(feature = "qecp_integrate")]
 impl QECPlaygroundCode {
     #[allow(clippy::unnecessary_cast)]
@@ -1124,6 +1060,92 @@ impl QECPlaygroundCode {
         }
         code
     }
+}
+
+#[cfg(all(feature = "python_binding", feature = "qecp_integrate"))]
+bind_trait_example_code! {QECPlaygroundCode}
+
+#[cfg(feature = "qecp_integrate")]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct QECPlaygroundCodeConfig {
+    // default to d
+    pub di: Option<usize>,
+    pub dj: Option<usize>,
+    pub nm: Option<usize>,
+    #[serde(default = "qec_playground_default_configs::pe")]
+    pub pe: f64,
+    pub noise_model_modifier: Option<serde_json::Value>,
+    #[serde(default = "qec_playground_default_configs::code_type")]
+    pub code_type: qecp::code_builder::CodeType,
+    #[serde(default = "qec_playground_default_configs::bias_eta")]
+    pub bias_eta: f64,
+    pub noise_model: Option<qecp::noise_model_builder::NoiseModelBuilder>,
+    #[serde(default = "qec_playground_default_configs::noise_model_configuration")]
+    pub noise_model_configuration: serde_json::Value,
+    #[serde(default = "qec_playground_default_configs::parallel_init")]
+    pub parallel_init: usize,
+    #[serde(default = "qec_playground_default_configs::use_brief_edge")]
+    pub use_brief_edge: bool,
+    // specify the target qubit type
+    pub qubit_type: Option<qecp::types::QubitType>,
+    #[serde(default = "qec_playground_default_configs::max_weight")]
+    pub max_weight: usize,
+}
+
+#[cfg(feature = "qecp_integrate")]
+pub mod qec_playground_default_configs {
+    pub fn pe() -> f64 {
+        0.
+    }
+    pub fn bias_eta() -> f64 {
+        0.5
+    }
+    pub fn noise_model_configuration() -> serde_json::Value {
+        json!({})
+    }
+    pub fn code_type() -> qecp::code_builder::CodeType {
+        qecp::code_builder::CodeType::StandardPlanarCode
+    }
+    pub fn parallel_init() -> usize {
+        1
+    }
+    pub fn use_brief_edge() -> bool {
+        false
+    }
+    pub fn max_weight() -> usize {
+        1000000
+    }
+}
+
+#[cfg(feature = "qecp_integrate")]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HyperionDecoderConfig {
+    /// weight function, by default using [`WeightFunction::AutotuneImproved`]
+    #[serde(alias = "wf")] // abbreviation
+    #[serde(default = "hyperion_default_configs::weight_function")]
+    pub weight_function: qecp::model_graph::WeightFunction,
+    /// combined probability can improve accuracy, but will cause probabilities differ a lot even in the case of i.i.d. noise model
+    #[serde(alias = "ucp")] // abbreviation
+    #[serde(default = "hyperion_default_configs::use_combined_probability")]
+    pub use_combined_probability: bool,
+    #[serde(default = "hyperion_default_configs::default_hyperion_config")]
+    pub hyperion_config: serde_json::Value,
+}
+
+#[cfg(feature = "qecp_integrate")]
+pub mod hyperion_default_configs {
+    use super::*;
+    pub fn default_hyperion_config() -> serde_json::Value {
+        json!({})
+    }
+    pub fn weight_function() -> qecp::model_graph::WeightFunction {
+        qecp::model_graph::WeightFunction::AutotuneImproved
+    }
+    pub fn use_combined_probability() -> bool {
+        true
+    } // default use combined probability for better accuracy
 }
 
 /// read from file, including the error patterns;

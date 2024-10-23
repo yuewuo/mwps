@@ -1,4 +1,5 @@
 #![cfg_attr(feature = "python_binding", feature(cfg_eval))]
+#![feature(get_mut_unchecked)]
 
 extern crate serde;
 #[macro_use]
@@ -52,6 +53,8 @@ pub mod relaxer_optimizer;
 pub mod union_find;
 pub mod util;
 pub mod visualize;
+
+pub use bp;
 
 #[cfg(feature = "python_binding")]
 use pyo3::prelude::*;
