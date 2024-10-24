@@ -203,6 +203,7 @@ impl PrimalDualSolver for SolverSerialPlugins {
         self.primal_module.print_clusters();
     }
     fn update_weights(&mut self, llrs: &mut Vec<f64>) {
+        // note: this will be fix bp with incr_lp problem, but the bp results are scaled, such that is less accurate...
         let mut_model_graph = unsafe { Arc::get_mut_unchecked(&mut self.model_graph) };
         let mut_initializer = unsafe { Arc::get_mut_unchecked(&mut mut_model_graph.initializer) };
 
