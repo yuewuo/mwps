@@ -125,21 +125,30 @@ pub trait ExampleCode {
     /// scales such that the maximum integer weight is 10000 and the minimum is 1
     fn compute_weights(&mut self, weight_upper_limit: Weight) {
         let (_vertices, edges) = self.vertices_edges();
+        let mut unscaled_weights = Vec::<f64>::with_capacity(edges.len());
         let mut max_weight = 0.;
         for edge in edges.iter() {
             let weight = weight_of_p(edge.p);
             if weight > max_weight {
                 max_weight = weight;
             }
+            unscaled_weights.push(weight);
         }
         assert!(max_weight > 0., "max weight is not expected to be 0.");
         // scale all weights but set the smallest to 1
         for edge in edges.iter_mut() {
             let weight = weight_of_p(edge.p);
             let new_weight: Weight = ((weight_upper_limit as f64) * weight / max_weight).round() as Weight;
-            edge.weight = if new_weight == 0 { 1 } else { new_weight }; // weight is required to be even
+            edge.weight = if new_weight == 0 { 1 } else { new_weight };
         }
+        self.set_unscaled_weights(unscaled_weights);
     }
+
+    /// get unscaled weights for BP
+    fn get_unscaled_weights(&self) -> &Vec<f64>;
+
+    /// set unscaled weights for BP
+    fn set_unscaled_weights(&mut self, unscaled_weights: Vec<f64>);
 
     /// remove duplicate edges by keeping one with largest probability
     #[allow(clippy::unnecessary_cast)]
@@ -540,6 +549,8 @@ pub struct CodeCapacityRepetitionCode {
     /// nearest-neighbor edges in the decoding graph
     #[cfg_attr(feature = "python_binding", pyo3(get, set))]
     pub edges: Vec<CodeEdge>,
+    /// unscaled weights for BP
+    pub unscaled_weights: Vec<f64>,
 }
 
 impl ExampleCode for CodeCapacityRepetitionCode {
@@ -548,6 +559,12 @@ impl ExampleCode for CodeCapacityRepetitionCode {
     }
     fn immutable_vertices_edges(&self) -> (&Vec<CodeVertex>, &Vec<CodeEdge>) {
         (&self.vertices, &self.edges)
+    }
+    fn get_unscaled_weights(&self) -> &Vec<f64> {
+        &self.unscaled_weights
+    }
+    fn set_unscaled_weights(&mut self, unscaled_weights: Vec<f64>) {
+        self.unscaled_weights = unscaled_weights;
     }
 }
 
@@ -580,6 +597,7 @@ impl CodeCapacityRepetitionCode {
         let mut code = Self {
             vertices: Vec::new(),
             edges,
+            unscaled_weights: Vec::new(),
         };
         // create vertices
         code.fill_vertices(vertex_num);
@@ -606,6 +624,8 @@ pub struct CodeCapacityPlanarCode {
     /// nearest-neighbor edges in the decoding graph
     #[cfg_attr(feature = "python_binding", pyo3(get, set))]
     pub edges: Vec<CodeEdge>,
+    /// unscaled weights for BP
+    pub unscaled_weights: Vec<f64>,
 }
 
 impl ExampleCode for CodeCapacityPlanarCode {
@@ -614,6 +634,12 @@ impl ExampleCode for CodeCapacityPlanarCode {
     }
     fn immutable_vertices_edges(&self) -> (&Vec<CodeVertex>, &Vec<CodeEdge>) {
         (&self.vertices, &self.edges)
+    }
+    fn get_unscaled_weights(&self) -> &Vec<f64> {
+        &self.unscaled_weights
+    }
+    fn set_unscaled_weights(&mut self, unscaled_weights: Vec<f64>) {
+        self.unscaled_weights = unscaled_weights;
     }
 }
 
@@ -655,6 +681,7 @@ impl CodeCapacityPlanarCode {
         let mut code = Self {
             vertices: Vec::new(),
             edges,
+            unscaled_weights: Vec::new(),
         };
         // create vertices
         code.fill_vertices(vertex_num);
@@ -684,6 +711,8 @@ pub struct CodeCapacityTailoredCode {
     /// nearest-neighbor edges in the decoding graph
     #[cfg_attr(feature = "python_binding", pyo3(get, set))]
     pub edges: Vec<CodeEdge>,
+    /// unscaled weights for BP
+    pub unscaled_weights: Vec<f64>,
 }
 
 impl ExampleCode for CodeCapacityTailoredCode {
@@ -692,6 +721,12 @@ impl ExampleCode for CodeCapacityTailoredCode {
     }
     fn immutable_vertices_edges(&self) -> (&Vec<CodeVertex>, &Vec<CodeEdge>) {
         (&self.vertices, &self.edges)
+    }
+    fn get_unscaled_weights(&self) -> &Vec<f64> {
+        &self.unscaled_weights
+    }
+    fn set_unscaled_weights(&mut self, unscaled_weights: Vec<f64>) {
+        self.unscaled_weights = unscaled_weights;
     }
 }
 
@@ -783,6 +818,7 @@ impl CodeCapacityTailoredCode {
         let mut code = Self {
             vertices: Vec::new(),
             edges,
+            unscaled_weights: Vec::new(),
         };
         // there might be duplicate edges; select a larger probability one
         code.remove_duplicate_edges();
@@ -808,6 +844,8 @@ pub struct CodeCapacityColorCode {
     /// nearest-neighbor edges in the decoding graph
     #[cfg_attr(feature = "python_binding", pyo3(get, set))]
     pub edges: Vec<CodeEdge>,
+    /// unscaled weights for BP
+    pub unscaled_weights: Vec<f64>,
 }
 
 impl ExampleCode for CodeCapacityColorCode {
@@ -816,6 +854,12 @@ impl ExampleCode for CodeCapacityColorCode {
     }
     fn immutable_vertices_edges(&self) -> (&Vec<CodeVertex>, &Vec<CodeEdge>) {
         (&self.vertices, &self.edges)
+    }
+    fn get_unscaled_weights(&self) -> &Vec<f64> {
+        &self.unscaled_weights
+    }
+    fn set_unscaled_weights(&mut self, unscaled_weights: Vec<f64>) {
+        self.unscaled_weights = unscaled_weights;
     }
 }
 
@@ -886,6 +930,7 @@ impl CodeCapacityColorCode {
         let mut code = Self {
             vertices: Vec::new(),
             edges,
+            unscaled_weights: Vec::new(),
         };
         // create vertices
         code.fill_vertices(vertex_num);
@@ -912,6 +957,8 @@ pub struct QECPlaygroundCode {
     /// nearest-neighbor edges in the decoding graph
     #[cfg_attr(feature = "python_binding", pyo3(get, set))]
     pub edges: Vec<CodeEdge>,
+    /// unscaled weights for BP
+    pub unscaled_weights: Vec<f64>,
 }
 
 #[cfg(feature = "qecp_integrate")]
@@ -963,6 +1010,12 @@ impl ExampleCode for QECPlaygroundCode {
         // TODO: generate the real error pattern
         (self.get_syndrome(), vec![])
     }
+    fn get_unscaled_weights(&self) -> &Vec<f64> {
+        &self.unscaled_weights
+    }
+    fn set_unscaled_weights(&mut self, unscaled_weights: Vec<f64>) {
+        self.unscaled_weights = unscaled_weights;
+    }
 }
 
 #[cfg(feature = "qecp_integrate")]
@@ -1006,7 +1059,9 @@ impl QECPlaygroundCode {
         let model_hypergraph = Arc::new(model_hypergraph);
         // implementing: model_hypergraph.generate_mwpf_hypergraph(config.max_weight);
         let mut maximum_weight = 0.;
+        let mut unscaled_weights = Vec::with_capacity(model_hypergraph.weighted_edges.len());
         for (_, hyperedge_group) in model_hypergraph.weighted_edges.iter() {
+            unscaled_weights.push(hyperedge_group.hyperedge.weight);
             if hyperedge_group.hyperedge.probability > 0. && hyperedge_group.hyperedge.weight > maximum_weight {
                 maximum_weight = hyperedge_group.hyperedge.weight;
             }
@@ -1037,6 +1092,7 @@ impl QECPlaygroundCode {
             edge_index_map: std::sync::Arc::new(HashMap::new()), // overwrite later
             vertices: Vec::with_capacity(initializer.vertex_num),
             edges: Vec::with_capacity(initializer.weighted_edges.len()),
+            unscaled_weights,
         };
         let mut edge_index_map = HashMap::new();
         for (edge_index, hyperedge) in initializer.weighted_edges.iter().cloned().enumerate() {
@@ -1184,6 +1240,12 @@ impl ExampleCode for ErrorPatternReader {
         let syndrome_pattern = self.syndrome_patterns[self.syndrome_index].clone();
         self.syndrome_index += 1;
         (syndrome_pattern, vec![])
+    }
+    fn get_unscaled_weights(&self) -> &Vec<f64> {
+        unimplemented!()
+    }
+    fn set_unscaled_weights(&mut self, _unscaled_weights: Vec<f64>) {
+        unimplemented!()
     }
 }
 

@@ -320,11 +320,9 @@ impl Cli {
 
                 if use_bp {
                     let channel_probabilities = vec![p; code.edge_num()];
-                    let initial_log_ratios = code.edges().iter().map(|edge| edge.weight as f64).collect();
-                    let mut bp_decoder = BpDecoder::new_3(pcm, channel_probabilities, 1).unwrap();
-                    bp_decoder.set_log_domain_bp(&initial_log_ratios);
+                    let bp_decoder = BpDecoder::new_3(pcm, channel_probabilities, 1).unwrap();
                     bp_decoder_option = Some(bp_decoder);
-                    initial_log_ratios_option = Some(initial_log_ratios);
+                    initial_log_ratios_option = Some(code.get_unscaled_weights().clone());
                 }
 
                 if pe != 0. {
@@ -364,12 +362,12 @@ impl Cli {
 
                         bp_decoder.set_log_domain_bp(initial_log_ratios);
                         bp_decoder.decode(&syndrome_array);
-                        let llrs = &bp_decoder.log_prob_ratios;
-                        code.update_weights(llrs);
+                        let mut llrs = bp_decoder.log_prob_ratios.clone();
 
-                        primal_dual_solver.update_weights(llrs);
+                        primal_dual_solver.update_weights(&mut llrs);
 
                         // note: may/may not be needed
+                        // code.update_weights(&llrs);
                         // initializer = code.get_initializer();
                         // let mut result_verifier = verifier.build(&initializer);
                     }
@@ -425,12 +423,12 @@ impl Cli {
 
                         bp_decoder.set_log_domain_bp(initial_log_ratios);
                         bp_decoder.decode(&syndrome_array);
-                        let llrs = &bp_decoder.log_prob_ratios;
-                        code.update_weights(llrs);
+                        let mut llrs = bp_decoder.log_prob_ratios.clone();
 
-                        primal_dual_solver.update_weights(llrs);
+                        primal_dual_solver.update_weights(&mut llrs);
 
                         // note: may/may not be needed
+                        // code.update_weights(&llrs);
                         // initializer = code.get_initializer();
                         // let mut result_verifier = verifier.build(&initializer);
                     }

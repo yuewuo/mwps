@@ -45,8 +45,7 @@ pub trait PrimalDualSolver {
     fn print_clusters(&self) {
         panic!();
     }
-
-    fn update_weights(&mut self, _new_weights: &[f64]) {}
+    fn update_weights(&mut self, _new_weights: &mut Vec<f64>) {}
     fn get_model_graph(&self) -> Arc<ModelHyperGraph>;
 }
 
@@ -203,12 +202,24 @@ impl PrimalDualSolver for SolverSerialPlugins {
     fn print_clusters(&self) {
         self.primal_module.print_clusters();
     }
-    fn update_weights(&mut self, llrs: &[f64]) {
+    fn update_weights(&mut self, llrs: &mut Vec<f64>) {
         let mut_model_graph = unsafe { Arc::get_mut_unchecked(&mut self.model_graph) };
         let mut_initializer = unsafe { Arc::get_mut_unchecked(&mut mut_model_graph.initializer) };
-        for (hyper_edge, new_weight) in mut_initializer.weighted_edges.iter_mut().zip(llrs.iter()) {
+
+        for (hyper_edge, new_weight) in mut_initializer.weighted_edges.iter_mut().zip(llrs.iter_mut()) {
+            let mut temp = 1. / (1. + new_weight.exp()) * hyper_edge.weight as f64;
+            let eps = 1e-14;
+            temp = if temp > 1. - eps {
+                1. - eps
+            } else if temp < eps {
+                eps
+            } else {
+                temp
+            };
+            *new_weight = -temp.ln();
             hyper_edge.weight = (*new_weight).round() as usize;
         }
+
         self.dual_module.update_weights(llrs);
     }
     fn get_model_graph(&self) -> Arc<ModelHyperGraph> {
@@ -243,14 +254,8 @@ macro_rules! bind_primal_dual_solver_trait {
             fn print_clusters(&self) {
                 self.0.print_clusters()
             }
-            fn update_weights(&mut self, llrs: &[f64]) {
-                let mut_model_graph = unsafe { Arc::get_mut_unchecked(&mut self.0.model_graph) };
-                let mut_initializer = unsafe { Arc::get_mut_unchecked(&mut mut_model_graph.initializer) };
-                for (hyper_edge, new_weight) in mut_initializer.weighted_edges.iter_mut().zip(llrs.iter()) {
-                    hyper_edge.weight = (*new_weight).round() as usize;
-                }
-
-                self.0.dual_module.update_weights(llrs);
+            fn update_weights(&mut self, llrs: &mut Vec<f64>) {
+                self.0.update_weights(llrs)
             }
             fn get_model_graph(&self) -> Arc<ModelHyperGraph> {
                 self.0.model_graph.clone()
