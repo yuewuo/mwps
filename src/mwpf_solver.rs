@@ -203,11 +203,13 @@ impl PrimalDualSolver for SolverSerialPlugins {
         self.primal_module.print_clusters();
     }
     fn update_weights(&mut self, llrs: &mut Vec<f64>) {
-        // note: this will be fix bp with incr_lp problem, but the bp results are scaled, such that is less accurate...
-        let mut_model_graph = unsafe { Arc::get_mut_unchecked(&mut self.model_graph) };
-        let mut_initializer = unsafe { Arc::get_mut_unchecked(&mut mut_model_graph.initializer) };
+        // note: this will be fix bp with incr_lp problem, but the bp results are scaled, such that could be less accurate/slower...
 
-        for (hyper_edge, new_weight) in mut_initializer.weighted_edges.iter_mut().zip(llrs.iter_mut()) {
+        // should update or not? If updated, then need to reset
+        // let mut_model_graph = unsafe { Arc::get_mut_unchecked(&mut self.model_graph) };
+        // let mut_initializer = unsafe { Arc::get_mut_unchecked(&mut mut_model_graph.initializer) };
+
+        for (hyper_edge, new_weight) in self.model_graph.initializer.weighted_edges.iter().zip(llrs.iter_mut()) {
             let mut temp = 1. / (1. + new_weight.exp()) * hyper_edge.weight as f64;
             let eps = 1e-14;
             temp = if temp > 1. - eps {
@@ -218,7 +220,7 @@ impl PrimalDualSolver for SolverSerialPlugins {
                 temp
             };
             *new_weight = -temp.ln();
-            hyper_edge.weight = (*new_weight).round() as usize;
+            // hyper_edge.weight = (*new_weight).round() as usize;
         }
 
         self.dual_module.update_weights(llrs);
