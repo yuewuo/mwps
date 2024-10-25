@@ -1,4 +1,4 @@
-import { type Ref, ref } from 'vue'
+import { type Ref, ref, type ComputedRef, computed } from 'vue'
 import { Pane, FolderApi } from 'tweakpane'
 import { assert } from '@/util'
 import { Vector3, type OrthographicCamera, type Intersection } from 'three'
@@ -113,22 +113,31 @@ export class RuntimeData {
     }
 }
 
+export class ConfigProps {
+    show_config: boolean = true
+    full_screen: boolean = true
+    segments: number = 32
+}
+
 /* configuration helper class given the runtime data */
 export class Config {
     data: RuntimeData
-    basic: BasicConfig = new BasicConfig()
-    snapshot: SnapshotConfig = new SnapshotConfig()
+    config_prop: ConfigProps
+    basic: BasicConfig
+    snapshot_config: SnapshotConfig = new SnapshotConfig()
     camera: CameraConfig = new CameraConfig()
     pane?: Pane
 
-    constructor (data: RuntimeData) {
+    constructor (data: RuntimeData, config_prop: ConfigProps) {
         this.data = data
+        this.config_prop = config_prop
+        this.basic = new BasicConfig(config_prop.segments)
     }
 
     create_pane (container: any) {
         assert(this.pane == null, 'cannot create pane twice')
         this.pane = new Pane({
-            title: 'Visualizer Config',
+            title: this.title,
             container: container,
             expanded: false
         })
@@ -137,7 +146,7 @@ export class Config {
         for (const [name, _] of this.data.visualizer.snapshots) {
             snapshot_names.push(name as string)
         }
-        this.snapshot.add_to(pane.addFolder({ title: 'Camera', expanded: true }), snapshot_names)
+        this.snapshot_config.add_to(pane.addFolder({ title: 'Camera', expanded: true }), snapshot_names)
         this.camera.add_to(pane.addFolder({ title: 'Camera', expanded: true }))
         this.basic.add_to(pane.addFolder({ title: 'Basic', expanded: true }))
     }
@@ -147,9 +156,8 @@ export class Config {
         pane.refresh()
     }
 
-    public set title (title: string) {
-        const pane: FolderApi = this.pane
-        pane.title = title
+    public get title (): string {
+        return `MWPF (${this.snapshot_index + 1}/${this.snapshot_num})`
     }
 
     public set aspect_ratio (aspect_ratio: number) {
@@ -158,13 +166,22 @@ export class Config {
     }
 
     public set snapshot_index (index: number) {
-        this.snapshot.index = index
-        this.snapshot.name = index
+        this.snapshot_config.index = index
+        this.snapshot_config.name = index
+        const pane: FolderApi = this.pane
+        pane.title = this.title
         this.refresh_pane()
     }
 
     public get snapshot_index (): number {
-        return this.snapshot.index
+        return this.snapshot_config.index
+    }
+
+    public get snapshot (): ComputedRef<Snapshot> {
+        const that = this
+        return computed(() => {
+            return that.data.visualizer.snapshots[that.snapshot_index][1] as Snapshot
+        })
     }
 
     public get snapshot_num (): number {
@@ -176,12 +193,18 @@ export class Config {
 export class BasicConfig {
     aspect_ratio: number = 1
     background: string = '#ffffff'
+    segments: number
     show_stats: boolean = true
+
+    constructor (segments: number) {
+        this.segments = segments
+    }
 
     add_to (pane: FolderApi): void {
         pane.addBinding(this, 'aspect_ratio', { min: 0.1, max: 3 })
         pane.addBinding(this, 'background')
         pane.addBinding(this, 'show_stats')
+        pane.addBinding(this, 'segments', { step: 1, min: 3, max: 128 })
     }
 }
 
@@ -219,7 +242,7 @@ export class CameraConfig {
             })
         }
         this.zoom = this.zoom * 0.999 // trigger camera zoom
-        pane.addBinding(this, 'zoom')
+        pane.addBinding(this, 'zoom', { min: 0.001, max: 1000 })
         if (this.orthographic_camera != null) {
             pane.addBinding(this, 'position')
         }

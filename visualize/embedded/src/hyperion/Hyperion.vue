@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { onMounted, type Ref, type ComputedRef, ref, computed, provide, watchEffect, onBeforeUnmount, useTemplateRef, render } from 'vue'
+import { onMounted, ref, computed, provide, watchEffect, onBeforeUnmount, useTemplateRef } from 'vue'
 import { Renderer, OrthographicCamera, Scene, AmbientLight, Raycaster } from 'troisjs'
-import { type VisualizerData, RuntimeData, Config } from './hyperion'
+import { type VisualizerData, RuntimeData, Config, ConfigProps } from './hyperion'
+import Vertices from './Vertices.vue'
 import { WebGLRenderer, OrthographicCamera as ThreeOrthographicCamera } from 'three'
 import { assert } from '@/util'
 // @ts-ignore
@@ -10,21 +11,19 @@ import Stats from 'troisjs/src/components/misc/Stats'
 
 interface Props {
     visualizer: VisualizerData
-    show_config?: boolean
-    full_screen?: boolean
+    config: ConfigProps
 }
 
 const props = withDefaults(defineProps<Props>(), {
-    show_config: true,
-    full_screen: false
+    config: () => new ConfigProps()
 })
 
-const config = ref(new Config(new RuntimeData(props.visualizer)))
+const config = ref(new Config(new RuntimeData(props.visualizer), props.config))
 provide('config', config) // prop drilling to all children components
 
 const container = useTemplateRef("container_ref")
 const container_pane = useTemplateRef("container_pane_ref")
-const show_config = ref(props.show_config)
+const show_config = ref(props.config.show_config)
 const renderer = useTemplateRef("renderer_ref")
 const width = ref(400)
 const height = computed(() => width.value / config.value.basic.aspect_ratio)
@@ -53,7 +52,7 @@ onMounted(() => {
         for (const entry of entries) {
             const container_width = entry.contentRect.width
             width.value = container_width
-            if (props.full_screen) {
+            if (props.config.full_screen) {
                 config.value.aspect_ratio = document.documentElement.clientWidth / document.documentElement.clientHeight * 1.02
             }
         }
@@ -106,6 +105,7 @@ function onKeyDown(event: KeyboardEvent) {
             </Raycaster>
             <Scene :background="config.basic.background">
                 <AmbientLight></AmbientLight>
+                <Vertices></Vertices>
             </Scene>
         </Renderer>
     </div>

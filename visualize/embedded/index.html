@@ -46,7 +46,11 @@
         /* HYPERION_VISUAL_DEBUG_DATA_END */
 
         function main() {
-            window.hyperion_visual.bind_to_div("#hyperion", visualizer_data, false, true)
+            const override_config = {
+                // show_config: false
+                // full_screen: false
+            }
+            window.hyperion_visual.bind_to_div("#hyperion", visualizer_data, { ...window.hyperion_visual.default_config(), ...override_config })
         }
         window.onload = () => (on_hyperion_library_ready(main))
     </script>
