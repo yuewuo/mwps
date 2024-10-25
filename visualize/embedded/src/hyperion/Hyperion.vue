@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, type Ref, type ComputedRef, ref, computed, provide, watchEffect, onBeforeUnmount } from 'vue'
+import { onMounted, type Ref, type ComputedRef, ref, computed, provide, watchEffect, onBeforeUnmount, useTemplateRef, render } from 'vue'
 import { Renderer, OrthographicCamera, Scene, AmbientLight, Raycaster } from 'troisjs'
 import { type VisualizerData, RuntimeData, Config } from './hyperion'
 import { WebGLRenderer, OrthographicCamera as ThreeOrthographicCamera } from 'three'
@@ -10,44 +10,41 @@ import Stats from 'troisjs/src/components/misc/Stats'
 
 interface Props {
     visualizer: VisualizerData
-    hide_config?: boolean
+    show_config?: boolean
     full_screen?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
-    hide_config: false,
+    show_config: true,
     full_screen: false
 })
 
-const data: Ref<RuntimeData> = computed(() => new RuntimeData(props.visualizer))
-provide('data', data)  // prop drilling to all children components
-const config = ref(new Config(data.value))
-provide('config', config)
+const config = ref(new Config(new RuntimeData(props.visualizer)))
+provide('config', config) // prop drilling to all children components
 
-const container_ref: Ref<HTMLElement | undefined> = ref(undefined)
-const container_pane: Ref<HTMLElement | undefined> = ref(undefined)
-const renderer_ref: Ref<HTMLElement | undefined> = ref(undefined)
-const width: Ref<number> = ref(400)
-const height: ComputedRef<number> = computed(() => width.value / config.value.basic.aspect_ratio)
-const orthographic_camera: Ref<HTMLElement | undefined> = ref(undefined)
+const container = useTemplateRef("container_ref")
+const container_pane = useTemplateRef("container_pane_ref")
+const show_config = ref(props.show_config)
+const renderer = useTemplateRef("renderer_ref")
+const width = ref(400)
+const height = computed(() => width.value / config.value.basic.aspect_ratio)
+const orthographic_camera = useTemplateRef("orthographic_camera_ref")
 
 
 onMounted(() => {
     // pass camera object
-    const camera: any = orthographic_camera.value
-    const three_camera: ThreeOrthographicCamera = camera.camera
+    const three_camera: ThreeOrthographicCamera = (orthographic_camera.value as any).camera
     config.value.camera.orthographic_camera = three_camera
 
     // initialize controller pane
-    if (!props.hide_config) {
-        config.value.create_pane(container_pane.value)
-    }
+    config.value.create_pane(container_pane.value);
+
+    // make the renderer selected in HTML: https://stackoverflow.com/a/12887221, to react to key events
+    (renderer.value as any).canvas.setAttribute('tabindex', '1')
 
     // update renderer if width or height changes
     watchEffect(() => {
-        const renderer: any = renderer_ref.value
-        assert(renderer != undefined)
-        const webgl_renderer: WebGLRenderer = renderer.renderer
+        const webgl_renderer: WebGLRenderer = (renderer.value as any).renderer
         webgl_renderer.setSize(width.value, height.value)
     })
 
@@ -57,32 +54,56 @@ onMounted(() => {
             const container_width = entry.contentRect.width
             width.value = container_width
             if (props.full_screen) {
-                config.value.basic.aspect_ratio = document.documentElement.clientWidth / document.documentElement.clientHeight * 1.02
+                config.value.aspect_ratio = document.documentElement.clientWidth / document.documentElement.clientHeight * 1.02
             }
         }
     })
-    assert(container_ref.value != undefined)
-    container_resize_observer.observe(container_ref.value)
+    container_resize_observer.observe(container.value as any)
 })
 
 onBeforeUnmount(() => {
     config.value.pane?.dispose()
 })
 
+function onKeyDown(event: KeyboardEvent) {
+    if (!event.metaKey) {
+        if (event.key == 't' || event.key == 'T') {
+            config.value.camera.set_position("Top")
+        } else if (event.key == 'l' || event.key == 'L') {
+            config.value.camera.set_position("Left")
+        } else if (event.key == 'f' || event.key == 'F') {
+            config.value.camera.set_position("Front")
+        } else if (event.key == 'c' || event.key == 'C') {
+            show_config.value = !show_config.value
+        } else if (event.key == 's' || event.key == 'S') {
+            config.value.basic.show_stats = !config.value.basic.show_stats
+        } else if (event.key == 'ArrowRight') {
+            if (config.value.snapshot_index < config.value.snapshot_num - 1) {
+                config.value.snapshot_index += 1
+            }
+        } else if (event.key == 'ArrowLeft') {
+            if (config.value.snapshot_index > 0) {
+                config.value.snapshot_index -= 1
+            }
+        }
+    }
+}
+
 </script>
 
 <template>
-    <div ref="container_ref" class="hyperion-container">
+    <div ref="container_ref" class="hyperion-container" @keydown="onKeyDown">
         <!-- placeholder for controller pane container -->
-        <div ref="container_pane" class="pane-container"></div>
+        <div v-show="show_config" ref="container_pane_ref" class="pane-container"></div>
 
         <Renderer ref="renderer_ref" :width="width + 'px'" :height="height + 'px'" :orbit-ctrl="true" :antialias="true"
             :alpha="true" :params="{ powerPreference: 'high-performance' }">
             <OrthographicCamera :left="-config.basic.aspect_ratio" :right="config.basic.aspect_ratio"
-                :zoom="config.camera.zoom" :position="config.camera.position" ref="orthographic_camera">
+                :zoom="config.camera.zoom" :position="config.camera.position" ref="orthographic_camera_ref">
             </OrthographicCamera>
             <Stats v-if="config.basic.show_stats"></Stats>
-            <Raycaster @pointer-enter="data.onPointerEnter" @pointer-leave="data.onPointerLeave"></Raycaster>
+            <Raycaster @pointer-enter="config.data.onPointerEnter" @pointer-leave="config.data.onPointerLeave">
+            </Raycaster>
             <Scene :background="config.basic.background">
                 <AmbientLight></AmbientLight>
             </Scene>
