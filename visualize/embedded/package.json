@@ -17,7 +17,8 @@
     "troisjs": "^0.3.4",
     "vite-plugin-css-injected-by-js": "^3.2.0",
     "vue": "^3.5.12",
-    "tweakpane": "^4.0.0"
+    "tweakpane": "^4.0.0",
+    "@tweakpane/plugin-essentials": "^0.2.1"
   },
   "devDependencies": {
     "@rushstack/eslint-patch": "^1.2.0",

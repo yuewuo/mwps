@@ -1,5 +1,6 @@
 import { type Ref, ref, type ComputedRef, computed } from 'vue'
 import { Pane, FolderApi } from 'tweakpane'
+import * as EssentialsPlugin from '@tweakpane/plugin-essentials'
 import { assert } from '@/util'
 import { Vector3, type OrthographicCamera, type Intersection } from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
@@ -132,7 +133,7 @@ export class Config {
     constructor (data: RuntimeData, config_prop: ConfigProps) {
         this.data = data
         this.config_prop = config_prop
-        this.basic = new BasicConfig(config_prop.segments)
+        this.basic = new BasicConfig(config_prop)
     }
 
     create_pane (container: any) {
@@ -142,12 +143,13 @@ export class Config {
             container: container,
             expanded: false
         })
+        this.pane.registerPlugin(EssentialsPlugin)
         const pane: FolderApi = this.pane
         const snapshot_names = []
         for (const [name, _] of this.data.visualizer.snapshots) {
             snapshot_names.push(name as string)
         }
-        this.snapshot_config.add_to(pane.addFolder({ title: 'Camera', expanded: true }), snapshot_names)
+        this.snapshot_config.add_to(pane.addFolder({ title: 'Snapshot', expanded: true }), snapshot_names)
         this.camera.add_to(pane.addFolder({ title: 'Camera', expanded: true }))
         this.basic.add_to(pane.addFolder({ title: 'Basic', expanded: true }))
     }
@@ -204,13 +206,18 @@ export class BasicConfig {
     background: string = '#ffffff'
     segments: number
     show_stats: boolean = true
+    config_props: ConfigProps
 
-    constructor (segments: number) {
-        this.segments = segments
+    constructor (config_props: ConfigProps) {
+        this.config_props = config_props
+        this.segments = config_props.segments
     }
 
     add_to (pane: FolderApi): void {
-        pane.addBinding(this, 'aspect_ratio', { min: 0.1, max: 3 })
+        if (!this.config_props.full_screen) {
+            // in full screen mode, user cannot adjust aspect ratio manually
+            pane.addBinding(this, 'aspect_ratio', { min: 0.1, max: 3 })
+        }
         pane.addBinding(this, 'background')
         pane.addBinding(this, 'show_stats')
         pane.addBinding(this, 'segments', { step: 1, min: 3, max: 128 })
@@ -246,11 +253,17 @@ export class CameraConfig {
     orbit_control?: OrbitControls
 
     add_to (pane: FolderApi): void {
-        for (let i = 0; i < 3; ++i) {
-            pane.addButton({ title: names[i] }).on('click', () => {
-                this.set_position(names[i])
-            })
-        }
+        pane.addBlade({
+            view: 'buttongrid',
+            size: [3, 1],
+            cells: (x: number) => ({
+                title: names[x]
+            }),
+            label: 'reset view'
+        }).on('click', (event: any) => {
+            const i: number = event.index[0]
+            this.set_position(names[i])
+        })
         this.zoom = this.zoom * 0.999 // trigger camera zoom
         pane.addBinding(this, 'zoom', { min: 0.001, max: 1000 })
         if (this.orthographic_camera != null) {

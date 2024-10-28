@@ -4,6 +4,7 @@ import { Renderer, OrthographicCamera, Scene, AmbientLight, Raycaster } from 'tr
 import { type VisualizerData, RuntimeData, Config, ConfigProps } from './hyperion'
 import Vertices from './Vertices.vue'
 import { WebGLRenderer, OrthographicCamera as ThreeOrthographicCamera } from 'three'
+import { FolderApi } from 'tweakpane'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { assert } from '@/util'
 // @ts-ignore
@@ -31,9 +32,9 @@ const orthographic_camera = useTemplateRef('orthographic_camera_ref')
 
 onMounted(() => {
     // pass camera object
-    const three_camera: ThreeOrthographicCamera = (orthographic_camera.value as any).camera
+    const camera: ThreeOrthographicCamera = (orthographic_camera.value as any).camera
     const orbit_controls: OrbitControls = (renderer.value as any).three.cameraCtrl
-    config.value.camera.orthographic_camera = three_camera
+    config.value.camera.orthographic_camera = camera
     config.value.camera.orbit_control = orbit_controls
 
     // initialize controller pane
@@ -47,6 +48,11 @@ onMounted(() => {
     // listen to orbit control events and mouse over events, and focus on the canvas so that the key listener works
     orbit_controls.addEventListener('change', () => {
         canvas.focus()
+        config.value.camera.position = camera.position.clone()
+        // @ts-ignore
+        const orbit_control_scale: number = orbit_controls._scale
+        config.value.camera.zoom = camera.zoom * orbit_control_scale
+        config.value.refresh_pane()
     })
     canvas.addEventListener('mouseover', () => {
         canvas.focus()
@@ -66,6 +72,7 @@ onMounted(() => {
             if (props.config.full_screen) {
                 config.value.aspect_ratio =
                     (document.documentElement.clientWidth / document.documentElement.clientHeight) * 1.02
+                config.value.refresh_pane()
             }
         }
     })
@@ -86,6 +93,11 @@ function onKeyDown(event: KeyboardEvent) {
             config.value.camera.set_position('Front')
         } else if (event.key == 'c' || event.key == 'C') {
             show_config.value = !show_config.value
+            if (config.value.basic.show_stats) {
+                // automatically unfold if using keyboard shortcut to display it
+                const pane: FolderApi = config.value.pane
+                pane.expanded = true
+            }
         } else if (event.key == 's' || event.key == 'S') {
             config.value.basic.show_stats = !config.value.basic.show_stats
         } else if (event.key == 'ArrowRight') {
@@ -99,6 +111,7 @@ function onKeyDown(event: KeyboardEvent) {
         } else {
             return // unrecognized, propagate to other listeners
         }
+        config.value.refresh_pane()
         event.preventDefault()
         event.stopPropagation()
     }
