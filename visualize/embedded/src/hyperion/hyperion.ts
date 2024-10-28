@@ -2,6 +2,7 @@ import { type Ref, ref, type ComputedRef, computed } from 'vue'
 import { Pane, FolderApi } from 'tweakpane'
 import { assert } from '@/util'
 import { Vector3, type OrthographicCamera, type Intersection } from 'three'
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 
 export interface Position {
     t: number
@@ -242,6 +243,7 @@ export class CameraConfig {
     zoom: number = 0.2
     position: Vector3 = positions[0].clone()
     orthographic_camera?: OrthographicCamera
+    orbit_control?: OrbitControls
 
     add_to (pane: FolderApi): void {
         for (let i = 0; i < 3; ++i) {
@@ -263,6 +265,9 @@ export class CameraConfig {
             return
         }
         this.position = positions[index].clone()
+        if (this.orbit_control != undefined) {
+            this.orbit_control.target = new Vector3()
+        }
     }
 }
 

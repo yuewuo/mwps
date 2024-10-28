@@ -32,7 +32,9 @@ const orthographic_camera = useTemplateRef('orthographic_camera_ref')
 onMounted(() => {
     // pass camera object
     const three_camera: ThreeOrthographicCamera = (orthographic_camera.value as any).camera
+    const orbit_controls: OrbitControls = (renderer.value as any).three.cameraCtrl
     config.value.camera.orthographic_camera = three_camera
+    config.value.camera.orbit_control = orbit_controls
 
     // initialize controller pane
     config.value.create_pane(container_pane.value)
@@ -42,9 +44,11 @@ onMounted(() => {
     canvas.setAttribute('tabindex', '1')
     canvas.style.setProperty('outline-style', 'none') // remove select border
 
-    // listen to orbit control events
-    const orbit_controls: OrbitControls = (renderer.value as any).three.cameraCtrl
+    // listen to orbit control events and mouse over events, and focus on the canvas so that the key listener works
     orbit_controls.addEventListener('change', () => {
+        canvas.focus()
+    })
+    canvas.addEventListener('mouseover', () => {
         canvas.focus()
     })
 
@@ -92,7 +96,11 @@ function onKeyDown(event: KeyboardEvent) {
             if (config.value.snapshot_index > 0) {
                 config.value.snapshot_index -= 1
             }
+        } else {
+            return // unrecognized, propagate to other listeners
         }
+        event.preventDefault()
+        event.stopPropagation()
     }
 }
 </script>
