@@ -1,14 +1,29 @@
-import { type Ref, ref, type ComputedRef, computed } from 'vue'
+import { type Ref, ref, computed } from 'vue'
 import { Pane, FolderApi } from 'tweakpane'
 import * as EssentialsPlugin from '@tweakpane/plugin-essentials'
 import { assert } from '@/util'
 import { Vector3, type OrthographicCamera, type Intersection } from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 
+export const zero_vector = new Vector3(0, 0, 0)
+export const unit_up_vector = new Vector3(0, 1, 0)
+
 export interface Position {
     t: number
     i: number
     j: number
+}
+
+export function load_position (mesh_position: Vector3, data_position: Position) {
+    mesh_position.z = data_position.i
+    mesh_position.x = data_position.j
+    mesh_position.y = data_position.t
+}
+
+export function compute_vector3 (data_position: Position): Vector3 {
+    let vector = new Vector3(0, 0, 0)
+    load_position(vector, data_position)
+    return vector
 }
 
 export interface DualNode {
@@ -128,6 +143,8 @@ export class Config {
     basic: BasicConfig
     snapshot_config: SnapshotConfig = new SnapshotConfig()
     camera: CameraConfig = new CameraConfig()
+    vertex: VertexConfig = new VertexConfig()
+    edge: EdgeConfig = new EdgeConfig()
     pane?: Pane
 
     constructor (data: RuntimeData, config_prop: ConfigProps) {
@@ -152,6 +169,8 @@ export class Config {
         this.snapshot_config.add_to(pane.addFolder({ title: 'Snapshot', expanded: true }), snapshot_names)
         this.camera.add_to(pane.addFolder({ title: 'Camera', expanded: true }))
         this.basic.add_to(pane.addFolder({ title: 'Basic', expanded: true }))
+        this.vertex.add_to(pane.addFolder({ title: 'Vertex', expanded: true }))
+        this.edge.add_to(pane.addFolder({ title: 'Edge', expanded: true }))
     }
 
     refresh_pane () {
@@ -204,6 +223,7 @@ export class Config {
 export class BasicConfig {
     aspect_ratio: number = 1
     background: string = '#ffffff'
+    light_intensity: number = 10
     segments: number
     show_stats: boolean = true
     config_props: ConfigProps
@@ -219,6 +239,7 @@ export class BasicConfig {
             pane.addBinding(this, 'aspect_ratio', { min: 0.1, max: 3 })
         }
         pane.addBinding(this, 'background')
+        pane.addBinding(this, 'light_intensity', { min: 0.1, max: 10 })
         pane.addBinding(this, 'show_stats')
         pane.addBinding(this, 'segments', { step: 1, min: 3, max: 128 })
     }
@@ -281,6 +302,28 @@ export class CameraConfig {
         if (this.orbit_control != undefined) {
             this.orbit_control.target = new Vector3()
         }
+    }
+}
+
+export class VertexConfig {
+    radius: number = 0.15
+    outline_ratio: number = 1.2
+    normal_color: string = '#FFFFFF'
+    defect_color: string = '#FF0000'
+
+    add_to (pane: FolderApi): void {
+        pane.addBinding(this, 'radius', { min: 0, max: 10, step: 0.001 })
+        pane.addBinding(this, 'outline_ratio', { min: 0, max: 10, step: 0.001 })
+        pane.addBinding(this, 'normal_color')
+        pane.addBinding(this, 'defect_color')
+    }
+}
+
+export class EdgeConfig {
+    radius: number = 0.03
+
+    add_to (pane: FolderApi): void {
+        pane.addBinding(this, 'radius', { min: 0, max: 1, step: 0.001 })
     }
 }
 

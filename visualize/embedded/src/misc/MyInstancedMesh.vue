@@ -23,7 +23,11 @@ export default defineComponent({
             // when `this.count` changes, update count (and instancedMesh if necessary)
             watchEffect(() => {
                 if (this.count > this.current_count) {
-                    console.warn(`display (${this.count} objects more than ${this.current_count}, reconstructing...`)
+                    if (this.count > 100) {
+                        console.warn(
+                            `display (${this.count} objects more than ${this.current_count}, reconstructing...`
+                        )
+                    }
                     // dispose current mesh (see troisjs/src/core/Object3D.ts), without disposing materials and geometries
                     if (!this.disableRemove) this.removeFromParent()
                     if (this.o3d) {

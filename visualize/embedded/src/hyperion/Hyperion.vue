@@ -6,7 +6,6 @@ import Vertices from './Vertices.vue'
 import { WebGLRenderer, OrthographicCamera as ThreeOrthographicCamera } from 'three'
 import { FolderApi } from 'tweakpane'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
-import { assert } from '@/util'
 // @ts-ignore
 import Stats from 'troisjs/src/components/misc/Stats'
 
@@ -128,15 +127,21 @@ function onKeyDown(event: KeyboardEvent) {
             :width="width + 'px'"
             :height="height + 'px'"
             :orbit-ctrl="true"
-            :antialias="true"
-            :alpha="true"
-            :params="{ powerPreference: 'high-performance' }"
+            :params="{
+                antialias: true,
+                alpha: true,
+                powerPreference: 'high-performance',
+                precision: 'highp',
+                stencil: true
+            }"
         >
             <OrthographicCamera
                 :left="-config.basic.aspect_ratio"
                 :right="config.basic.aspect_ratio"
                 :zoom="config.camera.zoom"
                 :position="config.camera.position"
+                :near="0.1"
+                :far="100000"
                 ref="orthographic_camera_ref"
             >
             </OrthographicCamera>
@@ -144,7 +149,7 @@ function onKeyDown(event: KeyboardEvent) {
             <Raycaster @pointer-enter="config.data.onPointerEnter" @pointer-leave="config.data.onPointerLeave">
             </Raycaster>
             <Scene :background="config.basic.background">
-                <AmbientLight></AmbientLight>
+                <AmbientLight color="#FFFFFF" :intensity="config.basic.light_intensity"></AmbientLight>
                 <Vertices></Vertices>
             </Scene>
         </Renderer>
