@@ -177,11 +177,19 @@ export class Config {
         return this.snapshot_config.index
     }
 
-    public get snapshot (): ComputedRef<Snapshot> {
+    public get snapshot_count (): number {
+        return this.data.visualizer.snapshots.length
+    }
+
+    public get_snapshot (snapshot_index: number): Snapshot {
+        return this.data.visualizer.snapshots[snapshot_index][1] as Snapshot
+    }
+
+    public get snapshot (): Snapshot {
         const that = this
-        return computed(() => {
-            return that.data.visualizer.snapshots[that.snapshot_index][1] as Snapshot
-        })
+        return computed<Snapshot>(() => {
+            return that.get_snapshot(that.snapshot_index)
+        }) as any
     }
 
     public get snapshot_num (): number {

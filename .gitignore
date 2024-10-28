@@ -32,7 +32,6 @@ mwpf.egg-info/
 *.DS_Store
 .vscode
 .idea
-misc/
 
 # rust bug reports
 rustc-ice*

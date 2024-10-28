@@ -29,7 +29,7 @@
                 if (window.hyperion_visual != null) {
                     break
                 }
-                if (i != 0 && i % 10 == 9) console.log(`window.hyperion_visual not ready, tried ${i} times`)
+                if (i != 0 && i % 10 == 0) console.log(`window.hyperion_visual not ready, tried ${i} times`)
                 await hyperion_sleep(100)
             }
             if (window.hyperion_visual != null) {
@@ -42,7 +42,7 @@
 
         let visualizer_data =
             /* HYPERION_VISUAL_DEBUG_DATA_START */
-            { "format": "mwpf", "version": "0.1.1", "positions": [{ "i": -2, "j": -1, "t": 0.0 }, { "i": 2, "j": -1, "t": 0.0 }, { "i": 0, "j": 2, "t": 0.0 }], "snapshots": [["grow 0.5", { "dual_nodes": [{ "d": 0.0, "dd": 1, "dn": 0.0, "e": [], "h": [0], "r": 1.0, "rd": 1, "rn": 1.0, "v": [0] }], "edges": [{ "g": 0.0, "gd": 1, "gn": 0.0, "u": 1.0, "ud": 1, "un": 1.0, "v": [0, 1, 2], "w": 1.0 }], "interface": { "sdd": 1, "sdn": 0.0, "sum_dual": 0.0 }, "vertices": [{ "s": 1 }, { "s": 0 }, { "s": 0 }] }], ["solved", { "dual_nodes": [{ "d": 1.0, "dd": 1, "dn": 1.0, "e": [], "h": [0], "r": 0.0, "rd": 1, "rn": 0.0, "v": [0] }], "edges": [{ "g": 1.0, "gd": 1, "gn": 1.0, "u": 0.0, "ud": 1, "un": 0.0, "v": [0, 1, 2], "w": 1.0 }], "interface": { "sdd": 1, "sdn": 0.0, "sum_dual": 0.0 }, "vertices": [{ "s": 1 }, { "s": 0 }, { "s": 0 }], "subgraph": [0], "weight_range": { "lower": 1.0, "ld": 1, "ln": 1.0, "upper": 1.0, "ud": 1, "un": 1.0, } }]] }
+            { "format": "mwpf", "version": "0.1.1", "positions": [{ "i": -2, "j": -1, "t": 0.0 }, { "i": 2, "j": -1, "t": 0.0 }, { "i": 0, "j": 2, "t": 0.0 }], "snapshots": [["grow 0.5", { "dual_nodes": [{ "d": 0.0, "dd": 1, "dn": 0.0, "e": [], "h": [0], "r": 1.0, "rd": 1, "rn": 1.0, "v": [0] }], "edges": [{ "g": 0.0, "gd": 1, "gn": 0.0, "u": 1.0, "ud": 1, "un": 1.0, "v": [0, 1, 2], "w": 1.0 }], "interface": { "sdd": 1, "sdn": 0.0, "sum_dual": 0.0 }, "vertices": [{ "s": 1 }, { "s": 0 }, { "s": 0 }] }], ["solved", { "dual_nodes": [{ "d": 1.0, "dd": 1, "dn": 1.0, "e": [], "h": [0], "r": 0.0, "rd": 1, "rn": 0.0, "v": [0] }], "edges": [{ "g": 1.0, "gd": 1, "gn": 1.0, "u": 0.0, "ud": 1, "un": 0.0, "v": [0, 1, 2], "w": 1.0 }], "interface": { "sdd": 1, "sdn": 0.0, "sum_dual": 0.0 }, "vertices": [{ "s": 1 }, { "s": 1 }, { "s": 1 }], "subgraph": [0], "weight_range": { "lower": 1.0, "ld": 1, "ln": 1.0, "upper": 1.0, "ud": 1, "un": 1.0, } }]] }
         /* HYPERION_VISUAL_DEBUG_DATA_END */
 
         function main() {
