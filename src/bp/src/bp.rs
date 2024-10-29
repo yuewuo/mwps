@@ -353,10 +353,7 @@ impl<'a> BpDecoder {
                         let prob2 = (1.0 - self.channel_probabilities[bit2]) / self.channel_probabilities[bit2];
 
                         // Calculate logs and compare, reversing for descending order.
-                        prob2
-                            .log(f64::consts::E)
-                            .partial_cmp(&prob1.log(f64::consts::E))
-                            .unwrap_or(std::cmp::Ordering::Equal)
+                        prob2.ln().partial_cmp(&prob1.ln()).unwrap_or(std::cmp::Ordering::Equal)
                     }
                 });
             }
