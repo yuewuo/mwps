@@ -209,19 +209,19 @@ impl PrimalDualSolver for SolverSerialPlugins {
         // let mut_model_graph = unsafe { Arc::get_mut_unchecked(&mut self.model_graph) };
         // let mut_initializer = unsafe { Arc::get_mut_unchecked(&mut mut_model_graph.initializer) };
 
-        for (hyper_edge, new_weight) in self.model_graph.initializer.weighted_edges.iter().zip(llrs.iter_mut()) {
-            let mut temp = 1. / (1. + new_weight.exp()) * hyper_edge.weight as f64;
-            let eps = 1e-14;
-            temp = if temp > 1. - eps {
-                1. - eps
-            } else if temp < eps {
-                eps
-            } else {
-                temp
-            };
-            *new_weight = -temp.ln();
-            // hyper_edge.weight = (*new_weight).round() as usize;
-        }
+        // for (hyper_edge, new_weight) in self.model_graph.initializer.weighted_edges.iter().zip(llrs.iter_mut()) {
+        //     let mut temp = 1. / (1. + new_weight.exp()) * hyper_edge.weight as f64;
+        //     let eps = 1e-14;
+        //     temp = if temp > 1. - eps {
+        //         1. - eps
+        //     } else if temp < eps {
+        //         eps
+        //     } else {
+        //         temp
+        //     };
+        //     *new_weight = -temp.ln();
+        //     // hyper_edge.weight = (*new_weight).round() as usize;
+        // }
 
         self.dual_module.update_weights(llrs);
     }

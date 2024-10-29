@@ -2,11 +2,12 @@
 //!
 //! Generics for primal modules, defining the necessary interfaces for a primal module
 //!
-
 #[cfg(feature = "cluster_size_limit")]
 use std::collections::VecDeque;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
+
+use hashbrown::HashSet;
 
 use crate::dual_module::*;
 use crate::num_traits::FromPrimitive;
@@ -124,12 +125,28 @@ pub trait PrimalModuleImpl {
     fn solve_step_callback<D: DualModuleImpl, F>(
         &mut self,
         interface: &DualModuleInterfacePtr,
-        syndrome_pattern: Arc<SyndromePattern>,
+        mut syndrome_pattern: Arc<SyndromePattern>,
         dual_module: &mut D,
         callback: F,
     ) where
         F: FnMut(&DualModuleInterfacePtr, &mut D, &mut Self, &GroupMaxUpdateLength),
     {
+        let syndrome_pattern_mut = unsafe { Arc::get_mut_unchecked(&mut syndrome_pattern) };
+        let moved_out_vec = std::mem::take(&mut syndrome_pattern_mut.defect_vertices);
+
+        let mut moved_out_set = moved_out_vec.into_iter().collect::<HashSet<VertexIndex>>();
+
+        for to_flip in dual_module.get_flip_vertices().iter() {
+            if moved_out_set.contains(to_flip) {
+                moved_out_set.remove(to_flip);
+            } else {
+                moved_out_set.insert(*to_flip);
+            }
+        }
+
+        syndrome_pattern_mut.defect_vertices = moved_out_set.into_iter().collect();
+
+        // subgraph_set.into_iter().collect()
         interface.load(syndrome_pattern, dual_module);
         self.load(interface, dual_module);
         self.solve_step_callback_interface_loaded(interface, dual_module, callback);
@@ -241,7 +258,7 @@ pub trait PrimalModuleImpl {
     ) -> (Subgraph, WeightRange) {
         let subgraph = self.subgraph(interface, dual_module);
         let weight_range = WeightRange::new(
-            interface.sum_dual_variables(),
+            interface.sum_dual_variables() + dual_module.get_negative_weight_sum(),
             Rational::from_usize(
                 interface
                     .read_recursive()
@@ -250,7 +267,8 @@ pub trait PrimalModuleImpl {
                     .initializer
                     .get_subgraph_total_weight(&subgraph),
             )
-            .unwrap(),
+            .unwrap()
+                + dual_module.get_negative_weight_sum(), // this uses the initailizer, we would need to update this if were to keep this consistent
         );
         (subgraph, weight_range)
     }

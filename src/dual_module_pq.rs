@@ -22,7 +22,7 @@ use std::{
 
 use derivative::Derivative;
 use hashbrown::hash_map::Entry;
-use hashbrown::HashMap;
+use hashbrown::{HashMap, HashSet};
 use heapz::RankPairingHeap;
 use heapz::{DecreaseKey, Heap};
 use num_traits::{FromPrimitive, Signed};
@@ -310,8 +310,14 @@ where
     /// the current mode of the dual module
     mode: DualModuleMode,
 
+    // tuning mode statistics
     tuning_start_time: Option<Instant>,
     total_tuning_time: Option<f64>,
+
+    // negative weight handling
+    negative_weight_sum: Rational,
+    negative_edges: HashSet<EdgeIndex>,
+    flip_vertices: HashSet<VertexIndex>,
 }
 
 impl<Queue> DualModulePQ<Queue>
@@ -431,6 +437,9 @@ where
             mode: DualModuleMode::default(),
             tuning_start_time: None,
             total_tuning_time: None,
+            negative_weight_sum: Rational::zero(),
+            negative_edges: HashSet::new(),
+            flip_vertices: HashSet::new(),
         }
     }
 
@@ -445,6 +454,9 @@ where
         self.mode_mut().reset();
 
         self.tuning_start_time = None;
+
+        self.negative_edges.clear();
+        self.negative_weight_sum = Rational::zero();
     }
 
     #[allow(clippy::unnecessary_cast)]
@@ -869,8 +881,32 @@ where
     fn update_weights(&mut self, _log_prob_ratios: &[f64]) {
         for (edge, log_prob_ratio) in self.edges.iter().zip(_log_prob_ratios.iter()) {
             let mut edge = edge.write();
-            edge.weight = Rational::from_f64(*log_prob_ratio).unwrap();
+            if edge.weight.is_negative() {
+                self.negative_edges.insert(edge.edge_index);
+                edge.vertices.iter().for_each(|vertex| {
+                    let temp = vertex.upgrade_force().read_recursive().vertex_index;
+
+                    if self.flip_vertices.contains(&temp) {
+                        self.flip_vertices.remove(&temp);
+                    } else {
+                        self.flip_vertices.insert(temp);
+                    }
+                });
+                edge.weight = Rational::from_f64(*log_prob_ratio).unwrap().abs();
+            }
         }
+    }
+
+    fn get_negative_weight_sum(&self) -> Rational {
+        self.negative_weight_sum.clone()
+    }
+
+    fn get_negative_edges(&self) -> HashSet<EdgeIndex> {
+        self.negative_edges.clone()
+    }
+
+    fn get_flip_vertices(&self) -> HashSet<VertexIndex> {
+        self.flip_vertices.clone()
     }
 }
 
