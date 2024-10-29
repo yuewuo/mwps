@@ -23,7 +23,6 @@ class VertexStates {
     all_vertices: Array<VertexState> = []
 }
 
-// the vertices information computed from the snapshot, regardless of whether they are displayed
 const vertex_states = computed(() => {
     const vertex_states = new VertexStates()
     const snapshot = config.value.snapshot
@@ -48,9 +47,9 @@ const vertex_states = computed(() => {
 })
 
 function applyMeshVertices(vertex_states: Array<VertexState>, mesh: any) {
-    const dummy = new Object3D()
     for (let i = 0; i < vertex_states.length; i++) {
         const state = vertex_states[i]
+        const dummy = new Object3D()
         load_position(dummy.position, state.position)
         dummy.updateMatrix()
         mesh.setMatrixAt(i, dummy.matrix)
@@ -62,12 +61,9 @@ const normal_vertices_ref = useTemplateRef('normal_vertices')
 const defect_vertices_ref = useTemplateRef('defect_vertices')
 const vertices_outlines_ref = useTemplateRef('vertices_outlines')
 
-const update_normal_vertices = () =>
-    applyMeshVertices(vertex_states.value.normal_vertices, (normal_vertices_ref.value as any).mesh)
-const update_defect_vertices = () =>
-    applyMeshVertices(vertex_states.value.defect_vertices, (defect_vertices_ref.value as any).mesh)
-const update_vertices_outlines = () =>
-    applyMeshVertices(vertex_states.value.all_vertices, (vertices_outlines_ref.value as any).mesh)
+const update_normal_vertices = () => applyMeshVertices(vertex_states.value.normal_vertices, (normal_vertices_ref.value as any).mesh)
+const update_defect_vertices = () => applyMeshVertices(vertex_states.value.defect_vertices, (defect_vertices_ref.value as any).mesh)
+const update_vertices_outlines = () => applyMeshVertices(vertex_states.value.all_vertices, (vertices_outlines_ref.value as any).mesh)
 function update() {
     update_normal_vertices()
     update_defect_vertices()
@@ -82,65 +78,20 @@ onMounted(() => {
 
 <template>
     <!-- normal vertices -->
-    <MyInstancedMesh
-        ref="normal_vertices"
-        :count="vertex_states.normal_vertices.length"
-        @reinstantiated="update_normal_vertices"
-    >
-        <SphereGeometry
-            :radius="config.vertex.radius"
-            :height-segments="config.basic.segments"
-            :width-segments="config.basic.segments"
-        >
-        </SphereGeometry>
-        <PhysicalMaterial
-            :props="{
-                transparent: false,
-                side: FrontSide,
-                color: config.vertex.normal_color
-            }"
-        ></PhysicalMaterial>
+    <MyInstancedMesh ref="normal_vertices" :count="vertex_states.normal_vertices.length" @reinstantiated="update_normal_vertices">
+        <SphereGeometry :radius="config.vertex.radius" :height-segments="config.basic.segments" :width-segments="config.basic.segments"> </SphereGeometry>
+        <PhysicalMaterial :props="{ transparent: false, side: FrontSide, color: config.vertex.normal_color }"></PhysicalMaterial>
     </MyInstancedMesh>
 
     <!-- defect vertices -->
-    <MyInstancedMesh
-        ref="defect_vertices"
-        :count="vertex_states.defect_vertices.length"
-        @reinstantiated="update_defect_vertices"
-    >
-        <SphereGeometry
-            :radius="config.vertex.radius"
-            :height-segments="config.basic.segments"
-            :width-segments="config.basic.segments"
-        >
-        </SphereGeometry>
-        <PhysicalMaterial
-            :props="{
-                transparent: false,
-                side: FrontSide,
-                color: config.vertex.defect_color
-            }"
-        ></PhysicalMaterial>
+    <MyInstancedMesh ref="defect_vertices" :count="vertex_states.defect_vertices.length" @reinstantiated="update_defect_vertices">
+        <SphereGeometry :radius="config.vertex.radius" :height-segments="config.basic.segments" :width-segments="config.basic.segments"> </SphereGeometry>
+        <PhysicalMaterial :props="{ transparent: false, side: FrontSide, color: config.vertex.defect_color }"></PhysicalMaterial>
     </MyInstancedMesh>
 
     <!-- all vertices outlines -->
-    <MyInstancedMesh
-        ref="vertices_outlines"
-        :count="vertex_states.all_vertices.length"
-        @reinstantiated="update_vertices_outlines"
-    >
-        <SphereGeometry
-            :radius="config.vertex.radius * config.vertex.outline_ratio"
-            :height-segments="config.basic.segments"
-            :width-segments="config.basic.segments"
-        >
-        </SphereGeometry>
-        <PhysicalMaterial
-            :props="{
-                transparent: false,
-                side: BackSide,
-                color: '#000000'
-            }"
-        ></PhysicalMaterial>
+    <MyInstancedMesh ref="vertices_outlines" :count="vertex_states.all_vertices.length" @reinstantiated="update_vertices_outlines">
+        <SphereGeometry :radius="config.vertex.outline_radius" :height-segments="config.basic.segments" :width-segments="config.basic.segments"> </SphereGeometry>
+        <PhysicalMaterial :props="{ transparent: false, side: BackSide, color: '#000000' }"></PhysicalMaterial>
     </MyInstancedMesh>
 </template>

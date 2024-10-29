@@ -3,6 +3,7 @@ import { onMounted, ref, computed, provide, watchEffect, onBeforeUnmount, useTem
 import { Renderer, OrthographicCamera, Scene, AmbientLight, Raycaster } from 'troisjs'
 import { type VisualizerData, RuntimeData, Config, ConfigProps } from './hyperion'
 import Vertices from './Vertices.vue'
+import Edges from './Edges.vue'
 import { WebGLRenderer, OrthographicCamera as ThreeOrthographicCamera } from 'three'
 import { FolderApi } from 'tweakpane'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
@@ -69,8 +70,7 @@ onMounted(() => {
             const container_width = entry.contentRect.width
             width.value = container_width
             if (props.config.full_screen) {
-                config.value.aspect_ratio =
-                    (document.documentElement.clientWidth / document.documentElement.clientHeight) * 1.02
+                config.value.aspect_ratio = (document.documentElement.clientWidth / document.documentElement.clientHeight) * 1.02
                 config.value.refresh_pane()
             }
         }
@@ -146,11 +146,11 @@ function onKeyDown(event: KeyboardEvent) {
             >
             </OrthographicCamera>
             <Stats v-if="config.basic.show_stats"></Stats>
-            <Raycaster @pointer-enter="config.data.onPointerEnter" @pointer-leave="config.data.onPointerLeave">
-            </Raycaster>
+            <Raycaster @pointer-enter="config.data.onPointerEnter" @pointer-leave="config.data.onPointerLeave"> </Raycaster>
             <Scene :background="config.basic.background">
                 <AmbientLight color="#FFFFFF" :intensity="config.basic.light_intensity"></AmbientLight>
                 <Vertices></Vertices>
+                <Edges></Edges>
             </Scene>
         </Renderer>
     </div>

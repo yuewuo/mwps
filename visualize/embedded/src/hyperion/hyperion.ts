@@ -84,7 +84,7 @@ export interface WeightRange {
 }
 
 export interface Snapshot {
-    dual_nodes: DualNode[]
+    dual_nodes?: DualNode[]
     edges: Edge[]
     interface: Interface
     vertices: Vertex[]
@@ -223,7 +223,7 @@ export class Config {
 export class BasicConfig {
     aspect_ratio: number = 1
     background: string = '#ffffff'
-    light_intensity: number = 10
+    light_intensity: number = 3
     segments: number
     show_stats: boolean = true
     config_props: ConfigProps
@@ -317,13 +317,94 @@ export class VertexConfig {
         pane.addBinding(this, 'normal_color')
         pane.addBinding(this, 'defect_color')
     }
+
+    public get outline_radius (): number {
+        return this.radius * this.outline_ratio
+    }
+}
+
+export class ColorPaletteConfig {
+    c0: string = '#44C03F' // green
+    c1: string = '#F6C231' // yellow
+    c2: string = '#4DCCFB' // light blue
+    c3: string = '#F17B24' // orange
+    c4: string = '#7C1DD8' // purple
+    c5: string = '#8C4515' // brown
+    c6: string = '#E14CB6' // pink
+    c7: string = '#44C03F' // green
+    c8: string = '#F6C231' // yellow
+    c9: string = '#4DCCFB' // light blue
+    c10: string = '#F17B24' // orange
+    c11: string = '#7C1DD8' // purple
+    c12: string = '#8C4515' // brown
+    c13: string = '#E14CB6' // pink
+
+    ungrown: string = '#1A1A1A' // dark grey
+    subgraph: string = '#0000FF' // standard blue
+
+    add_to (pane: FolderApi): void {
+        pane.addBinding(this, 'ungrown')
+        pane.addBinding(this, 'subgraph')
+        for (let i = 0; i < 14; ++i) {
+            pane.addBinding(this, `c${i}`)
+        }
+    }
+
+    get (index: number): string {
+        // @ts-ignore
+        return this[`c${index % 14}`]
+    }
 }
 
 export class EdgeConfig {
     radius: number = 0.03
+    ungrown_opacity: number = 0.1
+    grown_opacity: number = 0.3
+    tight_opacity: number = 1
+    color_palette: ColorPaletteConfig = new ColorPaletteConfig()
+
+    deg_1_ratio: number = 1.3
+    deg_3_ratio: number = 1.5
+    deg_4_ratio: number = 2
+    deg_5_ratio: number = 2.5
+    deg_10_ratio: number = 3
 
     add_to (pane: FolderApi): void {
         pane.addBinding(this, 'radius', { min: 0, max: 1, step: 0.001 })
+        pane.addBinding(this, 'ungrown_opacity', { min: 0, max: 1, step: 0.01 })
+        pane.addBinding(this, 'grown_opacity', { min: 0, max: 1, step: 0.01 })
+        pane.addBinding(this, 'tight_opacity', { min: 0, max: 1, step: 0.01 })
+        // add color palette
+        let color_palette = pane.addFolder({ title: 'Color Palette', expanded: false })
+        this.color_palette.add_to(color_palette)
+        // add edge radius fine tuning
+        let deg_ratios = pane.addFolder({ title: 'Edge Radius Ratios', expanded: true })
+        deg_ratios.addBinding(this, 'deg_1_ratio', { min: 0, max: 10, step: 0.01 })
+        deg_ratios.addBinding(this, 'deg_3_ratio', { min: 0, max: 10, step: 0.01 })
+        deg_ratios.addBinding(this, 'deg_4_ratio', { min: 0, max: 10, step: 0.01 })
+        deg_ratios.addBinding(this, 'deg_5_ratio', { min: 0, max: 10, step: 0.01 })
+        deg_ratios.addBinding(this, 'deg_10_ratio', { min: 0, max: 10, step: 0.01 })
+    }
+
+    ratio_of_deg (deg: number): number {
+        assert(deg >= 1, 'degree must be at least 1')
+        switch (deg) {
+            case 1:
+                return this.deg_1_ratio
+            case 2:
+                return 1
+            case 3:
+                return this.deg_3_ratio
+            case 4:
+                return this.deg_4_ratio
+            case 5:
+                return this.deg_5_ratio
+            default:
+                if (deg <= 10) {
+                    return this.deg_5_ratio + ((deg - 5) * (this.deg_10_ratio - this.deg_5_ratio)) / 5
+                }
+                return this.deg_10_ratio
+        }
     }
 }
 
