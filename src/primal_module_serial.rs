@@ -21,6 +21,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use crate::itertools::Itertools;
+use hashbrown::HashSet;
 #[cfg(feature = "incr_lp")]
 use parking_lot::Mutex;
 use parking_lot::RwLock;
@@ -289,7 +290,15 @@ impl PrimalModuleImpl for PrimalModuleSerial {
                     .iter(),
             );
         }
-        subgraph
+        let mut subgraph_set = subgraph.into_iter().collect::<HashSet<EdgeIndex>>();
+        for to_flip in _dual_module.get_negative_edges().iter() {
+            if subgraph_set.contains(to_flip) {
+                subgraph_set.remove(to_flip);
+            } else {
+                subgraph_set.insert(*to_flip);
+            }
+        }
+        subgraph_set.into_iter().collect()
     }
 
     /// check if there are more plugins to be applied
