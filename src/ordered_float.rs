@@ -55,7 +55,7 @@ impl num_traits::One for OrderedFloat {
 }
 impl num_traits::Signed for OrderedFloat {
     fn is_negative(&self) -> bool {
-        !self.is_zero() && self.0 < 0.0
+        !self.is_zero() && self.0.is_sign_negative()
     }
     fn is_positive(&self) -> bool {
         !self.is_zero() && self.0 > 0.0

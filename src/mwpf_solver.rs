@@ -25,6 +25,9 @@ use std::io::BufWriter;
 use std::sync::Arc;
 
 pub trait PrimalDualSolver {
+    fn debug_print(&self) {
+        unimplemented!();
+    }
     fn clear(&mut self);
     fn solve_visualizer(&mut self, syndrome_pattern: &SyndromePattern, visualizer: Option<&mut Visualizer>);
     fn solve(&mut self, syndrome_pattern: &SyndromePattern) {
@@ -228,6 +231,9 @@ impl PrimalDualSolver for SolverSerialPlugins {
     fn get_model_graph(&self) -> Arc<ModelHyperGraph> {
         self.model_graph.clone()
     }
+    fn debug_print(&self) {
+        self.dual_module.debug_print();
+    }
 }
 
 macro_rules! bind_primal_dual_solver_trait {
@@ -262,6 +268,9 @@ macro_rules! bind_primal_dual_solver_trait {
             }
             fn get_model_graph(&self) -> Arc<ModelHyperGraph> {
                 self.0.model_graph.clone()
+            }
+            fn debug_print(&self) {
+                self.0.debug_print()
             }
         }
     };

@@ -457,6 +457,7 @@ where
 
         self.negative_edges.clear();
         self.negative_weight_sum = Rational::zero();
+        self.flip_vertices.clear();
     }
 
     #[allow(clippy::unnecessary_cast)]
@@ -773,10 +774,9 @@ where
         println!("global time: {:?}", self.global_time.read_recursive());
         println!(
             "edges: {:?}",
-            self.edges
-                .iter()
-                .filter(|e| !e.read_recursive().grow_rate.is_zero())
-                .collect::<Vec<&EdgePtr>>()
+            self.edges // .iter()
+                       // .filter(|e| !e.read_recursive().grow_rate.is_zero())
+                       // .collect::<Vec<&EdgePtr>>()
         );
         if self.obstacle_queue.len() > 0 {
             println!("pq: {:?}", self.obstacle_queue.len());
@@ -881,7 +881,7 @@ where
     fn update_weights(&mut self, _log_prob_ratios: &[f64]) {
         for (edge, log_prob_ratio) in self.edges.iter().zip(_log_prob_ratios.iter()) {
             let mut edge = edge.write();
-            if edge.weight.is_negative() {
+            if log_prob_ratio.is_sign_negative() {
                 self.negative_edges.insert(edge.edge_index);
                 edge.vertices.iter().for_each(|vertex| {
                     let temp = vertex.upgrade_force().read_recursive().vertex_index;
@@ -892,7 +892,10 @@ where
                         self.flip_vertices.insert(temp);
                     }
                 });
-                edge.weight = Rational::from_f64(*log_prob_ratio).unwrap().abs();
+                edge.weight = Rational::from_f64(-*log_prob_ratio).unwrap();
+                // eprintln!("!!!!!, negative edge: {:?}", edge.edge_index);
+            } else {
+                edge.weight = Rational::from_f64(*log_prob_ratio).unwrap();
             }
         }
     }
