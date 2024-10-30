@@ -30,11 +30,11 @@ pub trait PrimalDualSolver {
     fn solve(&mut self, syndrome_pattern: &SyndromePattern) {
         self.solve_visualizer(syndrome_pattern, None)
     }
-    fn subgraph_range_visualizer(&mut self, visualizer: Option<&mut Visualizer>) -> (Subgraph, WeightRange);
-    fn subgraph_range(&mut self) -> (Subgraph, WeightRange) {
+    fn subgraph_range_visualizer(&mut self, visualizer: Option<&mut Visualizer>) -> (OutputSubgraph, WeightRange);
+    fn subgraph_range(&mut self) -> (OutputSubgraph, WeightRange) {
         self.subgraph_range_visualizer(None)
     }
-    fn subgraph(&mut self) -> Subgraph {
+    fn subgraph(&mut self) -> OutputSubgraph {
         self.subgraph_range().0
     }
     fn sum_dual_variables(&self) -> Rational;
@@ -172,7 +172,7 @@ impl PrimalDualSolver for SolverSerialPlugins {
             "the subgraph does not generate the syndrome"
         );
     }
-    fn subgraph_range_visualizer(&mut self, visualizer: Option<&mut Visualizer>) -> (Subgraph, WeightRange) {
+    fn subgraph_range_visualizer(&mut self, visualizer: Option<&mut Visualizer>) -> (OutputSubgraph, WeightRange) {
         let (subgraph, weight_range) = self.primal_module.subgraph_range(&self.interface_ptr, &mut self.dual_module);
         if let Some(visualizer) = visualizer {
             visualizer
@@ -239,7 +239,7 @@ macro_rules! bind_primal_dual_solver_trait {
             fn solve_visualizer(&mut self, syndrome_pattern: &SyndromePattern, visualizer: Option<&mut Visualizer>) {
                 self.0.solve_visualizer(syndrome_pattern, visualizer)
             }
-            fn subgraph_range_visualizer(&mut self, visualizer: Option<&mut Visualizer>) -> (Subgraph, WeightRange) {
+            fn subgraph_range_visualizer(&mut self, visualizer: Option<&mut Visualizer>) -> (OutputSubgraph, WeightRange) {
                 self.0.subgraph_range_visualizer(visualizer)
             }
             fn sum_dual_variables(&self) -> Rational {
@@ -399,7 +399,7 @@ impl PrimalDualSolver for SolverErrorPatternLogger {
             .unwrap();
         self.file.write_all(b"\n").unwrap();
     }
-    fn subgraph_range_visualizer(&mut self, _visualizer: Option<&mut Visualizer>) -> (Subgraph, WeightRange) {
+    fn subgraph_range_visualizer(&mut self, _visualizer: Option<&mut Visualizer>) -> (OutputSubgraph, WeightRange) {
         panic!("error pattern logger do not actually solve the problem, please use Verifier::None by `--verifier none`")
     }
     fn sum_dual_variables(&self) -> Rational {
