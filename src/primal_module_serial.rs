@@ -289,6 +289,17 @@ impl PrimalModuleImpl for PrimalModuleSerial {
                     .iter(),
             );
         }
+
+        // let mut subgraph_set = subgraph.into_iter().collect::<hashbrown::HashSet<EdgeIndex>>();
+        // for to_flip in _dual_module.get_negative_edges().iter() {
+        //     if subgraph_set.contains(to_flip) {
+        //         subgraph_set.remove(to_flip);
+        //     } else {
+        //         subgraph_set.insert(*to_flip);
+        //     }
+        // }
+        // OutputSubgraph::new(subgraph_set.into_iter().collect(), Default::default())
+
         OutputSubgraph::new(subgraph, _dual_module.get_negative_edges())
     }
 

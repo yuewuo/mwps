@@ -7,8 +7,6 @@ use std::collections::VecDeque;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
-use hashbrown::HashSet;
-
 use crate::dual_module::*;
 use crate::num_traits::FromPrimitive;
 use crate::ordered_float::OrderedFloat;
@@ -125,27 +123,12 @@ pub trait PrimalModuleImpl {
     fn solve_step_callback<D: DualModuleImpl, F>(
         &mut self,
         interface: &DualModuleInterfacePtr,
-        mut syndrome_pattern: Arc<SyndromePattern>,
+        syndrome_pattern: Arc<SyndromePattern>,
         dual_module: &mut D,
         callback: F,
     ) where
         F: FnMut(&DualModuleInterfacePtr, &mut D, &mut Self, &GroupMaxUpdateLength),
     {
-        let syndrome_pattern_mut = unsafe { Arc::get_mut_unchecked(&mut syndrome_pattern) };
-        let moved_out_vec = std::mem::take(&mut syndrome_pattern_mut.defect_vertices);
-
-        let mut moved_out_set = moved_out_vec.into_iter().collect::<HashSet<VertexIndex>>();
-
-        for to_flip in dual_module.get_flip_vertices().iter() {
-            if moved_out_set.contains(to_flip) {
-                moved_out_set.remove(to_flip);
-            } else {
-                moved_out_set.insert(*to_flip);
-            }
-        }
-
-        syndrome_pattern_mut.defect_vertices = moved_out_set.into_iter().collect();
-
         // subgraph_set.into_iter().collect()
         interface.load(syndrome_pattern, dual_module);
         self.load(interface, dual_module);

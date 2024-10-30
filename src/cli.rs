@@ -350,7 +350,7 @@ impl Cli {
 
                 // single seed mode, intended only execute a single failing round
                 if let Some(seed) = single_seed {
-                    let (syndrome_pattern, error_pattern) = code.generate_random_errors(seed);
+                    let (mut syndrome_pattern, error_pattern) = code.generate_random_errors(seed);
 
                     if use_bp {
                         let mut syndrome_array = vec![0; code.vertex_num()];
@@ -388,7 +388,7 @@ impl Cli {
                         .unwrap();
                         visualizer = Some(new_visualizer);
                     }
-                    primal_dual_solver.solve_visualizer(&syndrome_pattern, visualizer.as_mut());
+                    primal_dual_solver.solve_visualizer(&mut syndrome_pattern, visualizer.as_mut());
                     result_verifier.verify(
                         &mut primal_dual_solver,
                         &syndrome_pattern,
@@ -411,7 +411,7 @@ impl Cli {
                 for round in (starting_iteration as u64)..(total_rounds as u64) {
                     pb.as_mut().map(|pb| pb.set(round));
                     seed = if use_deterministic_seed { round } else { rng.next_u64() };
-                    let (syndrome_pattern, error_pattern) = code.generate_random_errors(seed);
+                    let (mut syndrome_pattern, error_pattern) = code.generate_random_errors(seed);
 
                     if use_bp {
                         let mut syndrome_array = vec![0; code.vertex_num()];
@@ -451,7 +451,7 @@ impl Cli {
                         visualizer = Some(new_visualizer);
                     }
                     benchmark_profiler.begin(&syndrome_pattern, &error_pattern);
-                    primal_dual_solver.solve_visualizer(&syndrome_pattern, visualizer.as_mut());
+                    primal_dual_solver.solve_visualizer(&mut syndrome_pattern, visualizer.as_mut());
                     benchmark_profiler.event("decoded".to_string());
                     result_verifier.verify(
                         &mut primal_dual_solver,
