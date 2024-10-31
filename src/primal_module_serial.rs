@@ -5,6 +5,7 @@
 
 use crate::decoding_hypergraph::*;
 use crate::dual_module::*;
+use crate::dual_module_parallel::DualModuleParallelUnitPtr;
 use crate::invalid_subgraph::*;
 use crate::matrix::*;
 use crate::num_traits::{One, Zero};
@@ -30,6 +31,10 @@ use crate::dual_module_serial::{EdgeWeak, VertexWeak, EdgePtr, VertexPtr};
 use crate::dual_module_pq::{EdgeWeak, VertexWeak, EdgePtr, VertexPtr};
 #[cfg(feature="unsafe_pointer")]
 use crate::pointers::UnsafePtr;
+
+use crate::dual_module_parallel::*;
+use crate::dual_module_pq::*;
+use std::ops::DerefMut;
 
 use crate::itertools::Itertools;
 #[cfg(feature = "incr_lp")]
@@ -1520,6 +1525,129 @@ impl PrimalModuleSerial {
             println!();
             println!("invalid subgraphs: {:?}", invalid_subgraphs.len());
         }
+    }
+
+    pub fn solve_step_callback_ptr<DualSerialModule: DualModuleImpl + Send + Sync, Queue, F>(
+        &mut self,
+        interface: &DualModuleInterfacePtr,
+        syndrome_pattern: Arc<SyndromePattern>,
+        dual_module_ptr: &mut DualModuleParallelUnitPtr<DualSerialModule, Queue>,
+        callback: F,
+    ) where
+        F: FnMut(&DualModuleInterfacePtr, &DualModuleParallelUnit<DualSerialModule, Queue>, &mut Self, &GroupMaxUpdateLength),
+        Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug + Send + Sync + Clone,
+
+    {
+        interface.load(syndrome_pattern, dual_module_ptr.write().deref_mut());
+        self.load(interface, dual_module_ptr.write().deref_mut());
+        self.solve_step_callback_interface_loaded_ptr(interface, dual_module_ptr, callback);
+    }
+
+    pub fn solve_step_callback_interface_loaded_ptr<DualSerialModule: DualModuleImpl + Send + Sync, Queue, F>(
+        &mut self,
+        interface: &DualModuleInterfacePtr,
+        dual_module_ptr: &mut DualModuleParallelUnitPtr<DualSerialModule, Queue>,
+        mut callback: F,
+    ) where
+        F: FnMut(&DualModuleInterfacePtr, &DualModuleParallelUnit<DualSerialModule, Queue>, &mut Self, &GroupMaxUpdateLength),
+        Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug + Send + Sync + Clone,
+    {
+        // Search, this part is unchanged
+        let mut group_max_update_length = dual_module_ptr.compute_maximum_update_length();
+
+        while !group_max_update_length.is_unbounded() {
+            callback(interface, &dual_module_ptr.read_recursive(), self, &group_max_update_length);
+            match group_max_update_length.get_valid_growth() {
+                Some(length) => dual_module_ptr.grow(length),
+                None => {
+                    self.resolve(group_max_update_length, interface, dual_module_ptr.write().deref_mut());
+                }
+            }
+            group_max_update_length = dual_module_ptr.compute_maximum_update_length();
+        }
+
+        // from here, all states should be syncronized
+        let mut start = true;
+
+        // starting with unbounded state here: All edges and nodes are not growing as of now
+        // Tune
+        let mut dual_module = dual_module_ptr.write();
+        while self.has_more_plugins() {
+            if start {
+                start = false;
+                dual_module.advance_mode();
+            }
+            self.update_sorted_clusters_aff(dual_module);
+            let cluster_affs = self.get_sorted_clusters_aff();
+
+            for cluster_affinity in cluster_affs.into_iter() {
+                #[cfg(not(feature="pointer"))]
+                let cluster_index = cluster_affinity.cluster_index;
+                #[cfg(feature="pointer")]
+                let cluster_ptr = cluster_affinity.cluster_ptr;
+                let mut dual_node_deltas = BTreeMap::new();
+                #[cfg(not(feature="pointer"))]
+                let (mut resolved, optimizer_result) =
+                    self.resolve_cluster_tune(cluster_index, interface, dual_module, &mut dual_node_deltas);
+                #[cfg(feature="pointer")]
+                let (mut resolved, optimizer_result) =
+                    self.resolve_cluster_tune(&cluster_ptr, interface, dual_module, &mut dual_node_deltas);
+
+                let mut conflicts = dual_module.get_conflicts_tune(optimizer_result, dual_node_deltas);
+
+                // for cycle resolution
+                #[cfg(feature = "cluster_size_limit")]
+                let mut order: VecDeque<BTreeSet<MaxUpdateLength>> = VecDeque::with_capacity(MAX_HISTORY); // fifo order of the conflicts sets seen
+                #[cfg(feature = "cluster_size_limit")]
+                let mut current_sequences: Vec<(usize, BTreeSet<MaxUpdateLength>)> = Vec::new(); // the indexes that are currently being processed
+
+                '_resolving: while !resolved {
+                    let (_conflicts, _resolved) = self.resolve_tune(conflicts.clone(), interface, dual_module);
+
+                    #[cfg(feature = "cluster_size_limit")]
+                    {
+                        // cycle resolution
+                        let drained: Vec<(usize, BTreeSet<MaxUpdateLength>)> = std::mem::take(&mut current_sequences);
+                        for (idx, start) in drained.into_iter() {
+                            if _conflicts.eq(&start) {
+                                dual_module.end_tuning();
+                                break '_resolving;
+                            }
+                            if _conflicts.eq(order
+                                .get(MAX_HISTORY - idx - 1)
+                                .unwrap_or(order.get(order.len() - idx - 1).unwrap()))
+                            {
+                                current_sequences.push((idx + 1, start));
+                            }
+                        }
+
+                        order.push_back(_conflicts.clone());
+                        if order.len() > MAX_HISTORY {
+                            order.pop_front();
+                            current_sequences = current_sequences
+                                .into_iter()
+                                .filter_map(|(x, start)| if x >= MAX_HISTORY { None } else { Some((x + 1, start)) })
+                                .collect();
+                        }
+
+                        for (idx, c) in order.iter().enumerate() {
+                            if c.eq(&_conflicts) {
+                                current_sequences.push((idx, c.clone()));
+                            }
+                        }
+                    }
+
+                    if _resolved {
+                        dual_module.end_tuning();
+                        break;
+                    }
+
+                    conflicts = _conflicts;
+                    resolved = _resolved;
+                }
+            }
+        }
+        drop(dual_module);
     }
 }
 

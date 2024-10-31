@@ -476,6 +476,7 @@ impl PartialOrd for EdgeWeak {
 }
 
 /* the actual dual module */
+#[derive(Clone)]
 pub struct DualModulePQ<Queue>
 where
     Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug,
@@ -1425,21 +1426,26 @@ where
     Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug + Clone,
 {
     fn snapshot(&self, abbrev: bool) -> serde_json::Value {
-        let mut vertices: Vec<serde_json::Value> = vec![];
+        // let mut vertices: Vec<serde_json::Value> = vec![];
+        let mut vertices: Vec<serde_json::Value> = (0..self.vertex_num).map(|_| serde_json::Value::Null).collect();
         for vertex_ptr in self.vertices.iter() {
             let vertex = vertex_ptr.read_recursive();
-            vertices.push(json!({
+            vertices[vertex.vertex_index as usize] = json!({
                 if abbrev { "s" } else { "is_defect" }: i32::from(vertex.is_defect),
-            }));
+            });
+            // vertices.push(json!({
+            //     if abbrev { "s" } else { "is_defect" }: i32::from(vertex.is_defect),
+            // }));
         }
-        let mut edges: Vec<serde_json::Value> = vec![];
+        // let mut edges: Vec<serde_json::Value> = vec![];
+        let mut edges: Vec<serde_json::Value> = (0..self.edge_num).map(|_| serde_json::Value::Null).collect();
         for edge_ptr in self.edges.iter() {
             let edge = edge_ptr.read_recursive();
             let current_growth = &edge.growth_at_last_updated_time
                 + (&self.global_time.read_recursive().clone() - &edge.last_updated_time) * &edge.grow_rate;
 
             let unexplored = &edge.weight - &current_growth;
-            edges.push(json!({
+            edges[edge.edge_index as usize] = json!({
                 if abbrev { "w" } else { "weight" }: edge.weight.to_f64(),
                 if abbrev { "v" } else { "vertices" }: edge.vertices.iter().map(|x| x.upgrade_force().read_recursive().vertex_index).collect::<Vec<_>>(),
                 if abbrev { "g" } else { "growth" }: current_growth.to_f64(),
@@ -1447,7 +1453,17 @@ where
                 "gd": current_growth.denom().to_i64(),
                 "un": numer_of(&unexplored),
                 "ud": unexplored.denom().to_i64(),
-            }));
+            });
+
+            // edges.push(json!({
+            //     if abbrev { "w" } else { "weight" }: edge.weight.to_f64(),
+            //     if abbrev { "v" } else { "vertices" }: edge.vertices.iter().map(|x| x.upgrade_force().read_recursive().vertex_index).collect::<Vec<_>>(),
+            //     if abbrev { "g" } else { "growth" }: current_growth.to_f64(),
+            //     "gn": numer_of(&current_growth),
+            //     "gd": current_growth.denom().to_i64(),
+            //     "un": numer_of(&unexplored),
+            //     "ud": unexplored.denom().to_i64(),
+            // }));
         }
         json!({
             "vertices": vertices,

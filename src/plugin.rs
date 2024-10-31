@@ -69,6 +69,7 @@ pub enum RepeatStrategy {
 }
 
 /// describes what plugins to enable and also the recursive strategy
+#[derive(Clone)]
 pub struct PluginEntry {
     /// the implementation of a plugin
     pub plugin: Arc<dyn PluginImpl + Send + Sync>,

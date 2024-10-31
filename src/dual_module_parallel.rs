@@ -147,23 +147,23 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
     }
 }
 
-// impl<SerialModule: DualModuleImpl + Send + Sync, Queue> Clone for DualModuleParallelUnit<SerialModule, Queue> 
-// where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug + Send + Sync + Clone,
-// {
-//     fn clone(&self) -> Self {
-//         Self {
-//             unit_index: self.unit_index.clone(),
-//             serial_module: self.serial_module.clone(),
-//             adjacent_parallel_units: self.adjacent_parallel_units.clone(),
-//             is_boundary_unit: self.is_boundary_unit.clone(),
-//             partition_info: self.partition_info.clone(),
-//             owning_range: self.owning_range.clone(),
-//             enable_parallel_execution: self.enable_parallel_execution.clone(),
-//             mode: self.mode.clone(),
-//             _phantom: PhantomData,
-//         }
-//     }
-// }
+impl<SerialModule: DualModuleImpl + Send + Sync, Queue> Clone for DualModuleParallelUnit<SerialModule, Queue> 
+where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug + Send + Sync + Clone,
+{
+    fn clone(&self) -> Self {
+        Self {
+            unit_index: self.unit_index.clone(),
+            serial_module: self.serial_module.clone(),
+            adjacent_parallel_units: self.adjacent_parallel_units.clone(),
+            is_boundary_unit: self.is_boundary_unit.clone(),
+            partition_info: self.partition_info.clone(),
+            owning_range: self.owning_range.clone(),
+            enable_parallel_execution: self.enable_parallel_execution.clone(),
+            mode: self.mode.clone(),
+            _phantom: PhantomData,
+        }
+    }
+}
 
 
 
@@ -366,8 +366,8 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
         for boundary_unit_index in partition_info.config.partitions.len()..unit_count {
             let unit = units[boundary_unit_index].read_recursive();
             for (index, vertex_ptr) in unit.serial_module.vertices.iter().enumerate() {
-                let vertex_index = vertex_ptr.read_recursive_force().vertex_index;
-                let mut vertex = vertex_ptr.write(Rational::zero());
+                let vertex_index = vertex_ptr.read_recursive().vertex_index;
+                let mut vertex = vertex_ptr.write();
                 // fill in the `mirrored_vertices` of vertcies for boundary-unit 
                 for adjacent_unit_index in partition_info.units[boundary_unit_index].adjacent_parallel_units.iter() {
                     let adjacent_unit = units[*adjacent_unit_index].read_recursive();
@@ -399,7 +399,7 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
 
                     // println!("offset_corresponding_mirrored_vertex: {:?}", offset_corresponding_mirrored_vertex);
                     let corresponding_mirrored_vertex_ptr = &adjacent_unit.serial_module.vertices[offset_corresponding_mirrored_vertex + index];
-                    let mut corresponding_mirrored_vertex = corresponding_mirrored_vertex_ptr.write(Rational::zero());
+                    let mut corresponding_mirrored_vertex = corresponding_mirrored_vertex_ptr.write();
                     for vertex_ptr0 in vertex.mirrored_vertices.iter() {
                         if !vertex_ptr0.eq(&corresponding_mirrored_vertex_ptr.downgrade()) {
                             corresponding_mirrored_vertex.mirrored_vertices.push(vertex_ptr0.clone());
@@ -446,14 +446,14 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
     /// find the parallel unit that handles this dual node, should be unique
     pub fn find_handling_parallel_unit(&self, dual_node_ptr: &DualNodePtr) -> DualModuleParallelUnitPtr<SerialModule, Queue> {
         let defect_ptr = dual_node_ptr.get_representative_vertex();
-        let owning_unit_index = self.partition_info.vertex_to_owning_unit.get(&defect_ptr.read_recursive_force().vertex_index);
+        let owning_unit_index = self.partition_info.vertex_to_owning_unit.get(&defect_ptr.read_recursive().vertex_index);
         match owning_unit_index {
             Some(x) => {
                 let owning_unit_ptr = self.units[*x].clone();
                 return owning_unit_ptr;
             },
             None => {
-                panic!("This dual node {} is not contained in any partition, we cannot find a parallel unit that handles this dual node.", defect_ptr.read_recursive_force().vertex_index)
+                panic!("This dual node {} is not contained in any partition, we cannot find a parallel unit that handles this dual node.", defect_ptr.read_recursive().vertex_index)
             }}
     }
 
@@ -598,7 +598,7 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
     /// come back later to fix the owning_edge_range contains
     #[cfg(feature="pointer")]
     fn get_edge_nodes(&self, edge_ptr: EdgePtr) -> Vec<DualNodePtr> {
-        edge_ptr.read_recursive_force()
+        edge_ptr.read_recursive()
                 .dual_nodes
                 .iter()
                 .map(|x| x.upgrade_force().ptr)
@@ -606,7 +606,7 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
     }
     #[cfg(feature="pointer")]
     fn get_edge_slack(&self, edge_ptr: EdgePtr) -> Rational {
-        let edge = edge_ptr.read_recursive_force();
+        let edge = edge_ptr.read_recursive();
         let unit_ptr = &self.units[edge.unit_index.unwrap()];
         let mut unit = unit_ptr.write();
         unit.get_edge_slack(edge_ptr.clone())
@@ -638,19 +638,19 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
 
     /// grow a specific edge on the spot
     fn grow_edge(&self, edge_ptr: EdgePtr, amount: &Rational) {
-        let mut edge = edge_ptr.write_force();
+        let mut edge = edge_ptr.write();
         edge.growth_at_last_updated_time += amount;
     }
 
     /// `is_edge_tight` but in tuning phase
     fn is_edge_tight_tune(&self, edge_ptr: EdgePtr) -> bool {
-        let edge = edge_ptr.read_recursive_force();
+        let edge = edge_ptr.read_recursive();
         edge.weight == edge.growth_at_last_updated_time
     }
 
     /// `get_edge_slack` but in tuning phase
     fn get_edge_slack_tune(&self, edge_ptr: EdgePtr) -> Rational {
-        let edge = edge_ptr.read_recursive_force();
+        let edge = edge_ptr.read_recursive();
         edge.weight.clone() - edge.growth_at_last_updated_time.clone()
     }
 
@@ -704,7 +704,7 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
         participating_dual_variables: &hashbrown::HashSet<usize>,
     ) -> Rational {
         // let edge = self.edges[edge_index as usize].read_recursive();
-        let edge = edge_ptr.read_recursive_force();
+        let edge = edge_ptr.read_recursive();
         let mut free_weight = edge.weight.clone();
         for dual_node in edge.dual_nodes.iter() {
             if participating_dual_variables.contains(&dual_node.index) {

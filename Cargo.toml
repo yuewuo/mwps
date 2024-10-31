@@ -36,7 +36,7 @@ debug = true
 
 [features]
 # to enable a feature, use `--features xxx`
-default = ["f64_weight", "cli", "qecp_integrate", "pointer", "unsafe_pointer"]
+default = ["f64_weight", "cli", "qecp_integrate", "pointer", "unsafe_pointer", "parallel"]
 old_default = ["cli", "slp"]
 cli = ["pbr"]
 r64_weight = []                                   # use Rational64 instead of BigRational as weight type
@@ -97,6 +97,7 @@ pheap = { path = "src/pheap" }
 weak-table = "0.3.2"
 rayon = "1.7.0"
 petgraph = { version = "0.6.0", features = ["serde-1"] }
+core_affinity = "0.8.0"
 
 
 [dev-dependencies]
