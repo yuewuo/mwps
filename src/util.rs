@@ -5,30 +5,30 @@ use crate::num_traits::ToPrimitive;
 use crate::rand_xoshiro;
 use crate::rand_xoshiro::rand_core::RngCore;
 use crate::visualize::*;
+use petgraph::Graph;
+use petgraph::Undirected;
 #[cfg(feature = "python_binding")]
 use pyo3::prelude::*;
 #[cfg(feature = "python_binding")]
 use pyo3::types::PyFloat;
 use serde::{Deserialize, Serialize};
-use std::hash::{Hash, Hasher};
 use std::collections::HashMap;
-use petgraph::Graph;
-use petgraph::Undirected;
+use std::hash::{Hash, Hasher};
 
+#[cfg(feature = "pointer")]
+use crate::pointers::FastClearUnsafePtr;
 use std::collections::BTreeSet;
 use std::fs::File;
 use std::io::prelude::*;
 use std::time::Instant;
-#[cfg(feature="pointer")]
-use crate::pointers::FastClearUnsafePtr;
 
-#[cfg(all(feature = "pointer", feature = "non-pq"))]
-use crate::dual_module_serial::{EdgeWeak, VertexWeak, EdgePtr, VertexPtr};
 #[cfg(all(feature = "pointer", not(feature = "non-pq")))]
-use crate::dual_module_pq::{EdgeWeak, VertexWeak, EdgePtr, VertexPtr};
+use crate::dual_module_pq::{EdgePtr, EdgeWeak, VertexPtr, VertexWeak};
+#[cfg(all(feature = "pointer", feature = "non-pq"))]
+use crate::dual_module_serial::{EdgePtr, EdgeWeak, VertexPtr, VertexWeak};
 use crate::num_traits::Zero;
 
-#[cfg(feature="unsafe_pointer")]
+#[cfg(feature = "unsafe_pointer")]
 use crate::pointers::UnsafePtr;
 
 pub type Weight = usize; // only used as input, all internal weight representation will use `Rational`
@@ -95,7 +95,11 @@ pub struct HyperEdge {
 impl HyperEdge {
     #[cfg_attr(feature = "python_binding", new)]
     pub fn new(vertices: Vec<VertexIndex>, weight: Weight) -> Self {
-        Self { vertices, weight , connected_to_boundary_vertex: false}
+        Self {
+            vertices,
+            weight,
+            connected_to_boundary_vertex: false,
+        }
     }
 
     #[cfg(feature = "python_binding")]
@@ -164,7 +168,7 @@ impl SolverInitializer {
         true
     }
 
-    #[cfg(not(feature="pointer"))]
+    #[cfg(not(feature = "pointer"))]
     #[allow(clippy::unnecessary_cast)]
     pub fn get_subgraph_total_weight(&self, subgraph: &Subgraph) -> Weight {
         let mut weight = 0;
@@ -174,7 +178,7 @@ impl SolverInitializer {
         weight
     }
 
-    #[cfg(feature="pointer")]
+    #[cfg(feature = "pointer")]
     #[allow(clippy::unnecessary_cast)]
     pub fn get_subgraph_total_weight(&self, internal_subgraph: &InternalSubgraph) -> Rational {
         let mut weight = Rational::zero();
@@ -185,7 +189,7 @@ impl SolverInitializer {
         weight
     }
 
-    #[cfg(feature="pointer")]
+    #[cfg(feature = "pointer")]
     #[allow(clippy::unnecessary_cast)]
     pub fn get_subgraph_index_total_weight(&self, subgraph_index: &Vec<usize>) -> Rational {
         use crate::num_traits::FromPrimitive;
@@ -241,7 +245,12 @@ impl MWPSVisualizer for SolverInitializer {
         for _ in 0..self.vertex_num {
             vertices.push(json!({}));
         }
-        for HyperEdge { vertices, weight , connected_to_boundary_vertex: _} in self.weighted_edges.iter() {
+        for HyperEdge {
+            vertices,
+            weight,
+            connected_to_boundary_vertex: _,
+        } in self.weighted_edges.iter()
+        {
             edges.push(json!({
                 if abbrev { "w" } else { "weight" }: weight,
                 if abbrev { "v" } else { "vertices" }: vertices,
@@ -336,9 +345,12 @@ pub type InternalSubgraph = Vec<EdgeIndex>;
 
 #[cfg(feature = "pointer")]
 impl MWPSVisualizer for InternalSubgraph {
-    #[cfg(feature="pointer")]
+    #[cfg(feature = "pointer")]
     fn snapshot(&self, _abbrev: bool) -> serde_json::Value {
-        let subgraph_by_index: Vec<usize> = self.into_iter().map(|e| e.upgrade_force().read_recursive().edge_index).collect();
+        let subgraph_by_index: Vec<usize> = self
+            .into_iter()
+            .map(|e| e.upgrade_force().read_recursive().edge_index)
+            .collect();
         json!({
             "subgraph": subgraph_by_index,
         })
@@ -346,14 +358,14 @@ impl MWPSVisualizer for InternalSubgraph {
 }
 
 impl MWPSVisualizer for Subgraph {
-    #[cfg(feature="pointer")]
+    #[cfg(feature = "pointer")]
     fn snapshot(&self, _abbrev: bool) -> serde_json::Value {
         json!({
             "subgraph": self,
         })
     }
 
-    #[cfg(not(feature="pointer"))]
+    #[cfg(not(feature = "pointer"))]
     fn snapshot(&self, _abbrev: bool) -> serde_json::Value {
         json!({
             "subgraph": self,
@@ -419,9 +431,9 @@ impl MWPSVisualizer for WeightRange {
             "weight_range": {
                 "lower": self.lower.to_f64(),
                 "upper": self.upper.to_f64(),
-                "ln": self.lower.numer().to_i64(),
+                "ln": numer_of(&self.lower),
                 "ld": self.lower.denom().to_i64(),
-                "un": self.upper.numer().to_i64(),
+                "un": numer_of(&self.upper),
                 "ud": self.upper.denom().to_i64(),
             },
         })
@@ -670,9 +682,8 @@ pub(crate) fn register(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
     Ok(())
 }
 
-
 /// for parallel implementation
-/// 
+///
 /// an efficient representation of partitioned vertices and erasures when they're ordered
 #[derive(Debug, Clone, Serialize)]
 
@@ -719,9 +730,9 @@ impl<'a> PartitionedSyndromePattern<'a> {
 //     // initialize a IndexSet that only has a continuous range of indices but no spaced out individual indices
 //     fn new_range(start: VertexNodeIndex, end: VertexNodeIndex) -> Self {
 //         debug_assert!(end > start, "invalid range [{}, {})", start, end);
-//         Self { 
+//         Self {
 //             individual_indices: BTreeSet::<VertexNodeIndex>::new(),
-//             range: [start, end], 
+//             range: [start, end],
 //         }
 //     }
 
@@ -741,7 +752,7 @@ impl<'a> PartitionedSyndromePattern<'a> {
 //     pub fn new(start: VertexNodeIndex, end: VertexNodeIndex, indices: Vec<VertexNodeIndex>) -> Self {
 //         debug_assert!(end > start, "invalid range [{}, {})", start, end);
 //         if start == end && indices.len() == 0{
-//             // range is invalid, we check whether indices are empty 
+//             // range is invalid, we check whether indices are empty
 //             // indices are empty too
 //             panic!("both the input range and individual indices are invalid");
 //         } else if start == end {
@@ -761,7 +772,7 @@ impl<'a> PartitionedSyndromePattern<'a> {
 //         }
 //     }
 
-//     // add more individual index to the already created IndexSet 
+//     // add more individual index to the already created IndexSet
 //     pub fn add_individual_index(&mut self, index: VertexNodeIndex) {
 //         self.individual_indices.insert(index);
 //     }
@@ -813,8 +824,6 @@ impl<'a> PartitionedSyndromePattern<'a> {
 //     //     )
 //     // }
 // }
-
-
 
 // we leave the code here just in case we need to describe the vertices in continuos range
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -889,7 +898,6 @@ impl IndexRange {
     }
 }
 
-
 impl Hash for IndexRange {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.range[0].hash(state);
@@ -935,7 +943,7 @@ pub struct PartitionConfig {
     /// detailed plan of interfacing vertices
     pub fusions: Vec<(usize, usize)>,
     /// undirected acyclic graph (DAG) to keep track of the relationship between different partition units
-    pub dag_partition_units: Graph::<(), bool, Undirected>,
+    pub dag_partition_units: Graph<(), bool, Undirected>,
     /// defect vertices (global index)
     pub defect_vertices: BTreeSet<usize>,
 }
@@ -955,7 +963,7 @@ impl PartitionConfig {
         Self {
             vertex_num,
             partitions: vec![], // we do not partition this newly (additionally) added unit
-            fusions: fusions,
+            fusions,
             dag_partition_units: Graph::new_undirected(), // we do not use this for the newly (additionally) added unit
             defect_vertices: BTreeSet::from_iter(defect_vertices),
         }
@@ -975,7 +983,7 @@ impl PartitionConfig {
             let mut owning_ranges = vec![];
             let unit_count = self.partitions.len() + self.fusions.len();
             let partitions_len = self.partitions.len();
-    
+
             for &partition in self.partitions.iter() {
                 partition.sanity_check();
                 assert!(
@@ -985,14 +993,14 @@ impl PartitionConfig {
                 );
                 owning_ranges.push(partition);
             }
-    
+
             // find boundary vertices
             let mut interface_ranges = vec![];
             let mut unit_index_to_adjacent_indices: HashMap<usize, Vec<usize>> = HashMap::new();
-            
+
             for (boundary_unit_index, (left_index, right_index)) in self.fusions.iter().enumerate() {
                 let boundary_unit_index = boundary_unit_index + partitions_len;
-                // find the interface_range 
+                // find the interface_range
                 let (_whole_range, interface_range) = self.partitions[*left_index].fuse(&self.partitions[*right_index]);
                 interface_ranges.push(interface_range);
                 owning_ranges.push(interface_range);
@@ -1003,7 +1011,7 @@ impl PartitionConfig {
                     adjacent_indices.push(boundary_unit_index);
                     unit_index_to_adjacent_indices.insert(*left_index, adjacent_indices.clone());
                 }
-                
+
                 if let Some(adjacent_indices) = unit_index_to_adjacent_indices.get_mut(right_index) {
                     adjacent_indices.push(boundary_unit_index);
                 } else {
@@ -1011,8 +1019,8 @@ impl PartitionConfig {
                     adjacent_indices.push(boundary_unit_index);
                     unit_index_to_adjacent_indices.insert(*right_index, adjacent_indices.clone());
                 }
-                
-                // now we insert the key-value pair for boundary_unit_index and its adjacent 
+
+                // now we insert the key-value pair for boundary_unit_index and its adjacent
                 if let Some(adjacent_indices) = unit_index_to_adjacent_indices.get_mut(&boundary_unit_index) {
                     adjacent_indices.push(*left_index);
                     adjacent_indices.push(*right_index);
@@ -1023,7 +1031,7 @@ impl PartitionConfig {
                     unit_index_to_adjacent_indices.insert(boundary_unit_index, adjacent_indices.clone());
                 }
             }
-           
+
             let mut boundary_vertices: HashMap<usize, Vec<IndexRange>> = HashMap::new();
             for (unit_index, adjacent_unit_indices) in unit_index_to_adjacent_indices.iter() {
                 if let Some(adjacent_vertices) = boundary_vertices.get_mut(&unit_index) {
@@ -1038,23 +1046,23 @@ impl PartitionConfig {
                     boundary_vertices.insert(*unit_index, adjacent_vertices.clone());
                 }
             }
-    
+
             // construct partition info, assuming partition along the time axis
             let partition_unit_info: Vec<_> = (0..unit_count)
                 .map(|i| PartitionUnitInfo {
                     // owning_range: if i == self.partitions.len() - 1 {
                     //     owning_ranges[i]
                     // }else {
-                    //     IndexRange::new(owning_ranges[i].start(), interface_ranges[i].end())  // owning_ranges[i], 
+                    //     IndexRange::new(owning_ranges[i].start(), interface_ranges[i].end())  // owning_ranges[i],
                     // },
                     owning_range: owning_ranges[i],
                     unit_index: i,
-                    is_boundary_unit: if i < partitions_len {false} else {true},
+                    is_boundary_unit: if i < partitions_len { false } else { true },
                     adjacent_parallel_units: unit_index_to_adjacent_indices.get(&i).unwrap().clone(),
                     boundary_vertices: boundary_vertices.get(&i).unwrap().clone(),
                 })
                 .collect();
-    
+
             // create vertex_to_owning_unit for owning_ranges
             let mut vertex_to_owning_unit = HashMap::new();
             for partition_unit in partition_unit_info.iter() {
@@ -1063,7 +1071,7 @@ impl PartitionConfig {
                     vertex_to_owning_unit.insert(vertex_index, partition_unit.unit_index);
                 }
             }
-    
+
             PartitionInfo {
                 config: self.clone(),
                 units: partition_unit_info,
@@ -1076,10 +1084,10 @@ impl PartitionConfig {
         // the self.partitins, dag should be empty
         let partition_unit_info = PartitionUnitInfo {
             owning_range: VertexRange::new(0, self.vertex_num),
-            unit_index: unit_index,
+            unit_index,
             is_boundary_unit: false, // not useful for this newly (additionally) added unit
             adjacent_parallel_units: vec![self.fusions[0].1], // note that self.fusions = (self, other)
-            boundary_vertices: vec![boundary_vertics], 
+            boundary_vertices: vec![boundary_vertics],
         };
         PartitionInfo {
             config: self.clone(),
@@ -1101,22 +1109,22 @@ pub struct PartitionInfo {
 }
 
 // impl PartitionInfo {
-    /// split a sequence of syndrome into multiple parts, each corresponds to a unit;
-    /// this is a slow method and should only be used when the syndrome pattern is not well-ordered
-    // #[allow(clippy::unnecessary_cast)]
-    // pub fn partition_syndrome_unordered(&self, syndrome_pattern: &SyndromePattern) -> Vec<SyndromePattern> {
-    //     let mut partitioned_syndrome: Vec<_> = (0..self.units.len()).map(|_| SyndromePattern::new_empty()).collect();
-    //     for defect_vertex in syndrome_pattern.defect_vertices.iter() {
-    //         let unit_index = self.vertex_to_owning_unit.get(defect_vertex);
-    //         match unit_index {
-    //             Some(unit_index) => partitioned_syndrome[*unit_index].defect_vertices.push(*defect_vertex),
-    //             None => // the syndrome is on the boudnary vertices
+/// split a sequence of syndrome into multiple parts, each corresponds to a unit;
+/// this is a slow method and should only be used when the syndrome pattern is not well-ordered
+// #[allow(clippy::unnecessary_cast)]
+// pub fn partition_syndrome_unordered(&self, syndrome_pattern: &SyndromePattern) -> Vec<SyndromePattern> {
+//     let mut partitioned_syndrome: Vec<_> = (0..self.units.len()).map(|_| SyndromePattern::new_empty()).collect();
+//     for defect_vertex in syndrome_pattern.defect_vertices.iter() {
+//         let unit_index = self.vertex_to_owning_unit.get(defect_vertex);
+//         match unit_index {
+//             Some(unit_index) => partitioned_syndrome[*unit_index].defect_vertices.push(*defect_vertex),
+//             None => // the syndrome is on the boudnary vertices
 
-    //         }
-    //     }
-    //     // TODO: partition edges
-    //     partitioned_syndrome
-    // }
+//         }
+//     }
+//     // TODO: partition edges
+//     partitioned_syndrome
+// }
 // }
 
 // for primal module parallel
@@ -1192,18 +1200,17 @@ impl<'a> PartitionedSyndromePattern<'a> {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PartitionUnitInfo {
-    /// the owning range of units, the vertices exlusive to this unit 
+    /// the owning range of units, the vertices exlusive to this unit
     pub owning_range: VertexRange,
     /// partition unit index
     pub unit_index: usize,
     /// if this unit is boundary unit
-    pub is_boundary_unit: bool, 
+    pub is_boundary_unit: bool,
 
     pub adjacent_parallel_units: Vec<usize>,
-    
+
     /// the boundary vertices near to this unit
     pub boundary_vertices: Vec<IndexRange>,
-
     // /// boundary vertices, following the global vertex index
     // /// key: indexrange of the boundary vertices. value: (unit_index, unit_index), the pair of unit_index of the two partition units adjacent to the boundary
     // pub boundary_vertices: Option<HashMap<IndexRange, (usize, usize)>>,
@@ -1260,7 +1267,6 @@ pub fn translated_defect_to_reordered(
         .map(|old_index| old_to_new[*old_index as usize].unwrap())
         .collect()
 }
-
 
 #[cfg(test)]
 pub mod tests {
