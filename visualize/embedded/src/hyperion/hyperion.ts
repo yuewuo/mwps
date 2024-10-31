@@ -134,7 +134,23 @@ export class ConfigProps {
     show_config: boolean = true
     full_screen: boolean = true
     segments: number = 32
+    visualizer_config: any = undefined
 }
+
+interface KeyShortcutDescription {
+    key: string
+    description: string
+}
+
+export const key_shortcuts: Array<KeyShortcutDescription> = [
+    { key: 'T', description: 'top view' },
+    { key: 'L', description: 'left view' },
+    { key: 'F', description: 'front view' },
+    { key: 'C', description: 'toggle config' },
+    { key: 'S', description: 'toggle stats' },
+    { key: '⬅', description: 'last snapshot' },
+    { key: '⮕', description: 'next snapshot' }
+]
 
 /* configuration helper class given the runtime data */
 export class Config {
@@ -145,12 +161,27 @@ export class Config {
     camera: CameraConfig = new CameraConfig()
     vertex: VertexConfig = new VertexConfig()
     edge: EdgeConfig = new EdgeConfig()
+    parameters: string = '' // export or import parameters of the tweak pane
     pane?: Pane
 
     constructor (data: RuntimeData, config_prop: ConfigProps) {
         this.data = data
         this.config_prop = config_prop
         this.basic = new BasicConfig(config_prop)
+    }
+
+    export_visualizer_parameters () {
+        // first clear existing parameters to avoid being included
+        this.parameters = ''
+        this.parameters = JSON.stringify((this.pane as any).exportState())
+        this.refresh_pane()
+    }
+
+    import_visualizer_parameters () {
+        const parameters = this.parameters
+        ;(this.pane as any).importState(JSON.parse(this.parameters))
+        this.parameters = parameters
+        this.refresh_pane()
     }
 
     create_pane (container: any) {
@@ -166,11 +197,48 @@ export class Config {
         for (const [name, _] of this.data.visualizer.snapshots) {
             snapshot_names.push(name as string)
         }
+        // add export/import buttons
+        const parameter_folder: FolderApi = pane.addFolder({ title: 'Import/Export', expanded: true })
+        parameter_folder
+            .addBlade({
+                view: 'buttongrid',
+                size: [2, 1],
+                cells: (x: number) => ({
+                    title: ['export', 'import'][x]
+                }),
+                label: 'parameters'
+            })
+            .on('click', (event: any) => {
+                if (event.index[0] == 0) {
+                    this.export_visualizer_parameters()
+                } else {
+                    this.import_visualizer_parameters()
+                }
+            })
+        parameter_folder.addBinding(this, 'parameters', { label: 'value' })
+        // add everything else
         this.snapshot_config.add_to(pane.addFolder({ title: 'Snapshot', expanded: true }), snapshot_names)
-        this.camera.add_to(pane.addFolder({ title: 'Camera', expanded: true }))
-        this.basic.add_to(pane.addFolder({ title: 'Basic', expanded: true }))
-        this.vertex.add_to(pane.addFolder({ title: 'Vertex', expanded: true }))
-        this.edge.add_to(pane.addFolder({ title: 'Edge', expanded: true }))
+        this.camera.add_to(pane.addFolder({ title: 'Camera', expanded: false }))
+        this.basic.add_to(pane.addFolder({ title: 'Basic', expanded: false }))
+        this.vertex.add_to(pane.addFolder({ title: 'Vertex', expanded: false }))
+        this.edge.add_to(pane.addFolder({ title: 'Edge', expanded: false }))
+        // add shortcut guide
+        pane.addBlade({ view: 'separator' })
+        const shortcuts_folder: FolderApi = pane.addFolder({ title: 'Key Shortcuts', expanded: true })
+        for (let key_shortcut of key_shortcuts) {
+            shortcuts_folder.addBlade({
+                view: 'text',
+                label: key_shortcut.description,
+                parse: (v: any) => String(v),
+                value: key_shortcut.key,
+                disabled: true
+            })
+        }
+        // if the config is passed from props, import it (must execute after all elements are created)
+        if (this.config_prop.visualizer_config != undefined) {
+            this.parameters = JSON.stringify(this.config_prop.visualizer_config)
+            this.import_visualizer_parameters()
+        }
     }
 
     refresh_pane () {
@@ -179,7 +247,7 @@ export class Config {
     }
 
     public get title (): string {
-        return `MWPF (${this.snapshot_index + 1}/${this.snapshot_num})`
+        return `MWPF Visualizer (${this.snapshot_index + 1}/${this.snapshot_num})`
     }
 
     public set aspect_ratio (aspect_ratio: number) {
