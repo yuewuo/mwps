@@ -22,20 +22,35 @@ const ring_resolution = 100
 const ring_index_of_ratio = (ratio: number) => Math.max(0, Math.min(ring_resolution, Math.round(ratio * ring_resolution)))
 
 class EdgeRingState {
-    userData: any = null
-    position: Vector3 = new Vector3()
+    type: string = 'edge'
+    ei: number
+    position: Vector3
     color: string = 'black'
     inner: number = 0
     outer: number = 1
+
+    constructor(ei: number, position: Vector3) {
+        this.ei = ei
+        this.position = position
+    }
 }
 
 class EdgeTubeState {
-    userData: any = null
-    position: Vector3 = new Vector3()
+    type: string = 'edge'
+    ei: number
+    position: Vector3
     color: string = 'black'
-    length: number = 1
-    degree: number = 0
-    quaternion: Quaternion = new Quaternion()
+    length: number
+    degree: number
+    quaternion: Quaternion
+
+    constructor(ei: number, position: Vector3, length: number, degree: number, quaternion: Quaternion) {
+        this.ei = ei
+        this.position = position
+        this.length = length
+        this.degree = degree
+        this.quaternion = quaternion
+    }
 }
 
 class EdgeStates {
@@ -134,12 +149,7 @@ const edge_states = computed(() => {
             // create the segments
             for (const { ni, accumulated_ratio, segment_ratio } of segments) {
                 if (edge.v.length != 1) {
-                    const state = new EdgeTubeState()
-                    state.userData = userData
-                    state.position = segment_position_of(accumulated_ratio)
-                    state.length = edge_length * segment_ratio
-                    state.degree = edge.v.length
-                    state.quaternion = quaternion
+                    const state = new EdgeTubeState(i, segment_position_of(accumulated_ratio), edge_length * segment_ratio, edge.v.length, quaternion)
                     if (subgraph_set.value[i]) {
                         // display the solid blue edge as subgraph
                         state.color = config.value.edge.color_palette.subgraph
@@ -160,11 +170,9 @@ const edge_states = computed(() => {
                         edge_states.ungrown_edge_tubes.push(state)
                     }
                 } else {
-                    const state = new EdgeRingState()
-                    state.userData = userData
-                    state.position = segment_position_of(accumulated_ratio)
                     const outline_ratio = config.value.vertex.outline_ratio
-                    const func = (ratio: number) => config.value.edge.deg_1_ratio * outline_ratio * ratio
+                    const func = (ratio: number) => outline_ratio + (config.value.edge.deg_1_ratio - 1) * outline_ratio * ratio
+                    const state = new EdgeRingState(i, segment_position_of(accumulated_ratio))
                     state.inner = func(accumulated_ratio)
                     state.outer = func(segment_ratio + accumulated_ratio)
                     const ring_index = ring_index_of_ratio(state.inner / state.outer)
@@ -195,6 +203,15 @@ const edge_states = computed(() => {
 })
 
 function applyMeshEdgeRings(singular_edges: Array<Array<EdgeRingState>>, refs: any) {
+    updateEdgeRingsMatrix(singular_edges, refs)
+    updateEdgeRingsColor(singular_edges, refs)
+    for (let i = 0; i < refs.length; i++) {
+        const mesh = refs[i].mesh
+        mesh.userData.vecData = singular_edges[i]
+    }
+}
+
+function updateEdgeRingsMatrix(singular_edges: Array<Array<EdgeRingState>>, refs: any) {
     for (let i = 0; i < refs.length; i++) {
         const mesh = refs[i].mesh
         const edges = singular_edges[i]
@@ -202,22 +219,43 @@ function applyMeshEdgeRings(singular_edges: Array<Array<EdgeRingState>>, refs: a
             const state = edges[j]
             const dummy = new Object3D()
             dummy.rotateX(Math.PI / 2)
-            const radius_ratio = config.value.vertex.radius * state.outer * config.value.edge.deg_1_ratio
+            const radius_ratio = config.value.vertex.radius * state.outer
             dummy.scale.set(radius_ratio, radius_ratio, 1)
             dummy.position.copy(state.position.clone())
             dummy.updateMatrix()
             mesh.setMatrixAt(j, dummy.matrix)
-            mesh.setColorAt(j, new Color(state.color))
         }
         mesh.instanceMatrix.needsUpdate = true
-        if (mesh.instanceColor != null) {
-            // when there is no edge, instanceColor is null
+    }
+}
+
+function updateEdgeRingsColor(singular_edges: Array<Array<EdgeRingState>>, refs: any) {
+    for (let i = 0; i < refs.length; i++) {
+        const mesh = refs[i].mesh
+        const edges = singular_edges[i]
+        for (let j = 0; j < edges.length; j++) {
+            const state = edges[j]
+            if (state.ei == selected_edge?.ei) {
+                mesh.setColorAt(j, new Color(config.value.basic.selected_color))
+            } else if (state.ei == hovered_edge?.ei) {
+                mesh.setColorAt(j, new Color(config.value.basic.hovered_color))
+            } else {
+                mesh.setColorAt(j, new Color(state.color))
+            }
+        }
+        if (mesh.instanceColor) {
             mesh.instanceColor.needsUpdate = true
         }
     }
 }
 
 function applyMeshEdgeTubes(edges: Array<EdgeTubeState>, mesh: any) {
+    updateEdgeTubesMatrix(edges, mesh)
+    updateEdgeTubesColor(edges, mesh)
+    mesh.userData.vecData = edges
+}
+
+function updateEdgeTubesMatrix(edges: Array<EdgeTubeState>, mesh: any) {
     for (let i = 0; i < edges.length; i++) {
         const state = edges[i]
         const dummy = new Object3D()
@@ -228,11 +266,22 @@ function applyMeshEdgeTubes(edges: Array<EdgeTubeState>, mesh: any) {
         dummy.translateY(state.length / 2)
         dummy.updateMatrix()
         mesh.setMatrixAt(i, dummy.matrix)
-        mesh.setColorAt(i, new Color(state.color))
     }
     mesh.instanceMatrix.needsUpdate = true
-    if (mesh.instanceColor != null) {
-        // when there is no edge, instanceColor is null
+}
+
+function updateEdgeTubesColor(edges: Array<EdgeTubeState>, mesh: any) {
+    for (let i = 0; i < edges.length; i++) {
+        const state = edges[i]
+        if (state.ei == selected_edge?.ei) {
+            mesh.setColorAt(i, new Color(config.value.basic.selected_color))
+        } else if (state.ei == hovered_edge?.ei) {
+            mesh.setColorAt(i, new Color(config.value.basic.hovered_color))
+        } else {
+            mesh.setColorAt(i, new Color(state.color))
+        }
+    }
+    if (mesh.instanceColor) {
         mesh.instanceColor.needsUpdate = true
     }
 }
@@ -258,10 +307,38 @@ function update() {
     update_grown_edge_tubes()
     update_tight_edge_tubes()
 }
+function update_intersect_color() {
+    updateEdgeRingsColor(edge_states.value.ungrown_edge_rings, ungrown_edge_rings_ref.value)
+    updateEdgeRingsColor(edge_states.value.grown_edge_rings, grown_edge_rings_ref.value)
+    updateEdgeRingsColor(edge_states.value.tight_edge_rings, tight_edge_rings_ref.value)
+    updateEdgeTubesColor(edge_states.value.ungrown_edge_tubes, (ungrown_edge_tubes_ref.value as any).mesh)
+    updateEdgeTubesColor(edge_states.value.grown_edge_tubes, (grown_edge_tubes_ref.value as any).mesh)
+    updateEdgeTubesColor(edge_states.value.tight_edge_tubes, (tight_edge_tubes_ref.value as any).mesh)
+}
+
+let hovered_edge: EdgeRingState | EdgeTubeState | undefined = undefined
+let selected_edge: EdgeRingState | EdgeTubeState | undefined = undefined
+function intersecting_edge(intersect: any): EdgeRingState | EdgeTubeState | undefined {
+    if (intersect?.instanceId == undefined) {
+        return undefined
+    }
+    const edge_state: EdgeRingState | EdgeTubeState | undefined = intersect?.object?.userData?.vecData?.[intersect.instanceId]
+    if (edge_state == undefined || edge_state.type != 'edge') {
+        return undefined
+    }
+    return edge_state
+}
 
 onMounted(() => {
     // when anything changes, update the mesh
     watchEffect(() => update())
+    // update color
+    watchEffect(() => {
+        // update the color when the hovered or selected state changes
+        hovered_edge = intersecting_edge(config.value.data.hovered)
+        selected_edge = intersecting_edge(config.value.data.selected)
+        update_intersect_color()
+    })
 })
 
 const subgraph_set = computed(() => {

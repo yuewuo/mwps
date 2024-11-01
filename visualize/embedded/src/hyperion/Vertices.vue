@@ -33,7 +33,6 @@ const vertex_states = computed(() => {
             continue
         }
         const state = new VertexState(i, config.value.data.visualizer.positions[i])
-        state.position = config.value.data.visualizer.positions[i]
         vertex_states.all_vertices.push(state)
         if (vertex.s) {
             vertex_states.normal_vertices.push(state)

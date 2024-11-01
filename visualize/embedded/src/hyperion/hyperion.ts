@@ -418,7 +418,7 @@ export class EdgeConfig {
     tight_opacity: number = 1
     color_palette: ColorPaletteConfig = new ColorPaletteConfig()
 
-    deg_1_ratio: number = 1.3
+    deg_1_ratio: number = 1.6
     deg_3_ratio: number = 1.5
     deg_4_ratio: number = 2
     deg_5_ratio: number = 2.5
