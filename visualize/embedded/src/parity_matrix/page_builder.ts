@@ -2,15 +2,15 @@
  * Build an html that can be saved
  */
 
-import { assert } from "@/util"
+import { assert } from '@/util'
 
-const caller_dom = document.getElementById("hyperion_visual_compressed_js_caller")
-const library_dom = document.getElementById("hyperion_visual_compressed_js_library")
+const caller_dom = document.getElementById('hyperion_visual_compressed_js_caller')
+const library_dom = document.getElementById('hyperion_visual_compressed_js_library')
 
 export enum Mode {
-    Debug,  // without any compressed source
-    Inline,  // with inline source
-    Linked,  // linking to a compressed source
+    Debug, // without any compressed source
+    Inline, // with inline source
+    Linked // linking to a compressed source
 }
 
 let mode = Mode.Debug
@@ -24,12 +24,10 @@ if (caller_dom != null) {
 
 export const is_compressed_js_available = mode != Mode.Debug
 
-export function generate_inline_html(matrix_data: Object): string {
-    assert(is_compressed_js_available, "no compressed js library available")
+export function generate_inline_html (matrix_data: object): string {
+    assert(is_compressed_js_available, 'no compressed js library available')
     // regardless of whether it's linked or inline
-    return prefix + JSON.stringify(matrix_data) + after_data
-        + caller_script_head + caller_dom?.innerText + "</script>"
-        + suffix
+    return prefix + JSON.stringify(matrix_data) + after_data + caller_script_head + caller_dom?.innerText + '</script>' + suffix
 }
 
 const prefix = `<!DOCTYPE html>

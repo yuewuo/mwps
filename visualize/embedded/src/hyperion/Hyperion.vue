@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref, computed, provide, watchEffect, onBeforeUnmount, useTemplateRef, render } from 'vue'
+import { onMounted, ref, computed, provide, watchEffect, onBeforeUnmount, useTemplateRef } from 'vue'
 import { Renderer, OrthographicCamera, Scene, AmbientLight } from 'troisjs'
 import { type VisualizerData, RuntimeData, Config, ConfigProps } from './hyperion'
 import Vertices from './Vertices.vue'
@@ -7,7 +7,7 @@ import Edges from './Edges.vue'
 import { WebGLRenderer, OrthographicCamera as ThreeOrthographicCamera, Raycaster, Vector2 } from 'three'
 import { FolderApi } from 'tweakpane'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
-// @ts-ignore
+// @ts-expect-error the Stats module does not have a declaration file
 import Stats from 'troisjs/src/components/misc/Stats'
 
 interface Props {
@@ -39,7 +39,7 @@ onMounted(() => {
     config.value.camera.orbit_control = orbit_controls
 
     // initialize controller pane
-    config.value.create_pane(container_pane.value)
+    config.value.create_pane(container_pane.value as HTMLElement)
 
     // make the renderer selected in HTML: https://stackoverflow.com/a/12887221, to react to key events
     const canvas: HTMLElement = (renderer.value as any).canvas
@@ -50,12 +50,12 @@ onMounted(() => {
     orbit_controls.addEventListener('change', () => {
         canvas.focus()
         config.value.camera.position = camera.position.clone()
-        // @ts-ignore
+        // @ts-expect-error _scale is a private property
         const orbit_control_scale: number = orbit_controls._scale
         config.value.camera.zoom = camera.zoom * orbit_control_scale
         config.value.refresh_pane()
     })
-    canvas.addEventListener('mouseenter', event => {
+    canvas.addEventListener('mouseenter', () => {
         canvas.focus()
     })
 
@@ -138,11 +138,6 @@ function onKeyDown(event: KeyboardEvent) {
         event.stopPropagation()
     }
 }
-
-const canvasRect = computed(() => {
-    const canvas: HTMLElement = (renderer.value as any).canvas
-    return canvas.getBoundingClientRect()
-})
 
 function onMouseChange(event: MouseEvent, is_click: boolean = true) {
     const canvas: HTMLElement = (renderer.value as any).canvas

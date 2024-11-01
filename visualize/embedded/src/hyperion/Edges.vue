@@ -59,9 +59,9 @@ class EdgeStates {
     grown_edge_rings: Array<Array<EdgeRingState>> = Array.from({ length: ring_resolution + 1 }, () => [])
     tight_edge_rings: Array<Array<EdgeRingState>> = Array.from({ length: ring_resolution + 1 }, () => [])
     // tubes (higher degree edges)
-    ungrown_edge_tubes: Array<EdgeTubeState> = Array()
-    grown_edge_tubes: Array<EdgeTubeState> = Array()
-    tight_edge_tubes: Array<EdgeTubeState> = Array()
+    ungrown_edge_tubes: Array<EdgeTubeState> = []
+    grown_edge_tubes: Array<EdgeTubeState> = []
+    tight_edge_tubes: Array<EdgeTubeState> = []
 }
 
 const edge_states = computed(() => {
@@ -70,10 +70,6 @@ const edge_states = computed(() => {
     for (const [i, edge] of snapshot.edges.entries()) {
         if (edge == null) {
             continue
-        }
-        const userData = {
-            type: 'edge',
-            ei: i
         }
         // calculate the center point of all vertices
         let sum_position = new Vector3(0, 0, 0)
@@ -363,7 +359,7 @@ const edge_offset = computed(() => {
 // calculate the dual variable indices for each edge
 const edge_to_dual_indices = computed(() => {
     const snapshot = config.value.snapshot
-    const dual_indices = Array.from({ length: snapshot.edges.length }, () => Array())
+    const dual_indices: Array<Array<number>> = Array.from({ length: snapshot.edges.length }, () => [])
     if (snapshot.dual_nodes != null) {
         for (let [node_index, node] of snapshot.dual_nodes.entries()) {
             for (let edge_index of node.h) {
@@ -425,8 +421,8 @@ function calculate_edge_branch_segmented(edge_index: number): EdgeBranchSegments
     let grown_end = Array(edge.v.length).fill(0)
     let grown_center = Array(edge.v.length).fill(0)
     // the contributing dual variables from the end vertex and the center vertex, respectively
-    let contributor_end = Array.from({ length: edge.v.length }, () => Array())
-    let contributor_center = Array.from({ length: edge.v.length }, () => Array())
+    let contributor_end: Array<Array<[number, number]>> = Array.from({ length: edge.v.length }, () => [])
+    let contributor_center: Array<Array<[number, number]>> = Array.from({ length: edge.v.length }, () => [])
     if (snapshot.dual_nodes == null || dual_indices.length == 0) {
         return { grown_end, grown_center, contributor_end, contributor_center }
     }
@@ -461,7 +457,7 @@ function calculate_edge_branch_segmented(edge_index: number): EdgeBranchSegments
         while (center_grow > 0) {
             let available_vertices = []
             let min_positive_remain = null
-            for (let [v_eid, vi] of edge.v.entries()) {
+            for (let [v_eid] of edge.v.entries()) {
                 let remain = branch_weight - grown_end[v_eid] - grown_center[v_eid]
                 if (remain > 0) {
                     available_vertices.push(v_eid)
@@ -504,6 +500,7 @@ function calculate_edge_branch_segmented(edge_index: number): EdgeBranchSegments
     <!-- ungrown edge rings -->
     <MyInstancedMesh
         v-for="(_, idx) in ring_resolution + 1"
+        :key="idx"
         ref="ungrown_edge_rings"
         :count="edge_states.ungrown_edge_rings[idx].length"
         @reinstantiated="update_ungrown_edge_rings"
@@ -513,13 +510,25 @@ function calculate_edge_branch_segmented(edge_index: number): EdgeBranchSegments
     </MyInstancedMesh>
 
     <!-- partially grown edge rings -->
-    <MyInstancedMesh v-for="(_, idx) in ring_resolution + 1" ref="grown_edge_rings" :count="edge_states.grown_edge_rings[idx].length" @reinstantiated="update_grown_edge_rings">
+    <MyInstancedMesh
+        v-for="(_, idx) in ring_resolution + 1"
+        :key="idx"
+        ref="grown_edge_rings"
+        :count="edge_states.grown_edge_rings[idx].length"
+        @reinstantiated="update_grown_edge_rings"
+    >
         <RingGeometry :inner-radius="idx / ring_resolution" :outer-radius="1" :theta-segments="config.basic.segments"> </RingGeometry>
         <PhysicalMaterial :props="{ transparent: true, opacity: config.edge.grown_opacity, side: DoubleSide }"></PhysicalMaterial>
     </MyInstancedMesh>
 
     <!-- tight edge rings -->
-    <MyInstancedMesh v-for="(_, idx) in ring_resolution + 1" ref="tight_edge_rings" :count="edge_states.tight_edge_rings[idx].length" @reinstantiated="update_tight_edge_rings">
+    <MyInstancedMesh
+        v-for="(_, idx) in ring_resolution + 1"
+        :key="idx"
+        ref="tight_edge_rings"
+        :count="edge_states.tight_edge_rings[idx].length"
+        @reinstantiated="update_tight_edge_rings"
+    >
         <RingGeometry :inner-radius="idx / ring_resolution" :outer-radius="1" :theta-segments="config.basic.segments"> </RingGeometry>
         <PhysicalMaterial :props="{ transparent: true, opacity: config.edge.tight_opacity, side: DoubleSide }"></PhysicalMaterial>
     </MyInstancedMesh>

@@ -1,4 +1,4 @@
-import { type Ref, ref, computed } from 'vue'
+import { computed } from 'vue'
 import { Pane, FolderApi } from 'tweakpane'
 import * as EssentialsPlugin from '@tweakpane/plugin-essentials'
 import { assert } from '@/util'
@@ -21,7 +21,7 @@ export function load_position (mesh_position: Vector3, data_position: Position) 
 }
 
 export function compute_vector3 (data_position: Position): Vector3 {
-    let vector = new Vector3(0, 0, 0)
+    const vector = new Vector3(0, 0, 0)
     load_position(vector, data_position)
     return vector
 }
@@ -117,7 +117,7 @@ export class ConfigProps {
     show_config: boolean = true
     full_screen: boolean = true
     segments: number = 32
-    visualizer_config: any = undefined
+    visualizer_config: object | undefined = undefined
 }
 
 interface KeyShortcutDescription {
@@ -156,18 +156,20 @@ export class Config {
     export_visualizer_parameters () {
         // first clear existing parameters to avoid being included
         this.parameters = ''
-        this.parameters = JSON.stringify((this.pane as any).exportState())
+        // @ts-expect-error exportState is not in the type definition
+        this.parameters = JSON.stringify(this.pane.exportState())
         this.refresh_pane()
     }
 
     import_visualizer_parameters () {
         const parameters = this.parameters
-        ;(this.pane as any).importState(JSON.parse(this.parameters))
+        // @ts-expect-error exportState is not in the type definition
+        this.pane.importState(JSON.parse(this.parameters))
         this.parameters = parameters
         this.refresh_pane()
     }
 
-    create_pane (container: any) {
+    create_pane (container: HTMLElement) {
         assert(this.pane == null, 'cannot create pane twice')
         this.pane = new Pane({
             title: this.title,
@@ -177,7 +179,7 @@ export class Config {
         this.pane.registerPlugin(EssentialsPlugin)
         const pane: FolderApi = this.pane
         const snapshot_names = []
-        for (const [name, _] of this.data.visualizer.snapshots) {
+        for (const [name] of this.data.visualizer.snapshots) {
             snapshot_names.push(name as string)
         }
         // add export/import buttons
@@ -191,7 +193,8 @@ export class Config {
                 }),
                 label: 'parameters'
             })
-            .on('click', (event: any) => {
+            .on('click', (event: object) => {
+                // @ts-expect-error index is not in the type definition
                 if (event.index[0] == 0) {
                     this.export_visualizer_parameters()
                 } else {
@@ -208,11 +211,11 @@ export class Config {
         // add shortcut guide
         pane.addBlade({ view: 'separator' })
         const shortcuts_folder: FolderApi = pane.addFolder({ title: 'Key Shortcuts', expanded: true })
-        for (let key_shortcut of key_shortcuts) {
+        for (const key_shortcut of key_shortcuts) {
             shortcuts_folder.addBlade({
                 view: 'text',
                 label: key_shortcut.description,
-                parse: (v: any) => String(v),
+                parse: (v: string) => v,
                 value: key_shortcut.key,
                 disabled: true
             })
@@ -259,10 +262,10 @@ export class Config {
     }
 
     public get snapshot (): Snapshot {
-        const that = this
+        // @ts-expect-error force type conversion
         return computed<Snapshot>(() => {
-            return that.get_snapshot(that.snapshot_index)
-        }) as any
+            return this.get_snapshot(this.snapshot_index)
+        })
     }
 
     public get snapshot_num (): number {
@@ -336,7 +339,8 @@ export class CameraConfig {
                 title: names[x]
             }),
             label: 'reset view'
-        }).on('click', (event: any) => {
+        }).on('click', (event: object) => {
+            // @ts-expect-error index is not in the type definition
             const i: number = event.index[0]
             this.set_position(names[i])
         })
@@ -406,7 +410,7 @@ export class ColorPaletteConfig {
     }
 
     get (index: number): string {
-        // @ts-ignore
+        // @ts-expect-error string is not indexable
         return this[`c${index % 14}`]
     }
 }
@@ -430,10 +434,10 @@ export class EdgeConfig {
         pane.addBinding(this, 'grown_opacity', { min: 0, max: 1, step: 0.01 })
         pane.addBinding(this, 'tight_opacity', { min: 0, max: 1, step: 0.01 })
         // add color palette
-        let color_palette = pane.addFolder({ title: 'Color Palette', expanded: false })
+        const color_palette = pane.addFolder({ title: 'Color Palette', expanded: false })
         this.color_palette.add_to(color_palette)
         // add edge radius fine tuning
-        let deg_ratios = pane.addFolder({ title: 'Edge Radius Ratios', expanded: true })
+        const deg_ratios = pane.addFolder({ title: 'Edge Radius Ratios', expanded: true })
         deg_ratios.addBinding(this, 'deg_1_ratio', { min: 0, max: 10, step: 0.01 })
         deg_ratios.addBinding(this, 'deg_3_ratio', { min: 0, max: 10, step: 0.01 })
         deg_ratios.addBinding(this, 'deg_4_ratio', { min: 0, max: 10, step: 0.01 })
