@@ -1,19 +1,18 @@
 import path from 'path'
 import fs from 'fs'
+import { PluginOption } from 'vite'
 import { array_buffer_to_base64, base64_to_array_buffer, assert_buffer_equal, assert } from './src/util'
 
-interface PluginConfig {
-    enabled: boolean
-    folder: string
+export class PluginConfig {
+    enabled: boolean = true
+    folder: string = path.resolve(__dirname, 'dist/')
     js_filename: string
-    zip_filename: string
-}
+    gzip_filename: string
 
-const default_config: PluginConfig = {
-    enabled: true,
-    folder: path.resolve(__dirname, 'dist/'),
-    js_filename: '',
-    zip_filename: ''
+    constructor (js_filename: string, gzip_filename: string) {
+        this.js_filename = js_filename
+        this.gzip_filename = gzip_filename
+    }
 }
 
 export async function compress_content (buffer: ArrayBuffer): Promise<string> {
@@ -32,7 +31,7 @@ export async function decompress_content (base64_str: string): Promise<ArrayBuff
     return decompressed
 }
 
-async function do_compress (folder: string, js_filename: string, zip_filename: string) {
+async function do_compress (folder: string, js_filename: string, gzip_filename: string) {
     const js_filepath = path.join(folder, js_filename)
     const js_content = fs.readFileSync(js_filepath)
     const base64_string = await compress_content(js_content)
@@ -40,18 +39,18 @@ async function do_compress (folder: string, js_filename: string, zip_filename: s
     const decompressed = await decompress_content(base64_string)
     assert_buffer_equal(js_content, decompressed)
     // write to file
-    const zip_filepath = path.join(folder, zip_filename)
+    const zip_filepath = path.join(folder, gzip_filename)
     if (fs.existsSync(zip_filepath)) {
         fs.unlinkSync(zip_filepath)
     }
     fs.writeFileSync(zip_filepath, base64_string)
 }
 
-async function generate_self_contained_html (folder: string, zip_filename: string) {
+async function generate_self_contained_html (folder: string, gzip_filename: string) {
     const html_filepath = path.resolve(__dirname, 'index.html')
     const html_content = fs.readFileSync(html_filepath).toString()
-    const start_flag = '/* HYPERION_VISUAL_MODULE_CODE_BEGIN */'
-    const end_flag = '/* HYPERION_VISUAL_MODULE_CODE_END */'
+    const start_flag = '/* HYPERION_VISUAL_MODULE_LOADER_BEGIN */'
+    const end_flag = '/* HYPERION_VISUAL_MODULE_LOADER_END */'
     const start_index = html_content.indexOf(start_flag)
     assert(start_index != -1, 'start flag not found in index.html')
     const end_index = html_content.indexOf(end_flag)
@@ -60,11 +59,14 @@ async function generate_self_contained_html (folder: string, zip_filename: strin
     const prefix = html_content.slice(0, start_index + start_flag.length)
     const suffix = html_content.slice(end_index)
     // build the inline library code
-    const zip_filepath = path.join(folder, zip_filename)
+    const zip_filepath = path.join(folder, gzip_filename)
     const base64_string = fs.readFileSync(zip_filepath).toString()
     const js_code = `
-const module_base64 = "${base64_string}"
-// console.log(module_base64)
+
+const module_base64 = 
+/* HYPERION_VISUAL_GZIP_B64_BEGIN */
+"${base64_string}"
+/* HYPERION_VISUAL_GZIP_B64_END */
 function uint8_to_array_buffer(array) {
     return array.buffer.slice(array.byteOffset, array.byteLength + array.byteOffset)
 }
@@ -91,13 +93,13 @@ async function load_module() {
 }
 load_module()
 `
-    const inline_html_content = prefix + js_code + suffix
+    const standalone_html_content = prefix + js_code + suffix
     // write to file
-    const inline_html_filepath = path.join(folder, 'inline-html.html')
-    if (fs.existsSync(inline_html_filepath)) {
-        fs.unlinkSync(inline_html_filepath)
+    const standalone_html_filepath = path.join(folder, 'standalone.html')
+    if (fs.existsSync(standalone_html_filepath)) {
+        fs.unlinkSync(standalone_html_filepath)
     }
-    fs.writeFileSync(inline_html_filepath, inline_html_content)
+    fs.writeFileSync(standalone_html_filepath, standalone_html_content)
     // also generate a compressed javascript file and its corresponding html
     const compressed_js_filename = 'hyperion-visual.compressed.js'
     const compressed_js_filepath = path.join(folder, compressed_js_filename)
@@ -120,13 +122,8 @@ load_module()
     fs.writeFileSync(invoke_compressed_html_filepath, invoke_compressed_html_content)
 }
 
-export function compress_js (user_config: PluginConfig): object {
-    const config: PluginConfig = {
-        ...default_config,
-        ...user_config
-    }
-    const { enabled, folder, js_filename, zip_filename }: PluginConfig = config
-    const zip_filename_fixed = zip_filename ? zip_filename : js_filename + '.b64'
+export function compress_js (user_config: PluginConfig): PluginOption {
+    const { enabled, folder, js_filename, gzip_filename } = user_config
     return {
         name: 'vite-plugin-zip-file',
         apply: 'build',
@@ -134,8 +131,8 @@ export function compress_js (user_config: PluginConfig): object {
             if (!enabled) {
                 return
             }
-            await do_compress(folder, js_filename, zip_filename_fixed)
-            await generate_self_contained_html(folder, zip_filename_fixed)
+            await do_compress(folder, js_filename, gzip_filename)
+            await generate_self_contained_html(folder, gzip_filename)
         }
     }
 }
