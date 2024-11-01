@@ -15,7 +15,7 @@ export default defineConfig({
         }
     },
     build: {
-        chunkSizeWarningLimit: 1000, // 1MB chunk limit
+        chunkSizeWarningLimit: 1500, // 1.5MB chunk limit to remove warning: we will use compression anyway
         rollupOptions: {
             input: {
                 main: resolve(__dirname, 'index.html')

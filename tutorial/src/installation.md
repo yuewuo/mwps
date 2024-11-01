@@ -60,6 +60,7 @@ nvm install 22
 
 # build the frontend
 cd visualizer
+npm i --include=dev
 npm run dev  # for development
 npm run build
 ```
