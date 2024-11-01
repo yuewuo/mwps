@@ -7,6 +7,7 @@ import Edges from './Edges.vue'
 import { WebGLRenderer, OrthographicCamera as ThreeOrthographicCamera, Raycaster, Vector2 } from 'three'
 import { FolderApi } from 'tweakpane'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
+import iconString from './icon.svg?raw'
 // @ts-expect-error the Stats module does not have a declaration file
 import Stats from 'troisjs/src/components/misc/Stats'
 
@@ -21,6 +22,15 @@ const props = withDefaults(defineProps<Props>(), {
 
 const config = ref(new Config(new RuntimeData(props.visualizer), props.config))
 provide('config', config) // prop drilling to all children components
+
+// update the icon of the web page if full screen is enabled
+if (config.value.config_prop.full_screen) {
+    const link = document.createElement('link')
+    link.rel = 'icon'
+    link.href = 'data:image/svg+xml;base64,' + btoa(iconString)
+    console.log(link)
+    document.head.appendChild(link)
+}
 
 const container = useTemplateRef('container_ref')
 const container_pane = useTemplateRef('container_pane_ref')
