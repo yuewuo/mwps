@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref, computed, provide, watchEffect, onBeforeUnmount, useTemplateRef } from 'vue'
 import { Renderer, OrthographicCamera, Scene, AmbientLight } from 'troisjs'
-import { type VisualizerData, RuntimeData, Config, ConfigProps } from './hyperion'
+import { type VisualizerData, RuntimeData, Config, ConfigProps, renderer_params } from './hyperion'
 import Vertices from './Vertices.vue'
 import Edges from './Edges.vue'
 import { WebGLRenderer, OrthographicCamera as ThreeOrthographicCamera, Raycaster, Vector2 } from 'three'
@@ -39,7 +39,7 @@ onMounted(() => {
     config.value.camera.orbit_control = orbit_controls
 
     // initialize controller pane
-    config.value.create_pane(container_pane.value as HTMLElement)
+    config.value.create_pane(container_pane.value as HTMLElement, renderer.value as any)
 
     // make the renderer selected in HTML: https://stackoverflow.com/a/12887221, to react to key events
     const canvas: HTMLElement = (renderer.value as any).canvas
@@ -169,19 +169,7 @@ function onMouseChange(event: MouseEvent, is_click: boolean = true) {
         <!-- placeholder for controller pane container -->
         <div v-show="show_config" ref="container_pane_ref" class="pane-container"></div>
 
-        <Renderer
-            ref="renderer_ref"
-            :width="width + 'px'"
-            :height="height + 'px'"
-            :orbit-ctrl="true"
-            :params="{
-                antialias: true,
-                alpha: true,
-                powerPreference: 'high-performance',
-                precision: 'highp',
-                stencil: true
-            }"
-        >
+        <Renderer ref="renderer_ref" :width="width + 'px'" :height="height + 'px'" :orbit-ctrl="true" :params="renderer_params">
             <OrthographicCamera
                 :left="-config.basic.aspect_ratio"
                 :right="config.basic.aspect_ratio"

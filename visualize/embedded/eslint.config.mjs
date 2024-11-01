@@ -13,7 +13,7 @@ export default [
     ...tseslint.configs.recommended,
     ...pluginVue.configs["flat/essential"],
     {
-        files: ["**/*.vue"],
+        files: ["**/*.vue", "**/*.ts"],
         languageOptions: { parserOptions: { parser: tseslint.parser } },
         rules: {
             "@typescript-eslint/no-explicit-any": "off",

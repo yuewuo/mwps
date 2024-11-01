@@ -2,11 +2,18 @@ import { computed } from 'vue'
 import { Pane, FolderApi } from 'tweakpane'
 import * as EssentialsPlugin from '@tweakpane/plugin-essentials'
 import { assert } from '@/util'
-import { Vector3, type OrthographicCamera, type Intersection } from 'three'
+import { Vector3, OrthographicCamera, type Intersection, WebGLRenderer, Vector2 } from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 
 export const zero_vector = new Vector3(0, 0, 0)
 export const unit_up_vector = new Vector3(0, 1, 0)
+export const renderer_params = {
+    antialias: true,
+    alpha: true,
+    powerPreference: 'high-performance',
+    precision: 'highp',
+    stencil: true
+}
 
 export interface Position {
     t: number
@@ -117,7 +124,7 @@ export class ConfigProps {
     show_config: boolean = true
     full_screen: boolean = true
     segments: number = 32
-    visualizer_config: object | undefined = undefined
+    visualizer_config: any = undefined
 }
 
 interface KeyShortcutDescription {
@@ -144,7 +151,6 @@ export class Config {
     camera: CameraConfig = new CameraConfig()
     vertex: VertexConfig = new VertexConfig()
     edge: EdgeConfig = new EdgeConfig()
-    parameters: string = '' // export or import parameters of the tweak pane
     pane?: Pane
 
     constructor (data: RuntimeData, config_prop: ConfigProps) {
@@ -169,8 +175,9 @@ export class Config {
         this.refresh_pane()
     }
 
-    create_pane (container: HTMLElement) {
+    create_pane (container: HTMLElement, renderer: HTMLElement) {
         assert(this.pane == null, 'cannot create pane twice')
+        this.renderer = renderer
         this.pane = new Pane({
             title: this.title,
             container: container,
@@ -183,25 +190,7 @@ export class Config {
             snapshot_names.push(name as string)
         }
         // add export/import buttons
-        const parameter_folder: FolderApi = pane.addFolder({ title: 'Import/Export', expanded: true })
-        parameter_folder
-            .addBlade({
-                view: 'buttongrid',
-                size: [2, 1],
-                cells: (x: number) => ({
-                    title: ['export', 'import'][x]
-                }),
-                label: 'parameters'
-            })
-            .on('click', (event: object) => {
-                // @ts-expect-error index is not in the type definition
-                if (event.index[0] == 0) {
-                    this.export_visualizer_parameters()
-                } else {
-                    this.import_visualizer_parameters()
-                }
-            })
-        parameter_folder.addBinding(this, 'parameters', { label: 'value' })
+        this.add_import_export(pane.addFolder({ title: 'Import/Export', expanded: true }))
         // add everything else
         this.snapshot_config.add_to(pane.addFolder({ title: 'Snapshot', expanded: true }), snapshot_names)
         this.camera.add_to(pane.addFolder({ title: 'Camera', expanded: false }))
@@ -210,20 +199,99 @@ export class Config {
         this.edge.add_to(pane.addFolder({ title: 'Edge', expanded: false }))
         // add shortcut guide
         pane.addBlade({ view: 'separator' })
-        const shortcuts_folder: FolderApi = pane.addFolder({ title: 'Key Shortcuts', expanded: true })
+        this.add_shortcut_guide(pane.addFolder({ title: 'Key Shortcuts', expanded: true }))
+        // if the config is passed from props, import it (must execute after all elements are created)
+        if (this.config_prop.visualizer_config != undefined) {
+            this.parameters = JSON.stringify(this.config_prop.visualizer_config)
+            this.import_visualizer_parameters()
+        }
+    }
+
+    parameters: string = '' // export or import parameters of the tweak pane
+    renderer: any = undefined
+    png_scale: number = 1
+    add_import_export (pane: FolderApi): void {
+        // add parameter import/export
+        pane.addBlade({
+            view: 'buttongrid',
+            size: [2, 1],
+            cells: (x: number) => ({
+                title: ['export parameters', 'import parameters'][x]
+            })
+        }).on('click', (event: any) => {
+            if (event.index[0] == 0) {
+                this.export_visualizer_parameters()
+            } else {
+                this.import_visualizer_parameters()
+            }
+        })
+        pane.addBinding(this, 'parameters')
+        // add figure import/export
+        pane.addBinding(this, 'png_scale', { min: 0.5, max: 2 })
+        pane.addBlade({
+            view: 'buttongrid',
+            size: [2, 1],
+            cells: (x: number) => ({
+                title: ['Open PNG', 'Download PNG'][x]
+            })
+        }).on('click', (event: any) => {
+            const data_url = this.generate_png()
+            if (data_url == undefined) {
+                return
+            }
+            if (event.index[0] == 0) {
+                this.open_png(data_url)
+            } else {
+                this.download_png(data_url)
+            }
+        })
+    }
+
+    generate_png (): string | undefined {
+        if (this.renderer == undefined) {
+            alert('renderer is not initialized, please wait')
+            return undefined
+        }
+        const renderer = new WebGLRenderer({ ...renderer_params, preserveDrawingBuffer: true })
+        const old_renderer: WebGLRenderer = (this.renderer as any).renderer
+        const size = old_renderer.getSize(new Vector2())
+        renderer.setSize(size.x * this.png_scale, size.y * this.png_scale, false)
+        renderer.setPixelRatio(window.devicePixelRatio * this.png_scale)
+        renderer.render((this.renderer as any).scene, (this.renderer as any).camera)
+        return renderer.domElement.toDataURL()
+    }
+
+    open_png (data_url: string) {
+        const w = window.open('', '')
+        if (w == null) {
+            alert('cannot open new window')
+            return
+        }
+        w.document.title = 'rendered image'
+        w.document.body.style.backgroundColor = 'white'
+        w.document.body.style.margin = '0'
+        const img = new Image()
+        img.src = data_url
+        img.setAttribute('style', 'width: 100%; height: 100%; object-fit: contain;')
+        w.document.body.appendChild(img)
+    }
+
+    download_png (data_url: string) {
+        const a = document.createElement('a')
+        a.href = data_url.replace('image/png', 'image/octet-stream')
+        a.download = 'rendered.png'
+        a.click()
+    }
+
+    add_shortcut_guide (pane: FolderApi): void {
         for (const key_shortcut of key_shortcuts) {
-            shortcuts_folder.addBlade({
+            pane.addBlade({
                 view: 'text',
                 label: key_shortcut.description,
                 parse: (v: string) => v,
                 value: key_shortcut.key,
                 disabled: true
             })
-        }
-        // if the config is passed from props, import it (must execute after all elements are created)
-        if (this.config_prop.visualizer_config != undefined) {
-            this.parameters = JSON.stringify(this.config_prop.visualizer_config)
-            this.import_visualizer_parameters()
         }
     }
 
@@ -339,8 +407,7 @@ export class CameraConfig {
                 title: names[x]
             }),
             label: 'reset view'
-        }).on('click', (event: object) => {
-            // @ts-expect-error index is not in the type definition
+        }).on('click', (event: any) => {
             const i: number = event.index[0]
             this.set_position(names[i])
         })
