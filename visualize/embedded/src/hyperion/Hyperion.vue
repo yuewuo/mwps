@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { onMounted, ref, computed, provide, watchEffect, onBeforeUnmount, useTemplateRef } from 'vue'
 import { Renderer, OrthographicCamera, Scene, AmbientLight } from 'troisjs'
-import { type VisualizerData, RuntimeData, Config, ConfigProps, renderer_params } from './hyperion'
+import { type VisualizerData, RuntimeData, ConfigProps, renderer_params } from './hyperion'
+import { Config } from './config_pane'
+import { Info } from './info_pane'
 import Vertices from './Vertices.vue'
 import Edges from './Edges.vue'
 import { WebGLRenderer, OrthographicCamera as ThreeOrthographicCamera, Raycaster, Vector2 } from 'three'
@@ -21,6 +23,7 @@ const props = withDefaults(defineProps<Props>(), {
 })
 
 const config = ref(new Config(new RuntimeData(props.visualizer), props.config))
+const info = ref(new Info(config as any))
 provide('config', config) // prop drilling to all children components
 
 // update the icon of the web page if full screen is enabled
@@ -33,8 +36,10 @@ if (config.value.config_prop.full_screen) {
 }
 
 const container = useTemplateRef('container_ref')
-const container_pane = useTemplateRef('container_pane_ref')
+const config_pane = useTemplateRef('container_config_ref')
+const info_pane = useTemplateRef('container_info_ref')
 const show_config = ref(props.config.show_config)
+const show_info = ref(props.config.show_info)
 const renderer = useTemplateRef('renderer_ref')
 const width = ref(400)
 const height = computed(() => width.value / config.value.basic.aspect_ratio)
@@ -49,7 +54,8 @@ onMounted(() => {
     config.value.camera.orbit_control = orbit_controls
 
     // initialize controller pane
-    config.value.create_pane(container_pane.value as HTMLElement, renderer.value as any)
+    config.value.create_pane(config_pane.value as HTMLElement, renderer.value as any)
+    info.value.create_pane(info_pane.value as HTMLElement)
 
     // make the renderer selected in HTML: https://stackoverflow.com/a/12887221, to react to key events
     const canvas: HTMLElement = (renderer.value as any).canvas
@@ -125,9 +131,16 @@ function onKeyDown(event: KeyboardEvent) {
             config.value.camera.set_position('Front')
         } else if (event.key == 'c' || event.key == 'C') {
             show_config.value = !show_config.value
-            if (config.value.basic.show_stats) {
+            if (show_config.value) {
                 // automatically unfold if using keyboard shortcut to display it
                 const pane: FolderApi = config.value.pane
+                pane.expanded = true
+            }
+        } else if (event.key == 'i' || event.key == 'I') {
+            show_info.value = !show_info.value
+            if (show_info.value) {
+                // automatically unfold if using keyboard shortcut to display it
+                const pane: FolderApi = info.value.pane
                 pane.expanded = true
             }
         } else if (event.key == 's' || event.key == 'S') {
@@ -177,7 +190,8 @@ function onMouseChange(event: MouseEvent, is_click: boolean = true) {
 <template>
     <div ref="container_ref" class="hyperion-container" @keydown="onKeyDown">
         <!-- placeholder for controller pane container -->
-        <div v-show="show_config" ref="container_pane_ref" class="pane-container"></div>
+        <div v-show="show_config" ref="container_config_ref" class="config-container"></div>
+        <div v-show="show_info" ref="container_info_ref" class="info-container"></div>
 
         <Renderer ref="renderer_ref" :width="width + 'px'" :height="height + 'px'" :orbit-ctrl="true" :params="renderer_params">
             <OrthographicCamera
@@ -206,11 +220,20 @@ function onMouseChange(event: MouseEvent, is_click: boolean = true) {
     position: relative;
 }
 
-.pane-container {
+.config-container {
     position: absolute;
     top: 0;
     right: 0;
     width: 300px;
+    padding: 0;
+    margin: 0;
+}
+
+.info-container {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 400px;
     padding: 0;
     margin: 0;
 }
