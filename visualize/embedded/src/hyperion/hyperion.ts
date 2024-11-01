@@ -105,28 +105,11 @@ export interface VisualizerData {
 /* runtime data */
 export class RuntimeData {
     visualizer: VisualizerData
-    hovered: Ref<any> = ref(undefined)
-    selected: Ref<any> = ref(undefined)
+    hovered: Intersection | undefined = undefined
+    selected: Intersection | undefined = undefined
 
     constructor (visualizer: VisualizerData) {
         this.visualizer = visualizer
-    }
-
-    getPointerObject (event: PointerIntersectEventInterface) {
-        if (event.intersect == undefined) {
-            return undefined
-        }
-        const instanceId = event.intersect.instanceId
-        const component = event.intersect.object.userData.component
-        return { instanceId, ...component.userData }
-    }
-
-    onPointerEnter (event: PointerIntersectEventInterface) {
-        this.hovered.value = this.getPointerObject(event)
-    }
-
-    onPointerLeave (event: PointerIntersectEventInterface) {
-        this.hovered.value = undefined
     }
 }
 
@@ -291,6 +274,8 @@ export class Config {
 export class BasicConfig {
     aspect_ratio: number = 1
     background: string = '#ffffff'
+    hovered_color: string = '#6FDFDF'
+    selected_color: string = '#4B7BE5'
     light_intensity: number = 3
     segments: number
     show_stats: boolean = true
@@ -307,6 +292,8 @@ export class BasicConfig {
             pane.addBinding(this, 'aspect_ratio', { min: 0.1, max: 3 })
         }
         pane.addBinding(this, 'background')
+        pane.addBinding(this, 'hovered_color')
+        pane.addBinding(this, 'selected_color')
         pane.addBinding(this, 'light_intensity', { min: 0.1, max: 10 })
         pane.addBinding(this, 'show_stats')
         pane.addBinding(this, 'segments', { step: 1, min: 3, max: 128 })
@@ -474,11 +461,4 @@ export class EdgeConfig {
                 return this.deg_10_ratio
         }
     }
-}
-
-export interface PointerIntersectEventInterface {
-    type: 'pointerenter' | 'pointerover' | 'pointermove' | 'pointerleave' | 'click'
-    component: any
-    over?: boolean
-    intersect?: Intersection
 }

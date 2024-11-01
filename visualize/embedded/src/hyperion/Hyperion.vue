@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { onMounted, ref, computed, provide, watchEffect, onBeforeUnmount, useTemplateRef } from 'vue'
-import { Renderer, OrthographicCamera, Scene, AmbientLight, Raycaster } from 'troisjs'
+import { onMounted, ref, computed, provide, watchEffect, onBeforeUnmount, useTemplateRef, render } from 'vue'
+import { Renderer, OrthographicCamera, Scene, AmbientLight } from 'troisjs'
 import { type VisualizerData, RuntimeData, Config, ConfigProps } from './hyperion'
 import Vertices from './Vertices.vue'
 import Edges from './Edges.vue'
-import { WebGLRenderer, OrthographicCamera as ThreeOrthographicCamera } from 'three'
+import { WebGLRenderer, OrthographicCamera as ThreeOrthographicCamera, Raycaster, Vector2 } from 'three'
 import { FolderApi } from 'tweakpane'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 // @ts-ignore
@@ -29,6 +29,7 @@ const renderer = useTemplateRef('renderer_ref')
 const width = ref(400)
 const height = computed(() => width.value / config.value.basic.aspect_ratio)
 const orthographic_camera = useTemplateRef('orthographic_camera_ref')
+const raycaster = new Raycaster()
 
 onMounted(() => {
     // pass camera object
@@ -54,8 +55,30 @@ onMounted(() => {
         config.value.camera.zoom = camera.zoom * orbit_control_scale
         config.value.refresh_pane()
     })
-    canvas.addEventListener('mouseover', () => {
+    canvas.addEventListener('mouseenter', event => {
         canvas.focus()
+    })
+
+    // hover and click handlers
+    let mousedown_clientX: number | undefined = undefined
+    let mousedown_clientY: number | undefined = undefined
+    let is_mouse_currently_down = false
+    canvas.addEventListener('mousedown', event => {
+        mousedown_clientX = event.clientX
+        mousedown_clientY = event.clientY
+        is_mouse_currently_down = true
+    })
+    canvas.addEventListener('mouseup', event => {
+        if (mousedown_clientX == event.clientX && mousedown_clientY == event.clientY) {
+            onMouseChange(event, true)
+        }
+        is_mouse_currently_down = false
+    })
+    canvas.addEventListener('mousemove', event => {
+        // to prevent triggering hover while moving camera
+        if (!is_mouse_currently_down) {
+            onMouseChange(event, false)
+        }
     })
 
     // update renderer if width or height changes
@@ -115,6 +138,35 @@ function onKeyDown(event: KeyboardEvent) {
         event.stopPropagation()
     }
 }
+
+const canvasRect = computed(() => {
+    const canvas: HTMLElement = (renderer.value as any).canvas
+    return canvas.getBoundingClientRect()
+})
+
+function onMouseChange(event: MouseEvent, is_click: boolean = true) {
+    const canvas: HTMLElement = (renderer.value as any).canvas
+    const rect = canvas.getBoundingClientRect()
+    const position = new Vector2(event.clientX - rect.left, event.clientY - rect.top)
+    const positionN = new Vector2((position.x / rect.width) * 2 - 1, -(position.y / rect.height) * 2 + 1)
+    raycaster.setFromCamera(positionN, (orthographic_camera.value as any).camera)
+    const intersects = raycaster.intersectObjects((renderer.value as any).scene.children, false)
+    for (let intersect of intersects) {
+        if (!intersect.object.visible) continue // don't select invisible object
+        // swap back to the original material
+        if (is_click) {
+            config.value.data.selected = intersect
+        } else {
+            config.value.data.hovered = intersect
+        }
+        return
+    }
+    if (is_click) {
+        config.value.data.selected = undefined
+    } else {
+        config.value.data.hovered = undefined
+    }
+}
 </script>
 
 <template>
@@ -146,7 +198,6 @@ function onKeyDown(event: KeyboardEvent) {
             >
             </OrthographicCamera>
             <Stats v-if="config.basic.show_stats"></Stats>
-            <Raycaster @pointer-enter="config.data.onPointerEnter" @pointer-leave="config.data.onPointerLeave"> </Raycaster>
             <Scene :background="config.basic.background">
                 <AmbientLight color="#FFFFFF" :intensity="config.basic.light_intensity"></AmbientLight>
                 <Vertices></Vertices>

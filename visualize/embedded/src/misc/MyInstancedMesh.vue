@@ -7,7 +7,8 @@ export default defineComponent({
     extends: Mesh,
     props: {
         count: { type: Number, required: true },
-        maxcount: { type: Number }
+        maxcount: { type: Number },
+        myData: { type: Object }
     },
     emits: ['reinstantiated'],
     data() {
@@ -24,9 +25,7 @@ export default defineComponent({
             watchEffect(() => {
                 if (this.count > this.current_count) {
                     if (this.count > 100) {
-                        console.warn(
-                            `display (${this.count} objects more than ${this.current_count}, reconstructing...`
-                        )
+                        console.warn(`display (${this.count} objects more than ${this.current_count}, reconstructing...`)
                     }
                     // dispose current mesh (see troisjs/src/core/Object3D.ts), without disposing materials and geometries
                     if (!this.disableRemove) this.removeFromParent()
@@ -53,19 +52,12 @@ export default defineComponent({
 
             this.mesh = new InstancedMesh(this.geometry, this.material, this.current_count)
             this.mesh.userData.component = this
+            this.mesh.userData.myData = this.myData
 
             bindProp(this, 'castShadow', this.mesh)
             bindProp(this, 'receiveShadow', this.mesh)
 
-            if (
-                this.onPointerEnter ||
-                this.onPointerOver ||
-                this.onPointerMove ||
-                this.onPointerLeave ||
-                this.onPointerDown ||
-                this.onPointerUp ||
-                this.onClick
-            ) {
+            if (this.onPointerEnter || this.onPointerOver || this.onPointerMove || this.onPointerLeave || this.onPointerDown || this.onPointerUp || this.onClick) {
                 this.renderer.three.addIntersectObject(this.mesh)
             }
 

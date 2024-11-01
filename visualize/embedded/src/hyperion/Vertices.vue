@@ -3,17 +3,19 @@ import { type Ref, computed, watchEffect, useTemplateRef, onMounted } from 'vue'
 import { type Config, type Position, load_position } from './hyperion'
 import { PhysicalMaterial, SphereGeometry } from 'troisjs'
 import MyInstancedMesh from '@/misc/MyInstancedMesh.vue'
-import { Object3D, FrontSide, BackSide } from 'three'
+import { Object3D, FrontSide, BackSide, Color } from 'three'
 import { assert_inject } from '@/misc/util'
 
 const config: Ref<Config> = assert_inject('config')
 
 class VertexState {
-    userData: any = null
+    type: string = 'vertex'
+    vi: number
     position: Position
 
-    constructor() {
-        this.position = { t: 0, i: 0, j: 0 }
+    constructor(vi: number, position: Position) {
+        this.vi = vi
+        this.position = position
     }
 }
 
@@ -30,11 +32,7 @@ const vertex_states = computed(() => {
         if (vertex == null) {
             continue
         }
-        const state = new VertexState()
-        state.userData = {
-            type: 'vertex',
-            vi: i
-        }
+        const state = new VertexState(i, config.value.data.visualizer.positions[i])
         state.position = config.value.data.visualizer.positions[i]
         vertex_states.all_vertices.push(state)
         if (vertex.s) {
@@ -47,6 +45,12 @@ const vertex_states = computed(() => {
 })
 
 function applyMeshVertices(vertex_states: Array<VertexState>, mesh: any) {
+    updateVerticesMatrix(vertex_states, mesh)
+    updateVerticesColor(vertex_states, mesh)
+    mesh.userData.vecData = vertex_states
+}
+
+function updateVerticesMatrix(vertex_states: Array<VertexState>, mesh: any) {
     for (let i = 0; i < vertex_states.length; i++) {
         const state = vertex_states[i]
         const dummy = new Object3D()
@@ -55,6 +59,35 @@ function applyMeshVertices(vertex_states: Array<VertexState>, mesh: any) {
         mesh.setMatrixAt(i, dummy.matrix)
     }
     mesh.instanceMatrix.needsUpdate = true
+}
+
+function updateVerticesColor(vertex_states: Array<VertexState>, mesh: any) {
+    for (let i = 0; i < vertex_states.length; i++) {
+        const state = vertex_states[i]
+        if (state.vi == selected_vertex?.vi) {
+            mesh.setColorAt(i, new Color(config.value.basic.selected_color))
+        } else if (state.vi == hovered_vertex?.vi) {
+            mesh.setColorAt(i, new Color(config.value.basic.hovered_color))
+        } else if (mesh.userData.myData) {
+            mesh.setColorAt(i, new Color(mesh.userData.myData.color))
+        }
+    }
+    if (mesh.instanceColor) {
+        mesh.instanceColor.needsUpdate = true
+    }
+}
+
+let hovered_vertex: VertexState | undefined = undefined
+let selected_vertex: VertexState | undefined = undefined
+function intersecting_vertex(intersect: any): VertexState | undefined {
+    if (intersect?.instanceId == undefined) {
+        return undefined
+    }
+    const vertex_state: VertexState | undefined = intersect?.object?.userData?.vecData?.[intersect.instanceId]
+    if (vertex_state == undefined || vertex_state.type != 'vertex') {
+        return undefined
+    }
+    return vertex_state
 }
 
 const normal_vertices_ref = useTemplateRef('normal_vertices')
@@ -69,24 +102,38 @@ function update() {
     update_defect_vertices()
     update_vertices_outlines()
 }
+function update_intersect_color() {
+    updateVerticesColor(vertex_states.value.normal_vertices, (normal_vertices_ref.value as any).mesh)
+    updateVerticesColor(vertex_states.value.defect_vertices, (defect_vertices_ref.value as any).mesh)
+    updateVerticesColor(vertex_states.value.all_vertices, (vertices_outlines_ref.value as any).mesh)
+}
 
 onMounted(() => {
     // when anything changes, update the mesh
     watchEffect(() => update())
+    // update color
+    watchEffect(() => {
+        // update the color when the hovered or selected state changes
+        hovered_vertex = intersecting_vertex(config.value.data.hovered)
+        selected_vertex = intersecting_vertex(config.value.data.selected)
+        update_intersect_color()
+    })
 })
 </script>
 
 <template>
+    <!-- note: color must be set individually, because otherwise ThreeJS will multiply the color values and create strange visual effects -->
+
     <!-- normal vertices -->
-    <MyInstancedMesh ref="normal_vertices" :count="vertex_states.normal_vertices.length" @reinstantiated="update_normal_vertices">
+    <MyInstancedMesh ref="normal_vertices" :count="vertex_states.normal_vertices.length" @reinstantiated="update_normal_vertices" :myData="{ color: config.vertex.normal_color }">
         <SphereGeometry :radius="config.vertex.radius" :height-segments="config.basic.segments" :width-segments="config.basic.segments"> </SphereGeometry>
-        <PhysicalMaterial :props="{ transparent: false, side: FrontSide, color: config.vertex.normal_color }"></PhysicalMaterial>
+        <PhysicalMaterial :props="{ transparent: false, side: FrontSide }"></PhysicalMaterial>
     </MyInstancedMesh>
 
     <!-- defect vertices -->
-    <MyInstancedMesh ref="defect_vertices" :count="vertex_states.defect_vertices.length" @reinstantiated="update_defect_vertices">
+    <MyInstancedMesh ref="defect_vertices" :count="vertex_states.defect_vertices.length" @reinstantiated="update_defect_vertices" :myData="{ color: config.vertex.defect_color }">
         <SphereGeometry :radius="config.vertex.radius" :height-segments="config.basic.segments" :width-segments="config.basic.segments"> </SphereGeometry>
-        <PhysicalMaterial :props="{ transparent: false, side: FrontSide, color: config.vertex.defect_color }"></PhysicalMaterial>
+        <PhysicalMaterial :props="{ transparent: false, side: FrontSide }"></PhysicalMaterial>
     </MyInstancedMesh>
 
     <!-- all vertices outlines -->
