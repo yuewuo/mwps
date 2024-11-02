@@ -1,19 +1,16 @@
-import { Pane, FolderApi, BladeApi } from 'tweakpane'
+import { Pane } from 'tweakpane'
 import * as EssentialsPlugin from '@tweakpane/plugin-essentials'
 import { Config } from './config_pane'
-import { createApp } from 'vue'
+import { createApp, watchEffect } from 'vue'
 import { assert } from '@/util'
 import { HyperionPluginBundle } from './tp_plugins'
-import DualNodes from './DualNodes.vue'
+import DualNodes from './tp_plugins/DualNodes.vue'
 
 /* info class of the current snapshot */
 export class Info {
     config: Config
     // @ts-expect-error we will not use pane before it's initialized, ignore for simplicity
     pane: Pane
-
-    dual_folder?: FolderApi
-    dual_blades?: BladeApi
 
     constructor (config: Config) {
         this.config = config
@@ -28,15 +25,17 @@ export class Info {
         })
         this.pane.registerPlugin(EssentialsPlugin)
         this.pane.registerPlugin(HyperionPluginBundle)
-        // create dual nodes
-        this.dual_folder = this.pane.addFolder({ title: 'Dual Variables', expanded: true })
-        this.dual_blades = this.dual_folder.addBlade({
-            view: 'vue',
-            app: createApp(DualNodes, { config: this.config })
-        })
+        this.add_dual_pane()
     }
 
-    update_pane () {
-        this.pane.refresh()
+    display_zero_dual_variables: boolean = false
+    add_dual_pane () {
+        const dual_folder = this.pane.addFolder({ title: 'Dual Variables', expanded: true })
+        dual_folder.addBinding(this, 'display_zero_dual_variables')
+        dual_folder.addBlade({ view: 'vue', app: createApp(DualNodes, { info: this }) })
+        watchEffect(() => {
+            console.log(this.config.snapshot.interface.sum_dual)
+            dual_folder.title = `Dual Variables (𝚺ys = ${this.config.snapshot.interface.sum_dual})`
+        })
     }
 }
