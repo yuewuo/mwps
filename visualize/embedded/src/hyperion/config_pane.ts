@@ -6,6 +6,10 @@ import { assert } from '@/util'
 import { Vector3, OrthographicCamera, WebGLRenderer, Vector2 } from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { RuntimeData, ConfigProps, renderer_params, type Snapshot } from './hyperion'
+import stringify from 'json-stringify-pretty-compact'
+import { Prism } from 'prism-esm'
+import { loader as JsonLoader } from 'prism-esm/components/prism-json.js'
+import prismCSS from 'prism-esm/themes/prism.min.css?raw'
 
 interface KeyShortcutDescription {
     key: string
@@ -107,7 +111,7 @@ export class Config {
             }
         })
         pane.addBinding(this, 'parameters')
-        // add figure import/export
+        // add figure export
         pane.addBinding(this, 'png_scale', { min: 0.5, max: 2 })
         const png_buttons: ButtonGridApi = pane.addBlade({
             view: 'buttongrid',
@@ -125,6 +129,21 @@ export class Config {
                 this.open_png(data_url)
             } else {
                 this.download_png(data_url)
+            }
+        })
+        // add visualizer data export
+        const data_buttons: ButtonGridApi = pane.addBlade({
+            view: 'buttongrid',
+            size: [2, 1],
+            cells: (x: number) => ({
+                title: ['Open JSON', 'Download JSON'][x]
+            })
+        }) as any
+        data_buttons.on('click', (event: any) => {
+            if (event.index[0] == 0) {
+                this.open_visualizer_data()
+            } else {
+                this.download_visualizer_data()
             }
         })
     }
@@ -162,6 +181,35 @@ export class Config {
         const a = document.createElement('a')
         a.href = data_url.replace('image/png', 'image/octet-stream')
         a.download = 'rendered.png'
+        a.click()
+    }
+
+    open_visualizer_data () {
+        const w = window.open('', '')
+        if (w == null) {
+            alert('cannot open new window')
+            return
+        }
+        w.document.title = 'visualizer data'
+        w.document.body.style.backgroundColor = 'white'
+        // add style for code highlight
+        const css = w.document.createElement('style')
+        css.textContent = prismCSS
+        w.document.head.appendChild(css)
+        // create div that contains the highlighted code
+        const div = w.document.createElement('code')
+        div.setAttribute('style', 'white-space: pre;')
+        w.document.body.appendChild(div)
+        // use prism-js to highlight the code
+        const prism = new Prism()
+        JsonLoader(prism)
+        div.innerHTML = prism.highlight(stringify(this.data.visualizer, { maxLength: 160, indent: 4 }), prism.languages.json, 'json')
+    }
+
+    download_visualizer_data () {
+        const a = document.createElement('a')
+        a.href = 'data:text/json;base64,' + btoa(JSON.stringify(this.data.visualizer))
+        a.download = 'mwpf-vis.json'
         a.click()
     }
 
