@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { type Ref, computed, watchEffect, useTemplateRef, onMounted } from 'vue'
-import { type Position, load_position } from './hyperion'
+import { VertexState, VertexStates, load_position } from './hyperion'
 import { type Config } from './config_pane'
 import { PhysicalMaterial, SphereGeometry } from 'troisjs'
 import MyInstancedMesh from '@/misc/MyInstancedMesh.vue'
@@ -8,24 +8,6 @@ import { Object3D, FrontSide, BackSide, Color } from 'three'
 import { assert_inject } from '@/misc/util'
 
 const config: Ref<Config> = assert_inject('config')
-
-class VertexState {
-    type: string = 'vertex'
-    vi: number
-    color?: string = undefined
-    position: Position
-
-    constructor(vi: number, position: Position) {
-        this.vi = vi
-        this.position = position
-    }
-}
-
-class VertexStates {
-    normal_vertices: Array<VertexState> = []
-    defect_vertices: Array<VertexState> = []
-    all_outlines: Array<VertexState> = []
-}
 
 const vertex_states = computed(() => {
     const vertex_states = new VertexStates()
@@ -37,9 +19,9 @@ const vertex_states = computed(() => {
         const state = new VertexState(i, config.value.data.visualizer.positions[i])
         vertex_states.all_outlines.push({ ...state })
         if (vertex.s) {
-            vertex_states.normal_vertices.push({ ...state, color: config.value.vertex.normal_color })
-        } else {
             vertex_states.defect_vertices.push({ ...state, color: config.value.vertex.defect_color })
+        } else {
+            vertex_states.normal_vertices.push({ ...state, color: config.value.vertex.normal_color })
         }
     }
     return vertex_states

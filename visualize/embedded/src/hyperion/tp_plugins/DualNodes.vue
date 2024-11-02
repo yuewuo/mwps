@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { onMounted, watchEffect } from 'vue'
 import Indices from './Indices.vue'
 import { Info } from '../info_pane'
 
@@ -9,14 +8,6 @@ interface Props {
 
 const props = defineProps<Props>()
 const config = props.info.config
-
-watchEffect(() => {
-    console.log(props.info)
-})
-
-onMounted(() => {
-    console.log('mounted')
-})
 </script>
 
 <template>

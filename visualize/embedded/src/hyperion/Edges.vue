@@ -11,7 +11,7 @@
  */
 
 import { type Ref, computed, watchEffect, useTemplateRef, onMounted } from 'vue'
-import { compute_vector3, unit_up_vector } from './hyperion'
+import { compute_vector3, unit_up_vector, EdgeRingState, EdgeTubeState, EdgeStates, ring_resolution } from './hyperion'
 import { type Config } from './config_pane'
 import { PhysicalMaterial, CylinderGeometry, RingGeometry } from 'troisjs'
 import MyInstancedMesh from '@/misc/MyInstancedMesh.vue'
@@ -19,51 +19,7 @@ import { Object3D, BackSide, DoubleSide, Color, Vector3, Quaternion } from 'thre
 import { assert_inject } from '@/misc/util'
 
 const config: Ref<Config> = assert_inject('config')
-const ring_resolution = 100
 const ring_index_of_ratio = (ratio: number) => Math.max(0, Math.min(ring_resolution, Math.round(ratio * ring_resolution)))
-
-class EdgeRingState {
-    type: string = 'edge'
-    ei: number
-    position: Vector3
-    color: string = 'black'
-    inner: number = 0
-    outer: number = 1
-
-    constructor(ei: number, position: Vector3) {
-        this.ei = ei
-        this.position = position
-    }
-}
-
-class EdgeTubeState {
-    type: string = 'edge'
-    ei: number
-    position: Vector3
-    color: string = 'black'
-    length: number
-    degree: number
-    quaternion: Quaternion
-
-    constructor(ei: number, position: Vector3, length: number, degree: number, quaternion: Quaternion) {
-        this.ei = ei
-        this.position = position
-        this.length = length
-        this.degree = degree
-        this.quaternion = quaternion
-    }
-}
-
-class EdgeStates {
-    // rings (degree-1 edges)
-    ungrown_edge_rings: Array<Array<EdgeRingState>> = Array.from({ length: ring_resolution + 1 }, () => [])
-    grown_edge_rings: Array<Array<EdgeRingState>> = Array.from({ length: ring_resolution + 1 }, () => [])
-    tight_edge_rings: Array<Array<EdgeRingState>> = Array.from({ length: ring_resolution + 1 }, () => [])
-    // tubes (higher degree edges)
-    ungrown_edge_tubes: Array<EdgeTubeState> = []
-    grown_edge_tubes: Array<EdgeTubeState> = []
-    tight_edge_tubes: Array<EdgeTubeState> = []
-}
 
 const edge_states = computed(() => {
     const edge_states = new EdgeStates()
