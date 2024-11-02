@@ -20,12 +20,13 @@ onMounted(() => {
 </script>
 
 <template>
-    <div v-for="(dual_node, dual_index) of config.snapshot.dual_nodes" :key="dual_index">
+    <div v-for="(dual_node, ni) of config.snapshot.dual_nodes" :key="ni">
         <div class="entry" v-if="props.info.display_zero_dual_variables || dual_node.d != 0">
             <div class="left">
+                <div class="color-indicator" :style="{ 'background-color': config.edge.color_palette.get(ni) }"></div>
                 <i style="font-size: 20px; position: relative; top: -13px">y</i>
                 <i style="font-size: 13px; position: relative; top: -10px">S</i>
-                <span style="display: inline-block; font-size: 10px; position: relative; top: -5px; width: 16px">{{ dual_index }}</span>
+                <span style="display: inline-block; font-size: 10px; position: relative; top: -5px; width: 16px">{{ ni }}</span>
                 <i style="font-size: 16px; position: relative; top: -11px">&nbsp;=&nbsp;</i>
                 <div class="rational">
                     <!-- TODO: optimize display of floating point number: always show full precision and forbid scientific representation (which puts the important number at the very end...) -->
@@ -57,6 +58,7 @@ onMounted(() => {
     margin-bottom: 3px;
 }
 .left {
+    position: relative;
     padding-left: 5px;
     width: 100px;
     /* background-color: red; */
@@ -87,5 +89,11 @@ onMounted(() => {
     overflow-y: scroll;
     scrollbar-width: none;
     scroll-padding: 0;
+}
+.color-indicator {
+    position: absolute;
+    width: 20px;
+    height: 8px;
+    border-radius: 5px;
 }
 </style>
