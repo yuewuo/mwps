@@ -7,7 +7,6 @@ import { Info } from './info_pane'
 import Vertices from './Vertices.vue'
 import Edges from './Edges.vue'
 import { WebGLRenderer, OrthographicCamera as ThreeOrthographicCamera, Raycaster, Vector2 } from 'three'
-import { FolderApi } from 'tweakpane'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import iconString from './icon.svg?raw'
 // @ts-expect-error the Stats module does not have a declaration file
@@ -31,7 +30,6 @@ if (config.value.config_prop.full_screen) {
     const link = document.createElement('link')
     link.rel = 'icon'
     link.href = 'data:image/svg+xml;base64,' + btoa(iconString)
-    console.log(link)
     document.head.appendChild(link)
 }
 
@@ -69,7 +67,7 @@ onMounted(() => {
         // @ts-expect-error _scale is a private property
         const orbit_control_scale: number = orbit_controls._scale
         config.value.camera.zoom = camera.zoom * orbit_control_scale
-        config.value.refresh_pane()
+        config.value.pane.refresh()
     })
     canvas.addEventListener('mouseenter', () => {
         canvas.focus()
@@ -110,7 +108,7 @@ onMounted(() => {
             width.value = container_width
             if (props.config.full_screen) {
                 config.value.aspect_ratio = (document.documentElement.clientWidth / document.documentElement.clientHeight) * 1.02
-                config.value.refresh_pane()
+                config.value.pane.refresh()
             }
         }
     })
@@ -133,15 +131,13 @@ function onKeyDown(event: KeyboardEvent) {
             show_config.value = !show_config.value
             if (show_config.value) {
                 // automatically unfold if using keyboard shortcut to display it
-                const pane: FolderApi = config.value.pane
-                pane.expanded = true
+                config.value.pane.expanded = true
             }
         } else if (event.key == 'i' || event.key == 'I') {
             show_info.value = !show_info.value
             if (show_info.value) {
                 // automatically unfold if using keyboard shortcut to display it
-                const pane: FolderApi = info.value.pane
-                pane.expanded = true
+                info.value.pane.expanded = true
             }
         } else if (event.key == 's' || event.key == 'S') {
             config.value.basic.show_stats = !config.value.basic.show_stats
@@ -156,7 +152,7 @@ function onKeyDown(event: KeyboardEvent) {
         } else {
             return // unrecognized, propagate to other listeners
         }
-        config.value.refresh_pane()
+        config.value.pane.refresh()
         event.preventDefault()
         event.stopPropagation()
     }

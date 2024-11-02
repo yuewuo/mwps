@@ -1,6 +1,7 @@
 import { computed } from 'vue'
 import { Pane, FolderApi } from 'tweakpane'
 import * as EssentialsPlugin from '@tweakpane/plugin-essentials'
+import { type ButtonGridApi } from '@tweakpane/plugin-essentials'
 import { assert } from '@/util'
 import { Vector3, OrthographicCamera, WebGLRenderer, Vector2 } from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
@@ -31,7 +32,8 @@ export class Config {
     camera: CameraConfig = new CameraConfig()
     vertex: VertexConfig = new VertexConfig()
     edge: EdgeConfig = new EdgeConfig()
-    pane?: Pane
+    // @ts-expect-error we will not use pane before it's initialized, ignore for simplicity
+    pane: Pane
 
     constructor (data: RuntimeData, config_prop: ConfigProps) {
         this.data = data
@@ -42,17 +44,15 @@ export class Config {
     export_visualizer_parameters () {
         // first clear existing parameters to avoid being included
         this.parameters = ''
-        // @ts-expect-error exportState is not in the type definition
         this.parameters = JSON.stringify(this.pane.exportState())
-        this.refresh_pane()
+        this.pane.refresh()
     }
 
     import_visualizer_parameters () {
         const parameters = this.parameters
-        // @ts-expect-error exportState is not in the type definition
         this.pane.importState(JSON.parse(this.parameters))
         this.parameters = parameters
-        this.refresh_pane()
+        this.pane.refresh()
     }
 
     create_pane (container: HTMLElement, renderer: HTMLElement) {
@@ -92,13 +92,14 @@ export class Config {
     png_scale: number = 1
     add_import_export (pane: FolderApi): void {
         // add parameter import/export
-        pane.addBlade({
+        const parameter_buttons: ButtonGridApi = pane.addBlade({
             view: 'buttongrid',
             size: [2, 1],
             cells: (x: number) => ({
                 title: ['export parameters', 'import parameters'][x]
             })
-        }).on('click', (event: any) => {
+        }) as any
+        parameter_buttons.on('click', (event: any) => {
             if (event.index[0] == 0) {
                 this.export_visualizer_parameters()
             } else {
@@ -108,13 +109,14 @@ export class Config {
         pane.addBinding(this, 'parameters')
         // add figure import/export
         pane.addBinding(this, 'png_scale', { min: 0.5, max: 2 })
-        pane.addBlade({
+        const png_buttons: ButtonGridApi = pane.addBlade({
             view: 'buttongrid',
             size: [2, 1],
             cells: (x: number) => ({
                 title: ['Open PNG', 'Download PNG'][x]
             })
-        }).on('click', (event: any) => {
+        }) as any
+        png_buttons.on('click', (event: any) => {
             const data_url = this.generate_png()
             if (data_url == undefined) {
                 return
@@ -175,18 +177,13 @@ export class Config {
         }
     }
 
-    refresh_pane () {
-        const pane: FolderApi = this.pane
-        pane.refresh()
-    }
-
     public get title (): string {
         return `MWPF Visualizer (${this.snapshot_index + 1}/${this.snapshot_num})`
     }
 
     public set aspect_ratio (aspect_ratio: number) {
         this.basic.aspect_ratio = aspect_ratio
-        this.refresh_pane()
+        this.pane.refresh()
     }
 
     public set snapshot_index (index: number) {
@@ -194,7 +191,7 @@ export class Config {
         this.snapshot_config.name = index
         const pane: FolderApi = this.pane
         pane.title = this.title
-        this.refresh_pane()
+        this.pane.refresh()
     }
 
     public get snapshot_index (): number {
@@ -280,14 +277,15 @@ export class CameraConfig {
     orbit_control?: OrbitControls
 
     add_to (pane: FolderApi): void {
-        pane.addBlade({
+        const camera_position_buttons: ButtonGridApi = pane.addBlade({
             view: 'buttongrid',
             size: [3, 1],
             cells: (x: number) => ({
                 title: names[x]
             }),
             label: 'reset view'
-        }).on('click', (event: any) => {
+        }) as any
+        camera_position_buttons.on('click', (event: any) => {
             const i: number = event.index[0]
             this.set_position(names[i])
         })
@@ -352,6 +350,7 @@ export class ColorPaletteConfig {
         pane.addBinding(this, 'ungrown')
         pane.addBinding(this, 'subgraph')
         for (let i = 0; i < 14; ++i) {
+            // @ts-expect-error cannot guarantee key exists
             pane.addBinding(this, `c${i}`)
         }
     }

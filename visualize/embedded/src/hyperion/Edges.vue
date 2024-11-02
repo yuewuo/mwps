@@ -11,7 +11,8 @@
  */
 
 import { type Ref, computed, watchEffect, useTemplateRef, onMounted } from 'vue'
-import { type Config, compute_vector3, unit_up_vector } from './hyperion'
+import { compute_vector3, unit_up_vector } from './hyperion'
+import { type Config } from './config_pane'
 import { PhysicalMaterial, CylinderGeometry, RingGeometry } from 'troisjs'
 import MyInstancedMesh from '@/misc/MyInstancedMesh.vue'
 import { Object3D, BackSide, DoubleSide, Color, Vector3, Quaternion } from 'three'

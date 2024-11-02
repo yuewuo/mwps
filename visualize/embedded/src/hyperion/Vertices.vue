@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { type Ref, computed, watchEffect, useTemplateRef, onMounted } from 'vue'
-import { type Config, type Position, load_position } from './hyperion'
+import { type Position, load_position } from './hyperion'
+import { type Config } from './config_pane'
 import { PhysicalMaterial, SphereGeometry } from 'troisjs'
 import MyInstancedMesh from '@/misc/MyInstancedMesh.vue'
 import { Object3D, FrontSide, BackSide, Color } from 'three'

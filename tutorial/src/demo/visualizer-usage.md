@@ -31,7 +31,7 @@ Both the web page and the Jupyter notebook plugins allows persistent.
 
 For Jupyter notebook, it is simple: all the output will be automatically saved as part of the notebook.
 Note that we have optimized for the space.
-Although the visualization library takes ~1MB overhead to your file, the overhead does not increase with the number of plots.
+Although the visualization library takes ~500KB overhead to your file, the overhead does not increase with the number of plots.
 
 The web page also allows easy persistent.
 When you open the visualizer configuration panel (press 'C' when your mouse hover over the window), you'll see an 'Import/Export'

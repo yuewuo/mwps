@@ -1,0 +1,17 @@
+.hy-dual-div {
+    align-items: center;
+    display: flex;
+    height: 80px;
+    background-color: #123456;
+    /* margin: 5px; */
+}
+
+.hy-dual-div div {
+    color: #00ffd680;
+    flex: 1;
+}
+
+.hy-dual-div button {
+    height: 40px;
+    width: 20px;
+}
