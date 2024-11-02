@@ -362,12 +362,14 @@ export class VertexConfig {
     outline_ratio: number = 1.2
     normal_color: string = '#FFFFFF'
     defect_color: string = '#FF0000'
+    outline_color: string = '#000000'
 
     add_to (pane: FolderApi): void {
         pane.addBinding(this, 'radius', { min: 0, max: 10, step: 0.001 })
         pane.addBinding(this, 'outline_ratio', { min: 0, max: 10, step: 0.001 })
         pane.addBinding(this, 'normal_color')
         pane.addBinding(this, 'defect_color')
+        pane.addBinding(this, 'outline_color')
     }
 
     public get outline_radius (): number {

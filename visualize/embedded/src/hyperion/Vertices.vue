@@ -12,6 +12,7 @@ const config: Ref<Config> = assert_inject('config')
 class VertexState {
     type: string = 'vertex'
     vi: number
+    color?: string = undefined
     position: Position
 
     constructor(vi: number, position: Position) {
@@ -23,7 +24,7 @@ class VertexState {
 class VertexStates {
     normal_vertices: Array<VertexState> = []
     defect_vertices: Array<VertexState> = []
-    all_vertices: Array<VertexState> = []
+    all_outlines: Array<VertexState> = []
 }
 
 const vertex_states = computed(() => {
@@ -34,11 +35,11 @@ const vertex_states = computed(() => {
             continue
         }
         const state = new VertexState(i, config.value.data.visualizer.positions[i])
-        vertex_states.all_vertices.push(state)
+        vertex_states.all_outlines.push({ ...state })
         if (vertex.s) {
-            vertex_states.normal_vertices.push(state)
+            vertex_states.normal_vertices.push({ ...state, color: config.value.vertex.normal_color })
         } else {
-            vertex_states.defect_vertices.push(state)
+            vertex_states.defect_vertices.push({ ...state, color: config.value.vertex.defect_color })
         }
     }
     return vertex_states
@@ -68,8 +69,8 @@ function updateVerticesColor(vertex_states: Array<VertexState>, mesh: any) {
             mesh.setColorAt(i, new Color(config.value.basic.selected_color))
         } else if (state.vi == hovered_vertex?.vi) {
             mesh.setColorAt(i, new Color(config.value.basic.hovered_color))
-        } else if (mesh.userData.myData) {
-            mesh.setColorAt(i, new Color(mesh.userData.myData.color))
+        } else {
+            mesh.setColorAt(i, new Color(state.color))
         }
     }
     if (mesh.instanceColor) {
@@ -96,7 +97,7 @@ const vertices_outlines_ref = useTemplateRef('vertices_outlines')
 
 const update_normal_vertices = () => applyMeshVertices(vertex_states.value.normal_vertices, (normal_vertices_ref.value as any).mesh)
 const update_defect_vertices = () => applyMeshVertices(vertex_states.value.defect_vertices, (defect_vertices_ref.value as any).mesh)
-const update_vertices_outlines = () => applyMeshVertices(vertex_states.value.all_vertices, (vertices_outlines_ref.value as any).mesh)
+const update_vertices_outlines = () => applyMeshVertices(vertex_states.value.all_outlines, (vertices_outlines_ref.value as any).mesh)
 function update() {
     update_normal_vertices()
     update_defect_vertices()
@@ -105,7 +106,7 @@ function update() {
 function update_intersect_color() {
     updateVerticesColor(vertex_states.value.normal_vertices, (normal_vertices_ref.value as any).mesh)
     updateVerticesColor(vertex_states.value.defect_vertices, (defect_vertices_ref.value as any).mesh)
-    updateVerticesColor(vertex_states.value.all_vertices, (vertices_outlines_ref.value as any).mesh)
+    updateVerticesColor(vertex_states.value.all_outlines, (vertices_outlines_ref.value as any).mesh)
 }
 
 onMounted(() => {
@@ -125,20 +126,20 @@ onMounted(() => {
     <!-- note: color must be set individually, because otherwise ThreeJS will multiply the color values and create strange visual effects -->
 
     <!-- normal vertices -->
-    <MyInstancedMesh ref="normal_vertices" :count="vertex_states.normal_vertices.length" @reinstantiated="update_normal_vertices" :myData="{ color: config.vertex.normal_color }">
+    <MyInstancedMesh ref="normal_vertices" :count="vertex_states.normal_vertices.length" @reinstantiated="update_normal_vertices">
         <SphereGeometry :radius="config.vertex.radius" :height-segments="config.basic.segments" :width-segments="config.basic.segments"> </SphereGeometry>
         <PhysicalMaterial :props="{ transparent: false, side: FrontSide }"></PhysicalMaterial>
     </MyInstancedMesh>
 
     <!-- defect vertices -->
-    <MyInstancedMesh ref="defect_vertices" :count="vertex_states.defect_vertices.length" @reinstantiated="update_defect_vertices" :myData="{ color: config.vertex.defect_color }">
+    <MyInstancedMesh ref="defect_vertices" :count="vertex_states.defect_vertices.length" @reinstantiated="update_defect_vertices">
         <SphereGeometry :radius="config.vertex.radius" :height-segments="config.basic.segments" :width-segments="config.basic.segments"> </SphereGeometry>
         <PhysicalMaterial :props="{ transparent: false, side: FrontSide }"></PhysicalMaterial>
     </MyInstancedMesh>
 
     <!-- all vertices outlines -->
-    <MyInstancedMesh ref="vertices_outlines" :count="vertex_states.all_vertices.length" @reinstantiated="update_vertices_outlines">
+    <MyInstancedMesh ref="vertices_outlines" :count="vertex_states.all_outlines.length" @reinstantiated="update_vertices_outlines">
         <SphereGeometry :radius="config.vertex.outline_radius" :height-segments="config.basic.segments" :width-segments="config.basic.segments"> </SphereGeometry>
-        <PhysicalMaterial :props="{ transparent: false, side: BackSide, color: '#000000' }"></PhysicalMaterial>
+        <PhysicalMaterial :props="{ transparent: false, side: BackSide, color: config.vertex.outline_color }"></PhysicalMaterial>
     </MyInstancedMesh>
 </template>
