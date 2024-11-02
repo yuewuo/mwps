@@ -1,9 +1,10 @@
 import { Pane, FolderApi, BladeApi } from 'tweakpane'
 import * as EssentialsPlugin from '@tweakpane/plugin-essentials'
 import { Config } from './config_pane'
-import { watchEffect } from 'vue'
+import { createApp } from 'vue'
 import { assert } from '@/util'
 import { HyperionPluginBundle } from './tp_plugins'
+import DualNodes from './DualNodes.vue'
 
 /* info class of the current snapshot */
 export class Info {
@@ -27,28 +28,15 @@ export class Info {
         })
         this.pane.registerPlugin(EssentialsPlugin)
         this.pane.registerPlugin(HyperionPluginBundle)
-        // create folders
+        // create dual nodes
         this.dual_folder = this.pane.addFolder({ title: 'Dual Variables', expanded: true })
-        watchEffect(() => {
-            if (this.dual_blades) {
-                this.dual_blades.dispose()
-                this.dual_blades = undefined
-            }
-            if (this.config.snapshot.dual_nodes) {
-                this.dual_blades = this.dual_folder?.addBlade({
-                    view: 'dual_nodes',
-                    value: this.config.snapshot.dual_nodes
-                })
-            }
+        this.dual_blades = this.dual_folder.addBlade({
+            view: 'vue',
+            app: createApp(DualNodes, { config: this.config })
         })
     }
 
-    refresh_pane () {
-        this.pane?.refresh()
-    }
-
     update_pane () {
-        // const pane: FolderApi = this.pane
-        this.refresh_pane()
+        this.pane.refresh()
     }
 }

@@ -1,12 +1,23 @@
 <script setup lang="ts">
-import { onMounted } from 'vue'
-import { onUnmounted } from 'vue'
+import { onMounted, onUnmounted, watchEffect } from 'vue'
+import { type Config } from './config_pane'
+
+interface Props {
+    config: Config
+}
+
+const props = defineProps<Props>()
+const config = props.config
 
 onMounted(() => {
     console.log('mounted')
 })
 onUnmounted(() => {
     console.log('unmounted')
+})
+
+watchEffect(() => {
+    console.log(config.snapshot)
 })
 </script>
 
