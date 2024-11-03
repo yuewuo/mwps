@@ -38,7 +38,7 @@ export class Info {
         folder.addBinding(this, 'display_zero_dual_variables')
         folder.addBlade({ view: 'vue', app: createApp(DualNodes, { info: this }) })
         watchEffect(() => {
-            folder.title = `Dual Variables (𝚺ys = ${this.config.snapshot.interface.sum_dual})`
+            folder.title = `Dual Variables (𝚺ys = ${this.config.snapshot.interface?.sum_dual})`
         })
         this.dual_folder = folder
     }

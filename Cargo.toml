@@ -36,20 +36,24 @@ debug = true
 
 [features]
 # to enable a feature, use `--features xxx`
-default = ["f64_weight", "cli", "qecp_integrate"]
+default = ["f64_weight", "cli", "qecp_integrate", "embed_visualizer"]
 old_default = ["cli", "slp"]
 cli = ["pbr"]
-r64_weight = []                                   # use Rational64 instead of BigRational as weight type
-f64_weight = ["float_lp"]                         # use f64 instead of BigRational as weight type
-f32_weight = ["float_lp"]                         # use f64 instead of BigRational as weight type
-u32_index = []                                    # use u32 instead of usize as index type, to save memory
-python_binding = ["pyo3"]                         # bind to Python
-wasm_binding = ["wasm-bindgen"]                   # bind to wasm
-colorful = []                                     # enable colorful output in case terminal exists
-qecp_integrate = ["qecp"]                         # integrate with qecp
-float_lp = ["highs"]                              # use floating point LP solver, which is highs
-incr_lp = []                                      # solve lp problems incrementally, compatible with highs, by modifying the internal data of the probelm
-cluster_size_limit = []                           # allow configuration for limit on primal cluster size, for accrate benchmark timing.
+r64_weight = [] # use Rational64 instead of BigRational as weight type
+f64_weight = ["float_lp"] # use f64 instead of BigRational as weight type
+f32_weight = ["float_lp"] # use f64 instead of BigRational as weight type
+u32_index = [] # use u32 instead of usize as index type, to save memory
+python_binding = ["pyo3"] # bind to Python
+wasm_binding = ["wasm-bindgen"] # bind to wasm
+colorful = [] # enable colorful output in case terminal exists
+qecp_integrate = ["qecp"] # integrate with qecp
+float_lp = ["highs"] # use floating point LP solver, which is highs
+incr_lp = [
+] # solve lp problems incrementally, compatible with highs, by modifying the internal data of the probelm
+cluster_size_limit = [
+] # allow configuration for limit on primal cluster size, for accrate benchmark timing.
+embed_visualizer = [
+] # use nodejs to build frontend and embed in Python instead of outputing individual JSON files
 
 [dependencies]
 pyo3 = { version = "0.19.2", features = [
@@ -90,6 +94,10 @@ priority-queue = "2.0.3"
 heapz = { path = "src/heapz" }
 hashbrown = "0.14.5"
 pheap = { path = "src/pheap" }
+tempfile = "3.13.0"
+include_optional = "1.0.1"
+flate2 = "1.0.34"
+base64 = "0.22.1"
 
 [dev-dependencies]
 test-case = "3.1.0"

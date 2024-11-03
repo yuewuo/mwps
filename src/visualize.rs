@@ -4,15 +4,16 @@
 //!
 
 use crate::chrono::Local;
+use crate::html_export::*;
 use crate::serde::{Deserialize, Serialize};
 use crate::serde_json;
-use crate::urlencoding;
 #[cfg(feature = "python_binding")]
 use crate::util::*;
 #[cfg(feature = "python_binding")]
 use pyo3::prelude::*;
-use std::fs::File;
+use std::fs::{File, OpenOptions};
 use std::io::{Seek, SeekFrom, Write};
+use tempfile::SpooledTempFile;
 
 pub trait MWPSVisualizer {
     /// take a snapshot, set `abbrev` to true to save space
@@ -65,12 +66,39 @@ impl VisualizePosition {
     }
 }
 
+trait VisualizerFileTrait: std::io::Write + std::io::Read + std::io::Seek + std::fmt::Debug {
+    fn set_len(&mut self, len: u64) -> std::io::Result<()>;
+    fn sync_all(&mut self) -> std::io::Result<()>;
+}
+
+impl VisualizerFileTrait for File {
+    fn set_len(&mut self, len: u64) -> std::io::Result<()> {
+        File::set_len(self, len)
+    }
+    fn sync_all(&mut self) -> std::io::Result<()> {
+        File::sync_all(self)
+    }
+}
+
+impl VisualizerFileTrait for SpooledTempFile {
+    fn set_len(&mut self, len: u64) -> std::io::Result<()> {
+        self.set_len(len)
+    }
+    fn sync_all(&mut self) -> std::io::Result<()> {
+        // doesn't matter whether it's written to file, because it's temporary anyway
+        Ok(())
+    }
+}
+
 #[derive(Debug)]
 #[cfg_attr(feature = "python_binding", cfg_eval)]
 #[cfg_attr(feature = "python_binding", pyclass)]
 pub struct Visualizer {
+    /// original filepath
+    #[cfg_attr(feature = "python_binding", pyo3(get))]
+    pub filepath: Option<String>,
     /// save to file if applicable
-    file: Option<File>,
+    file: Option<Box<dyn VisualizerFileTrait>>,
     /// if waiting for the first snapshot
     empty_snapshot: bool,
     /// names of the snapshots
@@ -298,7 +326,7 @@ pub fn center_positions(mut positions: Vec<VisualizePosition>) -> Vec<VisualizeP
 impl Visualizer {
     /// create a new visualizer with target filename and node layout
     #[cfg_attr(feature = "python_binding", new)]
-    #[cfg_attr(feature = "python_binding", pyo3(signature = (filepath, positions=vec![], center=true)))]
+    #[cfg_attr(feature = "python_binding", pyo3(signature = (filepath="", positions=vec![], center=true)))]
     pub fn new(mut filepath: Option<String>, mut positions: Vec<VisualizePosition>, center: bool) -> std::io::Result<Self> {
         if cfg!(feature = "disable_visualizer") {
             filepath = None; // do not open file
@@ -306,8 +334,22 @@ impl Visualizer {
         if center {
             positions = center_positions(positions);
         }
-        let mut file = match filepath {
-            Some(filepath) => Some(File::create(filepath)?),
+        let mut file: Option<Box<dyn VisualizerFileTrait>> = match filepath {
+            Some(ref filepath) => Some(if filepath.is_empty() {
+                // 256MB max memory (uncompressed JSON can be very large, no need to write to file)
+                Box::new(SpooledTempFile::new(256 * 1024 * 1024))
+            } else {
+                Box::new(
+                    // manually enable read, see
+                    // https://doc.rust-lang.org/std/fs/struct.File.html#method.create
+                    OpenOptions::new()
+                        .write(true)
+                        .read(true)
+                        .create(true)
+                        .truncate(true)
+                        .open(filepath)?,
+                )
+            }),
             None => None,
         };
         if let Some(file) = file.as_mut() {
@@ -320,6 +362,7 @@ impl Visualizer {
             file.sync_all()?;
         }
         Ok(Self {
+            filepath,
             file,
             empty_snapshot: true,
             snapshots: vec![],
@@ -437,6 +480,16 @@ impl Visualizer {
         self.incremental_save(name, value)?;
         Ok(())
     }
+
+    pub fn generate_html(&mut self, override_config: serde_json::Value) -> String {
+        // read JSON data from the file
+        let file = self.file.as_mut().expect("visualizer file is not opened, please provide filename (could be empty string for temporary file) when constructing the visualizer");
+        file.seek(SeekFrom::Start(0))
+            .expect("cannot seek to the beginning of the file");
+        let visualizer_data: serde_json::Value =
+            serde_json::from_reader(file).expect("cannot read JSON from visualizer file");
+        HTMLExport::generate_html(visualizer_data, override_config)
+    }
 }
 
 const DEFAULT_VISUALIZE_DATA_FOLDER: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/visualize/data/");
@@ -456,29 +509,8 @@ pub fn auto_visualize_data_filename() -> String {
     format!("{}.json", Local::now().format("%Y%m%d-%H-%M-%S%.3f"))
 }
 
-#[cfg_attr(feature = "python_binding", pyfunction)]
-pub fn print_visualize_link_with_parameters(filename: String, parameters: Vec<(String, String)>) {
-    let default_port = if cfg!(feature = "python_binding") { 51672 } else { 8072 };
-    let mut link = format!("http://localhost:{}?filename={}", default_port, filename);
-    for (key, value) in parameters.iter() {
-        link.push('&');
-        link.push_str(&urlencoding::encode(key));
-        link.push('=');
-        link.push_str(&urlencoding::encode(value));
-    }
-    if cfg!(feature = "python_binding") {
-        println!(
-            "opening link {} (use `mwpf.open_visualizer(filename)` to start a server and open it in browser)",
-            link
-        )
-    } else {
-        println!("opening link {} (start local server by running ./visualize/server.sh) or call `node index.js <link>` to render locally", link)
-    }
-}
-
-#[cfg_attr(feature = "python_binding", pyfunction)]
-pub fn print_visualize_link(filename: String) {
-    print_visualize_link_with_parameters(filename, Vec::new())
+pub fn print_visualize_link(_: String) {
+    unimplemented!();
 }
 
 #[cfg(feature = "python_binding")]
@@ -488,7 +520,6 @@ pub(crate) fn register(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<Visualizer>()?;
     m.add_function(wrap_pyfunction!(static_visualize_data_filename, m)?)?;
     m.add_function(wrap_pyfunction!(auto_visualize_data_filename, m)?)?;
-    m.add_function(wrap_pyfunction!(print_visualize_link_with_parameters, m)?)?;
     m.add_function(wrap_pyfunction!(print_visualize_link, m)?)?;
     m.add_function(wrap_pyfunction!(center_positions, m)?)?;
     Ok(())

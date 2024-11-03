@@ -1379,17 +1379,19 @@ mod tests {
     use super::*;
 
     fn visualize_code(code: &mut impl ExampleCode, visualize_filename: String) {
-        print_visualize_link(visualize_filename.clone());
-        let mut visualizer = Visualizer::new(
-            Some(visualize_data_folder() + visualize_filename.as_str()),
-            code.get_positions(),
-            true,
-        )
-        .unwrap();
+        let visualizer_path = visualize_data_folder() + visualize_filename.as_str();
+        let mut visualizer = Visualizer::new(Some(visualizer_path.clone()), code.get_positions(), true).unwrap();
         visualizer.snapshot("code".to_string(), code).unwrap();
         for round in 0..3 {
             code.generate_random_errors(round);
             visualizer.snapshot(format!("syndrome {}", round + 1), code).unwrap();
+        }
+        if cfg!(feature = "embed_visualizer") {
+            let html = visualizer.generate_html(json!({}));
+            assert!(visualizer_path.ends_with(".json"));
+            let html_path = format!("{}.html", &visualizer_path.as_str()[..visualizer_path.len() - 5]);
+            std::fs::write(&html_path, html).expect("Unable to write file");
+            println!("visualizer path: {}", &html_path);
         }
     }
 

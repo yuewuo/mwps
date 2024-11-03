@@ -37,8 +37,6 @@ export async function generate_html (visualizer_data: object, compress_data: boo
     assert(available, 'no compressed js library available, please run this in release mode')
     const override = { ...override_config, full_screen: true }
     const override_str = bigInt.JavascriptStringify(override, { maxLength: 160, indent: 4 })
-    // @ts-expect-error hahahah
-    window.override_str = override_str
     const new_vis_data_tail = override_head + '\n' + begin(override_config_flag) + '\n' + override_str + '\n' + end(override_config_flag) + '\n' + override_tail
     let javascript_data = ''
     if (compress_data) {
