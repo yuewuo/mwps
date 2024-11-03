@@ -248,7 +248,7 @@ export class Config {
         a.click()
     }
 
-    generate_html (): string {
+    async generate_html (): Promise<string> {
         let visualizer_data = this.data.visualizer
         if (this.html_use_visualizer_data != '') {
             try {
@@ -269,22 +269,24 @@ export class Config {
     }
 
     open_html () {
-        const html = this.generate_html() // may have exception, put in the front
-        const w = window.open('', '')
-        if (w == null) {
-            alert('cannot open new window')
-            return
-        }
-        w.document.write(html)
-        w.document.close()
+        this.generate_html().then(html => {
+            const w = window.open('', '')
+            if (w == null) {
+                alert('cannot open new window')
+                return
+            }
+            w.document.write(html)
+            w.document.close()
+        })
     }
 
     download_html () {
-        const html = this.generate_html() // may have exception, put in the front
-        const a = document.createElement('a')
-        a.href = 'data:text/html;charset=utf-8,' + encodeURIComponent(html)
-        a.download = 'mwpf-vis.html'
-        a.click()
+        this.generate_html().then(html => {
+            const a = document.createElement('a')
+            a.href = 'data:text/html;charset=utf-8,' + encodeURIComponent(html)
+            a.download = 'mwpf-vis.html'
+            a.click()
+        })
     }
 
     add_shortcut_guide (pane: FolderApi): void {

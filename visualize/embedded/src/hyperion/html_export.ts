@@ -1,4 +1,4 @@
-import { assert, bigInt } from '@/util'
+import { assert, bigInt, compress_content } from '@/util'
 import HTMLString from '../../index.html?raw'
 import type { ConfigProps } from './hyperion'
 
@@ -33,7 +33,7 @@ const [vis_data_head, , vis_data_tail] = slice_content(script_head, data_flag)
 const override_config_flag = 'HYPERION_VISUAL_OVERRIDE_CONFIG'
 const [override_head, , override_tail] = slice_content(vis_data_tail, override_config_flag)
 
-export function generate_html (visualizer_data: object, compress_data: boolean, override_config: ConfigProps): string {
+export async function generate_html (visualizer_data: object, compress_data: boolean, override_config: ConfigProps): Promise<string> {
     assert(available, 'no compressed js library available, please run this in release mode')
     const override = { ...override_config, full_screen: true }
     const override_str = bigInt.JavascriptStringify(override, { maxLength: 160, indent: 4 })
@@ -43,7 +43,9 @@ export function generate_html (visualizer_data: object, compress_data: boolean, 
     let javascript_data = ''
     if (compress_data) {
         // use gzip to compress the visualizer data, which is supposed to have a high redundancy
-        javascript_data = bigInt.JavascriptStringify(visualizer_data, { maxLength: 160, indent: 4 })
+        const json = bigInt.JSONStringify(visualizer_data)
+        const compressed = await compress_content(new TextEncoder().encode(json))
+        javascript_data = `"${compressed}"`
     } else {
         // use uncompressed javascript to store the data, for better readability and ease manual modification
         javascript_data = bigInt.JavascriptStringify(visualizer_data, { maxLength: 160, indent: 4 })
