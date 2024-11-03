@@ -2,11 +2,10 @@ import { computed } from 'vue'
 import { Pane, FolderApi } from 'tweakpane'
 import * as EssentialsPlugin from '@tweakpane/plugin-essentials'
 import { type ButtonGridApi } from '@tweakpane/plugin-essentials'
-import { assert } from '@/util'
+import { assert, bigInt } from '@/util'
 import { Vector3, OrthographicCamera, WebGLRenderer, Vector2 } from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { RuntimeData, ConfigProps, renderer_params, type Snapshot } from './hyperion'
-import stringify from 'json-stringify-pretty-compact'
 import { Prism } from 'prism-esm'
 import { loader as JsonLoader } from 'prism-esm/components/prism-json.js'
 import prismCSS from 'prism-esm/themes/prism.min.css?raw'
@@ -203,12 +202,12 @@ export class Config {
         // use prism-js to highlight the code
         const prism = new Prism()
         JsonLoader(prism)
-        div.innerHTML = prism.highlight(stringify(this.data.visualizer, { maxLength: 160, indent: 4 }), prism.languages.json, 'json')
+        div.innerHTML = prism.highlight(bigInt.JSONStringify(this.data.visualizer, { maxLength: 160, indent: 4 }), prism.languages.json, 'json')
     }
 
     download_visualizer_data () {
         const a = document.createElement('a')
-        a.href = 'data:text/json;base64,' + btoa(JSON.stringify(this.data.visualizer))
+        a.href = 'data:text/json;base64,' + btoa(bigInt.JSONStringify(this.data.visualizer))
         a.download = 'mwpf-vis.json'
         a.click()
     }

@@ -16,6 +16,7 @@
     "@tweakpane/plugin-essentials": "^0.2.1",
     "@types/three": "^0.169.0",
     "json-stringify-pretty-compact": "^4.0.0",
+    "json-with-bigint": "^2.2.3",
     "prism-esm": "^1.29.0-fix.6",
     "stats.js": "^0.17.0",
     "three": "^0.169.0",

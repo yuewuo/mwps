@@ -1,3 +1,6 @@
+import { JSONParse } from 'json-with-bigint'
+import stringify from 'json-stringify-pretty-compact'
+
 export function assert (condition: boolean, msg?: string): asserts condition {
     if (!condition) {
         throw new Error(msg)
@@ -36,4 +39,28 @@ export function assert_buffer_equal (buf1: ArrayBuffer, buf2: ArrayBuffer) {
 
 export function sleep (ms: number) {
     return new Promise(resolve => setTimeout(resolve, ms))
+}
+
+export interface BigIntStringifyOptions {
+    indent?: number | string
+    maxLength?: number
+    replacer?: ((this: any, key: string, value: any) => any) | (number | string)[]
+}
+
+export const bigInt = {
+    JSONParse,
+    // modified from https://github.com/Ivan-Korolenko/json-with-bigint/blob/main/json-with-bigint.js
+    // by using json-stringify-pretty-compact to generate a pretty JSON
+    JSONStringify: (data: any, options?: BigIntStringifyOptions): string => {
+        const bigInts = /([[:])?"(-?\d+)n"([,}\]])/g
+        const preliminaryJSON = JSON.stringify(data, (_, value) => (typeof value === 'bigint' ? value.toString() + 'n' : value))
+        const prettyJSON = stringify(JSON.parse(preliminaryJSON), options)
+        return prettyJSON.replace(bigInts, '$1$2$3')
+    },
+    JavascriptStringify: (data: any, options?: BigIntStringifyOptions): string => {
+        const bigInts = /([[:])?"(-?\d+)n"([,}\]])/g
+        const preliminaryJSON = JSON.stringify(data, (_, value) => (typeof value === 'bigint' ? value.toString() + 'n' : value))
+        const prettyJSON = stringify(JSON.parse(preliminaryJSON), options)
+        return prettyJSON.replace(bigInts, '$1$2n$3')
+    }
 }
