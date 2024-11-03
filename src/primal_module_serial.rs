@@ -1202,6 +1202,8 @@ pub mod tests {
                     vec![&interface_ptr, &dual_module, &subgraph, &weight_range],
                 )
                 .unwrap();
+            visualizer.save_html_along_json();
+            println!("open visualizer at {}", visualizer.html_along_json_path());
         }
         assert!(
             decoding_graph
@@ -1235,16 +1237,12 @@ pub mod tests {
         impl DualModuleImpl + MWPSVisualizer,
     ) {
         println!("{defect_vertices:?}");
-        let visualizer = {
-            let visualizer = Visualizer::new(
-                Some(visualize_data_folder() + visualize_filename.as_str()),
-                code.get_positions(),
-                true,
-            )
-            .unwrap();
-            print_visualize_link(visualize_filename.clone());
-            visualizer
-        };
+        let visualizer = Visualizer::new(
+            Some(visualize_data_folder() + visualize_filename.as_str()),
+            code.get_positions(),
+            true,
+        )
+        .unwrap();
         // create dual module
         let model_graph = code.get_model_graph();
         primal_module_serial_basic_standard_syndrome_optional_viz(
@@ -1272,16 +1270,12 @@ pub mod tests {
         impl DualModuleImpl + MWPSVisualizer,
     ) {
         println!("{defect_vertices:?}");
-        let visualizer = {
-            let visualizer = Visualizer::new(
-                Some(visualize_data_folder() + visualize_filename.as_str()),
-                code.get_positions(),
-                true,
-            )
-            .unwrap();
-            print_visualize_link(visualize_filename.clone());
-            visualizer
-        };
+        let visualizer = Visualizer::new(
+            Some(visualize_data_folder() + visualize_filename.as_str()),
+            code.get_positions(),
+            true,
+        )
+        .unwrap();
         // create dual module
         let model_graph = code.get_model_graph();
         primal_module_serial_basic_standard_syndrome_optional_viz(

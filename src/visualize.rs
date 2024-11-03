@@ -3,7 +3,6 @@
 //! This module helps visualize the progress of a mwpf module
 //!
 
-use crate::chrono::Local;
 use crate::html_export::*;
 use crate::serde::{Deserialize, Serialize};
 use crate::serde_json;
@@ -490,6 +489,26 @@ impl Visualizer {
             serde_json::from_reader(file).expect("cannot read JSON from visualizer file");
         HTMLExport::generate_html(visualizer_data, override_config)
     }
+
+    pub fn save_html(&mut self, path: &str) {
+        let html = self.generate_html(json!({}));
+        let mut file = File::create(path).expect("cannot create HTML file");
+        file.write_all(html.as_bytes()).expect("cannot write to HTML file");
+    }
+
+    pub fn html_along_json_path(&self) -> String {
+        let path = self
+            .filepath
+            .clone()
+            .expect("unknown filepath, please provide a proper json file path when constructing the Visualizer");
+        assert!(path.ends_with(".json"));
+        format!("{}.html", &path.as_str()[..path.len() - 5])
+    }
+
+    pub fn save_html_along_json(&mut self) {
+        let html_path = self.html_along_json_path();
+        self.save_html(&html_path);
+    }
 }
 
 const DEFAULT_VISUALIZE_DATA_FOLDER: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/visualize/data/");
@@ -505,12 +524,8 @@ pub fn static_visualize_data_filename() -> String {
 }
 
 #[cfg_attr(feature = "python_binding", pyfunction)]
-pub fn auto_visualize_data_filename() -> String {
-    format!("{}.json", Local::now().format("%Y%m%d-%H-%M-%S%.3f"))
-}
-
-pub fn print_visualize_link(_: String) {
-    unimplemented!();
+pub fn static_visualize_html_filename() -> String {
+    "visualizer.html".to_string()
 }
 
 #[cfg(feature = "python_binding")]
@@ -519,7 +534,7 @@ pub(crate) fn register(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<VisualizePosition>()?;
     m.add_class::<Visualizer>()?;
     m.add_function(wrap_pyfunction!(static_visualize_data_filename, m)?)?;
-    m.add_function(wrap_pyfunction!(auto_visualize_data_filename, m)?)?;
+    m.add_function(wrap_pyfunction!(static_visualize_html_filename, m)?)?;
     m.add_function(wrap_pyfunction!(print_visualize_link, m)?)?;
     m.add_function(wrap_pyfunction!(center_positions, m)?)?;
     Ok(())

@@ -71,6 +71,12 @@ pub struct BenchmarkParameters {
     /// logging to the default visualizer file at visualize/data/visualizer.json
     #[clap(long, action)]
     enable_visualizer: bool,
+    /// generate json from the visualizer; if not provided, we will use 256MB max memory to store the JSON in memory, and move it to a temporary file (which is deleted when the program exit) if the size of the JSON exceeds 256MB.
+    #[clap(long)]
+    visualizer_json_filepath: Option<String>,
+    /// generate html from the visualizer
+    #[clap(long)]
+    visualizer_html_filepath: Option<String>,
     /// print syndrome patterns
     #[clap(long, action)]
     print_syndrome_pattern: bool,
@@ -284,6 +290,8 @@ impl Cli {
                 max_weight,
                 code_type,
                 enable_visualizer,
+                visualizer_json_filepath,
+                visualizer_html_filepath,
                 verifier,
                 total_rounds,
                 primal_dual_type,
@@ -303,10 +311,6 @@ impl Cli {
                 let mut code: Box<dyn ExampleCode> = code_type.build(d, p, noisy_measurements, max_weight, code_config);
                 if pe != 0. {
                     code.set_erasure_probability(pe);
-                }
-                if enable_visualizer {
-                    // print visualizer file path only once
-                    print_visualize_link(static_visualize_data_filename());
                 }
                 // create initializer and solver
                 let initializer = code.get_initializer();
@@ -335,12 +339,8 @@ impl Cli {
                     }
                     let mut visualizer = None;
                     if enable_visualizer {
-                        let new_visualizer = Visualizer::new(
-                            Some(visualize_data_folder() + static_visualize_data_filename().as_str()),
-                            code.get_positions(),
-                            true,
-                        )
-                        .unwrap();
+                        let new_visualizer =
+                            Visualizer::new(visualizer_json_filepath.clone(), code.get_positions(), true).unwrap();
                         visualizer = Some(new_visualizer);
                     }
                     primal_dual_solver.solve_visualizer(&syndrome_pattern, visualizer.as_mut());
@@ -351,6 +351,11 @@ impl Cli {
                         visualizer.as_mut(),
                         seed,
                     );
+                    if let Some(html_path) = &visualizer_html_filepath {
+                        if let Some(visualizer) = visualizer.as_mut() {
+                            visualizer.save_html(html_path);
+                        }
+                    }
                     primal_dual_solver.clear();
 
                     return;
@@ -376,12 +381,8 @@ impl Cli {
                     // create a new visualizer each round
                     let mut visualizer = None;
                     if enable_visualizer {
-                        let new_visualizer = Visualizer::new(
-                            Some(visualize_data_folder() + static_visualize_data_filename().as_str()),
-                            code.get_positions(),
-                            true,
-                        )
-                        .unwrap();
+                        let new_visualizer =
+                            Visualizer::new(visualizer_json_filepath.clone(), code.get_positions(), true).unwrap();
                         visualizer = Some(new_visualizer);
                     }
                     benchmark_profiler.begin(&syndrome_pattern, &error_pattern);
@@ -401,6 +402,11 @@ impl Cli {
 
                     if primal_dual_solver.get_tuning_time().is_some() {
                         primal_dual_solver.clear_tuning_time();
+                    }
+                    if let Some(html_path) = &visualizer_html_filepath {
+                        if let Some(visualizer) = visualizer.as_mut() {
+                            visualizer.save_html(html_path);
+                        }
                     }
 
                     if let Some(pb) = pb.as_mut() {

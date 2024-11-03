@@ -268,16 +268,12 @@ pub mod tests {
         impl DualModuleImpl + MWPSVisualizer,
     ) {
         println!("{defect_vertices:?}");
-        let visualizer = {
-            let visualizer = Visualizer::new(
-                Some(visualize_data_folder() + visualize_filename.as_str()),
-                code.get_positions(),
-                true,
-            )
-            .unwrap();
-            print_visualize_link(visualize_filename.clone());
-            visualizer
-        };
+        let visualizer = Visualizer::new(
+            Some(visualize_data_folder() + visualize_filename.as_str()),
+            code.get_positions(),
+            true,
+        )
+        .unwrap();
 
         // create dual module
         let model_graph = code.get_model_graph();
@@ -303,16 +299,12 @@ pub mod tests {
         impl DualModuleImpl + MWPSVisualizer,
     ) {
         println!("{defect_vertices:?}");
-        let visualizer = {
-            let visualizer = Visualizer::new(
-                Some(visualize_data_folder() + visualize_filename.as_str()),
-                code.get_positions(),
-                true,
-            )
-            .unwrap();
-            print_visualize_link(visualize_filename.clone());
-            visualizer
-        };
+        let visualizer = Visualizer::new(
+            Some(visualize_data_folder() + visualize_filename.as_str()),
+            code.get_positions(),
+            true,
+        )
+        .unwrap();
 
         // create dual module
         let model_graph = code.get_model_graph();
