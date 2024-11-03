@@ -18,7 +18,7 @@ interface Props {
 }
 
 const props = withDefaults(defineProps<Props>(), {
-    config: () => new ConfigProps()
+    config: () => new ConfigProps(),
 })
 
 const config = ref(new Config(new RuntimeData(props.visualizer), props.config))

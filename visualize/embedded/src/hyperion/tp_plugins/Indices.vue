@@ -7,7 +7,7 @@ interface Props {
 }
 const props = withDefaults(defineProps<Props>(), {
     titleWidth: 30,
-    width: 300
+    width: 300,
 })
 </script>
 

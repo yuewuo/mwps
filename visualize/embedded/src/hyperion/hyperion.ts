@@ -7,7 +7,7 @@ export const renderer_params = {
     alpha: true,
     powerPreference: 'high-performance',
     precision: 'highp',
-    stencil: true
+    stencil: true,
 }
 
 export interface Position {

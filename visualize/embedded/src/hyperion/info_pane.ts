@@ -22,7 +22,7 @@ export class Info {
         this.pane = new Pane({
             title: 'Snapshot Info',
             container: container,
-            expanded: true
+            expanded: true,
         })
         this.pane.registerPlugin(EssentialsPlugin)
         this.pane.registerPlugin(HyperionPluginBundle)
@@ -36,7 +36,6 @@ export class Info {
         dual_folder.addBinding(this, 'display_zero_dual_variables')
         dual_folder.addBlade({ view: 'vue', app: createApp(DualNodes, { info: this }) })
         watchEffect(() => {
-            console.log(this.config.snapshot.interface.sum_dual)
             dual_folder.title = `Dual Variables (𝚺ys = ${this.config.snapshot.interface.sum_dual})`
         })
     }

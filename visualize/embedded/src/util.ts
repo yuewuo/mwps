@@ -62,5 +62,21 @@ export const bigInt = {
         const preliminaryJSON = JSON.stringify(data, (_, value) => (typeof value === 'bigint' ? value.toString() + 'n' : value))
         const prettyJSON = stringify(JSON.parse(preliminaryJSON), options)
         return prettyJSON.replace(bigInts, '$1$2n$3')
-    }
+    },
+}
+
+export async function compress_content (buffer: ArrayBuffer): Promise<string> {
+    const blob = new Blob([buffer])
+    const stream = blob.stream().pipeThrough(new CompressionStream('gzip'))
+    const compressed = await new Response(stream).arrayBuffer()
+    const base64_string = array_buffer_to_base64(compressed)
+    return base64_string
+}
+
+export async function decompress_content (base64_str: string): Promise<ArrayBuffer> {
+    const base64_binary = base64_to_array_buffer(base64_str)
+    const blob = new Blob([base64_binary])
+    const decompressed_stream = blob.stream().pipeThrough(new DecompressionStream('gzip'))
+    const decompressed = await new Response(decompressed_stream).arrayBuffer()
+    return decompressed
 }

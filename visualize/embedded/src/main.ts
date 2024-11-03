@@ -6,6 +6,10 @@ import { createApp } from 'vue'
 import { bigInt } from '@/util'
 
 function bind_to_div (div_selector: string, visualizer: VisualizerData, config?: ConfigProps) {
+    // TODO: when config.full_screen is true, check for url to load data from link instead
+    if (config?.full_screen) {
+        // visualizer
+    }
     const app = createApp(Hyperion, { visualizer, config })
     app.mount(div_selector)
 }
@@ -20,5 +24,5 @@ export const hyperion_visual = {
 
     bigInt,
     bind_to_div,
-    default_config
+    default_config,
 }

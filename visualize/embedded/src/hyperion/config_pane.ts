@@ -3,6 +3,7 @@ import { Pane, FolderApi } from 'tweakpane'
 import * as EssentialsPlugin from '@tweakpane/plugin-essentials'
 import { type ButtonGridApi } from '@tweakpane/plugin-essentials'
 import { assert, bigInt } from '@/util'
+import * as HTMLExport from './html_export'
 import { Vector3, OrthographicCamera, WebGLRenderer, Vector2 } from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { RuntimeData, ConfigProps, renderer_params, type Snapshot } from './hyperion'
@@ -23,7 +24,7 @@ export const key_shortcuts: Array<KeyShortcutDescription> = [
     { key: 'I', description: 'toggle info' },
     { key: 'S', description: 'toggle stats' },
     { key: '⬅', description: 'last snapshot' },
-    { key: '⮕', description: 'next snapshot' }
+    { key: '⮕', description: 'next snapshot' },
 ]
 
 /* configuration helper class given the runtime data */
@@ -64,7 +65,7 @@ export class Config {
         this.pane = new Pane({
             title: this.title,
             container: container,
-            expanded: false
+            expanded: false,
         })
         this.pane.registerPlugin(EssentialsPlugin)
         const pane: FolderApi = this.pane
@@ -72,8 +73,6 @@ export class Config {
         for (const [name] of this.data.visualizer.snapshots) {
             snapshot_names.push(name as string)
         }
-        // add export/import buttons
-        this.add_import_export(pane.addFolder({ title: 'Import/Export', expanded: true }))
         // add everything else
         this.snapshot_config.add_to(pane.addFolder({ title: 'Snapshot', expanded: true }), snapshot_names)
         this.camera.add_to(pane.addFolder({ title: 'Camera', expanded: false }))
@@ -83,6 +82,8 @@ export class Config {
         // add shortcut guide
         pane.addBlade({ view: 'separator' })
         this.add_shortcut_guide(pane.addFolder({ title: 'Key Shortcuts', expanded: true }))
+        // add export/import buttons
+        this.add_import_export(pane.addFolder({ title: 'Import/Export', expanded: true }))
         // if the config is passed from props, import it (must execute after all elements are created)
         if (this.config_prop.visualizer_config != undefined) {
             this.parameters = JSON.stringify(this.config_prop.visualizer_config)
@@ -99,8 +100,8 @@ export class Config {
             view: 'buttongrid',
             size: [2, 1],
             cells: (x: number) => ({
-                title: ['export parameters', 'import parameters'][x]
-            })
+                title: ['export parameters', 'import parameters'][x],
+            }),
         }) as any
         parameter_buttons.on('click', (event: any) => {
             if (event.index[0] == 0) {
@@ -116,8 +117,8 @@ export class Config {
             view: 'buttongrid',
             size: [2, 1],
             cells: (x: number) => ({
-                title: ['Open PNG', 'Download PNG'][x]
-            })
+                title: ['Open PNG', 'Download PNG'][x],
+            }),
         }) as any
         png_buttons.on('click', (event: any) => {
             const data_url = this.generate_png()
@@ -135,8 +136,8 @@ export class Config {
             view: 'buttongrid',
             size: [2, 1],
             cells: (x: number) => ({
-                title: ['Open JSON', 'Download JSON'][x]
-            })
+                title: ['Open JSON', 'Download JSON'][x],
+            }),
         }) as any
         data_buttons.on('click', (event: any) => {
             if (event.index[0] == 0) {
@@ -145,6 +146,26 @@ export class Config {
                 this.download_visualizer_data()
             }
         })
+        // add html page export
+        const html_buttons: ButtonGridApi = pane.addBlade({
+            view: 'buttongrid',
+            size: [2, 1],
+            cells: (x: number) => ({
+                title: ['Open HTML', 'Download HTML', 'Download '][x],
+            }),
+        }) as any
+        if (HTMLExport.available) {
+            html_buttons.on('click', (event: any) => {
+                if (event.index[0] == 0) {
+                    this.open_html()
+                } else {
+                    this.download_html()
+                }
+            })
+        } else {
+            html_buttons.disabled = true
+            console.warn('Open/Download HTML only available in release build (which has compressed js library)')
+        }
     }
 
     generate_png (): string | undefined {
@@ -212,6 +233,25 @@ export class Config {
         a.click()
     }
 
+    open_html () {
+        const w = window.open('', '')
+        if (w == null) {
+            alert('cannot open new window')
+            return
+        }
+        const htmlText = HTMLExport.generate_inline_html(this.data.visualizer)
+        w.document.write(htmlText)
+        w.document.close()
+    }
+
+    download_html () {
+        const a = document.createElement('a')
+        const htmlText = HTMLExport.generate_inline_html(this.data.visualizer)
+        a.href = 'data:text/html;base64,' + btoa(htmlText)
+        a.download = 'mwpf-vis.html'
+        a.click()
+    }
+
     add_shortcut_guide (pane: FolderApi): void {
         for (const key_shortcut of key_shortcuts) {
             pane.addBlade({
@@ -219,7 +259,7 @@ export class Config {
                 label: key_shortcut.description,
                 parse: (v: string) => v,
                 value: key_shortcut.key,
-                disabled: true
+                disabled: true,
             })
         }
     }
@@ -328,9 +368,9 @@ export class CameraConfig {
             view: 'buttongrid',
             size: [3, 1],
             cells: (x: number) => ({
-                title: names[x]
+                title: names[x],
             }),
-            label: 'reset view'
+            label: 'reset view',
         }) as any
         camera_position_buttons.on('click', (event: any) => {
             const i: number = event.index[0]

@@ -9,7 +9,7 @@ import {
     type Blade,
     parseRecord,
     type MicroParser,
-    BladeApi
+    BladeApi,
 } from '@tweakpane/core'
 import { type App } from 'vue'
 
@@ -31,7 +31,7 @@ export const TpVuePlugin: BladePlugin<TpVueConfig> = createPlugin({
     accept (params: Record<string, unknown>) {
         const result = parseRecord<TpVueConfig>(params, p => ({
             view: p.required.constant('vue'),
-            app: p.required.raw as MicroParser<App>
+            app: p.required.raw as MicroParser<App>,
         }))
         return result ? { params: result } : null
     },
@@ -43,7 +43,7 @@ export const TpVuePlugin: BladePlugin<TpVueConfig> = createPlugin({
             return null
         }
         return new BladeApi<TpVueBladeController>(args.controller)
-    }
+    },
 })
 
 export class TpVueBladeController extends BladeController<View> {
@@ -67,5 +67,5 @@ export const HyperionPluginBundle: TpPluginBundle = {
     // Identifier of the plugin bundle
     id: 'hyperion',
     // Plugins that should be registered
-    plugins: [TpVuePlugin]
+    plugins: [TpVuePlugin],
 }

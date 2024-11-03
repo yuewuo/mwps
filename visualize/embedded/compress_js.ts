@@ -1,7 +1,7 @@
 import path from 'path'
 import fs from 'fs'
 import { PluginOption } from 'vite'
-import { array_buffer_to_base64, base64_to_array_buffer, assert_buffer_equal, assert } from './src/util'
+import { compress_content, decompress_content, assert_buffer_equal, assert } from './src/util'
 
 export class PluginConfig {
     enabled: boolean = true
@@ -13,22 +13,6 @@ export class PluginConfig {
         this.js_filename = js_filename
         this.gzip_filename = gzip_filename
     }
-}
-
-export async function compress_content (buffer: ArrayBuffer): Promise<string> {
-    const blob = new Blob([buffer])
-    const stream = blob.stream().pipeThrough(new CompressionStream('gzip'))
-    const compressed = await new Response(stream).arrayBuffer()
-    const base64_string = array_buffer_to_base64(compressed)
-    return base64_string
-}
-
-export async function decompress_content (base64_str: string): Promise<ArrayBuffer> {
-    const base64_binary = base64_to_array_buffer(base64_str)
-    const blob = new Blob([base64_binary])
-    const decompressed_stream = blob.stream().pipeThrough(new DecompressionStream('gzip'))
-    const decompressed = await new Response(decompressed_stream).arrayBuffer()
-    return decompressed
 }
 
 async function do_compress (folder: string, js_filename: string, gzip_filename: string) {
@@ -100,26 +84,26 @@ load_module()
         fs.unlinkSync(standalone_html_filepath)
     }
     fs.writeFileSync(standalone_html_filepath, standalone_html_content)
-    // also generate a compressed javascript file and its corresponding html
-    const compressed_js_filename = 'hyperion-visual.compressed.js'
-    const compressed_js_filepath = path.join(folder, compressed_js_filename)
-    if (fs.existsSync(compressed_js_filepath)) {
-        fs.unlinkSync(compressed_js_filepath)
-    }
-    fs.writeFileSync(compressed_js_filepath, js_code)
-    // generate a html file that invokes the above javascript
-    const invoke_compressed_js_code = `
-    const script = document.createElement('script')
-    script.id = "hyperion_visual_compressed_js_library"
-    script.src = "./${compressed_js_filename}"
-    document.body.appendChild(script)
-    `
-    const invoke_compressed_html_content = prefix + invoke_compressed_js_code + suffix
-    const invoke_compressed_html_filepath = path.join(folder, 'invoke-compressed.html')
-    if (fs.existsSync(invoke_compressed_html_filepath)) {
-        fs.unlinkSync(invoke_compressed_html_filepath)
-    }
-    fs.writeFileSync(invoke_compressed_html_filepath, invoke_compressed_html_content)
+    // // also generate a compressed javascript file and its corresponding html
+    // const compressed_js_filename = 'hyperion-visual.compressed.js'
+    // const compressed_js_filepath = path.join(folder, compressed_js_filename)
+    // if (fs.existsSync(compressed_js_filepath)) {
+    //     fs.unlinkSync(compressed_js_filepath)
+    // }
+    // fs.writeFileSync(compressed_js_filepath, js_code)
+    // // generate a html file that invokes the above javascript
+    // const invoke_compressed_js_code = `
+    // const script = document.createElement('script')
+    // script.id = "hyperion_visual_compressed_js_library"
+    // script.src = "./${compressed_js_filename}"
+    // document.body.appendChild(script)
+    // `
+    // const invoke_compressed_html_content = prefix + invoke_compressed_js_code + suffix
+    // const invoke_compressed_html_filepath = path.join(folder, 'invoke-compressed.html')
+    // if (fs.existsSync(invoke_compressed_html_filepath)) {
+    //     fs.unlinkSync(invoke_compressed_html_filepath)
+    // }
+    // fs.writeFileSync(invoke_compressed_html_filepath, invoke_compressed_html_content)
 }
 
 export function compress_js (user_config: PluginConfig): PluginOption {
@@ -133,6 +117,6 @@ export function compress_js (user_config: PluginConfig): PluginOption {
             }
             await do_compress(folder, js_filename, gzip_filename)
             await generate_self_contained_html(folder, gzip_filename)
-        }
+        },
     }
 }
