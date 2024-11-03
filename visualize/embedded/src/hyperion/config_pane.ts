@@ -10,6 +10,7 @@ import { RuntimeData, ConfigProps, renderer_params, type Snapshot } from './hype
 import { Prism } from 'prism-esm'
 import { loader as JsonLoader } from 'prism-esm/components/prism-json.js'
 import prismCSS from 'prism-esm/themes/prism.min.css?raw'
+import * as TextareaPlugin from '@pangenerator/tweakpane-textarea-plugin'
 
 interface KeyShortcutDescription {
     key: string
@@ -17,14 +18,10 @@ interface KeyShortcutDescription {
 }
 
 export const key_shortcuts: Array<KeyShortcutDescription> = [
-    { key: 'T', description: 'top view' },
-    { key: 'L', description: 'left view' },
-    { key: 'F', description: 'front view' },
-    { key: 'C', description: 'toggle config' },
-    { key: 'I', description: 'toggle info' },
-    { key: 'S', description: 'toggle stats' },
-    { key: '⬅', description: 'last snapshot' },
-    { key: '⮕', description: 'next snapshot' },
+    { key: 'T/L/F', description: 'top/left/front view' },
+    { key: 'C/I/S', description: 'toggle config/info/stat' },
+    { key: 'D/A', description: 'toggle dual/active info' },
+    { key: '⬅/⮕', description: 'previous/next snapshot' },
 ]
 
 /* configuration helper class given the runtime data */
@@ -68,6 +65,7 @@ export class Config {
             expanded: false,
         })
         this.pane.registerPlugin(EssentialsPlugin)
+        this.pane.registerPlugin(TextareaPlugin)
         const pane: FolderApi = this.pane
         const snapshot_names = []
         for (const [name] of this.data.visualizer.snapshots) {
@@ -94,6 +92,11 @@ export class Config {
     parameters: string = '' // export or import parameters of the tweak pane
     renderer: any = undefined
     png_scale: number = 1
+    html_include_parameters: boolean = true
+    html_use_visualizer_data: string = ''
+    html_compress_data: boolean = true
+    html_show_info: boolean = true
+    html_show_config: boolean = true
     add_import_export (pane: FolderApi): void {
         // add parameter import/export
         const parameter_buttons: ButtonGridApi = pane.addBlade({
@@ -154,6 +157,17 @@ export class Config {
                 title: ['Open HTML', 'Download HTML', 'Download '][x],
             }),
         }) as any
+        const html_export_folder = pane.addFolder({ title: 'HTML Export Config', expanded: false })
+        html_export_folder.addBinding(this, 'html_include_parameters', { label: 'save parameters' })
+        html_export_folder.addBinding(this, 'html_compress_data', { label: 'compress data' })
+        html_export_folder.addBinding(this, 'html_show_info', { label: 'show info' })
+        html_export_folder.addBinding(this, 'html_show_config', { label: 'show config' })
+        html_export_folder.addBinding(this, 'html_use_visualizer_data', {
+            view: 'textarea',
+            rows: 3,
+            label: 'use alternative visualizer data (paste here)',
+            placeholder: 'Type here...',
+        })
         if (HTMLExport.available) {
             html_buttons.on('click', (event: any) => {
                 if (event.index[0] == 0) {
@@ -164,6 +178,7 @@ export class Config {
             })
         } else {
             html_buttons.disabled = true
+            html_export_folder.disabled = true
             console.warn('Open/Download HTML only available in release build (which has compressed js library)')
         }
     }
@@ -233,21 +248,41 @@ export class Config {
         a.click()
     }
 
+    generate_html (): string {
+        let visualizer_data = this.data.visualizer
+        if (this.html_use_visualizer_data != '') {
+            try {
+                visualizer_data = bigInt.JSONParse(this.html_use_visualizer_data)
+            } catch (e) {
+                alert('failed to parse visualizer data')
+                throw e
+            }
+            this.html_use_visualizer_data = '' // clear the field if no problem
+        }
+        const config_props = new ConfigProps()
+        config_props.show_info = this.html_show_info
+        config_props.show_config = this.html_show_config
+        if (this.html_include_parameters) {
+            config_props.visualizer_config = this.pane.exportState()
+        }
+        return HTMLExport.generate_html(visualizer_data, this.html_compress_data, config_props)
+    }
+
     open_html () {
+        const html = this.generate_html() // may have exception, put in the front
         const w = window.open('', '')
         if (w == null) {
             alert('cannot open new window')
             return
         }
-        const htmlText = HTMLExport.generate_inline_html(this.data.visualizer)
-        w.document.write(htmlText)
+        w.document.write(html)
         w.document.close()
     }
 
     download_html () {
+        const html = this.generate_html() // may have exception, put in the front
         const a = document.createElement('a')
-        const htmlText = HTMLExport.generate_inline_html(this.data.visualizer)
-        a.href = 'data:text/html;base64,' + btoa(htmlText)
+        a.href = 'data:text/html;charset=utf-8,' + encodeURIComponent(html)
         a.download = 'mwpf-vis.html'
         a.click()
     }
@@ -256,9 +291,9 @@ export class Config {
         for (const key_shortcut of key_shortcuts) {
             pane.addBlade({
                 view: 'text',
-                label: key_shortcut.description,
+                label: key_shortcut.key,
                 parse: (v: string) => v,
-                value: key_shortcut.key,
+                value: key_shortcut.description,
                 disabled: true,
             })
         }

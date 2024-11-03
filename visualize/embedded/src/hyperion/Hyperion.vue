@@ -141,6 +141,24 @@ function onKeyDown(event: KeyboardEvent) {
             }
         } else if (event.key == 's' || event.key == 'S') {
             config.value.basic.show_stats = !config.value.basic.show_stats
+        } else if (event.key == 'd' || event.key == 'D') {
+            const current_showing = show_info.value && info.value.pane.expanded && info.value.dual_folder.expanded
+            if (current_showing) {
+                info.value.dual_folder.expanded = false
+            } else {
+                show_info.value = true
+                info.value.pane.expanded = true
+                info.value.dual_folder.expanded = true
+            }
+        } else if (event.key == 'a' || event.key == 'A') {
+            const current_showing = show_info.value && info.value.pane.expanded && info.value.selection_folder.expanded
+            if (current_showing) {
+                info.value.selection_folder.expanded = false
+            } else {
+                show_info.value = true
+                info.value.pane.expanded = true
+                info.value.selection_folder.expanded = true
+            }
         } else if (event.key == 'ArrowRight') {
             if (config.value.snapshot_index < config.value.snapshot_num - 1) {
                 config.value.snapshot_index += 1
