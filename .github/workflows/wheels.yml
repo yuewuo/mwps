@@ -12,7 +12,7 @@ on:
 jobs: # Workflow credit to https://github.com/samuelcolvin/rtoml/blob/main/.github/workflows/ci.yml
 
   build_wheels:
-    name: Build wheels py3.${{ matrix.python-version }} on ${{ matrix.os }}
+    name: Build wheels py3.${{ matrix.python-version }} on ${{ matrix.os }} (${{ matrix.build-feature }})
     strategy:
       fail-fast: true
       # fail-fast: false
@@ -96,7 +96,7 @@ jobs: # Workflow credit to https://github.com/samuelcolvin/rtoml/blob/main/.gith
             curl https://sh.rustup.rs -sSf | sh -s -- --default-toolchain=nightly-2023-11-16 --profile=minimal -y &&
             . "$HOME/.cargo/env" &&
             rustup show &&
-            curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.0/install.sh | bash && . "$HOME/.bashrc" && nvm install 20 && node -v && npm -v
+            curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.0/install.sh | bash && . "$HOME/.bashrc" && nvm install 18 && node -v && npm -v
 
       - name: list wheel files
         run: ${{ matrix.ls || 'ls -lh' }} wheelhouse/
