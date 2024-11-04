@@ -1,4 +1,5 @@
 #![forbid(missing_docs)]
+#![feature(offset_of)]
 //! Safe rust binding to the [HiGHS](https://highs.dev) linear programming solver.
 //!
 //! ## Usage example

@@ -1,5 +1,4 @@
 #![cfg_attr(feature = "python_binding", feature(cfg_eval))]
-#![feature(offset_of)]
 
 extern crate serde;
 #[macro_use]
