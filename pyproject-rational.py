@@ -5,6 +5,7 @@ patches = [
         "Cargo.toml",
         [
             ('name = "mwpf"', 'name = "mwpf_rational"'),
+            ('default-run = "mwpf"', 'default-run = "mwpf_rational"'),
         ],
     ),
     (
