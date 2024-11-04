@@ -57,6 +57,13 @@ pub mod visualize;
 #[cfg(feature = "python_binding")]
 use pyo3::prelude::*;
 
+/// include the CLI in Python package: python3 -m mwpf --help
+#[cfg_attr(feature = "python_binding", pyfunction)]
+pub fn run_cli(parameters: Vec<String>) {
+    use crate::clap::Parser;
+    cli::Cli::parse_from(parameters).run();
+}
+
 #[cfg(feature = "python_binding")]
 #[pymodule]
 fn mwpf(py: Python<'_>, m: &PyModule) -> PyResult<()> {
@@ -65,6 +72,7 @@ fn mwpf(py: Python<'_>, m: &PyModule) -> PyResult<()> {
     example_codes::register(py, m)?;
     mwpf_solver::register(py, m)?;
     html_export::register(py, m)?;
+    m.add_wrapped(wrap_pyfunction!(run_cli))?;
     Ok(())
 }
 
