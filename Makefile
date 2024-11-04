@@ -38,7 +38,6 @@ check: clean-env
 	# cargo check --features u32_index
 	# cargo check --lib --no-default-features --features wasm_binding
 	# cargo check --lib --no-default-features --features wasm_binding,u32_index
-	cargo check --features cluster_size_limit
 	cargo check --release
 
 python: clean-env

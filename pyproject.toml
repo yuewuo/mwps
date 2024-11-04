@@ -29,11 +29,7 @@ classifiers = [
 ]
 
 [tool.maturin]
-features = [
-    "python_binding",
-    "f64_weight",
-    "cluster_size_limit",
-    "embed_visualizer",
-]
+no-default-features = true
+features = ["python_binding", "f64_weight", "embed_visualizer"]
 bindings = "pyo3"
-cargo-extra-args = "--features python_binding,f64_weight,cluster_size_limit,embed_visualizer"
+cargo-extra-args = "--no-default-features --features python_binding,f64_weight,embed_visualizer"

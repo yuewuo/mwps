@@ -85,7 +85,6 @@ pub struct SolverSerialPluginsConfig {
     /// growing strategy
     #[serde(default = "hyperion_default_configs::growing_strategy")]
     growing_strategy: GrowingStrategy,
-    #[cfg(feature = "cluster_size_limit")]
     /// cluster size limit for the primal module in the tuning phase
     /// this is the threshold for which LP will not be ran on a specific cluster to optimize the solution
     pub tuning_cluster_size_limit: Option<usize>,
@@ -128,11 +127,7 @@ impl SolverSerialPlugins {
         primal_module.growing_strategy = config.growing_strategy;
         primal_module.plugins = plugins;
         primal_module.config = config.primal.clone();
-
-        #[cfg(feature = "cluster_size_limit")]
-        {
-            primal_module.cluster_node_limit = config.tuning_cluster_size_limit;
-        }
+        primal_module.cluster_node_limit = config.tuning_cluster_size_limit;
 
         Self {
             dual_module: DualModulePQ::new_empty(initializer),

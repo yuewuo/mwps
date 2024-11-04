@@ -14,8 +14,6 @@ extern crate more_asserts;
 extern crate num_rational;
 extern crate num_traits;
 extern crate parking_lot;
-#[cfg(feature = "cli")]
-extern crate pbr;
 extern crate prettytable;
 #[cfg(feature = "python_binding")]
 extern crate pyo3;
@@ -27,7 +25,6 @@ extern crate urlencoding;
 #[cfg(feature = "wasm_binding")]
 extern crate wasm_bindgen;
 
-#[cfg(feature = "cli")]
 pub mod cli;
 pub mod decoding_hypergraph;
 pub mod dual_module;
