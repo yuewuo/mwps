@@ -60,7 +60,7 @@ jobs: # Workflow credit to https://github.com/samuelcolvin/rtoml/blob/main/.gith
 
       - name: apply patch to build different packages
         if: matrix.build-feature != 'default'
-        run: python pyproject-${{ matrix.build-feature }}.py
+        run: python pyproject-${{ matrix.build-feature }}.py apply
 
       - name: Build Wheels
         run: python -m cibuildwheel --output-dir wheelhouse
