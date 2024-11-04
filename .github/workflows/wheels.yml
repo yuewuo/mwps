@@ -19,8 +19,8 @@ jobs: # Workflow credit to https://github.com/samuelcolvin/rtoml/blob/main/.gith
       matrix:
         os:
           - ubuntu
-          - macos
-          - windows
+          # - macos
+          # - windows
         python-version: # Yue 2022.10.9: I enabled abi3-py37 in pyo3, so everything built will be py37-abi3 which is compatible with py37+
           - '8' # use python 3.8 to build because macos universal2 requires at least python 3.8; however the result will be py37-abi3
         include:
@@ -54,6 +54,11 @@ jobs: # Workflow credit to https://github.com/samuelcolvin/rtoml/blob/main/.gith
           profile: minimal
           toolchain: nightly-2023-11-16
           override: true
+          
+      - name: Install NodeJs
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
 
       - name: Install Python dependencies
         run: python -m pip install -U setuptools wheel twine cibuildwheel
@@ -91,6 +96,10 @@ jobs: # Workflow credit to https://github.com/samuelcolvin/rtoml/blob/main/.gith
             curl https://sh.rustup.rs -sSf | sh -s -- --default-toolchain=nightly-2023-11-16 --profile=minimal -y &&
             . "$HOME/.cargo/env" &&
             rustup show
+            curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.0/install.sh | bash
+            nvm install 22
+            node -v
+            npm -v
 
       - name: list wheel files
         run: ${{ matrix.ls || 'ls -lh' }} wheelhouse/
