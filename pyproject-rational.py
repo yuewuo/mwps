@@ -1,3 +1,5 @@
+import sys
+
 patches = [
     (
         "Cargo.toml",
@@ -37,5 +39,11 @@ def patch(dry):
 
 
 if __name__ == "__main__":
-    patch(dry=True)
-    patch(dry=False)
+    assert len(sys.argv) == 2, "Usage: python pyproject-rational.py [dry|apply]"
+    if sys.argv[1] == "dry":
+        patch(dry=True)
+    elif sys.argv[1] == "apply":
+        patch(dry=True)
+        patch(dry=False)
+    else:
+        raise ValueError("Invalid argument, should be dry or apply")
