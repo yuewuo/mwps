@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref, computed, provide, watchEffect, onBeforeUnmount, useTemplateRef } from 'vue'
+import { onMounted, ref, computed, provide, watchEffect, onBeforeUnmount, useTemplateRef, onUnmounted } from 'vue'
 import { Renderer, OrthographicCamera, Scene, AmbientLight } from 'troisjs'
 import { type VisualizerData, RuntimeData, ConfigProps, renderer_params } from './hyperion'
 import { Config } from './config_pane'
@@ -44,7 +44,12 @@ const height = computed(() => width.value / config.value.basic.aspect_ratio)
 const orthographic_camera = useTemplateRef('orthographic_camera_ref')
 const raycaster = new Raycaster()
 
+onUnmounted(() => {
+    console.log('Hyperion.vue unmounted')
+})
 onMounted(() => {
+    console.log('Hyperion.vue mounted')
+
     // pass camera object
     const camera: ThreeOrthographicCamera = (orthographic_camera.value as any).camera
     const orbit_controls: OrbitControls = (renderer.value as any).three.cameraCtrl

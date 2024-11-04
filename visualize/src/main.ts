@@ -2,10 +2,10 @@ import { parity_matrix } from './parity_matrix/parity_matrix'
 import { hypergraph } from './hypergraph/hypergraph'
 import { type VisualizerData, ConfigProps } from '@/hyperion/hyperion'
 import Hyperion from '@/hyperion/Hyperion.vue'
-import { createApp } from 'vue'
+import { createApp, type App } from 'vue'
 import { bigInt, decompress_content } from '@/util'
 
-async function bind_to_div (div_selector: string, visualizer: VisualizerData | string, config?: ConfigProps) {
+async function bind_to_div (div_selector: string, visualizer: VisualizerData | string, config?: ConfigProps): Promise<App<Element>> {
     if (typeof visualizer === 'string') {
         const decompressed = await decompress_content(visualizer)
         const text_decoder = new TextDecoder('utf-8')
@@ -14,6 +14,7 @@ async function bind_to_div (div_selector: string, visualizer: VisualizerData | s
     }
     const app = createApp(Hyperion, { visualizer, config })
     app.mount(div_selector)
+    return app
 }
 
 function default_config (): ConfigProps {

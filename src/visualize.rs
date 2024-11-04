@@ -65,7 +65,7 @@ impl VisualizePosition {
     }
 }
 
-trait VisualizerFileTrait: std::io::Write + std::io::Read + std::io::Seek + std::fmt::Debug {
+trait VisualizerFileTrait: std::io::Write + std::io::Read + std::io::Seek + std::fmt::Debug + Send {
     fn set_len(&mut self, len: u64) -> std::io::Result<()>;
     fn sync_all(&mut self) -> std::io::Result<()>;
 }
@@ -325,7 +325,7 @@ pub fn center_positions(mut positions: Vec<VisualizePosition>) -> Vec<VisualizeP
 impl Visualizer {
     /// create a new visualizer with target filename and node layout
     #[cfg_attr(feature = "python_binding", new)]
-    #[cfg_attr(feature = "python_binding", pyo3(signature = (filepath="", positions=vec![], center=true)))]
+    #[cfg_attr(feature = "python_binding", pyo3(signature = (filepath="".to_string(), positions=vec![], center=true)))]
     pub fn new(mut filepath: Option<String>, mut positions: Vec<VisualizePosition>, center: bool) -> std::io::Result<Self> {
         if cfg!(feature = "disable_visualizer") {
             filepath = None; // do not open file
@@ -410,6 +410,36 @@ impl Visualizer {
         let value = pyobject_to_json(value_py);
         self.snapshot_value(name, value)
     }
+
+    #[cfg(feature = "python_binding")]
+    #[pyo3(name = "show", signature = (override_config = None))]
+    pub fn show_py(&mut self, override_config: Option<PyObject>) {
+        let override_config = if let Some(override_config) = override_config {
+            pyobject_to_json(override_config)
+        } else {
+            json!({})
+        };
+        HTMLExport::display_jupyter_html(self.get_visualizer_data(), override_config);
+    }
+
+    #[cfg(feature = "python_binding")]
+    #[pyo3(name = "generate_html", signature = (override_config = None))]
+    pub fn generate_html_py(&mut self, override_config: Option<PyObject>) -> String {
+        let override_config = if let Some(override_config) = override_config {
+            pyobject_to_json(override_config)
+        } else {
+            json!({})
+        };
+        self.generate_html(override_config)
+    }
+
+    #[cfg(feature = "python_binding")]
+    #[pyo3(name = "save_html", signature = (path, override_config = None))]
+    pub fn save_html_py(&mut self, path: String, override_config: Option<PyObject>) {
+        let html = self.generate_html_py(override_config);
+        let mut file = File::create(path).expect("cannot create HTML file");
+        file.write_all(html.as_bytes()).expect("cannot write to HTML file");
+    }
 }
 
 impl Visualizer {
@@ -480,14 +510,16 @@ impl Visualizer {
         Ok(())
     }
 
-    pub fn generate_html(&mut self, override_config: serde_json::Value) -> String {
+    pub fn get_visualizer_data(&mut self) -> serde_json::Value {
         // read JSON data from the file
         let file = self.file.as_mut().expect("visualizer file is not opened, please provide filename (could be empty string for temporary file) when constructing the visualizer");
         file.seek(SeekFrom::Start(0))
             .expect("cannot seek to the beginning of the file");
-        let visualizer_data: serde_json::Value =
-            serde_json::from_reader(file).expect("cannot read JSON from visualizer file");
-        HTMLExport::generate_html(visualizer_data, override_config)
+        serde_json::from_reader(file).expect("cannot read JSON from visualizer file")
+    }
+
+    pub fn generate_html(&mut self, override_config: serde_json::Value) -> String {
+        HTMLExport::generate_html(self.get_visualizer_data(), override_config)
     }
 
     pub fn save_html(&mut self, path: &str) {
@@ -518,12 +550,10 @@ pub fn visualize_data_folder() -> String {
     DEFAULT_VISUALIZE_DATA_FOLDER.to_string()
 }
 
-#[cfg_attr(feature = "python_binding", pyfunction)]
 pub fn static_visualize_data_filename() -> String {
     "visualizer.json".to_string()
 }
 
-#[cfg_attr(feature = "python_binding", pyfunction)]
 pub fn static_visualize_html_filename() -> String {
     "visualizer.html".to_string()
 }
@@ -533,9 +563,6 @@ pub fn static_visualize_html_filename() -> String {
 pub(crate) fn register(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<VisualizePosition>()?;
     m.add_class::<Visualizer>()?;
-    m.add_function(wrap_pyfunction!(static_visualize_data_filename, m)?)?;
-    m.add_function(wrap_pyfunction!(static_visualize_html_filename, m)?)?;
-    m.add_function(wrap_pyfunction!(print_visualize_link, m)?)?;
     m.add_function(wrap_pyfunction!(center_positions, m)?)?;
     Ok(())
 }

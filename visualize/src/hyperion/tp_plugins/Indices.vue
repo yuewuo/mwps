@@ -62,11 +62,13 @@ const props = withDefaults(defineProps<Props>(), {
     align-items: center;
 }
 .idx-button {
+    border: solid black 1px;
+    border-radius: 3px;
     height: 14px;
     display: inline;
     font-size: 10px;
     line-height: 10px;
-    padding: 0 0 1px 0;
+    padding: 0 1px 1px 2px;
     margin: 0 1px 0 1px;
 }
 .idx-button:hover {

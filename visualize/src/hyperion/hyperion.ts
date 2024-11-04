@@ -121,6 +121,7 @@ export class ConfigProps {
     full_screen: boolean = false
     segments: number = 32
     visualizer_config: any = undefined
+    initial_aspect_ratio?: number = undefined
 }
 
 /*

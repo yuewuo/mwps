@@ -64,6 +64,7 @@ fn mwpf(py: Python<'_>, m: &PyModule) -> PyResult<()> {
     visualize::register(py, m)?;
     example_codes::register(py, m)?;
     mwpf_solver::register(py, m)?;
+    html_export::register(py, m)?;
     Ok(())
 }
 

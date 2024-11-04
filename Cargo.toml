@@ -95,7 +95,6 @@ heapz = { path = "src/heapz" }
 hashbrown = "0.14.5"
 pheap = { path = "src/pheap" }
 tempfile = "3.13.0"
-include_optional = "1.0.1"
 flate2 = "1.0.34"
 base64 = "0.22.1"
 

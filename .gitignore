@@ -46,3 +46,4 @@ rustc-ice*
 
 # logs
 *.log
+.ipynb_checkpoints

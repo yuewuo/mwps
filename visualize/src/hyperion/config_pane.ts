@@ -355,14 +355,14 @@ export class BasicConfig {
 
     constructor (config_props: ConfigProps) {
         this.config_props = config_props
+        if (config_props.initial_aspect_ratio != undefined) {
+            this.aspect_ratio = config_props.initial_aspect_ratio
+        }
         this.segments = config_props.segments
     }
 
     add_to (pane: FolderApi): void {
-        if (!this.config_props.full_screen) {
-            // in full screen mode, user cannot adjust aspect ratio manually
-            pane.addBinding(this, 'aspect_ratio', { min: 0.1, max: 3 })
-        }
+        pane.addBinding(this, 'aspect_ratio', { min: 0.3, max: 3, disabled: this.config_props.full_screen })
         pane.addBinding(this, 'background')
         pane.addBinding(this, 'hovered_color')
         pane.addBinding(this, 'selected_color')
