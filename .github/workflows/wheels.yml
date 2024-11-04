@@ -96,7 +96,7 @@ jobs: # Workflow credit to https://github.com/samuelcolvin/rtoml/blob/main/.gith
             curl https://sh.rustup.rs -sSf | sh -s -- --default-toolchain=nightly-2023-11-16 --profile=minimal -y &&
             . "$HOME/.cargo/env" &&
             rustup show &&
-            curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.0/install.sh | bash && . "$HOME/.bashrc" && nvm install 16 && node -v && npm -v
+            curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.0/install.sh | bash && . "$HOME/.bashrc" && . "$HOME/.profile" && . "$HOME/.nvm/nvm.sh" && nvm install 16 --no-progress && node -v && npm -v
 
       - name: list wheel files
         run: ${{ matrix.ls || 'ls -lh' }} wheelhouse/
