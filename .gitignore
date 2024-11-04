@@ -48,4 +48,4 @@ rustc-ice*
 *.log
 .ipynb_checkpoints
 
-src/python/mwpf/*.so
+src/python/**/*.so

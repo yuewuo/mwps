@@ -40,10 +40,10 @@ debug = true
 [features]
 # to enable a feature, use `--features xxx`
 default = ["f64_weight", "qecp_integrate", "embed_visualizer"]
-old_default = ["slp"]
 r64_weight = [] # use Rational64 instead of BigRational as weight type
 f64_weight = ["float_lp"] # use f64 instead of BigRational as weight type
 f32_weight = ["float_lp"] # use f64 instead of BigRational as weight type
+rational_weight = ["slp"]
 u32_index = [] # use u32 instead of usize as index type, to save memory
 python_binding = ["pyo3"] # bind to Python
 wasm_binding = ["wasm-bindgen"] # bind to wasm
