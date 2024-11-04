@@ -49,9 +49,6 @@ jobs: # Workflow credit to https://github.com/samuelcolvin/rtoml/blob/main/.gith
         run: echo "LIBCLANG_PATH=${{ env.LLVM_PATH }}/lib" >> "$GITHUB_ENV"
 
       - name: Install Rust
-        # unnecessary for ubuntu because it's installed inside cibuildwheel
-        # no python37 for macos
-        if: matrix.os != 'ubuntu' && (matrix.os != 'macos' || matrix['python-version'] != '7')
         uses: actions-rs/toolchain@v1
         with:
           profile: minimal
