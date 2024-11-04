@@ -95,11 +95,8 @@ jobs: # Workflow credit to https://github.com/samuelcolvin/rtoml/blob/main/.gith
             if command -v apt > /dev/null; then apt install -y clang; elif command -v yum > /dev/null; then yum install -y llvm-toolset-7.0; elif command -v apk > /dev/null; then apk add clang17-libclang; fi &&
             curl https://sh.rustup.rs -sSf | sh -s -- --default-toolchain=nightly-2023-11-16 --profile=minimal -y &&
             . "$HOME/.cargo/env" &&
-            rustup show
-            curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.0/install.sh | bash
-            nvm install 22
-            node -v
-            npm -v
+            rustup show &&
+            curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.0/install.sh | bash && nvm install 22 && node -v npm -v
 
       - name: list wheel files
         run: ${{ matrix.ls || 'ls -lh' }} wheelhouse/
