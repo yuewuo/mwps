@@ -46,3 +46,6 @@ rustc-ice*
 
 # logs
 *.log
+.ipynb_checkpoints
+
+src/python/**/*.so

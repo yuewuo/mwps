@@ -14,8 +14,6 @@ extern crate more_asserts;
 extern crate num_rational;
 extern crate num_traits;
 extern crate parking_lot;
-#[cfg(feature = "cli")]
-extern crate pbr;
 extern crate prettytable;
 #[cfg(feature = "python_binding")]
 extern crate pyo3;
@@ -27,13 +25,13 @@ extern crate urlencoding;
 #[cfg(feature = "wasm_binding")]
 extern crate wasm_bindgen;
 
-#[cfg(feature = "cli")]
 pub mod cli;
 pub mod decoding_hypergraph;
 pub mod dual_module;
 pub mod dual_module_pq;
 pub mod dual_module_serial;
 pub mod example_codes;
+pub mod html_export;
 pub mod invalid_subgraph;
 pub mod matrix;
 pub mod model_hypergraph;
@@ -56,6 +54,13 @@ pub mod visualize;
 #[cfg(feature = "python_binding")]
 use pyo3::prelude::*;
 
+/// include the CLI in Python package: python3 -m mwpf --help
+#[cfg_attr(feature = "python_binding", pyfunction)]
+pub fn run_cli(parameters: Vec<String>) {
+    use crate::clap::Parser;
+    cli::Cli::parse_from(parameters).run();
+}
+
 #[cfg(feature = "python_binding")]
 #[pymodule]
 fn mwpf(py: Python<'_>, m: &PyModule) -> PyResult<()> {
@@ -63,6 +68,8 @@ fn mwpf(py: Python<'_>, m: &PyModule) -> PyResult<()> {
     visualize::register(py, m)?;
     example_codes::register(py, m)?;
     mwpf_solver::register(py, m)?;
+    html_export::register(py, m)?;
+    m.add_wrapped(wrap_pyfunction!(run_cli))?;
     Ok(())
 }
 

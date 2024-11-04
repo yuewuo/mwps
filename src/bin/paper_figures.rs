@@ -60,10 +60,6 @@ fn hyperedge_example() {
         true,
     )
     .unwrap();
-    print_visualize_link_with_parameters(
-        visualize_filename.clone(),
-        vec![("segmented_untight_opacity".to_string(), "1".to_string())],
-    );
     visualizer
         .snapshot_combined("init".to_string(), vec![&interface_ptr, &dual_module])
         .unwrap();

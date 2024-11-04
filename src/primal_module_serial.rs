@@ -49,9 +49,7 @@ pub struct PrimalModuleSerial {
     #[cfg(feature = "incr_lp")]
     /// parameter indicating if the primal module has initialized states necessary for `incr_lp` slack calculation
     pub cluster_weights_initialized: bool,
-
-    #[cfg(feature = "cluster_size_limit")]
-    /// optional cluster size limit in tuning phase, possibly based on the code-distance
+    /// cluster size limit in tuning phase, possibly based on the code-distance
     ///     note: this is not monitored in the searching phase because then there will be no solution
     pub cluster_node_limit: Option<usize>,
 }
@@ -169,7 +167,6 @@ impl PrimalModuleImpl for PrimalModuleSerial {
             sorted_clusters_aff: None,
             #[cfg(feature = "incr_lp")]
             cluster_weights_initialized: false,
-            #[cfg(feature = "cluster_size_limit")]
             cluster_node_limit: None,
         }
     }
@@ -406,7 +403,6 @@ impl PrimalModuleImpl for PrimalModuleSerial {
         if cluster_temp.nodes.is_empty() {
             return (true, optimizer_result); // no longer a cluster, no need to handle
         }
-        #[cfg(feature = "cluster_size_limit")]
         if let Some(len_limit) = self.cluster_node_limit {
             if cluster_temp.nodes.len() >= len_limit {
                 return (true, optimizer_result);
@@ -1202,6 +1198,8 @@ pub mod tests {
                     vec![&interface_ptr, &dual_module, &subgraph, &weight_range],
                 )
                 .unwrap();
+            visualizer.save_html_along_json();
+            println!("open visualizer at {}", visualizer.html_along_json_path());
         }
         assert!(
             decoding_graph
@@ -1235,16 +1233,12 @@ pub mod tests {
         impl DualModuleImpl + MWPSVisualizer,
     ) {
         println!("{defect_vertices:?}");
-        let visualizer = {
-            let visualizer = Visualizer::new(
-                Some(visualize_data_folder() + visualize_filename.as_str()),
-                code.get_positions(),
-                true,
-            )
-            .unwrap();
-            print_visualize_link(visualize_filename.clone());
-            visualizer
-        };
+        let visualizer = Visualizer::new(
+            Some(visualize_data_folder() + visualize_filename.as_str()),
+            code.get_positions(),
+            true,
+        )
+        .unwrap();
         // create dual module
         let model_graph = code.get_model_graph();
         primal_module_serial_basic_standard_syndrome_optional_viz(
@@ -1272,16 +1266,12 @@ pub mod tests {
         impl DualModuleImpl + MWPSVisualizer,
     ) {
         println!("{defect_vertices:?}");
-        let visualizer = {
-            let visualizer = Visualizer::new(
-                Some(visualize_data_folder() + visualize_filename.as_str()),
-                code.get_positions(),
-                true,
-            )
-            .unwrap();
-            print_visualize_link(visualize_filename.clone());
-            visualizer
-        };
+        let visualizer = Visualizer::new(
+            Some(visualize_data_folder() + visualize_filename.as_str()),
+            code.get_positions(),
+            true,
+        )
+        .unwrap();
         // create dual module
         let model_graph = code.get_model_graph();
         primal_module_serial_basic_standard_syndrome_optional_viz(

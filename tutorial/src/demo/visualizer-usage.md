@@ -9,11 +9,6 @@ but not the other way around.
 
 ## Web Page
 
-To simplify the build process and reduce the possibility that the building toolchain is broken some time in the future, w
-commit the compiled library into the git repo. For people who needs to rebuild the visualization library, please see 
-[the installation section](../installation.md#install-frontend-tools-optional). The compiled binary is placed at
-`visualizer/data/mwpf-vis.js` in the repo.
-
 TODO: to open an visualizer in the browser, follow the example below.
 
 TODO: to save the visualizer in a file so that you can view later, see below.
@@ -30,13 +25,10 @@ TODO: to add a visualizer block, follow the example below.
 Both the web page and the Jupyter notebook plugins allows persistent.
 
 For Jupyter notebook, it is simple: all the output will be automatically saved as part of the notebook.
-Note that we have optimized for the space.
-Although the visualization library takes ~500KB overhead to your file, the overhead does not increase with the number of plots.
+Note that we have optimized for the space, so that although the visualization library has ~500KB overhead, the overhead does not increase with the number of plots.
 
 The web page also allows easy persistent.
 When you open the visualizer configuration panel (press 'C' when your mouse hover over the window), you'll see an 'Import/Export'
 folder.
-You can choose to export a standalone HTML file, or you can choose to export separate HTML library with JSON data file.
-You can even choose to include the current user settings into your exported HTML file (only supported for standalone HTML).
-This will persist your camera view, customized colors and sizes, etc.
+You can choose to export a standalone HTML file, which can also include the existing settings like camera view, customized colors and sizes, etc.
 We find this feature useful when people try to tune the visual for their papers, and want to save it for future accesses.

@@ -33,7 +33,6 @@ fn debug_demo() {
             true,
         )
         .unwrap();
-        print_visualize_link(visualize_filename.clone());
         if is_example {
             visualizer.snapshot_combined("code".to_string(), vec![&code]).unwrap();
             let mut primal_module = PrimalModuleSerial::new_empty(&initializer);
@@ -84,6 +83,8 @@ fn debug_demo() {
                 )
                 .unwrap();
         }
+        visualizer.save_html_along_json();
+        println!("open visualizer at {}", visualizer.html_along_json_path());
     }
 }
 
@@ -103,7 +104,6 @@ fn simple_demo() {
             true,
         )
         .unwrap();
-        print_visualize_link(visualize_filename.clone());
         if is_example {
             visualizer.snapshot_combined("code".to_string(), vec![&code]).unwrap();
             let mut primal_module = PrimalModuleSerial::new_empty(&initializer);
@@ -146,6 +146,8 @@ fn simple_demo() {
                 )
                 .unwrap();
         }
+        visualizer.save_html_along_json();
+        println!("open visualizer at {}", visualizer.html_along_json_path());
     }
 }
 
@@ -165,7 +167,6 @@ fn challenge_demo() {
             true,
         )
         .unwrap();
-        print_visualize_link(visualize_filename.clone());
         if is_example {
             visualizer.snapshot_combined("code".to_string(), vec![&code]).unwrap();
             let mut primal_module = PrimalModuleSerial::new_empty(&initializer);
@@ -287,6 +288,8 @@ fn challenge_demo() {
                 )
                 .unwrap();
         }
+        visualizer.save_html_along_json();
+        println!("open visualizer at {}", visualizer.html_along_json_path());
     }
 }
 
@@ -306,7 +309,6 @@ fn surface_code_example() {
             true,
         )
         .unwrap();
-        print_visualize_link(visualize_filename.clone());
         for seed in 0..count {
             pb.set(seed);
             code.generate_random_errors(seed);
@@ -332,6 +334,8 @@ fn surface_code_example() {
             dual_module.clear();
             interface_ptr.clear();
         }
+        visualizer.save_html_along_json();
+        println!("open visualizer at {}", visualizer.html_along_json_path());
         pb.finish()
     }
 }
@@ -352,7 +356,6 @@ fn triangle_color_code_example() {
             true,
         )
         .unwrap();
-        print_visualize_link(visualize_filename.clone());
         for seed in 0..count {
             pb.set(seed);
             code.generate_random_errors(seed);
@@ -379,6 +382,8 @@ fn triangle_color_code_example() {
             dual_module.clear();
             interface_ptr.clear();
         }
+        visualizer.save_html_along_json();
+        println!("open visualizer at {}", visualizer.html_along_json_path());
         pb.finish()
     }
 }
@@ -399,7 +404,6 @@ fn small_color_code_example() {
         true,
     )
     .unwrap();
-    print_visualize_link(visualize_filename.clone());
     for seed in 0..count {
         pb.set(seed);
         code.generate_random_errors(seed);
@@ -429,6 +433,8 @@ fn small_color_code_example() {
         dual_module.clear();
         interface_ptr.clear();
     }
+    visualizer.save_html_along_json();
+    println!("open visualizer at {}", visualizer.html_along_json_path());
     pb.finish()
 }
 
@@ -456,7 +462,6 @@ fn circuit_level_example() {
             true,
         )
         .unwrap();
-        print_visualize_link(visualize_filename.clone());
         for seed in 0..count {
             pb.set(seed);
             code.generate_random_errors(seed);
@@ -484,6 +489,8 @@ fn circuit_level_example() {
             dual_module.clear();
             interface_ptr.clear();
         }
+        visualizer.save_html_along_json();
+        println!("open visualizer at {}", visualizer.html_along_json_path());
         pb.finish()
     }
 }
@@ -505,7 +512,6 @@ fn code_figure() {
     // visualize
     for (idx, code) in codes.iter().enumerate() {
         let visualize_filename = format!("aps2024_code_figure_{idx}.json");
-        print_visualize_link(visualize_filename.clone());
         let mut visualizer = Visualizer::new(
             Some(visualize_data_folder() + visualize_filename.as_str()),
             code.get_positions(),
@@ -519,6 +525,8 @@ fn code_figure() {
         } else {
             visualizer.snapshot("code".to_string(), code).unwrap();
         }
+        visualizer.save_html_along_json();
+        println!("open visualizer at {}", visualizer.html_along_json_path());
     }
 }
 

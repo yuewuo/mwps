@@ -596,7 +596,6 @@ mod tests {
             true,
         )
         .unwrap();
-        print_visualize_link(visualize_filename);
         // create dual module
         let model_graph = code.get_model_graph();
         let mut dual_module = DualModuleSerial::new_empty(&model_graph.initializer);
@@ -625,6 +624,9 @@ mod tests {
         visualizer
             .snapshot_combined("subgraph".to_string(), vec![&interface_ptr, &dual_module, &subgraph])
             .unwrap();
+
+        visualizer.save_html_along_json();
+        println!("open visualizer at {}", visualizer.html_along_json_path());
     }
 
     #[test]
@@ -639,7 +641,6 @@ mod tests {
             true,
         )
         .unwrap();
-        print_visualize_link(visualize_filename);
         // create dual module
         let model_graph = code.get_model_graph();
         let mut dual_module = DualModuleSerial::new_empty(&model_graph.initializer);
@@ -666,6 +667,9 @@ mod tests {
         visualizer
             .snapshot_combined("subgraph".to_string(), vec![&interface_ptr, &dual_module, &subgraph])
             .unwrap();
+
+        visualizer.save_html_along_json();
+        println!("open visualizer at {}", visualizer.html_along_json_path());
     }
 
     #[test]
@@ -681,7 +685,6 @@ mod tests {
             true,
         )
         .unwrap();
-        print_visualize_link(visualize_filename);
         // create dual module
         let model_graph = code.get_model_graph();
         let mut dual_module = DualModuleSerial::new_empty(&model_graph.initializer);
@@ -723,6 +726,9 @@ mod tests {
         visualizer
             .snapshot_combined("subgraph".to_string(), vec![&interface_ptr, &dual_module, &subgraph])
             .unwrap();
+
+        visualizer.save_html_along_json();
+        println!("open visualizer at {}", visualizer.html_along_json_path());
     }
 
     #[test]
@@ -737,7 +743,6 @@ mod tests {
             true,
         )
         .unwrap();
-        print_visualize_link(visualize_filename);
         // create dual module
         let model_graph = code.get_model_graph();
         let mut dual_module = DualModuleSerial::new_empty(&model_graph.initializer);
@@ -759,5 +764,7 @@ mod tests {
         visualizer
             .snapshot_combined("subgraph".to_string(), vec![&interface_ptr, &dual_module, &subgraph])
             .unwrap();
+        visualizer.save_html_along_json();
+        println!("open visualizer at {}", visualizer.html_along_json_path());
     }
 }

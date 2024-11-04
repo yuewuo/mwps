@@ -1,4 +1,4 @@
-import { Pane } from 'tweakpane'
+import { FolderApi, Pane } from 'tweakpane'
 import * as EssentialsPlugin from '@tweakpane/plugin-essentials'
 import { Config } from './config_pane'
 import { createApp, watchEffect } from 'vue'
@@ -22,7 +22,7 @@ export class Info {
         this.pane = new Pane({
             title: 'Snapshot Info',
             container: container,
-            expanded: true
+            expanded: false,
         })
         this.pane.registerPlugin(EssentialsPlugin)
         this.pane.registerPlugin(HyperionPluginBundle)
@@ -31,18 +31,29 @@ export class Info {
     }
 
     display_zero_dual_variables: boolean = false
+    // @ts-expect-error it will be set
+    dual_folder: FolderApi
     add_dual_pane () {
-        const dual_folder = this.pane.addFolder({ title: 'Dual Variables', expanded: true })
-        dual_folder.addBinding(this, 'display_zero_dual_variables')
-        dual_folder.addBlade({ view: 'vue', app: createApp(DualNodes, { info: this }) })
+        const folder = this.pane.addFolder({ title: 'Dual Variables', expanded: false })
+        folder.addBinding(this, 'display_zero_dual_variables')
+        folder.addBlade({ view: 'vue', app: createApp(DualNodes, { info: this }) })
         watchEffect(() => {
-            console.log(this.config.snapshot.interface.sum_dual)
-            dual_folder.title = `Dual Variables (𝚺ys = ${this.config.snapshot.interface.sum_dual})`
+            folder.title = `Dual Variables (𝚺ys = ${this.config.snapshot.interface?.sum_dual})`
         })
+        this.dual_folder = folder
     }
 
+    // @ts-expect-error it will be set
+    selection_folder: FolderApi
     add_current_selection () {
         const folder = this.pane.addFolder({ title: 'Current Selection', expanded: true })
         folder.addBlade({ view: 'vue', app: createApp(CurrentSelect, { info: this }) })
+        watchEffect(() => {
+            if (this.config.data.selected != undefined) {
+                this.pane.expanded = true
+                folder.expanded = true
+            }
+        })
+        this.selection_folder = folder
     }
 }

@@ -2,14 +2,15 @@ import { computed } from 'vue'
 import { Pane, FolderApi } from 'tweakpane'
 import * as EssentialsPlugin from '@tweakpane/plugin-essentials'
 import { type ButtonGridApi } from '@tweakpane/plugin-essentials'
-import { assert } from '@/util'
+import { assert, bigInt } from '@/util'
+import * as HTMLExport from './html_export'
 import { Vector3, OrthographicCamera, WebGLRenderer, Vector2 } from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { RuntimeData, ConfigProps, renderer_params, type Snapshot } from './hyperion'
-import stringify from 'json-stringify-pretty-compact'
 import { Prism } from 'prism-esm'
 import { loader as JsonLoader } from 'prism-esm/components/prism-json.js'
 import prismCSS from 'prism-esm/themes/prism.min.css?raw'
+import * as TextareaPlugin from '@pangenerator/tweakpane-textarea-plugin'
 
 interface KeyShortcutDescription {
     key: string
@@ -17,14 +18,10 @@ interface KeyShortcutDescription {
 }
 
 export const key_shortcuts: Array<KeyShortcutDescription> = [
-    { key: 'T', description: 'top view' },
-    { key: 'L', description: 'left view' },
-    { key: 'F', description: 'front view' },
-    { key: 'C', description: 'toggle config' },
-    { key: 'I', description: 'toggle info' },
-    { key: 'S', description: 'toggle stats' },
-    { key: '⬅', description: 'last snapshot' },
-    { key: '⮕', description: 'next snapshot' }
+    { key: 'T/L/F', description: 'top/left/front view' },
+    { key: 'C/I/S', description: 'toggle config/info/stat' },
+    { key: 'D/A', description: 'toggle dual/active info' },
+    { key: '⬅/⮕', description: 'previous/next snapshot' },
 ]
 
 /* configuration helper class given the runtime data */
@@ -65,16 +62,15 @@ export class Config {
         this.pane = new Pane({
             title: this.title,
             container: container,
-            expanded: false
+            expanded: false,
         })
         this.pane.registerPlugin(EssentialsPlugin)
+        this.pane.registerPlugin(TextareaPlugin)
         const pane: FolderApi = this.pane
         const snapshot_names = []
         for (const [name] of this.data.visualizer.snapshots) {
             snapshot_names.push(name as string)
         }
-        // add export/import buttons
-        this.add_import_export(pane.addFolder({ title: 'Import/Export', expanded: true }))
         // add everything else
         this.snapshot_config.add_to(pane.addFolder({ title: 'Snapshot', expanded: true }), snapshot_names)
         this.camera.add_to(pane.addFolder({ title: 'Camera', expanded: false }))
@@ -84,6 +80,8 @@ export class Config {
         // add shortcut guide
         pane.addBlade({ view: 'separator' })
         this.add_shortcut_guide(pane.addFolder({ title: 'Key Shortcuts', expanded: true }))
+        // add export/import buttons
+        this.add_import_export(pane.addFolder({ title: 'Import/Export', expanded: true }))
         // if the config is passed from props, import it (must execute after all elements are created)
         if (this.config_prop.visualizer_config != undefined) {
             this.parameters = JSON.stringify(this.config_prop.visualizer_config)
@@ -94,14 +92,19 @@ export class Config {
     parameters: string = '' // export or import parameters of the tweak pane
     renderer: any = undefined
     png_scale: number = 1
+    html_include_parameters: boolean = true
+    html_use_visualizer_data: string = ''
+    html_compress_data: boolean = true
+    html_show_info: boolean = true
+    html_show_config: boolean = true
     add_import_export (pane: FolderApi): void {
         // add parameter import/export
         const parameter_buttons: ButtonGridApi = pane.addBlade({
             view: 'buttongrid',
             size: [2, 1],
             cells: (x: number) => ({
-                title: ['export parameters', 'import parameters'][x]
-            })
+                title: ['export parameters', 'import parameters'][x],
+            }),
         }) as any
         parameter_buttons.on('click', (event: any) => {
             if (event.index[0] == 0) {
@@ -117,8 +120,8 @@ export class Config {
             view: 'buttongrid',
             size: [2, 1],
             cells: (x: number) => ({
-                title: ['Open PNG', 'Download PNG'][x]
-            })
+                title: ['Open PNG', 'Download PNG'][x],
+            }),
         }) as any
         png_buttons.on('click', (event: any) => {
             const data_url = this.generate_png()
@@ -136,8 +139,8 @@ export class Config {
             view: 'buttongrid',
             size: [2, 1],
             cells: (x: number) => ({
-                title: ['Open JSON', 'Download JSON'][x]
-            })
+                title: ['Open JSON', 'Download JSON'][x],
+            }),
         }) as any
         data_buttons.on('click', (event: any) => {
             if (event.index[0] == 0) {
@@ -146,6 +149,38 @@ export class Config {
                 this.download_visualizer_data()
             }
         })
+        // add html page export
+        const html_buttons: ButtonGridApi = pane.addBlade({
+            view: 'buttongrid',
+            size: [2, 1],
+            cells: (x: number) => ({
+                title: ['Open HTML', 'Download HTML', 'Download '][x],
+            }),
+        }) as any
+        const html_export_folder = pane.addFolder({ title: 'HTML Export Config', expanded: false })
+        html_export_folder.addBinding(this, 'html_include_parameters', { label: 'save parameters' })
+        html_export_folder.addBinding(this, 'html_compress_data', { label: 'compress data' })
+        html_export_folder.addBinding(this, 'html_show_info', { label: 'show info' })
+        html_export_folder.addBinding(this, 'html_show_config', { label: 'show config' })
+        html_export_folder.addBinding(this, 'html_use_visualizer_data', {
+            view: 'textarea',
+            rows: 3,
+            label: 'use alternative visualizer data (paste here)',
+            placeholder: 'Type here...',
+        })
+        if (HTMLExport.available) {
+            html_buttons.on('click', (event: any) => {
+                if (event.index[0] == 0) {
+                    this.open_html()
+                } else {
+                    this.download_html()
+                }
+            })
+        } else {
+            html_buttons.disabled = true
+            html_export_folder.disabled = true
+            console.warn('Open/Download HTML only available in release build (which has compressed js library)')
+        }
     }
 
     generate_png (): string | undefined {
@@ -203,24 +238,65 @@ export class Config {
         // use prism-js to highlight the code
         const prism = new Prism()
         JsonLoader(prism)
-        div.innerHTML = prism.highlight(stringify(this.data.visualizer, { maxLength: 160, indent: 4 }), prism.languages.json, 'json')
+        div.innerHTML = prism.highlight(bigInt.JSONStringify(this.data.visualizer, { maxLength: 160, indent: 4 }), prism.languages.json, 'json')
     }
 
     download_visualizer_data () {
         const a = document.createElement('a')
-        a.href = 'data:text/json;base64,' + btoa(JSON.stringify(this.data.visualizer))
+        a.href = 'data:text/json;base64,' + btoa(bigInt.JSONStringify(this.data.visualizer))
         a.download = 'mwpf-vis.json'
         a.click()
+    }
+
+    async generate_html (): Promise<string> {
+        let visualizer_data = this.data.visualizer
+        if (this.html_use_visualizer_data != '') {
+            try {
+                visualizer_data = bigInt.JSONParse(this.html_use_visualizer_data)
+            } catch (e) {
+                alert('failed to parse visualizer data')
+                throw e
+            }
+            this.html_use_visualizer_data = '' // clear the field if no problem
+        }
+        const config_props = new ConfigProps()
+        config_props.show_info = this.html_show_info
+        config_props.show_config = this.html_show_config
+        if (this.html_include_parameters) {
+            config_props.visualizer_config = this.pane.exportState()
+        }
+        return HTMLExport.generate_html(visualizer_data, this.html_compress_data, config_props)
+    }
+
+    open_html () {
+        this.generate_html().then(html => {
+            const w = window.open('', '')
+            if (w == null) {
+                alert('cannot open new window')
+                return
+            }
+            w.document.write(html)
+            w.document.close()
+        })
+    }
+
+    download_html () {
+        this.generate_html().then(html => {
+            const a = document.createElement('a')
+            a.href = 'data:text/html;charset=utf-8,' + encodeURIComponent(html)
+            a.download = 'mwpf-vis.html'
+            a.click()
+        })
     }
 
     add_shortcut_guide (pane: FolderApi): void {
         for (const key_shortcut of key_shortcuts) {
             pane.addBlade({
                 view: 'text',
-                label: key_shortcut.description,
+                label: key_shortcut.key,
                 parse: (v: string) => v,
-                value: key_shortcut.key,
-                disabled: true
+                value: key_shortcut.description,
+                disabled: true,
             })
         }
     }
@@ -279,14 +355,14 @@ export class BasicConfig {
 
     constructor (config_props: ConfigProps) {
         this.config_props = config_props
+        if (config_props.initial_aspect_ratio != undefined) {
+            this.aspect_ratio = config_props.initial_aspect_ratio
+        }
         this.segments = config_props.segments
     }
 
     add_to (pane: FolderApi): void {
-        if (!this.config_props.full_screen) {
-            // in full screen mode, user cannot adjust aspect ratio manually
-            pane.addBinding(this, 'aspect_ratio', { min: 0.1, max: 3 })
-        }
+        pane.addBinding(this, 'aspect_ratio', { min: 0.3, max: 3, disabled: this.config_props.full_screen })
         pane.addBinding(this, 'background')
         pane.addBinding(this, 'hovered_color')
         pane.addBinding(this, 'selected_color')
@@ -329,9 +405,9 @@ export class CameraConfig {
             view: 'buttongrid',
             size: [3, 1],
             cells: (x: number) => ({
-                title: names[x]
+                title: names[x],
             }),
-            label: 'reset view'
+            label: 'reset view',
         }) as any
         camera_position_buttons.on('click', (event: any) => {
             const i: number = event.index[0]

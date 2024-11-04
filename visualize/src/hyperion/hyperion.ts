@@ -7,7 +7,7 @@ export const renderer_params = {
     alpha: true,
     powerPreference: 'high-performance',
     precision: 'highp',
-    stencil: true
+    stencil: true,
 }
 
 export interface Position {
@@ -121,6 +121,7 @@ export class ConfigProps {
     full_screen: boolean = false
     segments: number = 32
     visualizer_config: any = undefined
+    initial_aspect_ratio?: number = undefined
 }
 
 /*

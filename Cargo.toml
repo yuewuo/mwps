@@ -13,6 +13,9 @@ categories = ["science"]
 exclude = ["tutorial/*", "benchmark/*", "visualize/data/persist/*", ".github/*"]
 default-run = "mwpf"
 
+[package.metadata.maturin]
+python-source = "src/python"
+
 # see https://doc.rust-lang.org/1.39.0/cargo/reference/manifest.html#the-documentation-field-optional
 [badges]
 maintenance = { status = "actively-developed" }
@@ -36,20 +39,21 @@ debug = true
 
 [features]
 # to enable a feature, use `--features xxx`
-default = ["f64_weight", "cli", "qecp_integrate"]
-old_default = ["cli", "slp"]
-cli = ["pbr"]
-r64_weight = []                                   # use Rational64 instead of BigRational as weight type
-f64_weight = ["float_lp"]                         # use f64 instead of BigRational as weight type
-f32_weight = ["float_lp"]                         # use f64 instead of BigRational as weight type
-u32_index = []                                    # use u32 instead of usize as index type, to save memory
-python_binding = ["pyo3"]                         # bind to Python
-wasm_binding = ["wasm-bindgen"]                   # bind to wasm
-colorful = []                                     # enable colorful output in case terminal exists
-qecp_integrate = ["qecp"]                         # integrate with qecp
-float_lp = ["highs"]                              # use floating point LP solver, which is highs
-incr_lp = []                                      # solve lp problems incrementally, compatible with highs, by modifying the internal data of the probelm
-cluster_size_limit = []                           # allow configuration for limit on primal cluster size, for accrate benchmark timing.
+default = ["f64_weight", "qecp_integrate", "embed_visualizer"]
+r64_weight = [] # use Rational64 instead of BigRational as weight type
+f64_weight = ["float_lp"] # use f64 instead of BigRational as weight type
+f32_weight = ["float_lp"] # use f64 instead of BigRational as weight type
+rational_weight = ["slp"]
+u32_index = [] # use u32 instead of usize as index type, to save memory
+python_binding = ["pyo3"] # bind to Python
+wasm_binding = ["wasm-bindgen"] # bind to wasm
+colorful = [] # enable colorful output in case terminal exists
+qecp_integrate = ["qecp"] # integrate with qecp
+float_lp = ["highs"] # use floating point LP solver, which is highs
+incr_lp = [
+] # solve lp problems incrementally, compatible with highs, by modifying the internal data of the probelm
+embed_visualizer = [
+] # use nodejs to build frontend and embed in Python instead of outputing individual JSON files
 
 [dependencies]
 pyo3 = { version = "0.19.2", features = [
@@ -64,7 +68,7 @@ serde_json = "1.0.59"
 chrono = "0.4.19"
 urlencoding = "2.1.0"
 clap = { version = "4.2.7", features = ["cargo", "derive"] }
-pbr = { version = "1.0.4", optional = true }
+pbr = { version = "1.0.4" }
 rand_xoshiro = "0.6.0"
 derivative = "2.2.0"
 parking_lot = { version = "0.12.1", features = ["hardware-lock-elision"] }
@@ -90,6 +94,9 @@ priority-queue = "2.0.3"
 heapz = { path = "src/heapz" }
 hashbrown = "0.14.5"
 pheap = { path = "src/pheap" }
+tempfile = "3.13.0"
+flate2 = "1.0.34"
+base64 = "0.22.1"
 
 [dev-dependencies]
 test-case = "3.1.0"

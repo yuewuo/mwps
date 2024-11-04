@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref, computed, provide, watchEffect, onBeforeUnmount, useTemplateRef } from 'vue'
+import { onMounted, ref, computed, provide, watchEffect, onBeforeUnmount, useTemplateRef, onUnmounted } from 'vue'
 import { Renderer, OrthographicCamera, Scene, AmbientLight } from 'troisjs'
 import { type VisualizerData, RuntimeData, ConfigProps, renderer_params } from './hyperion'
 import { Config } from './config_pane'
@@ -18,7 +18,7 @@ interface Props {
 }
 
 const props = withDefaults(defineProps<Props>(), {
-    config: () => new ConfigProps()
+    config: () => new ConfigProps(),
 })
 
 const config = ref(new Config(new RuntimeData(props.visualizer), props.config))
@@ -44,7 +44,12 @@ const height = computed(() => width.value / config.value.basic.aspect_ratio)
 const orthographic_camera = useTemplateRef('orthographic_camera_ref')
 const raycaster = new Raycaster()
 
+onUnmounted(() => {
+    console.log('Hyperion.vue unmounted')
+})
 onMounted(() => {
+    console.log('Hyperion.vue mounted')
+
     // pass camera object
     const camera: ThreeOrthographicCamera = (orthographic_camera.value as any).camera
     const orbit_controls: OrbitControls = (renderer.value as any).three.cameraCtrl
@@ -141,6 +146,24 @@ function onKeyDown(event: KeyboardEvent) {
             }
         } else if (event.key == 's' || event.key == 'S') {
             config.value.basic.show_stats = !config.value.basic.show_stats
+        } else if (event.key == 'd' || event.key == 'D') {
+            const current_showing = show_info.value && info.value.pane.expanded && info.value.dual_folder.expanded
+            if (current_showing) {
+                info.value.dual_folder.expanded = false
+            } else {
+                show_info.value = true
+                info.value.pane.expanded = true
+                info.value.dual_folder.expanded = true
+            }
+        } else if (event.key == 'a' || event.key == 'A') {
+            const current_showing = show_info.value && info.value.pane.expanded && info.value.selection_folder.expanded
+            if (current_showing) {
+                info.value.selection_folder.expanded = false
+            } else {
+                show_info.value = true
+                info.value.pane.expanded = true
+                info.value.selection_folder.expanded = true
+            }
         } else if (event.key == 'ArrowRight') {
             if (config.value.snapshot_index < config.value.snapshot_num - 1) {
                 config.value.snapshot_index += 1

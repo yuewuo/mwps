@@ -11,23 +11,23 @@ export default defineConfig({
     plugins: [vue(), cssInjectedByJsPlugin(), compress_js(new PluginConfig('hyperion-visual.js', 'hyperion-visual.js.b64'))],
     resolve: {
         alias: {
-            '@': fileURLToPath(new URL('./src', import.meta.url))
-        }
+            '@': fileURLToPath(new URL('./src', import.meta.url)),
+        },
     },
     build: {
         chunkSizeWarningLimit: 1500, // 1.5MB chunk limit to remove warning: we will use compression anyway
         rollupOptions: {
             input: {
-                main: resolve(__dirname, 'index.html')
+                main: resolve(__dirname, 'index.html'),
             },
             output: {
                 entryFileNames: `hyperion-visual.js`,
                 chunkFileNames: `assets/[name].js`,
                 assetFileNames: `assets/[name].[ext]`,
                 // disable chunks to ensure a single js file
-                manualChunks: undefined
-            }
+                manualChunks: undefined,
+            },
         },
-        cssCodeSplit: false
-    }
+        cssCodeSplit: false,
+    },
 })
