@@ -47,13 +47,7 @@ cfg_if::cfg_if! {
     }
 }
 
-cfg_if::cfg_if! {
-    if #[cfg(feature="unsafe_pointer")] {
-        pub type KnownSafeRefCell<T> = ; // missing implementation
-    } else {
-        pub type KnownSafeRefCell<T> = std::cell::RefCell<T>;
-    }
-}
+pub type KnownSafeRefCell<T> = std::cell::RefCell<T>;
 
 pub type NodeIndex = VertexIndex;
 pub type DefectIndex = VertexIndex;

@@ -1,7 +1,7 @@
 extern crate clap;
 
 use crate::clap::Parser;
-use crate::cli::*;
+use mwpf::cli::*;
 
 pub fn main() {
     #[cfg(all(feature = "slp", feature = "incr_lp"))]

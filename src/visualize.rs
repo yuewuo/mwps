@@ -326,10 +326,7 @@ impl Visualizer {
     /// create a new visualizer with target filename and node layout
     #[cfg_attr(feature = "python_binding", new)]
     #[cfg_attr(feature = "python_binding", pyo3(signature = (filepath="".to_string(), positions=vec![], center=true)))]
-    pub fn new(mut filepath: Option<String>, mut positions: Vec<VisualizePosition>, center: bool) -> std::io::Result<Self> {
-        if cfg!(feature = "disable_visualizer") {
-            filepath = None; // do not open file
-        }
+    pub fn new(filepath: Option<String>, mut positions: Vec<VisualizePosition>, center: bool) -> std::io::Result<Self> {
         if center {
             positions = center_positions(positions);
         }
@@ -371,9 +368,6 @@ impl Visualizer {
     #[cfg(feature = "python_binding")]
     #[pyo3(name = "snapshot_combined")]
     pub fn snapshot_combined_py(&mut self, name: String, object_pys: Vec<&PyAny>) -> std::io::Result<()> {
-        if cfg!(feature = "disable_visualizer") {
-            return Ok(());
-        }
         let mut values = Vec::<serde_json::Value>::with_capacity(object_pys.len());
         for object_py in object_pys.into_iter() {
             values.push(pyobject_to_json(object_py.call_method0("snapshot")?.extract::<PyObject>()?));
@@ -384,9 +378,6 @@ impl Visualizer {
     #[cfg(feature = "python_binding")]
     #[pyo3(name = "snapshot")]
     pub fn snapshot_py(&mut self, name: String, object_py: &PyAny) -> std::io::Result<()> {
-        if cfg!(feature = "disable_visualizer") {
-            return Ok(());
-        }
         let value = pyobject_to_json(object_py.call_method0("snapshot")?.extract::<PyObject>()?);
         self.snapshot_value(name, value)
     }
@@ -394,9 +385,6 @@ impl Visualizer {
     #[cfg(feature = "python_binding")]
     #[pyo3(name = "snapshot_combined_value")]
     pub fn snapshot_combined_value_py(&mut self, name: String, value_pys: Vec<PyObject>) -> std::io::Result<()> {
-        if cfg!(feature = "disable_visualizer") {
-            return Ok(());
-        }
         let values: Vec<_> = value_pys.into_iter().map(pyobject_to_json).collect();
         self.snapshot_combined_value(name, values)
     }
@@ -404,9 +392,6 @@ impl Visualizer {
     #[cfg(feature = "python_binding")]
     #[pyo3(name = "snapshot_value")]
     pub fn snapshot_value_py(&mut self, name: String, value_py: PyObject) -> std::io::Result<()> {
-        if cfg!(feature = "disable_visualizer") {
-            return Ok(());
-        }
         let value = pyobject_to_json(value_py);
         self.snapshot_value(name, value)
     }
@@ -460,9 +445,6 @@ impl Visualizer {
 
     /// append another snapshot of the mwpf modules, and also update the file in case
     pub fn snapshot_combined(&mut self, name: String, mwpf_algorithms: Vec<&dyn MWPSVisualizer>) -> std::io::Result<()> {
-        if cfg!(feature = "disable_visualizer") {
-            return Ok(());
-        }
         let abbrev = true;
         let mut value = json!({});
         for mwpf_algorithm in mwpf_algorithms.iter() {
@@ -476,9 +458,6 @@ impl Visualizer {
 
     /// append another snapshot of the mwpf modules, and also update the file in case
     pub fn snapshot(&mut self, name: String, mwpf_algorithm: &impl MWPSVisualizer) -> std::io::Result<()> {
-        if cfg!(feature = "disable_visualizer") {
-            return Ok(());
-        }
         let abbrev = true;
         let mut value = mwpf_algorithm.snapshot(abbrev);
         snapshot_fix_missing_fields(&mut value, abbrev);
@@ -487,9 +466,6 @@ impl Visualizer {
     }
 
     pub fn snapshot_combined_value(&mut self, name: String, values: Vec<serde_json::Value>) -> std::io::Result<()> {
-        if cfg!(feature = "disable_visualizer") {
-            return Ok(());
-        }
         let abbrev = true;
         let mut value = json!({});
         for value_2 in values.into_iter() {
@@ -501,9 +477,6 @@ impl Visualizer {
     }
 
     pub fn snapshot_value(&mut self, name: String, mut value: serde_json::Value) -> std::io::Result<()> {
-        if cfg!(feature = "disable_visualizer") {
-            return Ok(());
-        }
         let abbrev = true;
         snapshot_fix_missing_fields(&mut value, abbrev);
         self.incremental_save(name, value)?;

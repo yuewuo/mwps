@@ -14,20 +14,22 @@ fn main() {
             }
         }
 
-        assert!(std::process::Command::new("npm")
-            .current_dir("./visualize")
-            .arg("install")
-            .arg("--include=dev")
-            .status()
-            .unwrap()
-            .success());
+        if std::env::var("SKIP_FRONTEND_BUILD").is_err() {
+            assert!(std::process::Command::new("npm")
+                .current_dir("./visualize")
+                .arg("install")
+                .arg("--include=dev")
+                .status()
+                .unwrap()
+                .success());
 
-        assert!(std::process::Command::new("npm")
-            .current_dir("./visualize")
-            .arg("run")
-            .arg("build")
-            .status()
-            .unwrap()
-            .success());
+            assert!(std::process::Command::new("npm")
+                .current_dir("./visualize")
+                .arg("run")
+                .arg("build")
+                .status()
+                .unwrap()
+                .success());
+        }
     }
 }
