@@ -14,7 +14,7 @@ fn main() {
             }
         }
 
-        if !std::env::var("SKIP_FRONTEND_BUILD").is_ok() {
+        if std::env::var("SKIP_FRONTEND_BUILD").is_err() {
             assert!(std::process::Command::new("npm")
                 .current_dir("./visualize")
                 .arg("install")
