@@ -103,14 +103,21 @@ impl HTMLExport {
     }
 
     #[cfg(feature = "python_binding")]
+    pub fn library_injected() -> bool {
+        *HYPERION_VISUAL_JUPYTER_LOADED.lock().unwrap()
+    }
+
+    #[cfg(feature = "python_binding")]
     pub fn force_inject_library() {
+        *HYPERION_VISUAL_JUPYTER_LOADED.lock().unwrap() = true;
         let script_body = Self::get_library_body().unwrap();
         let script_block = format!(
-            r#"<div><span style="color: white; font-size: 8px; padding: 4px; background-color: rgba(36, 110, 36); border-radius: 4px;">MWPF visualization library embedded</span></div><script type="module" id='hyperion_visual_compressed_js_caller'>
+            r#"<div><span style="color: white; font-size: 8px; padding: 4px; background-color: rgba(36, 110, 36); border-radius: 4px;">MWPF visualization library embedded ({}kB)</span></div><script type="module" id='hyperion_visual_compressed_js_caller'>
 /* HYPERION_VISUAL_MODULE_CODE_BEGIN */
 {script_body}
 /* HYPERION_VISUAL_MODULE_CODE_END */
-</script>"#
+</script>"#,
+            script_body.len() / 1024
         );
         Python::with_gil(|py| -> PyResult<()> {
             let display = PyModule::import_bound(py, "IPython.display")?;
@@ -125,8 +132,7 @@ impl HTMLExport {
         let template_html =
             Self::get_template_html().expect("template html not available, please rebuild with `embed_visualizer` feature");
         // if the hyperion_visual library is not loaded yet, load it
-        if !*HYPERION_VISUAL_JUPYTER_LOADED.lock().unwrap() {
-            *HYPERION_VISUAL_JUPYTER_LOADED.lock().unwrap() = true;
+        if !Self::library_injected() {
             Self::force_inject_library();
         }
         // create a div block

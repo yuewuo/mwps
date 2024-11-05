@@ -408,6 +408,15 @@ impl Visualizer {
     }
 
     #[cfg(feature = "python_binding")]
+    #[staticmethod]
+    #[pyo3(name = "embed", signature = (force=false))]
+    pub fn embed_py(force: bool) {
+        if force || !HTMLExport::library_injected() {
+            HTMLExport::force_inject_library();
+        }
+    }
+
+    #[cfg(feature = "python_binding")]
     #[pyo3(name = "generate_html", signature = (override_config = None))]
     pub fn generate_html_py(&mut self, override_config: Option<PyObject>) -> String {
         let override_config = if let Some(override_config) = override_config {
