@@ -3,8 +3,7 @@ name: Build Python Binding
 on:
   push:
     branches:
-      - main
-      - ci-test
+      - ci-build
     tags:
       - '**'
   # pull_request: {}
@@ -12,7 +11,7 @@ on:
 jobs: # Workflow credit to https://github.com/samuelcolvin/rtoml/blob/main/.github/workflows/ci.yml
 
   build_wheels:
-    name: Build wheels py3.${{ matrix.python-version }} on ${{ matrix.os }}
+    name: Build wheels py3.${{ matrix.python-version }} on ${{ matrix.os }} (${{ matrix.build-feature }})
     strategy:
       fail-fast: true
       # fail-fast: false
@@ -26,8 +25,8 @@ jobs: # Workflow credit to https://github.com/samuelcolvin/rtoml/blob/main/.gith
         include:
           - os: ubuntu
             platform: linux
-          - os: windows
-            ls: dir
+          # - os: windows
+          #   ls: dir
         build-feature:
           - default
           - rational  # will execute pyproject-rational.py before build
@@ -52,13 +51,17 @@ jobs: # Workflow credit to https://github.com/samuelcolvin/rtoml/blob/main/.gith
         uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: nightly-2023-11-16
+          toolchain: nightly-2024-11-03
           override: true
           
       - name: Install NodeJs
         uses: actions/setup-node@v4
         with:
           node-version: '22'
+      
+      - name: Build Frontend
+        working-directory: ./visualize
+        run: npm install --include=dev && npm run build
 
       - name: Install Python dependencies
         run: python -m pip install -U setuptools wheel twine cibuildwheel
@@ -74,18 +77,18 @@ jobs: # Workflow credit to https://github.com/samuelcolvin/rtoml/blob/main/.gith
           CIBW_SKIP: '*-win32 *_i686' # do not build for 32bit machines, rustc seems to complain about it
           CIBW_PLATFORM: ${{ matrix.platform || matrix.os }} # only build for specific platform
           CIBW_ENVIRONMENT: 'PATH="$HOME/.cargo/bin:$PATH"'
-          CIBW_ENVIRONMENT_WINDOWS: 'PATH="$UserProfile\.cargo\bin;$PATH"'
-          CIBW_ENVIRONMENT_LINUX: PATH="$HOME/.cargo/bin:$PATH" LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/opt/rh/llvm-toolset-7.0/root/usr/lib64/
+          CIBW_ENVIRONMENT_WINDOWS: 'PATH="$UserProfile\.cargo\bin;;$PATH"'
+          CIBW_ENVIRONMENT_LINUX: PATH="$HOME/.cargo/bin:$PATH" LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/opt/rh/llvm-toolset-7.0/root/usr/lib64/ SKIP_FRONTEND_BUILD=1
           CIBW_MANYLINUX_X86_64_IMAGE: 'manylinux2014'
           CIBW_MUSLLINUX_X86_64_IMAGE: 'musllinux_1_2'
           # Yue 2022.10.17: build on aarch64 failed due to strange `cargo metadata` exited with an error:     Updating crates.io index
           CIBW_ARCHS_LINUX: x86_64 # aarch64 requires QEMU, ~ 40min for each manylinux and musllinux...
           CIBW_ARCHS_MACOS: universal2
           CIBW_BEFORE_BUILD: >
-            rustup default nightly-2023-11-16 &&
+            rustup default nightly-2024-11-03 &&
             rustup show
           CIBW_BEFORE_BUILD_MACOS: >
-            rustup default nightly-2023-11-16 &&
+            rustup default nightly-2024-11-03 &&
             rustup target add aarch64-apple-darwin &&
             rustup target add x86_64-apple-darwin &&
             rustup show
@@ -93,10 +96,9 @@ jobs: # Workflow credit to https://github.com/samuelcolvin/rtoml/blob/main/.gith
           # musllinux_1_2 uses Alpine Linux 3.19 (apk add)
           CIBW_BEFORE_BUILD_LINUX: >
             if command -v apt > /dev/null; then apt install -y clang; elif command -v yum > /dev/null; then yum install -y llvm-toolset-7.0; elif command -v apk > /dev/null; then apk add clang17-libclang; fi &&
-            curl https://sh.rustup.rs -sSf | sh -s -- --default-toolchain=nightly-2023-11-16 --profile=minimal -y &&
+            curl https://sh.rustup.rs -sSf | sh -s -- --default-toolchain=nightly-2024-11-03 --profile=minimal -y &&
             . "$HOME/.cargo/env" &&
-            rustup show &&
-            curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.0/install.sh | bash && nvm install 22 && node -v && npm -v
+            rustup show
 
       - name: list wheel files
         run: ${{ matrix.ls || 'ls -lh' }} wheelhouse/

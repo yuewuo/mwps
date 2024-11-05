@@ -15,6 +15,12 @@ patches = [
         ],
     ),
     (
+        "src/main.rs",
+        [
+            ("use mwpf::cli::*;", "use mwpf_rational::cli::*;"),
+        ],
+    ),
+    (
         "pyproject.toml",
         [
             ('name = "mwpf"', 'name = "mwpf_rational"'),
