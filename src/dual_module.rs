@@ -22,8 +22,10 @@ use std::collections::BTreeMap;
 use std::collections::{BTreeSet, HashMap};
 use std::sync::Arc;
 
-// this is not effecitively doing much right now due to the My (Leo's) desire for ultra performance (inlining function > branches)
-#[derive(Default, Debug)]
+// this is not effectively doing much right now due to the My (Leo's) desire for ultra performance (inlining function > branches)
+#[derive(Default, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "python_binding", cfg_eval)]
+#[cfg_attr(feature = "python_binding", pyclass(eq, eq_int))]
 pub enum DualModuleMode {
     /// Mode 1
     #[default]
@@ -307,7 +309,7 @@ pub trait DualModuleImpl {
     fn is_edge_tight(&self, edge_index: EdgeIndex) -> bool;
 
     /* New tuning-related methods */
-    // mode mangements
+    // mode managements
 
     /// get the current mode of the dual module
     fn mode(&self) -> &DualModuleMode;

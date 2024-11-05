@@ -50,6 +50,8 @@ pub mod relaxer_forest;
 pub mod relaxer_optimizer;
 pub mod union_find;
 pub mod util;
+#[cfg(feature = "python_binding")]
+pub mod util_py;
 pub mod visualize;
 
 #[cfg(feature = "python_binding")]
@@ -70,6 +72,7 @@ fn mwpf(m: &Bound<'_, PyModule>) -> PyResult<()> {
     example_codes::register(m)?;
     mwpf_solver::register(m)?;
     html_export::register(m)?;
+    util_py::register(m)?;
     m.add_wrapped(wrap_pyfunction!(run_cli))?;
     Ok(())
 }
