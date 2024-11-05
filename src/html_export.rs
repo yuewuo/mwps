@@ -174,15 +174,28 @@ impl HTMLExport {
                     override_config.initial_aspect_ratio = initial_aspect_ratio;
                 }}
                 // bind the visualizer to the div block
-                const app = await window.hyperion_visual.bind_to_div("#{div_id}", visualizer_data, {{ ...window.hyperion_visual.default_config(), ...override_config }});
-                // observe the div block for removal
-                const script_dom = document.getElementById('{div_id}');
+                let app_currently_exist = false;
+                async function create_app() {{
+                    if (app_currently_exist) return;
+                    app_currently_exist = true;
+                    const script_dom = document.getElementById('{div_id}');
+                    const app = await window.hyperion_visual.bind_to_div("#{div_id}", visualizer_data, {{ ...window.hyperion_visual.default_config(), ...override_config }});
+                    // observe the div block for removal
+                    new MutationObserver(function(mutations) {{
+                        if(!document.body.contains(script_dom)) {{
+                            app.unmount()
+                            this.disconnect()
+                            app_currently_exist = false
+                        }}
+                    }}).observe(script_dom.parentElement.parentElement.parentElement.parentElement.parentElement, {{ childList: true, subtree: true }});
+                }}
+                create_app()
                 new MutationObserver(function(mutations) {{
-                    if(!document.body.contains(script_dom)) {{
-                        app.unmount()
-                        this.disconnect()
+                    const script_dom = document.getElementById('{div_id}');
+                    if(script_dom != undefined && script_dom.getAttribute('data-engine') == null) {{
+                        create_app()
                     }}
-                }}).observe(script_dom.parentElement.parentElement.parentElement.parentElement.parentElement, {{ childList: true, subtree: true }});
+                }}).observe(document, {{ childList: true, subtree: true }});
             }}
             on_hyperion_library_ready(main)
         "###
