@@ -64,12 +64,12 @@ pub fn run_cli(parameters: Vec<String>) {
 
 #[cfg(feature = "python_binding")]
 #[pymodule]
-fn mwpf(py: Python<'_>, m: &PyModule) -> PyResult<()> {
-    util::register(py, m)?;
-    visualize::register(py, m)?;
-    example_codes::register(py, m)?;
-    mwpf_solver::register(py, m)?;
-    html_export::register(py, m)?;
+fn mwpf(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    util::register(m)?;
+    visualize::register(m)?;
+    example_codes::register(m)?;
+    mwpf_solver::register(m)?;
+    html_export::register(m)?;
     m.add_wrapped(wrap_pyfunction!(run_cli))?;
     Ok(())
 }

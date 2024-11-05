@@ -15,6 +15,8 @@ use crate::primal_module_serial::PrimalClusterPtr;
 use crate::relaxer_optimizer::OptimizerResult;
 use crate::util::*;
 use crate::visualize::*;
+#[cfg(feature = "python_binding")]
+use pyo3::prelude::*;
 
 use std::collections::BTreeMap;
 use std::collections::{BTreeSet, HashMap};
@@ -147,8 +149,11 @@ impl std::fmt::Debug for DualNodeWeak {
 /// dual nodes, once created, will never be deconstructed until the next run
 #[derive(Derivative)]
 #[derivative(Debug)]
+#[cfg_attr(feature = "python_binding", cfg_eval)]
+#[cfg_attr(feature = "python_binding", pyclass)]
 pub struct DualModuleInterface {
     /// all the dual node that can be used to control a concrete dual module implementation
+    // #[cfg_attr(feature = "python_binding", pyo3(get))]
     pub nodes: Vec<DualNodePtr>,
     /// given an invalid subgraph, find its corresponding dual node
     pub hashmap: HashMap<Arc<InvalidSubgraph>, NodeIndex>,

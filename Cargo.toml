@@ -56,14 +56,14 @@ embed_visualizer = [
 ] # use nodejs to build frontend and embed in Python instead of outputing individual JSON files
 
 [dependencies]
-pyo3 = { version = "0.19.2", features = [
+pyo3 = { version = "0.22.5", features = [
     "extension-module",
     "multiple-pymethods",
     "abi3-py37",
     "num-bigint",
 ], optional = true }
-serde = { version = "1.0.163", features = ["derive", "rc"] }
-serde-wasm-bindgen = "0.5.0"
+serde = { version = "1.0.214", features = ["derive", "rc"] }
+serde-wasm-bindgen = "0.6.5"
 serde_json = "1.0.59"
 chrono = "0.4.19"
 urlencoding = "2.1.0"

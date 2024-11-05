@@ -8,7 +8,7 @@ use crate::visualize::*;
 #[cfg(feature = "python_binding")]
 use pyo3::prelude::*;
 #[cfg(feature = "python_binding")]
-use pyo3::types::PyFloat;
+use pyo3::types::{PyDict, PyFloat, PyList};
 use serde::{Deserialize, Serialize};
 
 use std::collections::BTreeSet;
@@ -276,9 +276,9 @@ impl MWPSVisualizer for Subgraph {
 pub fn rational_to_pyobject(value: &Rational) -> PyResult<Py<PyAny>> {
     Python::with_gil(|py| {
         if cfg!(feature = "float_lp") {
-            PyResult::Ok(PyFloat::new(py, value.to_f64().unwrap()).into())
+            PyResult::Ok(PyFloat::new_bound(py, value.to_f64().unwrap()).into())
         } else {
-            let frac = py.import("fractions")?;
+            let frac = py.import_bound("fractions")?;
             let numer = value.numer().clone();
             let denom = value.denom().clone();
             frac.call_method("Fraction", (numer, denom), None).map(Into::into)
@@ -512,10 +512,10 @@ pub fn json_to_pyobject_locked(value: serde_json::Value, py: Python) -> PyObject
         serde_json::Value::String(value) => value.to_object(py),
         serde_json::Value::Array(array) => {
             let elements: Vec<PyObject> = array.into_iter().map(|value| json_to_pyobject_locked(value, py)).collect();
-            pyo3::types::PyList::new(py, elements).into()
+            PyList::new_bound(py, elements).into()
         }
         serde_json::Value::Object(map) => {
-            let pydict = pyo3::types::PyDict::new(py);
+            let pydict = PyDict::new_bound(py);
             for (key, value) in map.into_iter() {
                 let pyobject = json_to_pyobject_locked(value, py);
                 pydict.set_item(key, pyobject).unwrap();
@@ -532,18 +532,18 @@ pub fn json_to_pyobject(value: serde_json::Value) -> PyObject {
 
 #[cfg(feature = "python_binding")]
 pub fn pyobject_to_json_locked(value: PyObject, py: Python) -> serde_json::Value {
-    let value: &PyAny = value.as_ref(py);
+    let value: &Bound<PyAny> = value.bind(py);
     if value.is_none() {
         serde_json::Value::Null
     } else if value.is_instance_of::<pyo3::types::PyBool>() {
         json!(value.extract::<bool>().unwrap())
     } else if value.is_instance_of::<pyo3::types::PyInt>() {
         json!(value.extract::<i64>().unwrap())
-    } else if value.is_instance_of::<pyo3::types::PyFloat>() {
+    } else if value.is_instance_of::<PyFloat>() {
         json!(value.extract::<f64>().unwrap())
     } else if value.is_instance_of::<pyo3::types::PyString>() {
         json!(value.extract::<String>().unwrap())
-    } else if value.is_instance_of::<pyo3::types::PyList>() {
+    } else if value.is_instance_of::<PyList>() {
         let elements: Vec<serde_json::Value> = value
             .extract::<Vec<PyObject>>()
             .unwrap()
@@ -551,8 +551,8 @@ pub fn pyobject_to_json_locked(value: PyObject, py: Python) -> serde_json::Value
             .map(|object| pyobject_to_json_locked(object, py))
             .collect();
         json!(elements)
-    } else if value.is_instance_of::<pyo3::types::PyDict>() {
-        let map: &pyo3::types::PyDict = value.downcast().unwrap();
+    } else if value.is_instance_of::<PyDict>() {
+        let map: &Bound<PyDict> = value.downcast().unwrap();
         let mut json_map = serde_json::Map::new();
         for (key, value) in map.iter() {
             json_map.insert(
@@ -573,7 +573,7 @@ pub fn pyobject_to_json(value: PyObject) -> serde_json::Value {
 
 #[cfg(feature = "python_binding")]
 #[pyfunction]
-pub(crate) fn register(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
+pub(crate) fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<SolverInitializer>()?;
     m.add_class::<SyndromePattern>()?;
     m.add_class::<HyperEdge>()?;

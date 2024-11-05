@@ -367,7 +367,7 @@ impl Visualizer {
 
     #[cfg(feature = "python_binding")]
     #[pyo3(name = "snapshot_combined")]
-    pub fn snapshot_combined_py(&mut self, name: String, object_pys: Vec<&PyAny>) -> std::io::Result<()> {
+    pub fn snapshot_combined_py(&mut self, name: String, object_pys: &Bound<pyo3::types::PyList>) -> std::io::Result<()> {
         let mut values = Vec::<serde_json::Value>::with_capacity(object_pys.len());
         for object_py in object_pys.into_iter() {
             values.push(pyobject_to_json(object_py.call_method0("snapshot")?.extract::<PyObject>()?));
@@ -377,7 +377,7 @@ impl Visualizer {
 
     #[cfg(feature = "python_binding")]
     #[pyo3(name = "snapshot")]
-    pub fn snapshot_py(&mut self, name: String, object_py: &PyAny) -> std::io::Result<()> {
+    pub fn snapshot_py(&mut self, name: String, object_py: &Bound<PyAny>) -> std::io::Result<()> {
         let value = pyobject_to_json(object_py.call_method0("snapshot")?.extract::<PyObject>()?);
         self.snapshot_value(name, value)
     }
@@ -533,7 +533,7 @@ pub fn static_visualize_html_filename() -> String {
 
 #[cfg(feature = "python_binding")]
 #[pyfunction]
-pub(crate) fn register(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
+pub(crate) fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<VisualizePosition>()?;
     m.add_class::<Visualizer>()?;
     m.add_function(wrap_pyfunction!(center_positions, m)?)?;

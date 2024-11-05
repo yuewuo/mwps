@@ -113,7 +113,7 @@ impl HTMLExport {
 </script>"#
         );
         Python::with_gil(|py| -> PyResult<()> {
-            let display = PyModule::import(py, "IPython.display")?;
+            let display = PyModule::import_bound(py, "IPython.display")?;
             display.call_method1("display", (display.call_method1("HTML", (script_block,))?,))?;
             Ok(())
         })
@@ -138,7 +138,7 @@ impl HTMLExport {
         };
         let div_block = format!(r#"<div id="{div_id}" style="width: auto; height: min(max(60vh, 400px), 100vw);"></div>"#);
         Python::with_gil(|py| -> PyResult<()> {
-            let display = PyModule::import(py, "IPython.display")?;
+            let display = PyModule::import_bound(py, "IPython.display")?;
             display.call_method1("display", (display.call_method1("HTML", (div_block,))?,))?;
             Ok(())
         })
@@ -182,7 +182,7 @@ impl HTMLExport {
         "###
         );
         Python::with_gil(|py| -> PyResult<()> {
-            let display = PyModule::import(py, "IPython.display")?;
+            let display = PyModule::import_bound(py, "IPython.display")?;
             display.call_method1("display", (display.call_method1("Javascript", (js_code,))?,))?;
             Ok(())
         })
@@ -268,7 +268,7 @@ impl HTMLExport {
 
 #[cfg(feature = "python_binding")]
 #[pyfunction]
-pub(crate) fn register(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
+pub(crate) fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<HTMLExport>()?;
     Ok(())
 }

@@ -56,15 +56,15 @@ macro_rules! bind_trait_to_python {
             fn trait_clear(&mut self) {
                 self.clear()
             }
-            #[pyo3(name = "solve")] // in Python, `solve` and `solve_visualizer` is the same because it can take optional parameter
+            #[pyo3(name = "solve", signature = (syndrome_pattern, visualizer=None))] // in Python, `solve` and `solve_visualizer` is the same because it can take optional parameter
             fn trait_solve(&mut self, syndrome_pattern: &SyndromePattern, visualizer: Option<&mut Visualizer>) {
                 self.solve_visualizer(syndrome_pattern, visualizer)
             }
-            #[pyo3(name = "subgraph_range")] // in Python, `subgraph_range` and `subgraph_range_visualizer` is the same
+            #[pyo3(name = "subgraph_range", signature = (visualizer=None))] // in Python, `subgraph_range` and `subgraph_range_visualizer` is the same
             fn trait_subgraph_range(&mut self, visualizer: Option<&mut Visualizer>) -> (Subgraph, WeightRange) {
                 self.subgraph_range_visualizer(visualizer)
             }
-            #[pyo3(name = "subgraph")]
+            #[pyo3(name = "subgraph", signature = (visualizer=None))]
             fn trait_subgraph(&mut self, visualizer: Option<&mut Visualizer>) -> Subgraph {
                 self.subgraph_range_visualizer(visualizer).0
             }
@@ -242,6 +242,7 @@ impl SolverSerialUnionFind {
 #[pymethods]
 impl SolverSerialUnionFind {
     #[new]
+    #[pyo3(signature = (initializer, config=None))]
     pub fn new_python(initializer: &SolverInitializer, config: Option<PyObject>) -> Self {
         let config = config.map(|x| pyobject_to_json(x)).unwrap_or(json!({}));
         Self::new(initializer, config)
@@ -274,6 +275,7 @@ impl SolverSerialSingleHair {
 #[pymethods]
 impl SolverSerialSingleHair {
     #[new]
+    #[pyo3(signature = (initializer, config=None))]
     pub fn new_python(initializer: &SolverInitializer, config: Option<PyObject>) -> Self {
         let config = config.map(|x| pyobject_to_json(x)).unwrap_or(json!({}));
         Self::new(initializer, config)
@@ -309,6 +311,7 @@ impl SolverSerialJointSingleHair {
 #[pymethods]
 impl SolverSerialJointSingleHair {
     #[new]
+    #[pyo3(signature = (initializer, config=None))]
     pub fn new_python(initializer: &SolverInitializer, config: Option<PyObject>) -> Self {
         let config = config.map(|x| pyobject_to_json(x)).unwrap_or(json!({}));
         Self::new(initializer, config)
@@ -377,7 +380,7 @@ impl PrimalDualSolver for SolverErrorPatternLogger {
 
 #[cfg(feature = "python_binding")]
 #[pyfunction]
-pub(crate) fn register(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
+pub(crate) fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<SolverSerialUnionFind>()?;
     m.add_class::<SolverSerialSingleHair>()?;
     m.add_class::<SolverSerialJointSingleHair>()?;

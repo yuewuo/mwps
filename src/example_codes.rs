@@ -1363,7 +1363,7 @@ impl ErrorPatternReader {
 
 #[cfg(feature = "python_binding")]
 #[pyfunction]
-pub(crate) fn register(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
+pub(crate) fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<CodeVertex>()?;
     m.add_class::<CodeEdge>()?;
     m.add_function(wrap_pyfunction!(weight_of_p, m)?)?;
