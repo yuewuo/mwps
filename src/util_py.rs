@@ -1,8 +1,12 @@
 use crate::dual_module::*;
+use crate::num_traits::{Signed, ToPrimitive};
 use crate::util::*;
+use pyo3::basic::CompareOp;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList, PySet};
 use std::collections::BTreeSet;
+use std::hash::DefaultHasher;
+use std::hash::{Hash, Hasher};
 
 macro_rules! bind_trait_simple_wrapper {
     ($struct_name:ident, $py_struct_name:ident) => {
@@ -15,16 +19,6 @@ macro_rules! bind_trait_simple_wrapper {
         impl From<$py_struct_name> for $struct_name {
             fn from(value: $py_struct_name) -> Self {
                 value.0
-            }
-        }
-
-        #[pymethods]
-        impl $py_struct_name {
-            fn __repr__(&self) -> String {
-                format!("{:?}", self.0)
-            }
-            fn __eq__(&self, other: &$py_struct_name) -> bool {
-                self.0 == other.0
             }
         }
     };
@@ -49,8 +43,8 @@ impl PyRational {
                 let denominator: f64 = denominator.map(|x| x.extract::<f64>()).transpose()?.unwrap_or(1.);
                 let numerator: f64 = numerator.extract()?;
             }
-            Ok(Self(Rational::new(numerator, denominator)))
         }
+        Ok(Self(Rational::new(numerator, denominator)))
     }
     #[getter]
     fn numer(&self) -> PyObject {
@@ -60,12 +54,72 @@ impl PyRational {
     fn denom(&self) -> PyObject {
         Python::with_gil(|py| self.0.denom().to_object(py))
     }
+    fn float(&self) -> f64 {
+        self.0.to_f64().unwrap()
+    }
+    fn __richcmp__(&self, other: &Self, op: CompareOp) -> bool {
+        op.matches(self.0.cmp(&other.0))
+    }
+    fn __abs__(&self) -> Self {
+        self.0.abs().into()
+    }
+    fn __mul__(&self, other: &Self) -> Self {
+        (self.0.clone() * other.0.clone()).into()
+    }
+    fn __truediv__(&self, other: &Self) -> Self {
+        (self.0.clone() / other.0.clone()).into()
+    }
+    fn __add__(&self, other: &Self) -> Self {
+        (self.0.clone() + other.0.clone()).into()
+    }
+    fn __sub__(&self, other: &Self) -> Self {
+        (self.0.clone() - other.0.clone()).into()
+    }
+    fn __neg__(&self) -> Self {
+        (-self.0.clone()).into()
+    }
+    fn __pos__(&self) -> Self {
+        self.clone()
+    }
+    fn __repr__(&self) -> String {
+        format!("{:?}", self.0)
+    }
+    fn __str__(&self) -> String {
+        cfg_if::cfg_if! {
+            if #[cfg(feature="rational_weight")] {
+                format!("{}/{}", self.0.numer(), self.0.denom())
+            } else {
+                format!("{}", self.0.to_f64().unwrap())
+            }
+        }
+    }
+    fn __hash__(&self) -> u64 {
+        let mut hasher = DefaultHasher::new();
+        self.0.hash(&mut hasher);
+        hasher.finish()
+    }
 }
 
 #[derive(Clone)]
 #[pyclass(name = "DualNodePtr")]
 pub struct PyDualNodePtr(pub DualNodePtr);
 bind_trait_simple_wrapper!(DualNodePtr, PyDualNodePtr);
+
+#[pymethods]
+impl PyDualNodePtr {
+    fn __repr__(&self) -> String {
+        format!("{:?}", self.0)
+    }
+    fn __eq__(&self, other: &PyDualNodePtr) -> bool {
+        self.0 == other.0
+    }
+    fn __str__(&self) -> String {
+        format!("Node({})", self.index())
+    }
+    fn __hash__(&self) -> u64 {
+        self.index() as u64
+    }
+}
 
 #[pymethods]
 impl PyDualNodePtr {
