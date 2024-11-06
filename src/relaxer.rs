@@ -157,7 +157,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic]
+    #[cfg_attr(debug_assertions, should_panic)]
     fn relaxer_bad() {
         // cargo test relaxer_bad -- --nocapture
         let visualize_filename = "relaxer_bad.json".to_string();

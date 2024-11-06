@@ -37,29 +37,30 @@ macro_rules! bind_trait_mwpf_visualizer {
 pub use bind_trait_mwpf_visualizer;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "python_binding", cfg_eval)]
-#[cfg_attr(feature = "python_binding", pyclass)]
+#[cfg_attr(feature = "python_binding", pyclass(get_all, set_all))]
 pub struct VisualizePosition {
     /// vertical axis, -i is up, +i is down (left-up corner is smallest i,j)
-    #[cfg_attr(feature = "python_binding", pyo3(get, set))]
     pub i: f64,
     /// horizontal axis, -j is left, +j is right (left-up corner is smallest i,j)
-    #[cfg_attr(feature = "python_binding", pyo3(get, set))]
     pub j: f64,
     /// time axis, top and bottom (orthogonal to the initial view, which looks at -t direction)
-    #[cfg_attr(feature = "python_binding", pyo3(get, set))]
     pub t: f64,
 }
 
-#[cfg_attr(feature = "python_binding", cfg_eval)]
-#[cfg_attr(feature = "python_binding", pymethods)]
 impl VisualizePosition {
     /// create a visualization position
-    #[cfg_attr(feature = "python_binding", new)]
     pub fn new(i: f64, j: f64, t: f64) -> Self {
         Self { i, j, t }
     }
-    #[cfg(feature = "python_binding")]
+}
+
+#[cfg(feature = "python_binding")]
+#[pymethods]
+impl VisualizePosition {
+    #[new]
+    fn py_new(i: f64, j: f64, t: f64) -> Self {
+        Self::new(i, j, t)
+    }
     fn __repr__(&self) -> String {
         format!("{:?}", self)
     }
@@ -90,19 +91,29 @@ impl VisualizerFileTrait for SpooledTempFile {
 }
 
 #[derive(Debug)]
-#[cfg_attr(feature = "python_binding", cfg_eval)]
 #[cfg_attr(feature = "python_binding", pyclass)]
 pub struct Visualizer {
     /// original filepath
-    #[cfg_attr(feature = "python_binding", pyo3(get))]
     pub filepath: Option<String>,
     /// save to file if applicable
     file: Option<Box<dyn VisualizerFileTrait>>,
     /// if waiting for the first snapshot
     empty_snapshot: bool,
     /// names of the snapshots
-    #[cfg_attr(feature = "python_binding", pyo3(get))]
     pub snapshots: Vec<String>,
+}
+
+#[cfg(feature = "python_binding")]
+#[pymethods]
+impl Visualizer {
+    #[getter]
+    fn filepath(&self) -> Option<String> {
+        self.filepath.clone()
+    }
+    #[getter]
+    fn snapshots(&self) -> Vec<String> {
+        self.snapshots.clone()
+    }
 }
 
 pub fn snapshot_fix_missing_fields(value: &mut serde_json::Value, abbrev: bool) {
@@ -320,12 +331,8 @@ pub fn center_positions(mut positions: Vec<VisualizePosition>) -> Vec<VisualizeP
     positions
 }
 
-#[cfg_attr(feature = "python_binding", cfg_eval)]
-#[cfg_attr(feature = "python_binding", pymethods)]
 impl Visualizer {
     /// create a new visualizer with target filename and node layout
-    #[cfg_attr(feature = "python_binding", new)]
-    #[cfg_attr(feature = "python_binding", pyo3(signature = (filepath="".to_string(), positions=vec![], center=true)))]
     pub fn new(filepath: Option<String>, mut positions: Vec<VisualizePosition>, center: bool) -> std::io::Result<Self> {
         if center {
             positions = center_positions(positions);
@@ -365,69 +372,6 @@ impl Visualizer {
         })
     }
 
-    #[cfg(feature = "python_binding")]
-    #[pyo3(name = "snapshot_combined")]
-    pub fn snapshot_combined_py(&mut self, name: String, object_pys: Vec<&PyAny>) -> std::io::Result<()> {
-        let mut values = Vec::<serde_json::Value>::with_capacity(object_pys.len());
-        for object_py in object_pys.into_iter() {
-            values.push(pyobject_to_json(object_py.call_method0("snapshot")?.extract::<PyObject>()?));
-        }
-        self.snapshot_combined_value(name, values)
-    }
-
-    #[cfg(feature = "python_binding")]
-    #[pyo3(name = "snapshot")]
-    pub fn snapshot_py(&mut self, name: String, object_py: &PyAny) -> std::io::Result<()> {
-        let value = pyobject_to_json(object_py.call_method0("snapshot")?.extract::<PyObject>()?);
-        self.snapshot_value(name, value)
-    }
-
-    #[cfg(feature = "python_binding")]
-    #[pyo3(name = "snapshot_combined_value")]
-    pub fn snapshot_combined_value_py(&mut self, name: String, value_pys: Vec<PyObject>) -> std::io::Result<()> {
-        let values: Vec<_> = value_pys.into_iter().map(pyobject_to_json).collect();
-        self.snapshot_combined_value(name, values)
-    }
-
-    #[cfg(feature = "python_binding")]
-    #[pyo3(name = "snapshot_value")]
-    pub fn snapshot_value_py(&mut self, name: String, value_py: PyObject) -> std::io::Result<()> {
-        let value = pyobject_to_json(value_py);
-        self.snapshot_value(name, value)
-    }
-
-    #[cfg(feature = "python_binding")]
-    #[pyo3(name = "show", signature = (override_config = None))]
-    pub fn show_py(&mut self, override_config: Option<PyObject>) {
-        let override_config = if let Some(override_config) = override_config {
-            pyobject_to_json(override_config)
-        } else {
-            json!({})
-        };
-        HTMLExport::display_jupyter_html(self.get_visualizer_data(), override_config);
-    }
-
-    #[cfg(feature = "python_binding")]
-    #[pyo3(name = "generate_html", signature = (override_config = None))]
-    pub fn generate_html_py(&mut self, override_config: Option<PyObject>) -> String {
-        let override_config = if let Some(override_config) = override_config {
-            pyobject_to_json(override_config)
-        } else {
-            json!({})
-        };
-        self.generate_html(override_config)
-    }
-
-    #[cfg(feature = "python_binding")]
-    #[pyo3(name = "save_html", signature = (path, override_config = None))]
-    pub fn save_html_py(&mut self, path: String, override_config: Option<PyObject>) {
-        let html = self.generate_html_py(override_config);
-        let mut file = File::create(path).expect("cannot create HTML file");
-        file.write_all(html.as_bytes()).expect("cannot write to HTML file");
-    }
-}
-
-impl Visualizer {
     pub fn incremental_save(&mut self, name: String, value: serde_json::Value) -> std::io::Result<()> {
         if let Some(file) = self.file.as_mut() {
             self.snapshots.push(name.clone());
@@ -516,6 +460,81 @@ impl Visualizer {
     }
 }
 
+#[cfg(feature = "python_binding")]
+#[pymethods]
+impl Visualizer {
+    #[new]
+    #[pyo3(signature = (filepath="".to_string(), positions=vec![], center=true))]
+    fn py_new(filepath: Option<String>, positions: Vec<VisualizePosition>, center: bool) -> std::io::Result<Self> {
+        Self::new(filepath, positions, center)
+    }
+    fn __repr__(&self) -> String {
+        format!("{:?}", self)
+    }
+
+    #[pyo3(name = "snapshot_combined")]
+    pub fn snapshot_combined_py(&mut self, name: String, object_pys: &Bound<pyo3::types::PyList>) -> std::io::Result<()> {
+        let mut values = Vec::<serde_json::Value>::with_capacity(object_pys.len());
+        for object_py in object_pys.into_iter() {
+            values.push(pyobject_to_json(object_py.call_method0("snapshot")?.extract::<PyObject>()?));
+        }
+        self.snapshot_combined_value(name, values)
+    }
+
+    #[pyo3(name = "snapshot")]
+    pub fn snapshot_py(&mut self, name: String, object_py: &Bound<PyAny>) -> std::io::Result<()> {
+        let value = pyobject_to_json(object_py.call_method0("snapshot")?.extract::<PyObject>()?);
+        self.snapshot_value(name, value)
+    }
+
+    #[pyo3(name = "snapshot_combined_value")]
+    pub fn snapshot_combined_value_py(&mut self, name: String, value_pys: Vec<PyObject>) -> std::io::Result<()> {
+        let values: Vec<_> = value_pys.into_iter().map(pyobject_to_json).collect();
+        self.snapshot_combined_value(name, values)
+    }
+
+    #[pyo3(name = "snapshot_value")]
+    pub fn snapshot_value_py(&mut self, name: String, value_py: PyObject) -> std::io::Result<()> {
+        let value = pyobject_to_json(value_py);
+        self.snapshot_value(name, value)
+    }
+
+    #[pyo3(name = "show", signature = (override_config = None))]
+    pub fn show_py(&mut self, override_config: Option<PyObject>) {
+        let override_config = if let Some(override_config) = override_config {
+            pyobject_to_json(override_config)
+        } else {
+            json!({})
+        };
+        HTMLExport::display_jupyter_html(self.get_visualizer_data(), override_config);
+    }
+
+    #[staticmethod]
+    #[pyo3(name = "embed", signature = (force=false))]
+    pub fn embed_py(force: bool) {
+        if force || !HTMLExport::library_injected() {
+            HTMLExport::force_inject_library();
+        }
+    }
+
+    #[pyo3(name = "generate_html", signature = (override_config = None))]
+    pub fn generate_html_py(&mut self, override_config: Option<PyObject>) -> String {
+        let override_config = if let Some(override_config) = override_config {
+            pyobject_to_json(override_config)
+        } else {
+            json!({})
+        };
+        self.generate_html(override_config)
+    }
+
+    #[pyo3(name = "save_html", signature = (path, override_config = None))]
+    pub fn save_html_py(&mut self, path: String, override_config: Option<PyObject>) {
+        let html = self.generate_html_py(override_config);
+        let mut file = File::create(path).expect("cannot create HTML file");
+        file.write_all(html.as_bytes()).expect("cannot write to HTML file");
+    }
+}
+
 const DEFAULT_VISUALIZE_DATA_FOLDER: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/visualize/data/");
 
 // only used locally, because this is compile time directory
@@ -533,7 +552,7 @@ pub fn static_visualize_html_filename() -> String {
 
 #[cfg(feature = "python_binding")]
 #[pyfunction]
-pub(crate) fn register(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
+pub(crate) fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<VisualizePosition>()?;
     m.add_class::<Visualizer>()?;
     m.add_function(wrap_pyfunction!(center_positions, m)?)?;

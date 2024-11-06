@@ -1,6 +1,3 @@
-#![cfg_attr(feature = "python_binding", feature(cfg_eval))]
-#![allow(non_local_definitions)]
-
 extern crate serde;
 #[macro_use]
 extern crate serde_json;
@@ -17,6 +14,7 @@ extern crate num_traits;
 extern crate parking_lot;
 extern crate prettytable;
 #[cfg(feature = "python_binding")]
+#[macro_use]
 extern crate pyo3;
 extern crate rand;
 extern crate rand_xoshiro;
@@ -50,6 +48,8 @@ pub mod relaxer_forest;
 pub mod relaxer_optimizer;
 pub mod union_find;
 pub mod util;
+#[cfg(feature = "python_binding")]
+pub mod util_py;
 pub mod visualize;
 
 #[cfg(feature = "python_binding")]
@@ -64,12 +64,13 @@ pub fn run_cli(parameters: Vec<String>) {
 
 #[cfg(feature = "python_binding")]
 #[pymodule]
-fn mwpf(py: Python<'_>, m: &PyModule) -> PyResult<()> {
-    util::register(py, m)?;
-    visualize::register(py, m)?;
-    example_codes::register(py, m)?;
-    mwpf_solver::register(py, m)?;
-    html_export::register(py, m)?;
+fn mwpf(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    util::register(m)?;
+    visualize::register(m)?;
+    example_codes::register(m)?;
+    mwpf_solver::register(m)?;
+    html_export::register(m)?;
+    util_py::register(m)?;
     m.add_wrapped(wrap_pyfunction!(run_cli))?;
     Ok(())
 }

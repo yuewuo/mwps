@@ -1,23 +1,18 @@
-#[cfg(not(feature = "f32_weight"))]
-type BaseFloat = f64;
-#[cfg(feature = "f32_weight")]
-type BaseFloat = f32; // there's actually no point in using this, as HIGHs don't support f32
-
 use num_traits::Zero;
 
-const EPSILON: BaseFloat = 1e-4; // note: it would be interesting to play around with this.
+const EPSILON: f64 = 1e-4; // note: it would be interesting to play around with this.
 
-#[derive(Debug, Clone, Copy)]
-pub struct OrderedFloat(BaseFloat);
+#[derive(Debug, Clone)]
+pub struct OrderedFloat(f64);
 
 impl OrderedFloat {
-    pub fn new(value: BaseFloat) -> Self {
+    pub fn new(value: f64) -> Self {
         Self(value)
     }
-    pub fn numer(&self) -> BaseFloat {
+    pub fn numer(&self) -> f64 {
         self.0
     }
-    pub fn denom(&self) -> BaseFloat {
+    pub fn denom(&self) -> f64 {
         1.0
     }
     pub fn set_zero(&mut self) {
@@ -28,7 +23,7 @@ impl OrderedFloat {
         Self::new(1.0 / self.0)
     }
     pub fn new_raw(numer: i32, denom: i32) -> Self {
-        Self::new(numer as BaseFloat / denom as BaseFloat)
+        Self::new(numer as f64 / denom as f64)
     }
 }
 
@@ -69,7 +64,7 @@ impl num_traits::Signed for OrderedFloat {
 impl num_traits::Num for OrderedFloat {
     type FromStrRadixErr = num_traits::ParseFloatError;
     fn from_str_radix(str: &str, radix: u32) -> Result<Self, Self::FromStrRadixErr> {
-        match BaseFloat::from_str_radix(str, radix) {
+        match f64::from_str_radix(str, radix) {
             Ok(value) => Ok(Self::new(value)),
             Err(err) => Err(err),
         }
@@ -77,16 +72,16 @@ impl num_traits::Num for OrderedFloat {
 }
 impl num_traits::FromPrimitive for OrderedFloat {
     fn from_i64(n: i64) -> Option<Self> {
-        Some(Self::new(n as BaseFloat))
+        Some(Self::new(n as f64))
     }
     fn from_u64(n: u64) -> Option<Self> {
-        Some(Self::new(n as BaseFloat))
+        Some(Self::new(n as f64))
     }
     fn from_f64(n: f64) -> Option<Self> {
         Some(Self::new(n))
     }
     fn from_usize(n: usize) -> Option<Self> {
-        Some(Self::new(n as BaseFloat))
+        Some(Self::new(n as f64))
     }
 }
 impl num_traits::ToPrimitive for OrderedFloat {
@@ -162,22 +157,22 @@ macro_rules! impl_assign_ops {
             #[allow(clippy::assign_op_pattern)]
             impl std::ops::$trait for OrderedFloat {
                 fn $method(&mut self, other: Self) {
-                    *self = *self $op other;
+                    *self = self.clone() $op other;
                 }
             }
             impl std::ops::$trait<&OrderedFloat> for OrderedFloat {
                 fn $method(&mut self, other: &Self) {
-                    *self = *self $op other;
+                    *self = self.clone() $op other;
                 }
             }
             // impl std::ops::$trait<&f32> for OrderedFloat {
             //     fn $method(&mut self, other: &f32) {
-            //         self.0 = self.0 $op *other as BaseFloat;
+            //         self.0 = self.0 $op *other as f64;
             //     }
             // }
             // impl std::ops::$trait<&f64> for OrderedFloat {
             //     fn $method(&mut self, other: &f64) {
-            //         self.0 = self.0 $op *other as BaseFloat;
+            //         self.0 = self.0 $op *other as f64;
             //     }
             // }
         };
@@ -245,8 +240,8 @@ impl Ord for OrderedFloat {
 }
 
 // Implement From<f64> for OrderedFloat
-impl From<BaseFloat> for OrderedFloat {
-    fn from(value: BaseFloat) -> Self {
+impl From<f64> for OrderedFloat {
+    fn from(value: f64) -> Self {
         OrderedFloat::new(value)
     }
 }
@@ -268,7 +263,7 @@ impl std::iter::Sum for OrderedFloat {
 // Implement Sum for references to OrderedFloat
 impl<'a> std::iter::Sum<&'a OrderedFloat> for OrderedFloat {
     fn sum<I: Iterator<Item = &'a Self>>(iter: I) -> Self {
-        iter.fold(Self::zero(), |acc, &item| acc + item)
+        iter.fold(Self::zero(), |acc, item| acc + item)
     }
 }
 

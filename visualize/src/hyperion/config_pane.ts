@@ -87,6 +87,8 @@ export class Config {
             this.parameters = JSON.stringify(this.config_prop.visualizer_config)
             this.import_visualizer_parameters()
         }
+        // by default showing the most recent snapshot; user can move back if they want
+        this.snapshot_index = Math.max(this.data.visualizer.snapshots.length - 1, 0)
     }
 
     parameters: string = '' // export or import parameters of the tweak pane

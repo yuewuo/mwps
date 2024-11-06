@@ -70,7 +70,42 @@ pub trait PrimalModuleImpl {
         syndrome_pattern: Arc<SyndromePattern>,
         dual_module: &mut impl DualModuleImpl,
     ) {
-        self.solve_step_callback(interface, syndrome_pattern, dual_module, |_, _, _, _| {})
+        self.solve_step_load_syndrome(interface, syndrome_pattern, dual_module);
+        self.solve_step_callback_interface_loaded(interface, dual_module, |_, _, _, _| {})
+    }
+
+    fn visualizer_callback<D: DualModuleImpl + MWPSVisualizer>(
+        visualizer: &mut Visualizer,
+    ) -> impl FnMut(&DualModuleInterfacePtr, &mut D, &mut Self, &GroupMaxUpdateLength)
+    where
+        Self: MWPSVisualizer + Sized,
+    {
+        |interface: &DualModuleInterfacePtr,
+         dual_module: &mut D,
+         primal_module: &mut Self,
+         group_max_update_length: &GroupMaxUpdateLength| {
+            if cfg!(debug_assertions) {
+                println!("group_max_update_length: {:?}", group_max_update_length);
+                // dual_module.debug_print();
+            }
+            if group_max_update_length.is_unbounded() {
+                visualizer
+                    .snapshot_combined("unbounded grow".to_string(), vec![interface, dual_module, primal_module])
+                    .unwrap();
+            } else if let Some(length) = group_max_update_length.get_valid_growth() {
+                visualizer
+                    .snapshot_combined(format!("grow {length}"), vec![interface, dual_module, primal_module])
+                    .unwrap();
+            } else {
+                let first_conflict = format!("{:?}", group_max_update_length.peek().unwrap());
+                visualizer
+                    .snapshot_combined(
+                        format!("resolve {first_conflict}"),
+                        vec![interface, dual_module, primal_module],
+                    )
+                    .unwrap();
+            };
+        }
     }
 
     fn solve_visualizer<D: DualModuleImpl + MWPSVisualizer>(
@@ -83,34 +118,9 @@ pub trait PrimalModuleImpl {
         Self: MWPSVisualizer + Sized,
     {
         if let Some(visualizer) = visualizer {
-            self.solve_step_callback(
-                interface,
-                syndrome_pattern,
-                dual_module,
-                |interface, dual_module, primal_module, group_max_update_length| {
-                    if cfg!(debug_assertions) {
-                        println!("group_max_update_length: {:?}", group_max_update_length);
-                        // dual_module.debug_print();
-                    }
-                    if group_max_update_length.is_unbounded() {
-                        visualizer
-                            .snapshot_combined("unbounded grow".to_string(), vec![interface, dual_module, primal_module])
-                            .unwrap();
-                    } else if let Some(length) = group_max_update_length.get_valid_growth() {
-                        visualizer
-                            .snapshot_combined(format!("grow {length}"), vec![interface, dual_module, primal_module])
-                            .unwrap();
-                    } else {
-                        let first_conflict = format!("{:?}", group_max_update_length.peek().unwrap());
-                        visualizer
-                            .snapshot_combined(
-                                format!("resolve {first_conflict}"),
-                                vec![interface, dual_module, primal_module],
-                            )
-                            .unwrap();
-                    };
-                },
-            );
+            let callback = Self::visualizer_callback(visualizer);
+            self.solve_step_load_syndrome(interface, syndrome_pattern, dual_module);
+            self.solve_step_callback_interface_loaded(interface, dual_module, callback);
             visualizer
                 .snapshot_combined("solved".to_string(), vec![interface, dual_module, self])
                 .unwrap();
@@ -119,18 +129,14 @@ pub trait PrimalModuleImpl {
         }
     }
 
-    fn solve_step_callback<D: DualModuleImpl, F>(
+    fn solve_step_load_syndrome<D: DualModuleImpl>(
         &mut self,
         interface: &DualModuleInterfacePtr,
         syndrome_pattern: Arc<SyndromePattern>,
         dual_module: &mut D,
-        callback: F,
-    ) where
-        F: FnMut(&DualModuleInterfacePtr, &mut D, &mut Self, &GroupMaxUpdateLength),
-    {
+    ) {
         interface.load(syndrome_pattern, dual_module);
         self.load(interface, dual_module);
-        self.solve_step_callback_interface_loaded(interface, dual_module, callback);
     }
 
     fn solve_step_callback_interface_loaded<D: DualModuleImpl, F>(

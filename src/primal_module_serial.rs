@@ -1280,7 +1280,7 @@ pub mod tests {
             final_dual,
             plugins,
             growing_strategy,
-            DualModulePQ::<FutureObstacleQueue<Rational>>::new_empty(&model_graph.initializer),
+            DualModulePQ::new_empty(&model_graph.initializer),
             model_graph,
             Some(visualizer),
         )

@@ -15,13 +15,16 @@ use crate::primal_module_serial::PrimalClusterPtr;
 use crate::relaxer_optimizer::OptimizerResult;
 use crate::util::*;
 use crate::visualize::*;
+#[cfg(feature = "python_binding")]
+use pyo3::prelude::*;
 
 use std::collections::BTreeMap;
 use std::collections::{BTreeSet, HashMap};
 use std::sync::Arc;
 
-// this is not effecitively doing much right now due to the My (Leo's) desire for ultra performance (inlining function > branches)
-#[derive(Default, Debug)]
+// this is not effectively doing much right now due to the My (Leo's) desire for ultra performance (inlining function > branches)
+#[derive(Default, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "python_binding", pyclass(eq, eq_int))]
 pub enum DualModuleMode {
     /// Mode 1
     #[default]
@@ -121,19 +124,25 @@ pub type DualNodeWeak = WeakRwLock<DualNode>;
 impl std::fmt::Debug for DualNodePtr {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         let dual_node = self.read_recursive(); // reading index is consistent
-        let new = ArcRwLock::new_value(Rational::zero());
-        let global_time = dual_node.global_time.as_ref().unwrap_or(&new).read_recursive();
-        write!(
-            f,
-            "\n\t\tindex: {}, global_time: {:?}, grow_rate: {:?}, dual_variable: {}\n\t\tdual_variable_at_last_updated_time: {}, last_updated_time: {}\n\timpacted_edges: {:?}\n",
-            dual_node.index,
-            global_time,
-            dual_node.grow_rate,
-            dual_node.get_dual_variable(),
-            dual_node.dual_variable_at_last_updated_time,
-            dual_node.last_updated_time,
-            dual_node.invalid_subgraph.hair
-        )
+        f.debug_struct("DualNode")
+            .field("index", &dual_node.index)
+            .field("dual_variable", &dual_node.get_dual_variable())
+            .field("grow_rate", &dual_node.grow_rate)
+            .field("hair", &dual_node.invalid_subgraph.hair)
+            .finish()
+        // let new = ArcRwLock::new_value(Rational::zero());
+        // let global_time = dual_node.global_time.as_ref().unwrap_or(&new).read_recursive();
+        // write!(
+        //     f,
+        //     "\n\t\tindex: {}, global_time: {:?}, grow_rate: {:?}, dual_variable: {}\n\t\tdual_variable_at_last_updated_time: {}, last_updated_time: {}\n\timpacted_edges: {:?}\n",
+        //     dual_node.index,
+        //     global_time,
+        //     dual_node.grow_rate,
+        //     dual_node.get_dual_variable(),
+        //     dual_node.dual_variable_at_last_updated_time,
+        //     dual_node.last_updated_time,
+        //     dual_node.invalid_subgraph.hair
+        // )
     }
 }
 
@@ -147,8 +156,10 @@ impl std::fmt::Debug for DualNodeWeak {
 /// dual nodes, once created, will never be deconstructed until the next run
 #[derive(Derivative)]
 #[derivative(Debug)]
+#[cfg_attr(feature = "python_binding", pyclass)]
 pub struct DualModuleInterface {
     /// all the dual node that can be used to control a concrete dual module implementation
+    // #[cfg_attr(feature = "python_binding", pyo3(get))]
     pub nodes: Vec<DualNodePtr>,
     /// given an invalid subgraph, find its corresponding dual node
     pub hashmap: HashMap<Arc<InvalidSubgraph>, NodeIndex>,
@@ -302,7 +313,7 @@ pub trait DualModuleImpl {
     fn is_edge_tight(&self, edge_index: EdgeIndex) -> bool;
 
     /* New tuning-related methods */
-    // mode mangements
+    // mode managements
 
     /// get the current mode of the dual module
     fn mode(&self) -> &DualModuleMode;

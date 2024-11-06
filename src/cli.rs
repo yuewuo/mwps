@@ -8,6 +8,7 @@ use clap::error::{ContextKind, ContextValue, ErrorKind};
 use clap::{Parser, Subcommand, ValueEnum};
 use more_asserts::assert_le;
 use num_traits::FromPrimitive;
+#[cfg(feature = "progress_bar")]
 use pbr::ProgressBar;
 use rand::rngs::SmallRng;
 use rand::RngCore;
@@ -295,7 +296,10 @@ impl Cli {
                 verifier,
                 total_rounds,
                 primal_dual_type,
+                #[cfg(feature = "progress_bar")]
                 pb_message,
+                #[cfg(not(feature = "progress_bar"))]
+                    pb_message: _,
                 primal_dual_config,
                 code_config,
                 use_deterministic_seed,
@@ -307,6 +311,7 @@ impl Cli {
                 single_seed,
             }) => {
                 // whether to disable progress bar, useful when running jobs in background
+                #[cfg(feature = "progress_bar")]
                 let disable_progress_bar = env::var("DISABLE_PROGRESS_BAR").is_ok();
                 let mut code: Box<dyn ExampleCode> = code_type.build(d, p, noisy_measurements, max_weight, code_config);
                 if pe != 0. {
@@ -317,6 +322,7 @@ impl Cli {
                 let mut primal_dual_solver = primal_dual_type.build(&initializer, &*code, primal_dual_config);
                 let mut result_verifier = verifier.build(&initializer);
                 // prepare progress bar display
+                #[cfg(feature = "progress_bar")]
                 let mut pb = if !disable_progress_bar {
                     let mut pb = ProgressBar::on(std::io::stderr(), total_rounds as u64);
                     pb.message(format!("{pb_message} ").as_str());
@@ -369,6 +375,7 @@ impl Cli {
                 };
                 let mut rng = SmallRng::seed_from_u64(seed);
                 for round in (starting_iteration as u64)..(total_rounds as u64) {
+                    #[cfg(feature = "progress_bar")]
                     pb.as_mut().map(|pb| pb.set(round));
                     seed = if use_deterministic_seed { round } else { rng.next_u64() };
                     let (syndrome_pattern, error_pattern) = code.generate_random_errors(seed);
@@ -408,13 +415,14 @@ impl Cli {
                             visualizer.save_html(html_path);
                         }
                     }
-
+                    #[cfg(feature = "progress_bar")]
                     if let Some(pb) = pb.as_mut() {
                         if pb_message.is_empty() {
                             pb.message(format!("{} ", benchmark_profiler.brief()).as_str());
                         }
                     }
                 }
+                #[cfg(feature = "progress_bar")]
                 if disable_progress_bar {
                     // always print out brief
                     println!("{}", benchmark_profiler.brief());

@@ -4,11 +4,13 @@ use crate::num_rational;
 use crate::num_traits::ToPrimitive;
 use crate::rand_xoshiro;
 use crate::rand_xoshiro::rand_core::RngCore;
+#[cfg(feature = "python_binding")]
+use crate::util_py::*;
 use crate::visualize::*;
 #[cfg(feature = "python_binding")]
 use pyo3::prelude::*;
 #[cfg(feature = "python_binding")]
-use pyo3::types::PyFloat;
+use pyo3::types::{PyDict, PyFloat, PyList};
 use serde::{Deserialize, Serialize};
 
 use std::collections::BTreeSet;
@@ -19,17 +21,12 @@ use std::time::Instant;
 pub type Weight = usize; // only used as input, all internal weight representation will use `Rational`
 
 cfg_if::cfg_if! {
-    if #[cfg(feature="r64_weight")] {
-        pub type Rational = num_rational::Rational64;
-        pub fn numer_of(value: &Rational) -> i64 {
-            value.numer().to_i64().unwrap()
-        }
-    } else if #[cfg(feature="float_lp")] {
+    if #[cfg(feature="f64_weight")] {
         pub type Rational = crate::ordered_float::OrderedFloat;
         pub fn numer_of(value: &Rational) -> f64 {
             value.numer().to_f64().unwrap()
         }
-    } else  {
+    } else if #[cfg(feature="rational_weight")] {
         pub type Rational = num_rational::BigRational;
         pub fn numer_of(value: &Rational) -> i64 {
             value.numer().to_i64().unwrap()
@@ -37,16 +34,8 @@ cfg_if::cfg_if! {
     }
 }
 
-cfg_if::cfg_if! {
-    if #[cfg(feature="u32_index")] {
-        pub type EdgeIndex = u32;
-        pub type VertexIndex = u32;
-    } else {
-        pub type EdgeIndex = usize;
-        pub type VertexIndex = usize;
-    }
-}
-
+pub type EdgeIndex = usize;
+pub type VertexIndex = usize;
 pub type KnownSafeRefCell<T> = std::cell::RefCell<T>;
 
 pub type NodeIndex = VertexIndex;
@@ -56,55 +45,57 @@ pub type VertexNum = VertexIndex;
 pub type NodeNum = VertexIndex;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "python_binding", cfg_eval)]
-#[cfg_attr(feature = "python_binding", pyclass)]
+#[cfg_attr(feature = "python_binding", pyclass(get_all, set_all))]
 pub struct HyperEdge {
     /// the vertices incident to the hyperedge
-    #[cfg_attr(feature = "python_binding", pyo3(get, set))]
     pub vertices: Vec<VertexIndex>,
     /// the weight of the hyperedge
-    #[cfg_attr(feature = "python_binding", pyo3(get, set))]
     pub weight: Weight,
 }
 
-#[cfg_attr(feature = "python_binding", cfg_eval)]
-#[cfg_attr(feature = "python_binding", pymethods)]
 impl HyperEdge {
-    #[cfg_attr(feature = "python_binding", new)]
     pub fn new(vertices: Vec<VertexIndex>, weight: Weight) -> Self {
         Self { vertices, weight }
     }
+}
 
-    #[cfg(feature = "python_binding")]
+#[cfg(feature = "python_binding")]
+#[pymethods]
+impl HyperEdge {
+    #[new]
+    fn py_new(vertices: Vec<VertexIndex>, weight: Weight) -> Self {
+        Self::new(vertices, weight)
+    }
     fn __repr__(&self) -> String {
         format!("{:?}", self)
     }
 }
 
-#[cfg_attr(feature = "python_binding", cfg_eval)]
-#[cfg_attr(feature = "python_binding", pyclass)]
+#[cfg_attr(feature = "python_binding", pyclass(get_all, set_all))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SolverInitializer {
     /// the number of vertices
-    #[cfg_attr(feature = "python_binding", pyo3(get, set))]
     pub vertex_num: VertexNum,
     /// weighted edges, where vertex indices are within the range [0, vertex_num)
-    #[cfg_attr(feature = "python_binding", pyo3(get, set))]
     pub weighted_edges: Vec<HyperEdge>,
 }
 
-#[cfg_attr(feature = "python_binding", cfg_eval)]
-#[cfg_attr(feature = "python_binding", pymethods)]
 impl SolverInitializer {
-    #[cfg_attr(feature = "python_binding", new)]
     pub fn new(vertex_num: VertexNum, weighted_edges: Vec<HyperEdge>) -> Self {
         Self {
             vertex_num,
             weighted_edges,
         }
     }
+}
 
-    #[cfg(feature = "python_binding")]
+#[cfg(feature = "python_binding")]
+#[pymethods]
+impl SolverInitializer {
+    #[new]
+    fn py_new(vertex_num: VertexNum, weighted_edges: Vec<HyperEdge>) -> Self {
+        Self::new(vertex_num, weighted_edges)
+    }
     fn __repr__(&self) -> String {
         format!("{:?}", self)
     }
@@ -189,14 +180,11 @@ impl MWPSVisualizer for SolverInitializer {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "python_binding", cfg_eval)]
-#[cfg_attr(feature = "python_binding", pyclass)]
+#[cfg_attr(feature = "python_binding", pyclass(get_all, set_all))]
 pub struct SyndromePattern {
     /// the vertices corresponding to defect measurements
-    #[cfg_attr(feature = "python_binding", pyo3(get, set))]
     pub defect_vertices: Vec<VertexIndex>,
     /// the edges that experience erasures, i.e. known errors
-    #[cfg_attr(feature = "python_binding", pyo3(get, set))]
     pub erasures: Vec<EdgeIndex>,
 }
 
@@ -209,37 +197,23 @@ impl SyndromePattern {
     }
 }
 
-#[cfg_attr(feature = "python_binding", cfg_eval)]
-#[cfg_attr(feature = "python_binding", pymethods)]
 impl SyndromePattern {
-    #[cfg_attr(feature = "python_binding", new)]
-    #[cfg_attr(feature = "python_binding", pyo3(signature = (defect_vertices=vec![], erasures=vec![], syndrome_vertices=None)))]
-    pub fn py_new(
-        mut defect_vertices: Vec<VertexIndex>,
-        erasures: Vec<EdgeIndex>,
-        syndrome_vertices: Option<Vec<VertexIndex>>,
-    ) -> Self {
-        if let Some(syndrome_vertices) = syndrome_vertices {
-            assert!(
-                defect_vertices.is_empty(),
-                "do not pass both `syndrome_vertices` and `defect_vertices` since they're aliasing"
-            );
-            defect_vertices = syndrome_vertices;
-        }
-        Self {
-            defect_vertices,
-            erasures,
-        }
-    }
-    #[cfg_attr(feature = "python_binding", staticmethod)]
     pub fn new_vertices(defect_vertices: Vec<VertexIndex>) -> Self {
         Self::new(defect_vertices, vec![])
     }
-    #[cfg_attr(feature = "python_binding", staticmethod)]
     pub fn new_empty() -> Self {
         Self::new(vec![], vec![])
     }
-    #[cfg(feature = "python_binding")]
+}
+
+#[cfg(feature = "python_binding")]
+#[pymethods]
+impl SyndromePattern {
+    #[new]
+    #[pyo3(signature = (defect_vertices=vec![], erasures=vec![]))]
+    fn py_new(defect_vertices: Vec<VertexIndex>, erasures: Vec<EdgeIndex>) -> Self {
+        Self::new(defect_vertices, erasures)
+    }
     fn __repr__(&self) -> String {
         format!("{:?}", self)
     }
@@ -271,24 +245,8 @@ impl MWPSVisualizer for Subgraph {
     }
 }
 
-// https://stackoverflow.com/questions/76082775/return-a-python-object-defined-in-a-third-party-python-module-e-g-numpy-using
-#[cfg(feature = "python_binding")]
-pub fn rational_to_pyobject(value: &Rational) -> PyResult<Py<PyAny>> {
-    Python::with_gil(|py| {
-        if cfg!(feature = "float_lp") {
-            PyResult::Ok(PyFloat::new(py, value.to_f64().unwrap()).into())
-        } else {
-            let frac = py.import("fractions")?;
-            let numer = value.numer().clone();
-            let denom = value.denom().clone();
-            frac.call_method("Fraction", (numer, denom), None).map(Into::into)
-        }
-    })
-}
-
 /// the range of the optimal MWPF solution's weight
 #[derive(Clone, Debug)]
-#[cfg_attr(feature = "python_binding", cfg_eval)]
 #[cfg_attr(feature = "python_binding", pyclass)]
 pub struct WeightRange {
     pub lower: Rational,
@@ -308,16 +266,27 @@ impl WeightRange {
 #[cfg(feature = "python_binding")]
 #[pymethods]
 impl WeightRange {
-    #[getter]
-    fn lower(&self) -> PyResult<Py<PyAny>> {
-        rational_to_pyobject(&self.lower)
+    #[new]
+    #[pyo3(signature=(lower, upper))]
+    fn py_new(lower: PyRational, upper: PyRational) -> Self {
+        Self::new(lower.0, upper.0)
     }
-
     #[getter]
-    fn upper(&self) -> PyResult<Py<PyAny>> {
-        rational_to_pyobject(&self.upper)
+    fn get_lower(&self) -> PyRational {
+        self.lower.clone().into()
     }
-
+    #[setter]
+    fn set_lower(&mut self, value: PyRational) {
+        self.lower = value.0;
+    }
+    #[getter]
+    fn get_upper(&self) -> PyRational {
+        self.upper.clone().into()
+    }
+    #[setter]
+    fn set_upper(&mut self, value: PyRational) {
+        self.upper = value.0;
+    }
     fn __repr__(&self) -> String {
         format!("{:?}", self)
     }
@@ -512,10 +481,10 @@ pub fn json_to_pyobject_locked(value: serde_json::Value, py: Python) -> PyObject
         serde_json::Value::String(value) => value.to_object(py),
         serde_json::Value::Array(array) => {
             let elements: Vec<PyObject> = array.into_iter().map(|value| json_to_pyobject_locked(value, py)).collect();
-            pyo3::types::PyList::new(py, elements).into()
+            PyList::new_bound(py, elements).into()
         }
         serde_json::Value::Object(map) => {
-            let pydict = pyo3::types::PyDict::new(py);
+            let pydict = PyDict::new_bound(py);
             for (key, value) in map.into_iter() {
                 let pyobject = json_to_pyobject_locked(value, py);
                 pydict.set_item(key, pyobject).unwrap();
@@ -531,34 +500,30 @@ pub fn json_to_pyobject(value: serde_json::Value) -> PyObject {
 }
 
 #[cfg(feature = "python_binding")]
-pub fn pyobject_to_json_locked(value: PyObject, py: Python) -> serde_json::Value {
-    let value: &PyAny = value.as_ref(py);
+pub fn pyobject_to_json_locked(value: &Bound<PyAny>) -> serde_json::Value {
     if value.is_none() {
         serde_json::Value::Null
     } else if value.is_instance_of::<pyo3::types::PyBool>() {
         json!(value.extract::<bool>().unwrap())
     } else if value.is_instance_of::<pyo3::types::PyInt>() {
         json!(value.extract::<i64>().unwrap())
-    } else if value.is_instance_of::<pyo3::types::PyFloat>() {
+    } else if value.is_instance_of::<PyFloat>() {
         json!(value.extract::<f64>().unwrap())
     } else if value.is_instance_of::<pyo3::types::PyString>() {
         json!(value.extract::<String>().unwrap())
-    } else if value.is_instance_of::<pyo3::types::PyList>() {
+    } else if value.is_instance_of::<PyList>() {
         let elements: Vec<serde_json::Value> = value
-            .extract::<Vec<PyObject>>()
+            .downcast::<PyList>()
             .unwrap()
             .into_iter()
-            .map(|object| pyobject_to_json_locked(object, py))
+            .map(|object| pyobject_to_json_locked(&object))
             .collect();
         json!(elements)
-    } else if value.is_instance_of::<pyo3::types::PyDict>() {
-        let map: &pyo3::types::PyDict = value.downcast().unwrap();
+    } else if value.is_instance_of::<PyDict>() {
+        let map: &Bound<PyDict> = value.downcast().unwrap();
         let mut json_map = serde_json::Map::new();
         for (key, value) in map.iter() {
-            json_map.insert(
-                key.extract::<String>().unwrap(),
-                pyobject_to_json_locked(value.to_object(py), py),
-            );
+            json_map.insert(key.extract::<String>().unwrap(), pyobject_to_json_locked(&value));
         }
         serde_json::Value::Object(json_map)
     } else {
@@ -568,12 +533,12 @@ pub fn pyobject_to_json_locked(value: PyObject, py: Python) -> serde_json::Value
 
 #[cfg(feature = "python_binding")]
 pub fn pyobject_to_json(value: PyObject) -> serde_json::Value {
-    Python::with_gil(|py| pyobject_to_json_locked(value, py))
+    Python::with_gil(|py| pyobject_to_json_locked(value.bind(py)))
 }
 
 #[cfg(feature = "python_binding")]
 #[pyfunction]
-pub(crate) fn register(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
+pub(crate) fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<SolverInitializer>()?;
     m.add_class::<SyndromePattern>()?;
     m.add_class::<HyperEdge>()?;

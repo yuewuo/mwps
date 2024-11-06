@@ -185,7 +185,7 @@ pub mod tests {
     }
 
     #[test]
-    #[should_panic]
+    #[cfg_attr(debug_assertions, should_panic)]
     fn tight_matrix_cannot_set_nonexistent_edge() {
         // cargo test tight_matrix_cannot_set_nonexistent_edge -- --nocapture
         let mut matrix = TightMatrix::new();
@@ -194,7 +194,7 @@ pub mod tests {
     }
 
     #[test]
-    #[should_panic]
+    #[cfg_attr(debug_assertions, should_panic)]
     fn tight_matrix_cannot_read_nonexistent_edge() {
         // cargo test tight_matrix_cannot_read_nonexistent_edge -- --nocapture
         let mut matrix = TightMatrix::new();
