@@ -114,6 +114,10 @@ macro_rules! bind_trait_to_python {
             fn py_grow(&mut self, length: PyRational) {
                 self.0.dual_module.grow(length.into())
             }
+            #[pyo3(name = "snapshot", signature = (abbrev=true))]
+            fn py_snapshot(&mut self, abbrev: bool) -> PyObject {
+                json_to_pyobject(self.0.snapshot(abbrev))
+            }
         }
         impl $struct_name {
             pub fn py_construct_invalid_subgraph(

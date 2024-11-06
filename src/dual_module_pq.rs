@@ -377,6 +377,24 @@ where
             self.update_dual_node_if_necessary(&mut dual_node);
         }
     }
+
+    fn compute_max_valid_grow(&mut self) -> Option<Rational> {
+        let global_time = self.global_time.read_recursive().clone();
+        // getting rid of all the invalid events
+        while let Some((time, event)) = self.obstacle_queue.peek_event() {
+            // found a valid event
+            if event.is_valid(self, time) {
+                // valid grow
+                if time != &global_time {
+                    return Some(time - global_time.clone());
+                }
+                // goto else
+                break;
+            }
+            self.obstacle_queue.pop_event();
+        }
+        None
+    }
 }
 
 pub type DualModulePQlPtr<Queue> = ArcRwLock<DualModulePQ<Queue>>;
@@ -557,20 +575,11 @@ where
     fn compute_maximum_update_length(&mut self) -> GroupMaxUpdateLength {
         // self.debug_print();
 
-        let global_time = self.global_time.read_recursive();
-        // getting rid of all the invalid events
-        while let Some((time, event)) = self.obstacle_queue.peek_event() {
-            // found a valid event
-            if event.is_valid(self, time) {
-                // valid grow
-                if time != &global_time.clone() {
-                    return GroupMaxUpdateLength::ValidGrow(time - global_time.clone());
-                }
-                // goto else
-                break;
-            }
-            self.obstacle_queue.pop_event();
+        if let Some(max_valid_grow) = self.compute_max_valid_grow() {
+            return GroupMaxUpdateLength::ValidGrow(max_valid_grow);
         }
+
+        let global_time = self.global_time.read_recursive().clone();
 
         // else , it is a valid conflict to resolve
         if let Some((_, event)) = self.obstacle_queue.pop_event() {
@@ -590,7 +599,7 @@ where
 
             // append all conflicts that happen at the same time as now
             while let Some((time, _)) = self.obstacle_queue.peek_event() {
-                if &global_time.clone() == time {
+                if &global_time == time {
                     let (time, event) = self.obstacle_queue.pop_event().unwrap();
                     if !event.is_valid(self, &time) {
                         continue;
@@ -617,7 +626,15 @@ where
 
     /// for pq implementation, simply updating the global time is enough, could be part of the `compute_maximum_update_length` function
     fn grow(&mut self, length: Rational) {
-        debug_assert!(
+        if let Some(max_valid_grow) = self.compute_max_valid_grow() {
+            assert!(
+                length <= max_valid_grow,
+                "growth overflow: attempting to grow {} but can only grow {} maximum",
+                length,
+                max_valid_grow
+            );
+        };
+        assert!(
             length.is_positive(),
             "growth should be positive; if desired, please set grow rate to negative for shrinking"
         );

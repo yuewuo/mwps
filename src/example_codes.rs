@@ -109,20 +109,20 @@ pub trait ExampleCode {
 
     /// generic method that automatically computes integer weights from probabilities,
     /// scales such that the maximum integer weight is 10000 and the minimum is 1
-    fn compute_weights(&mut self, weight_upper_limit: Weight) {
+    fn compute_weights(&mut self, max_weight: Weight) {
         let (_vertices, edges) = self.vertices_edges();
-        let mut max_weight = 0.;
+        let mut original_max_weight = 0.;
         for edge in edges.iter() {
             let weight = weight_of_p(edge.p);
-            if weight > max_weight {
-                max_weight = weight;
+            if weight > original_max_weight {
+                original_max_weight = weight;
             }
         }
-        assert!(max_weight > 0., "max weight is not expected to be 0.");
+        assert!(original_max_weight > 0., "max weight is not expected to be 0.");
         // scale all weights but set the smallest to 1
         for edge in edges.iter_mut() {
             let weight = weight_of_p(edge.p);
-            let new_weight: Weight = ((weight_upper_limit as f64) * weight / max_weight).round() as Weight;
+            let new_weight: Weight = ((max_weight as f64) * weight / original_max_weight).round() as Weight;
             edge.weight = if new_weight == 0 { 1 } else { new_weight }; // weight is required to be even
         }
     }
@@ -411,8 +411,8 @@ macro_rules! bind_trait_example_code {
                 self.vertex_num()
             }
             #[pyo3(name = "compute_weights")]
-            fn trait_compute_weights(&mut self, weight_upper_limit: Weight) {
-                self.compute_weights(weight_upper_limit)
+            fn trait_compute_weights(&mut self, max_weight: Weight) {
+                self.compute_weights(max_weight)
             }
             #[pyo3(name = "sanity_check")]
             fn trait_sanity_check(&self) -> Option<String> {
@@ -537,11 +537,11 @@ bind_trait_example_code! {CodeCapacityRepetitionCode}
 #[cfg_attr(feature = "python_binding", pymethods)]
 impl CodeCapacityRepetitionCode {
     #[cfg_attr(feature = "python_binding", new)]
-    #[cfg_attr(feature = "python_binding", pyo3(signature = (d, p, weight_upper_limit=1000)))]
-    pub fn new(d: VertexNum, p: f64, weight_upper_limit: Weight) -> Self {
+    #[cfg_attr(feature = "python_binding", pyo3(signature = (d, p, max_weight=1000)))]
+    pub fn new(d: VertexNum, p: f64, max_weight: Weight) -> Self {
         let mut code = Self::create_code(d);
         code.set_probability(p);
-        code.compute_weights(weight_upper_limit);
+        code.compute_weights(max_weight);
         code
     }
 
@@ -603,11 +603,11 @@ bind_trait_example_code! {CodeCapacityPlanarCode}
 #[cfg_attr(feature = "python_binding", pymethods)]
 impl CodeCapacityPlanarCode {
     #[cfg_attr(feature = "python_binding", new)]
-    #[cfg_attr(feature = "python_binding", pyo3(signature = (d, p, weight_upper_limit=1000)))]
-    pub fn new(d: VertexNum, p: f64, weight_upper_limit: Weight) -> Self {
+    #[cfg_attr(feature = "python_binding", pyo3(signature = (d, p, max_weight=1000)))]
+    pub fn new(d: VertexNum, p: f64, max_weight: Weight) -> Self {
         let mut code = Self::create_code(d);
         code.set_probability(p);
-        code.compute_weights(weight_upper_limit);
+        code.compute_weights(max_weight);
         code
     }
 
@@ -681,19 +681,19 @@ bind_trait_example_code! {CodeCapacityDepolarizePlanarCode}
 #[cfg_attr(feature = "python_binding", pymethods)]
 impl CodeCapacityDepolarizePlanarCode {
     #[cfg_attr(feature = "python_binding", new)]
-    #[cfg_attr(feature = "python_binding", pyo3(signature = (d, p, weight_upper_limit=1000)))]
-    pub fn new(d: VertexNum, p: f64, weight_upper_limit: Weight) -> Self {
+    #[cfg_attr(feature = "python_binding", pyo3(signature = (d, p, max_weight=1000)))]
+    pub fn new(d: VertexNum, p: f64, max_weight: Weight) -> Self {
         let mut code = Self::create_code(d, true);
         code.set_probability(p);
-        code.compute_weights(weight_upper_limit);
+        code.compute_weights(max_weight);
         code
     }
 
     #[cfg_attr(feature = "python_binding", staticmethod)]
-    pub fn new_no_y(d: VertexNum, p: f64, weight_upper_limit: Weight) -> Self {
+    pub fn new_no_y(d: VertexNum, p: f64, max_weight: Weight) -> Self {
         let mut code = Self::create_code(d, false);
         code.set_probability(p);
-        code.compute_weights(weight_upper_limit);
+        code.compute_weights(max_weight);
         code
     }
 
@@ -807,10 +807,10 @@ bind_trait_example_code! {CodeCapacityTailoredCode}
 #[cfg_attr(feature = "python_binding", pymethods)]
 impl CodeCapacityTailoredCode {
     #[cfg_attr(feature = "python_binding", new)]
-    #[cfg_attr(feature = "python_binding", pyo3(signature = (d, pxy, pz, weight_upper_limit=1000)))]
-    pub fn new(d: VertexNum, pxy: f64, pz: f64, weight_upper_limit: Weight) -> Self {
+    #[cfg_attr(feature = "python_binding", pyo3(signature = (d, pxy, pz, max_weight=1000)))]
+    pub fn new(d: VertexNum, pxy: f64, pz: f64, max_weight: Weight) -> Self {
         let mut code = Self::create_code(d, pxy, pz);
-        code.compute_weights(weight_upper_limit);
+        code.compute_weights(max_weight);
         code
     }
 
@@ -931,11 +931,11 @@ bind_trait_example_code! {CodeCapacityColorCode}
 #[cfg_attr(feature = "python_binding", pymethods)]
 impl CodeCapacityColorCode {
     #[cfg_attr(feature = "python_binding", new)]
-    #[cfg_attr(feature = "python_binding", pyo3(signature = (d, p, weight_upper_limit=1000)))]
-    pub fn new(d: VertexNum, p: f64, weight_upper_limit: Weight) -> Self {
+    #[cfg_attr(feature = "python_binding", pyo3(signature = (d, p, max_weight=1000)))]
+    pub fn new(d: VertexNum, p: f64, max_weight: Weight) -> Self {
         let mut code = Self::create_code(d);
         code.set_probability(p);
-        code.compute_weights(weight_upper_limit);
+        code.compute_weights(max_weight);
         code
     }
 

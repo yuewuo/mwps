@@ -2,7 +2,7 @@ use num_traits::Zero;
 
 const EPSILON: f64 = 1e-4; // note: it would be interesting to play around with this.
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct OrderedFloat(f64);
 
 impl OrderedFloat {
@@ -157,12 +157,12 @@ macro_rules! impl_assign_ops {
             #[allow(clippy::assign_op_pattern)]
             impl std::ops::$trait for OrderedFloat {
                 fn $method(&mut self, other: Self) {
-                    *self = *self $op other;
+                    *self = self.clone() $op other;
                 }
             }
             impl std::ops::$trait<&OrderedFloat> for OrderedFloat {
                 fn $method(&mut self, other: &Self) {
-                    *self = *self $op other;
+                    *self = self.clone() $op other;
                 }
             }
             // impl std::ops::$trait<&f32> for OrderedFloat {
@@ -263,7 +263,7 @@ impl std::iter::Sum for OrderedFloat {
 // Implement Sum for references to OrderedFloat
 impl<'a> std::iter::Sum<&'a OrderedFloat> for OrderedFloat {
     fn sum<I: Iterator<Item = &'a Self>>(iter: I) -> Self {
-        iter.fold(Self::zero(), |acc, &item| acc + item)
+        iter.fold(Self::zero(), |acc, item| acc + item)
     }
 }
 
