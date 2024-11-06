@@ -31,7 +31,7 @@ cfg_if::cfg_if! {
     }
 }
 
-pub trait PrimalDualSolver {
+pub trait SolverTrait {
     fn clear(&mut self);
     fn solve_visualizer(&mut self, syndrome_pattern: &SyndromePattern, visualizer: Option<&mut Visualizer>);
     fn solve(&mut self, syndrome_pattern: &SyndromePattern) {
@@ -225,7 +225,7 @@ impl SolverSerialPlugins {
     }
 }
 
-impl PrimalDualSolver for SolverSerialPlugins {
+impl SolverTrait for SolverSerialPlugins {
     fn clear(&mut self) {
         self.primal_module.clear();
         self.dual_module.clear();
@@ -283,9 +283,9 @@ impl PrimalDualSolver for SolverSerialPlugins {
     }
 }
 
-macro_rules! bind_primal_dual_solver_trait {
+macro_rules! bind_solver_trait {
     ($struct_name:ident) => {
-        impl PrimalDualSolver for $struct_name {
+        impl SolverTrait for $struct_name {
             fn clear(&mut self) {
                 self.0.clear()
             }
@@ -334,7 +334,7 @@ impl SolverSerialUnionFind {
     }
 }
 
-bind_primal_dual_solver_trait!(SolverSerialUnionFind);
+bind_solver_trait!(SolverSerialUnionFind);
 
 #[cfg(feature = "python_binding")]
 bind_trait_to_python!(SolverSerialUnionFind);
@@ -366,7 +366,7 @@ impl SolverSerialSingleHair {
     }
 }
 
-bind_primal_dual_solver_trait!(SolverSerialSingleHair);
+bind_solver_trait!(SolverSerialSingleHair);
 
 #[cfg(feature = "python_binding")]
 bind_trait_to_python!(SolverSerialSingleHair);
@@ -401,7 +401,7 @@ impl SolverSerialJointSingleHair {
     }
 }
 
-bind_primal_dual_solver_trait!(SolverSerialJointSingleHair);
+bind_solver_trait!(SolverSerialJointSingleHair);
 
 #[cfg(feature = "python_binding")]
 bind_trait_to_python!(SolverSerialJointSingleHair);
@@ -433,7 +433,7 @@ impl SolverErrorPatternLogger {
     }
 }
 
-impl PrimalDualSolver for SolverErrorPatternLogger {
+impl SolverTrait for SolverErrorPatternLogger {
     fn clear(&mut self) {}
     fn solve_visualizer(&mut self, syndrome_pattern: &SyndromePattern, _visualizer: Option<&mut Visualizer>) {
         self.file
