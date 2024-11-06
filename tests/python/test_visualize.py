@@ -21,7 +21,7 @@ code.set_defect_vertices([10, 11, 16, 17])
 initializer = code.get_initializer()
 
 # solver configuration
-config = {"primal": {"cluster_node_limit": 100, "timeout": 10.0}}
+config = {"cluster_node_limit": 100, "timeout": 10.0}
 solver = mwpf.SolverSerialJointSingleHair(initializer, config)
 
 """

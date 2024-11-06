@@ -161,7 +161,7 @@ macro_rules! bind_trait_to_python {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SolverSerialPluginsConfig {
-    #[serde(default = "hyperion_default_configs::primal")]
+    #[serde(flatten, default = "hyperion_default_configs::primal")]
     primal: PrimalModuleSerialConfig,
 }
 
