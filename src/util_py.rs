@@ -37,10 +37,29 @@ bind_trait_simple_wrapper!(Rational, PyRational);
 
 #[pymethods]
 impl PyRational {
-    // #[new]
-    // fn __new__(numerator: PyObject, denominator: PyObject) -> Self {
-    //     unimplemented!();
-    // }
+    #[new]
+    #[pyo3(signature = (numerator, denominator=None))]
+    fn __new__(numerator: &Bound<PyAny>, denominator: Option<&Bound<PyAny>>) -> PyResult<Self> {
+        cfg_if::cfg_if! {
+            if #[cfg(feature="rational_weight")] {
+                use num_bigint::BigInt;
+                let denominator: BigInt = denominator.map(|x| x.extract::<BigInt>()).transpose()?.unwrap_or_else(|| BigInt::from(1));
+                let numerator: BigInt = numerator.extract()?;
+                Ok(Self(Rational::new(numerator, denominator)))
+            } else {
+                // let denominator: f64 = denominator.map(|x| x.extract::<BigInt>()).transpose()?.unwrap_or(1.);
+                unimplemented!();
+            }
+        }
+    }
+    #[getter]
+    fn numer(&self) -> PyObject {
+        Python::with_gil(|py| self.0.numer().to_object(py))
+    }
+    #[getter]
+    fn denom(&self) -> PyObject {
+        Python::with_gil(|py| self.0.denom().to_object(py))
+    }
 }
 
 #[derive(Clone)]

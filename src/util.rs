@@ -19,17 +19,12 @@ use std::time::Instant;
 pub type Weight = usize; // only used as input, all internal weight representation will use `Rational`
 
 cfg_if::cfg_if! {
-    if #[cfg(feature="r64_weight")] {
-        pub type Rational = num_rational::Rational64;
-        pub fn numer_of(value: &Rational) -> i64 {
-            value.numer().to_i64().unwrap()
-        }
-    } else if #[cfg(feature="float_lp")] {
+    if #[cfg(feature="f64_weight")] {
         pub type Rational = crate::ordered_float::OrderedFloat;
         pub fn numer_of(value: &Rational) -> f64 {
             value.numer().to_f64().unwrap()
         }
-    } else  {
+    } else if #[cfg(feature="rational_weight")] {
         pub type Rational = num_rational::BigRational;
         pub fn numer_of(value: &Rational) -> i64 {
             value.numer().to_i64().unwrap()
@@ -37,16 +32,8 @@ cfg_if::cfg_if! {
     }
 }
 
-cfg_if::cfg_if! {
-    if #[cfg(feature="u32_index")] {
-        pub type EdgeIndex = u32;
-        pub type VertexIndex = u32;
-    } else {
-        pub type EdgeIndex = usize;
-        pub type VertexIndex = usize;
-    }
-}
-
+pub type EdgeIndex = usize;
+pub type VertexIndex = usize;
 pub type KnownSafeRefCell<T> = std::cell::RefCell<T>;
 
 pub type NodeIndex = VertexIndex;

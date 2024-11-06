@@ -884,16 +884,17 @@ where
             let edge = edge_ptr.read_recursive();
             let current_growth = &edge.growth_at_last_updated_time
                 + (&self.global_time.read_recursive().clone() - &edge.last_updated_time) * &edge.grow_rate;
-
             let unexplored = &edge.weight - &current_growth;
+            assert!(!unexplored.is_negative());
             edges.push(json!({
                 if abbrev { "w" } else { "weight" }: edge.weight.to_f64(),
                 if abbrev { "v" } else { "vertices" }: edge.vertices.iter().map(|x| x.upgrade_force().read_recursive().vertex_index).collect::<Vec<_>>(),
                 if abbrev { "g" } else { "growth" }: current_growth.to_f64(),
                 "gn": numer_of(&current_growth),
-                "gd": current_growth.denom().to_i64(),
+                "gd": current_growth.denom(),
+                if abbrev { "u" } else { "unexplored" }: unexplored.to_f64(),
                 "un": numer_of(&unexplored),
-                "ud": unexplored.denom().to_i64(),
+                "ud": unexplored.denom(),
             }));
         }
         json!({

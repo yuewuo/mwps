@@ -40,9 +40,7 @@ debug = true
 [features]
 # to enable a feature, use `--features xxx`
 default = ["f64_weight", "qecp_integrate", "embed_visualizer"]
-r64_weight = [] # use Rational64 instead of BigRational as weight type
 f64_weight = ["float_lp"] # use f64 instead of BigRational as weight type
-f32_weight = ["float_lp"] # use f64 instead of BigRational as weight type
 rational_weight = ["slp"]
 u32_index = [] # use u32 instead of usize as index type, to save memory
 python_binding = ["pyo3"] # bind to Python
@@ -56,7 +54,7 @@ embed_visualizer = [
 ] # use nodejs to build frontend and embed in Python instead of outputing individual JSON files
 
 [dependencies]
-pyo3 = { version = "0.22.5", features = [
+pyo3 = { version = "0.22.6", features = [
     "extension-module",
     "multiple-pymethods",
     "abi3-py37",
@@ -74,6 +72,7 @@ derivative = "2.2.0"
 parking_lot = { version = "0.12.1", features = ["hardware-lock-elision"] }
 num-rational = "0.4.1"
 num-traits = "0.2.15"
+num-bigint = "0.4.5"
 more-asserts = "0.3.1"
 rand = { version = "0.8.5", features = ["small_rng"] }
 prettytable-rs = "0.10.0"
