@@ -78,7 +78,7 @@ def revert():
 
 
 if __name__ == "__main__":
-    assert len(sys.argv) == 2, "Usage: python pyproject-rational.py [dry|apply]"
+    assert len(sys.argv) == 2, "Usage: python pyproject-rational.py [dry|apply|revert]"
     if sys.argv[1] == "dry":
         patch(dry=True)
     elif sys.argv[1] == "apply":
@@ -87,4 +87,4 @@ if __name__ == "__main__":
     elif sys.argv[1] == "revert":
         revert()
     else:
-        raise ValueError("Invalid argument, should be dry or apply")
+        raise ValueError("Invalid argument, should be dry|apply|revert")

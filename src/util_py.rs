@@ -45,11 +45,11 @@ impl PyRational {
                 use num_bigint::BigInt;
                 let denominator: BigInt = denominator.map(|x| x.extract::<BigInt>()).transpose()?.unwrap_or_else(|| BigInt::from(1));
                 let numerator: BigInt = numerator.extract()?;
-                Ok(Self(Rational::new(numerator, denominator)))
             } else {
-                // let denominator: f64 = denominator.map(|x| x.extract::<BigInt>()).transpose()?.unwrap_or(1.);
-                unimplemented!();
+                let denominator: f64 = denominator.map(|x| x.extract::<f64>()).transpose()?.unwrap_or(1.);
+                let numerator: f64 = numerator.extract()?;
             }
+            Ok(Self(Rational::new(numerator, denominator)))
         }
     }
     #[getter]
