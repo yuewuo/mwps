@@ -15,6 +15,7 @@ clean-env: clean fmt
 
 test: clean-env
 	cargo test
+	cargo test --release
 
 build: clean-env
 	cargo build

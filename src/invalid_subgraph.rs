@@ -216,7 +216,7 @@ pub mod tests {
     }
 
     #[test]
-    #[should_panic]
+    #[cfg_attr(debug_assertions, should_panic)]
     fn invalid_subgraph_bad() {
         // cargo test invalid_subgraph_bad -- --nocapture
         let visualize_filename = "invalid_subgraph_bad.json".to_string();

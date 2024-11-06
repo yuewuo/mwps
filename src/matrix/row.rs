@@ -328,7 +328,7 @@ pub mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "size must be the same")]
+    #[cfg_attr(debug_assertions, should_panic(expected = "size must be the same"))]
     fn parity_matrix_row_add_different_length() {
         // cargo test parity_matrix_row_add_different_length -- --nocapture
         let mut row1 = ParityRow::new_length(10);
