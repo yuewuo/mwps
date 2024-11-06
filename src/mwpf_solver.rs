@@ -110,6 +110,10 @@ macro_rules! bind_trait_to_python {
                 }
                 .into())
             }
+            #[pyo3(name = "grow", signature = (length))]
+            fn py_grow(&mut self, length: PyRational) {
+                self.0.dual_module.grow(length.into())
+            }
         }
         impl $struct_name {
             pub fn py_construct_invalid_subgraph(

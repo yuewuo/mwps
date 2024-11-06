@@ -35,6 +35,14 @@ macro_rules! bind_trait_simple_wrapper {
 pub struct PyRational(pub Rational);
 bind_trait_simple_wrapper!(Rational, PyRational);
 
+#[pymethods]
+impl PyRational {
+    // #[new]
+    // fn __new__(numerator: PyObject, denominator: PyObject) -> Self {
+    //     unimplemented!();
+    // }
+}
+
 #[derive(Clone)]
 #[pyclass(name = "DualNodePtr")]
 pub struct PyDualNodePtr(pub DualNodePtr);
