@@ -93,7 +93,6 @@ pub fn get_version() -> String {
     let mut dual_module = DualModulePQ::new_empty(&model_graph.initializer);
     // create primal module
     let mut primal_module = PrimalModuleSerial::new_empty(&model_graph.initializer);
-    primal_module.growing_strategy = GrowingStrategy::SingleCluster;
     primal_module.plugins = std::sync::Arc::new(vec![]);
     // try to work on a simple syndrome
     let decoding_graph = DecodingHyperGraph::new_defects(model_graph, defect_vertices.clone());

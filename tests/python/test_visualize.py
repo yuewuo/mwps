@@ -21,10 +21,7 @@ code.set_defect_vertices([10, 11, 16, 17])
 initializer = code.get_initializer()
 
 # solver configuration
-config = {
-    "growing_strategy": "SingleCluster",
-    # "growing_strategy": "MultipleClusters",
-}
+config = {}
 
 # pick a solver
 # solver = mwpf.SolverSerialUnionFind(initializer)
@@ -35,12 +32,22 @@ solver = mwpf.SolverSerialJointSingleHair(initializer, config)
 run the solver
 """
 
-git_root_dir = subprocess.run("git rev-parse --show-toplevel", cwd=os.path.dirname(os.path.abspath(__file__)),
-                              shell=True, check=True, capture_output=True).stdout.decode(sys.stdout.encoding).strip(" \r\n")
+git_root_dir = (
+    subprocess.run(
+        "git rev-parse --show-toplevel",
+        cwd=os.path.dirname(os.path.abspath(__file__)),
+        shell=True,
+        check=True,
+        capture_output=True,
+    )
+    .stdout.decode(sys.stdout.encoding)
+    .strip(" \r\n")
+)
 data_folder = os.path.join(git_root_dir, "visualize", "data")
 filename = f"python_test_visualize.json"
 visualizer = mwpf.Visualizer(
-    filepath=os.path.join(data_folder, filename), positions=code.get_positions())
+    filepath=os.path.join(data_folder, filename), positions=code.get_positions()
+)
 visualizer.snapshot("syndrome", code)
 
 syndrome = code.get_syndrome()

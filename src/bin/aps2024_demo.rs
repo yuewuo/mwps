@@ -36,7 +36,6 @@ fn debug_demo() {
         if is_example {
             visualizer.snapshot_combined("code".to_string(), vec![&code]).unwrap();
             let mut primal_module = PrimalModuleSerial::new_empty(&initializer);
-            primal_module.growing_strategy = GrowingStrategy::SingleCluster;
             primal_module.plugins = Arc::new(vec![]);
             primal_module.solve_visualizer(&interface_ptr, syndrome_pattern, &mut dual_module, Some(&mut visualizer));
             let (subgraph, weight_range) = primal_module.subgraph_range(&interface_ptr, &mut dual_module);
@@ -107,7 +106,6 @@ fn simple_demo() {
         if is_example {
             visualizer.snapshot_combined("code".to_string(), vec![&code]).unwrap();
             let mut primal_module = PrimalModuleSerial::new_empty(&initializer);
-            primal_module.growing_strategy = GrowingStrategy::SingleCluster;
             primal_module.plugins = Arc::new(vec![]);
             primal_module.solve_visualizer(&interface_ptr, syndrome_pattern, &mut dual_module, Some(&mut visualizer));
             let (subgraph, weight_range) = primal_module.subgraph_range(&interface_ptr, &mut dual_module);
@@ -170,7 +168,6 @@ fn challenge_demo() {
         if is_example {
             visualizer.snapshot_combined("code".to_string(), vec![&code]).unwrap();
             let mut primal_module = PrimalModuleSerial::new_empty(&initializer);
-            primal_module.growing_strategy = GrowingStrategy::SingleCluster;
             primal_module.plugins = Arc::new(vec![
                 PluginUnionFind::entry(), // to allow timeout using union-find as baseline
                 PluginSingleHair::entry_with_strategy(RepeatStrategy::Once), // first make all clusters valid single hair
@@ -314,7 +311,6 @@ fn surface_code_example() {
             code.generate_random_errors(seed);
             let syndrome_pattern = Arc::new(code.get_syndrome());
             let mut primal_module = PrimalModuleSerial::new_empty(&initializer);
-            primal_module.growing_strategy = GrowingStrategy::MultipleClusters;
             primal_module.plugins = Arc::new(vec![
                 PluginUnionFind::entry(), // to allow timeout using union-find as baseline
                 PluginSingleHair::entry_with_strategy(RepeatStrategy::Once), // first make all clusters valid single hair
@@ -361,7 +357,6 @@ fn triangle_color_code_example() {
             code.generate_random_errors(seed);
             let syndrome_pattern = Arc::new(code.get_syndrome());
             let mut primal_module = PrimalModuleSerial::new_empty(&initializer);
-            primal_module.growing_strategy = GrowingStrategy::MultipleClusters;
             primal_module.plugins = Arc::new(vec![
                 PluginUnionFind::entry(), // to allow timeout using union-find as baseline
                 PluginSingleHair::entry_with_strategy(RepeatStrategy::Once), // first make all clusters valid single hair
@@ -412,7 +407,6 @@ fn small_color_code_example() {
             continue;
         }
         let mut primal_module = PrimalModuleSerial::new_empty(&initializer);
-        primal_module.growing_strategy = GrowingStrategy::MultipleClusters;
         primal_module.plugins = Arc::new(vec![
             PluginUnionFind::entry(), // to allow timeout using union-find as baseline
             PluginSingleHair::entry_with_strategy(RepeatStrategy::Once), // first make all clusters valid single hair
@@ -467,7 +461,6 @@ fn circuit_level_example() {
             code.generate_random_errors(seed);
             let syndrome_pattern = Arc::new(code.get_syndrome());
             let mut primal_module = PrimalModuleSerial::new_empty(&initializer);
-            primal_module.growing_strategy = GrowingStrategy::MultipleClusters;
             primal_module.plugins = Arc::new(vec![
                 PluginUnionFind::entry(), // to allow timeout using union-find as baseline
                 PluginSingleHair::entry_with_strategy(RepeatStrategy::Once), // first make all clusters valid single hair

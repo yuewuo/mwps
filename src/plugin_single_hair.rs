@@ -98,7 +98,6 @@ pub mod tests {
     use super::*;
     use crate::example_codes::*;
     use crate::primal_module_serial::tests::*;
-    use crate::primal_module_serial::*;
 
     #[test]
     fn plugin_single_hair_basic_1() {
@@ -115,7 +114,6 @@ pub mod tests {
                 PluginUnionFind::entry(),
                 PluginSingleHair::entry_with_strategy(RepeatStrategy::Once),
             ],
-            GrowingStrategy::ModeBased,
         );
     }
 
@@ -136,7 +134,6 @@ pub mod tests {
                 PluginUnionFind::entry(),
                 PluginSingleHair::entry_with_strategy(RepeatStrategy::Once),
             ],
-            GrowingStrategy::ModeBased,
         );
     }
 
@@ -157,7 +154,6 @@ pub mod tests {
                 PluginUnionFind::entry(),
                 PluginSingleHair::entry_with_strategy(RepeatStrategy::Once),
             ],
-            GrowingStrategy::ModeBased,
         );
     }
 
@@ -178,7 +174,6 @@ pub mod tests {
                 PluginUnionFind::entry(),
                 PluginSingleHair::entry_with_strategy(RepeatStrategy::Once),
             ],
-            GrowingStrategy::ModeBased,
         );
     }
 
@@ -199,7 +194,6 @@ pub mod tests {
                 PluginUnionFind::entry(),
                 PluginSingleHair::entry_with_strategy(RepeatStrategy::Once),
             ],
-            GrowingStrategy::SingleCluster,
         );
     }
 
@@ -221,7 +215,6 @@ pub mod tests {
                 PluginUnionFind::entry(),
                 PluginSingleHair::entry_with_strategy(RepeatStrategy::Once),
             ],
-            GrowingStrategy::ModeBased,
         );
     }
 
@@ -245,7 +238,6 @@ pub mod tests {
                     max_repetition: usize::MAX,
                 }),
             ],
-            GrowingStrategy::SingleCluster,
         );
     }
 
@@ -268,8 +260,6 @@ pub mod tests {
                     max_repetition: usize::MAX,
                 }),
             ],
-            // GrowingStrategy::SingleCluster,
-            GrowingStrategy::ModeBased,
         );
     }
 }

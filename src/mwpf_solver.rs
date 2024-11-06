@@ -164,9 +164,6 @@ pub struct SolverSerialPluginsConfig {
     /// timeout for the whole solving process in millisecond
     #[serde(default = "hyperion_default_configs::primal")]
     primal: PrimalModuleSerialConfig,
-    /// growing strategy
-    #[serde(default = "hyperion_default_configs::growing_strategy")]
-    growing_strategy: GrowingStrategy,
     /// cluster size limit for the primal module in the tuning phase
     /// this is the threshold for which LP will not be ran on a specific cluster to optimize the solution
     pub tuning_cluster_size_limit: Option<usize>,
@@ -177,10 +174,6 @@ pub mod hyperion_default_configs {
 
     pub fn primal() -> PrimalModuleSerialConfig {
         serde_json::from_value(json!({})).unwrap()
-    }
-
-    pub fn growing_strategy() -> GrowingStrategy {
-        GrowingStrategy::MultipleClusters
     }
 }
 
@@ -205,7 +198,6 @@ impl SolverSerialPlugins {
         let model_graph = Arc::new(ModelHyperGraph::new(Arc::new(initializer.clone())));
         let mut primal_module = PrimalModuleSerial::new_empty(initializer);
         let config: SolverSerialPluginsConfig = serde_json::from_value(config).unwrap();
-        primal_module.growing_strategy = config.growing_strategy;
         primal_module.plugins = plugins;
         primal_module.config = config.primal.clone();
         primal_module.cluster_node_limit = config.tuning_cluster_size_limit;

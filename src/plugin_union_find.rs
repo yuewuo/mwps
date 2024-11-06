@@ -52,14 +52,12 @@ impl PluginImpl for PluginUnionFind {
 pub mod tests {
     use super::*;
     use crate::example_codes::*;
-    use crate::primal_module_serial::{tests::*, GrowingStrategy};
-    use test_case::test_case;
+    use crate::primal_module_serial::tests::*;
 
-    #[test_case("single_cluster", GrowingStrategy::SingleCluster)]
-    #[test_case("multiple_cluster", GrowingStrategy::MultipleClusters)]
-    fn plugin_union_find_basic_1(suffix: &str, growing_strategy: GrowingStrategy) {
+    #[test]
+    fn plugin_union_find_basic_1() {
         // cargo test plugin_union_find_basic_1 -- --nocapture
-        let visualize_filename = format!("plugin_union_find_basic_1_{suffix}.json");
+        let visualize_filename = "plugin_union_find_basic_1.json".to_string();
         let defect_vertices = vec![10, 11, 16, 17];
         let code = CodeCapacityTailoredCode::new(5, 0., 0.01, 1);
         primal_module_serial_basic_standard_syndrome(
@@ -68,7 +66,6 @@ pub mod tests {
             defect_vertices,
             1,
             vec![PluginUnionFind::entry()],
-            growing_strategy,
         );
     }
 }

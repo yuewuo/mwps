@@ -27,8 +27,6 @@ use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 
 pub struct PrimalModuleSerial {
-    /// growing strategy, default to single-tree approach for easier debugging and better locality
-    pub growing_strategy: GrowingStrategy,
     /// dual nodes information
     pub nodes: Vec<PrimalModuleSerialNodePtr>,
     /// clusters of dual nodes
@@ -106,17 +104,6 @@ pub mod primal_serial_default_configs {
     }
 }
 
-/// strategy of growing the dual variables
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-pub enum GrowingStrategy {
-    /// focus on a single cluster at a time, for easier debugging and better locality
-    SingleCluster, // Question: Should this be deprecated?
-    /// all clusters grow at the same time at the same speed
-    MultipleClusters,
-    /// utilizing the search/tune mode separation
-    ModeBased,
-}
-
 pub struct PrimalModuleSerialNode {
     /// the dual node
     pub dual_node_ptr: DualNodePtr,
@@ -155,7 +142,6 @@ pub type PrimalClusterWeak = WeakRwLock<PrimalCluster>;
 impl PrimalModuleImpl for PrimalModuleSerial {
     fn new_empty(_initializer: &SolverInitializer) -> Self {
         Self {
-            growing_strategy: GrowingStrategy::SingleCluster,
             nodes: vec![],
             clusters: vec![],
             pending_nodes: VecDeque::new(),
@@ -183,7 +169,7 @@ impl PrimalModuleImpl for PrimalModuleSerial {
     }
 
     #[allow(clippy::unnecessary_cast)]
-    fn load<D: DualModuleImpl>(&mut self, interface_ptr: &DualModuleInterfacePtr, dual_module: &mut D) {
+    fn load<D: DualModuleImpl>(&mut self, interface_ptr: &DualModuleInterfacePtr, _dual_module: &mut D) {
         let interface = interface_ptr.read_recursive();
         for index in 0..interface.nodes.len() as NodeIndex {
             let dual_node_ptr = &interface.nodes[index as usize];
@@ -223,13 +209,6 @@ impl PrimalModuleImpl for PrimalModuleSerial {
             // add to self
             self.nodes.push(primal_node_ptr);
             self.clusters.push(primal_cluster_ptr);
-        }
-        if matches!(self.growing_strategy, GrowingStrategy::SingleCluster) {
-            for primal_node_ptr in self.nodes.iter().skip(1) {
-                let dual_node_ptr = primal_node_ptr.read_recursive().dual_node_ptr.clone();
-                dual_module.set_grow_rate(&dual_node_ptr, Rational::zero());
-                self.pending_nodes.push_back(primal_node_ptr.downgrade());
-            }
         }
     }
 
@@ -1165,7 +1144,6 @@ pub mod tests {
         defect_vertices: Vec<VertexIndex>,
         final_dual: Weight,
         plugins: PluginVec,
-        growing_strategy: GrowingStrategy,
         mut dual_module: impl DualModuleImpl + MWPSVisualizer,
         model_graph: Arc<crate::model_hypergraph::ModelHyperGraph>,
         mut visualizer: Option<Visualizer>,
@@ -1176,7 +1154,6 @@ pub mod tests {
     ) {
         // create primal module
         let mut primal_module = PrimalModuleSerial::new_empty(&model_graph.initializer);
-        primal_module.growing_strategy = growing_strategy;
         primal_module.plugins = Arc::new(plugins);
         // primal_module.config = serde_json::from_value(json!({"timeout":1})).unwrap();
         // try to work on a simple syndrome
@@ -1225,7 +1202,6 @@ pub mod tests {
         defect_vertices: Vec<VertexIndex>,
         final_dual: Weight,
         plugins: PluginVec,
-        growing_strategy: GrowingStrategy,
     ) -> (
         DualModuleInterfacePtr,
         PrimalModuleSerial,
@@ -1245,7 +1221,6 @@ pub mod tests {
             defect_vertices,
             final_dual,
             plugins,
-            growing_strategy,
             DualModulePQ::new_empty(&model_graph.initializer),
             model_graph,
             Some(visualizer),
@@ -1259,14 +1234,7 @@ pub mod tests {
         let visualize_filename = "primal_module_serial_basic_1.json".to_string();
         let defect_vertices = vec![23, 24, 29, 30];
         let code = CodeCapacityTailoredCode::new(7, 0., 0.01, 1);
-        primal_module_serial_basic_standard_syndrome(
-            code,
-            visualize_filename,
-            defect_vertices,
-            1,
-            vec![],
-            GrowingStrategy::ModeBased,
-        );
+        primal_module_serial_basic_standard_syndrome(code, visualize_filename, defect_vertices, 1, vec![]);
     }
 
     #[test]
@@ -1275,14 +1243,7 @@ pub mod tests {
         let visualize_filename = "primal_module_serial_basic_2.json".to_string();
         let defect_vertices = vec![16, 17, 23, 25, 29, 30];
         let code = CodeCapacityTailoredCode::new(7, 0., 0.01, 1);
-        primal_module_serial_basic_standard_syndrome(
-            code,
-            visualize_filename,
-            defect_vertices,
-            2,
-            vec![],
-            GrowingStrategy::ModeBased,
-        );
+        primal_module_serial_basic_standard_syndrome(code, visualize_filename, defect_vertices, 2, vec![]);
     }
 
     #[test]
@@ -1291,14 +1252,7 @@ pub mod tests {
         let visualize_filename = "primal_module_serial_basic_3.json".to_string();
         let defect_vertices = vec![14, 15, 16, 17, 22, 25, 28, 31, 36, 37, 38, 39];
         let code = CodeCapacityTailoredCode::new(7, 0., 0.01, 1);
-        primal_module_serial_basic_standard_syndrome(
-            code,
-            visualize_filename,
-            defect_vertices,
-            5,
-            vec![],
-            GrowingStrategy::ModeBased,
-        );
+        primal_module_serial_basic_standard_syndrome(code, visualize_filename, defect_vertices, 5, vec![]);
     }
 
     #[test]
@@ -1316,7 +1270,6 @@ pub mod tests {
                 PluginUnionFind::entry(),
                 PluginSingleHair::entry_with_strategy(RepeatStrategy::Once),
             ],
-            GrowingStrategy::ModeBased,
         );
     }
 
@@ -1329,14 +1282,7 @@ pub mod tests {
         let visualize_filename = "primal_module_serial_basic_4.json".to_string();
         let defect_vertices = vec![10, 11, 12, 15, 16, 17, 18];
         let code = CodeCapacityTailoredCode::new(5, 0., 0.01, 1);
-        primal_module_serial_basic_standard_syndrome(
-            code,
-            visualize_filename,
-            defect_vertices,
-            4,
-            vec![],
-            GrowingStrategy::ModeBased,
-        );
+        primal_module_serial_basic_standard_syndrome(code, visualize_filename, defect_vertices, 4, vec![]);
     }
 
     #[test]
@@ -1354,7 +1300,6 @@ pub mod tests {
                 PluginUnionFind::entry(),
                 PluginSingleHair::entry_with_strategy(RepeatStrategy::Once),
             ],
-            GrowingStrategy::MultipleClusters,
         );
     }
 
@@ -1364,14 +1309,7 @@ pub mod tests {
         let visualize_filename = "primal_module_serial_basic_5.json".to_string();
         let defect_vertices = vec![32, 33, 37, 47, 86, 87, 72, 82];
         let code = CodeCapacityPlanarCode::new(11, 0.01, 1);
-        primal_module_serial_basic_standard_syndrome(
-            code,
-            visualize_filename,
-            defect_vertices,
-            4,
-            vec![],
-            GrowingStrategy::ModeBased,
-        );
+        primal_module_serial_basic_standard_syndrome(code, visualize_filename, defect_vertices, 4, vec![]);
     }
 
     #[test]
@@ -1389,7 +1327,6 @@ pub mod tests {
                 PluginUnionFind::entry(),
                 PluginSingleHair::entry_with_strategy(RepeatStrategy::Once),
             ],
-            GrowingStrategy::ModeBased,
         );
     }
 }
