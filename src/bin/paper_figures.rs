@@ -1,7 +1,7 @@
 // cargo run --release --bin paper_figures
 
 use mwpf::dual_module::*;
-use mwpf::dual_module_serial::*;
+use mwpf::dual_module_pq::*;
 use mwpf::example_codes::*;
 use mwpf::invalid_subgraph::*;
 use mwpf::model_hypergraph::*;
@@ -31,7 +31,7 @@ fn hyperedge_example() {
     // create dual module
     let initializer = code.get_initializer();
     let model_graph = Arc::new(ModelHyperGraph::new(Arc::new(initializer.clone())));
-    let mut dual_module = DualModuleSerial::new_empty(&initializer);
+    let mut dual_module = DualModulePQ::new_empty(&initializer);
     let interface_ptr = DualModuleInterfacePtr::new(model_graph.clone());
     // add syndrome
     let syndrome_pattern = Arc::new(SyndromePattern::new_vertices(vec![1, 2, 4, 6]));

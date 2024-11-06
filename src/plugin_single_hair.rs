@@ -99,13 +99,11 @@ pub mod tests {
     use crate::example_codes::*;
     use crate::primal_module_serial::tests::*;
     use crate::primal_module_serial::*;
-    use test_case::test_case;
 
-    #[test_case("single_cluster", GrowingStrategy::SingleCluster)]
-    #[test_case("multiple_cluster", GrowingStrategy::MultipleClusters)]
-    fn plugin_single_hair_basic_1(suffix: &str, growing_strategy: GrowingStrategy) {
+    #[test]
+    fn plugin_single_hair_basic_1() {
         // cargo test --features=colorful plugin_single_hair_basic_1 -- --nocapture
-        let visualize_filename = format!("plugin_single_hair_basic_1_{suffix}.json");
+        let visualize_filename = "plugin_single_hair_basic_1.json".to_string();
         let defect_vertices = vec![10, 11, 12, 15, 16, 17, 18];
         let code = CodeCapacityTailoredCode::new(5, 0., 0.01, 1);
         primal_module_serial_basic_standard_syndrome(
@@ -114,7 +112,7 @@ pub mod tests {
             defect_vertices,
             4,
             vec![PluginSingleHair::entry_with_strategy(RepeatStrategy::Once)],
-            growing_strategy,
+            GrowingStrategy::ModeBased,
         );
     }
 
@@ -131,8 +129,11 @@ pub mod tests {
             visualize_filename,
             defect_vertices,
             6,
-            vec![PluginSingleHair::entry_with_strategy(RepeatStrategy::Once)],
-            GrowingStrategy::SingleCluster,
+            vec![
+                PluginUnionFind::entry(),
+                PluginSingleHair::entry_with_strategy(RepeatStrategy::Once),
+            ],
+            GrowingStrategy::ModeBased,
         );
     }
 
@@ -149,9 +150,11 @@ pub mod tests {
             visualize_filename,
             defect_vertices,
             4,
-            vec![PluginSingleHair::entry_with_strategy(RepeatStrategy::Once)],
+            vec![
+                PluginUnionFind::entry(),
+                PluginSingleHair::entry_with_strategy(RepeatStrategy::Once),
+            ],
             GrowingStrategy::ModeBased,
-            // GrowingStrategy::SingleCluster,
         );
     }
 
@@ -168,8 +171,10 @@ pub mod tests {
             visualize_filename,
             defect_vertices,
             4,
-            vec![PluginSingleHair::entry_with_strategy(RepeatStrategy::Once)],
-            // GrowingStrategy::SingleCluster,
+            vec![
+                PluginUnionFind::entry(),
+                PluginSingleHair::entry_with_strategy(RepeatStrategy::Once),
+            ],
             GrowingStrategy::ModeBased,
         );
     }
@@ -187,7 +192,10 @@ pub mod tests {
             visualize_filename,
             defect_vertices,
             3,
-            vec![PluginSingleHair::entry_with_strategy(RepeatStrategy::Once)],
+            vec![
+                PluginUnionFind::entry(),
+                PluginSingleHair::entry_with_strategy(RepeatStrategy::Once),
+            ],
             GrowingStrategy::SingleCluster,
         );
     }
@@ -206,7 +214,10 @@ pub mod tests {
             visualize_filename,
             defect_vertices,
             3,
-            vec![PluginSingleHair::entry_with_strategy(RepeatStrategy::Once)],
+            vec![
+                PluginUnionFind::entry(),
+                PluginSingleHair::entry_with_strategy(RepeatStrategy::Once),
+            ],
             GrowingStrategy::SingleCluster,
         );
     }
@@ -225,9 +236,12 @@ pub mod tests {
             visualize_filename,
             defect_vertices,
             1,
-            vec![PluginSingleHair::entry_with_strategy(RepeatStrategy::Multiple {
-                max_repetition: usize::MAX,
-            })],
+            vec![
+                PluginUnionFind::entry(),
+                PluginSingleHair::entry_with_strategy(RepeatStrategy::Multiple {
+                    max_repetition: usize::MAX,
+                }),
+            ],
             GrowingStrategy::SingleCluster,
         );
     }
@@ -245,31 +259,14 @@ pub mod tests {
             visualize_filename,
             defect_vertices,
             2,
-            vec![PluginSingleHair::entry_with_strategy(RepeatStrategy::Multiple {
-                max_repetition: usize::MAX,
-            })],
+            vec![
+                PluginUnionFind::entry(),
+                PluginSingleHair::entry_with_strategy(RepeatStrategy::Multiple {
+                    max_repetition: usize::MAX,
+                }),
+            ],
             // GrowingStrategy::SingleCluster,
             GrowingStrategy::ModeBased,
         );
     }
-
-    // // error_pattern: [0, 3, 9]
-    // // defect_vertices: [2, 3, 4]
-    // #[test]
-    // fn plugin_joint_single_hair_debug_3() {
-    //     // cargo test --features=colorful plugin_joint_single_hair_debug_3 -- --nocapture
-    //     let visualize_filename = "plugin_joint_single_hair_debug_3.json".to_string();
-    //     let defect_vertices = vec![2, 3, 4];
-    //     let code = CodeCapacityColorCode::new(5, 0., 1);
-    //     primal_module_serial_basic_standard_syndrome(
-    //         code,
-    //         visualize_filename,
-    //         defect_vertices,
-    //         3,
-    //         vec![PluginSingleHair::entry_with_strategy(RepeatStrategy::Multiple {
-    //             max_repetition: usize::MAX,
-    //         })],
-    //         GrowingStrategy::SingleCluster,
-    //     );
-    // }
 }

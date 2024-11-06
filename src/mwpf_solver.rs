@@ -185,7 +185,6 @@ pub mod hyperion_default_configs {
 }
 
 pub struct SolverSerialPlugins {
-    // dual_module: DualModuleSerial,
     dual_module: DualModulePQ,
     primal_module: PrimalModuleSerial,
     interface_ptr: DualModuleInterfacePtr,
@@ -213,7 +212,6 @@ impl SolverSerialPlugins {
 
         Self {
             dual_module: DualModulePQ::new_empty(initializer),
-            // dual_module: DualModuleSerial::new_empty(initializer),
             primal_module,
             interface_ptr: DualModuleInterfacePtr::new(model_graph.clone()),
             model_graph,

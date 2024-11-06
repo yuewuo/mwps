@@ -28,7 +28,6 @@ pub mod cli;
 pub mod decoding_hypergraph;
 pub mod dual_module;
 pub mod dual_module_pq;
-pub mod dual_module_serial;
 pub mod example_codes;
 pub mod html_export;
 pub mod invalid_subgraph;
@@ -82,7 +81,7 @@ use wasm_bindgen::prelude::*;
 pub fn get_version() -> String {
     use decoding_hypergraph::*;
     use dual_module::*;
-    use dual_module_serial::*;
+    use dual_module_pq::*;
     use example_codes::*;
     use primal_module::*;
     use primal_module_serial::*;
@@ -91,7 +90,7 @@ pub fn get_version() -> String {
     let code = CodeCapacityTailoredCode::new(7, 0., 0.01, 1);
     // create dual module
     let model_graph = code.get_model_graph();
-    let mut dual_module = DualModuleSerial::new_empty(&model_graph.initializer);
+    let mut dual_module = DualModulePQ::new_empty(&model_graph.initializer);
     // create primal module
     let mut primal_module = PrimalModuleSerial::new_empty(&model_graph.initializer);
     primal_module.growing_strategy = GrowingStrategy::SingleCluster;

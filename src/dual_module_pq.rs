@@ -187,7 +187,7 @@ impl<T: Ord + PartialEq + Eq + std::fmt::Debug, E: std::fmt::Debug> FutureQueueM
 #[derive(Derivative)]
 #[derivative(Debug)]
 pub struct Vertex {
-    /// the index of this vertex in the decoding graph, not necessary the index in [`DualModuleSerial::vertices`] if it's partitioned
+    /// the index of this vertex in the decoding graph, not necessary the index in [`DualModulePQ::vertices`] if it's partitioned
     pub vertex_index: VertexIndex,
     /// if a vertex is defect, then [`Vertex::propagated_dual_node`] always corresponds to that root
     pub is_defect: bool,
@@ -543,18 +543,17 @@ where
 
         self.update_dual_node_if_necessary(&mut dual_node);
 
-        let global_time = self.global_time.read_recursive();
+        // it is okay to use global_time now, as this must be up-to-speed
+        let global_time = self.global_time.read_recursive().clone();
         let grow_rate_diff = &grow_rate - &dual_node.grow_rate;
 
         dual_node.grow_rate = grow_rate.clone();
         if dual_node.grow_rate.is_negative() {
-            self.obstacle_queue.will_happen(
-                // it is okay to use global_time now, as this must be up-to-speed
-                dual_node.get_dual_variable().clone() / (-grow_rate) + global_time.clone(),
-                Obstacle::ShrinkToZero {
-                    dual_node_ptr: dual_node_ptr.clone(),
-                },
-            );
+            let time = dual_node.get_dual_variable().clone() / (-grow_rate) + global_time.clone();
+            let event = Obstacle::ShrinkToZero {
+                dual_node_ptr: dual_node_ptr.clone(),
+            };
+            self.obstacle_queue.will_happen(time, event);
         }
 
         // don't reacquire the read guard
