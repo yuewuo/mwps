@@ -10,6 +10,12 @@ clippy:
 
 clean:
 	cargo clean
+	cd src/heapz && cargo clean
+	cd src/highs/fuzz && cargo clean
+	cd src/highs && cargo clean
+	cd src/pheap && cargo clean
+	cd src/slp && cargo clean
+
 
 clean-env: clean fmt
 

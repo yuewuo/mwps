@@ -192,13 +192,9 @@ impl MWPSVisualizer for PrimalModuleUnionFind {
 #[cfg(test)]
 pub mod tests {
     use super::super::dual_module_serial::*;
-    use super::super::example_codes::*;
     use super::*;
-    use crate::dual_module_pq::DualModulePQ;
-    use crate::dual_module_pq::FutureObstacleQueue;
-    // use crate::dual_module_pq::_FutureObstacleQueue;
-    // use crate::dual_module_pq::PairingPQ;
-    // use crate::dual_module_pq::RankPairingPQ;
+    use crate::dual_module_pq::*;
+    use crate::example_codes::*;
     use crate::more_asserts::*;
     use crate::num_traits::{FromPrimitive, ToPrimitive};
     use std::sync::Arc;
