@@ -47,9 +47,6 @@ pub struct PrimalModuleSerial {
     #[cfg(feature = "incr_lp")]
     /// parameter indicating if the primal module has initialized states necessary for `incr_lp` slack calculation
     pub cluster_weights_initialized: bool,
-    /// cluster size limit in tuning phase, possibly based on the code-distance
-    ///     note: this is not monitored in the searching phase because then there will be no solution
-    pub cluster_node_limit: Option<usize>,
 }
 
 #[derive(Eq, Debug)]
@@ -96,11 +93,18 @@ pub struct PrimalModuleSerialConfig {
     /// timeout for the whole solving process
     #[serde(default = "primal_serial_default_configs::timeout")]
     pub timeout: f64,
+    /// cluster size limit in tuning phase, possibly based on the code-distance
+    ///     note: this is not monitored in the searching phase because we need to ensure at least one valid solution is generated
+    #[serde(default = "primal_serial_default_configs::cluster_node_limit")]
+    pub cluster_node_limit: usize,
 }
 
 pub mod primal_serial_default_configs {
     pub fn timeout() -> f64 {
         (10 * 60) as f64
+    }
+    pub fn cluster_node_limit() -> usize {
+        usize::MAX
     }
 }
 
@@ -153,7 +157,6 @@ impl PrimalModuleImpl for PrimalModuleSerial {
             sorted_clusters_aff: None,
             #[cfg(feature = "incr_lp")]
             cluster_weights_initialized: false,
-            cluster_node_limit: None,
         }
     }
 
@@ -382,10 +385,8 @@ impl PrimalModuleImpl for PrimalModuleSerial {
         if cluster_temp.nodes.is_empty() {
             return (true, optimizer_result); // no longer a cluster, no need to handle
         }
-        if let Some(len_limit) = self.cluster_node_limit {
-            if cluster_temp.nodes.len() >= len_limit {
-                return (true, optimizer_result);
-            }
+        if cluster_temp.nodes.len() >= self.config.cluster_node_limit {
+            return (true, optimizer_result);
         }
         // update the matrix with new tight edges
         #[cfg(feature = "incr_lp")]

@@ -161,12 +161,8 @@ macro_rules! bind_trait_to_python {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SolverSerialPluginsConfig {
-    /// timeout for the whole solving process in millisecond
     #[serde(default = "hyperion_default_configs::primal")]
     primal: PrimalModuleSerialConfig,
-    /// cluster size limit for the primal module in the tuning phase
-    /// this is the threshold for which LP will not be ran on a specific cluster to optimize the solution
-    pub tuning_cluster_size_limit: Option<usize>,
 }
 
 pub mod hyperion_default_configs {
@@ -200,7 +196,6 @@ impl SolverSerialPlugins {
         let config: SolverSerialPluginsConfig = serde_json::from_value(config).unwrap();
         primal_module.plugins = plugins;
         primal_module.config = config.primal.clone();
-        primal_module.cluster_node_limit = config.tuning_cluster_size_limit;
 
         Self {
             dual_module: DualModulePQ::new_empty(initializer),
@@ -472,5 +467,7 @@ pub(crate) fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<SolverSerialSingleHair>()?;
     m.add_class::<SolverSerialJointSingleHair>()?;
     m.add_class::<SolverErrorPatternLogger>()?;
+    // add Solver as default class
+    m.add("Solver", m.getattr("SolverSerialJointSingleHair")?)?;
     Ok(())
 }
