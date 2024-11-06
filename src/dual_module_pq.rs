@@ -378,7 +378,7 @@ where
         }
     }
 
-    fn compute_max_valid_grow(&mut self) -> Option<Rational> {
+    pub fn compute_max_valid_grow(&mut self) -> Option<Rational> {
         let global_time = self.global_time.read_recursive().clone();
         // getting rid of all the invalid events
         while let Some((time, event)) = self.obstacle_queue.peek_event() {
@@ -626,14 +626,6 @@ where
 
     /// for pq implementation, simply updating the global time is enough, could be part of the `compute_maximum_update_length` function
     fn grow(&mut self, length: Rational) {
-        if let Some(max_valid_grow) = self.compute_max_valid_grow() {
-            assert!(
-                length <= max_valid_grow,
-                "growth overflow: attempting to grow {} but can only grow {} maximum",
-                length,
-                max_valid_grow
-            );
-        };
         assert!(
             length.is_positive(),
             "growth should be positive; if desired, please set grow rate to negative for shrinking"
