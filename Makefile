@@ -10,6 +10,7 @@ clippy:
 
 clean:
 	cargo clean
+# the following subfolder targets only appears when running `maturin develop --release`
 	cd src/heapz && cargo clean
 	cd src/highs/fuzz && cargo clean
 	cd src/highs && cargo clean

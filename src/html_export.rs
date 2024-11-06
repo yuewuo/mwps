@@ -30,7 +30,6 @@ lazy_static! {
     };
 }
 
-#[cfg_attr(feature = "python_binding", cfg_eval)]
 #[cfg_attr(feature = "python_binding", pyclass)]
 pub struct HTMLExport {}
 
@@ -209,10 +208,7 @@ impl HTMLExport {
     }
 }
 
-#[cfg_attr(feature = "python_binding", cfg_eval)]
-#[cfg_attr(feature = "python_binding", pymethods)]
 impl HTMLExport {
-    #[cfg_attr(feature = "python_binding", staticmethod)]
     pub fn get_template_html() -> Option<&'static str> {
         cfg_if::cfg_if! {
             if #[cfg(feature="embed_visualizer")] {
@@ -223,7 +219,6 @@ impl HTMLExport {
         }
     }
 
-    #[cfg_attr(feature = "python_binding", staticmethod)]
     pub fn get_library_body() -> Option<&'static str> {
         cfg_if::cfg_if! {
             if #[cfg(feature="embed_visualizer")] {
@@ -234,7 +229,6 @@ impl HTMLExport {
         }
     }
 
-    #[cfg_attr(feature = "python_binding", staticmethod)]
     pub fn compress_content(data: &str) -> String {
         let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
         encoder.write_all(data.as_bytes()).unwrap();
@@ -242,7 +236,6 @@ impl HTMLExport {
         BASE64_STANDARD.encode(compressed).to_string()
     }
 
-    #[cfg_attr(feature = "python_binding", staticmethod)]
     pub fn decompress_content(base64_str: &str) -> String {
         let compressed = BASE64_STANDARD.decode(base64_str.as_bytes()).unwrap();
         let mut decoder = GzDecoder::new(compressed.as_slice());
@@ -250,8 +243,32 @@ impl HTMLExport {
         decoder.read_to_string(&mut uncompressed).unwrap();
         uncompressed
     }
+}
 
-    #[cfg(feature = "python_binding")]
+#[cfg(feature = "python_binding")]
+#[pymethods]
+impl HTMLExport {
+    #[staticmethod]
+    #[pyo3(name = "get_template_html")]
+    fn py_get_template_html() -> Option<&'static str> {
+        Self::get_template_html()
+    }
+    #[staticmethod]
+    #[pyo3(name = "get_library_body")]
+    fn py_get_library_body() -> Option<&'static str> {
+        Self::get_library_body()
+    }
+    #[staticmethod]
+    #[pyo3(name = "compress_content")]
+    fn py_compress_content(data: &str) -> String {
+        Self::compress_content(data)
+    }
+    #[staticmethod]
+    #[pyo3(name = "decompress_content")]
+    fn py_decompress_content(base64_str: &str) -> String {
+        Self::decompress_content(base64_str)
+    }
+
     #[staticmethod]
     #[pyo3(name = "generate_html", signature = (visualizer_data, override_config = None))]
     pub fn generate_html_py(visualizer_data: PyObject, override_config: Option<PyObject>) -> std::io::Result<String> {
@@ -264,7 +281,6 @@ impl HTMLExport {
         Ok(Self::generate_html(visualizer_data, override_config))
     }
 
-    #[cfg(feature = "python_binding")]
     #[staticmethod]
     #[pyo3(name = "display_jupyter_html", signature = (visualizer_data, override_config = None))]
     pub fn display_jupyter_html_py(visualizer_data: PyObject, override_config: Option<PyObject>) -> std::io::Result<()> {

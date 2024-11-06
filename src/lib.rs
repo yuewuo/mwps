@@ -1,6 +1,3 @@
-#![cfg_attr(feature = "python_binding", feature(cfg_eval))]
-#![allow(non_local_definitions)]
-
 extern crate serde;
 #[macro_use]
 extern crate serde_json;
@@ -17,6 +14,7 @@ extern crate num_traits;
 extern crate parking_lot;
 extern crate prettytable;
 #[cfg(feature = "python_binding")]
+#[macro_use]
 extern crate pyo3;
 extern crate rand;
 extern crate rand_xoshiro;

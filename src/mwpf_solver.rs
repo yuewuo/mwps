@@ -76,8 +76,8 @@ macro_rules! bind_trait_to_python {
                 self.subgraph_range_visualizer(visualizer).0
             }
             #[pyo3(name = "sum_dual_variables")]
-            fn py_sum_dual_variables(&self) -> PyResult<Py<PyAny>> {
-                rational_to_pyobject(&self.sum_dual_variables())
+            fn py_sum_dual_variables(&self) -> PyRational {
+                self.sum_dual_variables().clone().into()
             }
             #[pyo3(name = "load_syndrome", signature = (syndrome_pattern, visualizer=None))]
             pub fn py_load_syndrome(&mut self, syndrome_pattern: &SyndromePattern, visualizer: Option<&mut Visualizer>) {
@@ -329,7 +329,6 @@ macro_rules! bind_primal_dual_solver_trait {
     };
 }
 
-#[cfg_attr(feature = "python_binding", cfg_eval)]
 #[cfg_attr(feature = "python_binding", pyclass)]
 pub struct SolverSerialUnionFind(SolverSerialPlugins);
 
@@ -355,7 +354,6 @@ bind_primal_dual_solver_trait!(SolverSerialUnionFind);
 #[cfg(feature = "python_binding")]
 bind_trait_to_python!(SolverSerialUnionFind);
 
-#[cfg_attr(feature = "python_binding", cfg_eval)]
 #[cfg_attr(feature = "python_binding", pyclass)]
 pub struct SolverSerialSingleHair(SolverSerialPlugins);
 
@@ -388,7 +386,6 @@ bind_primal_dual_solver_trait!(SolverSerialSingleHair);
 #[cfg(feature = "python_binding")]
 bind_trait_to_python!(SolverSerialSingleHair);
 
-#[cfg_attr(feature = "python_binding", cfg_eval)]
 #[cfg_attr(feature = "python_binding", pyclass)]
 pub struct SolverSerialJointSingleHair(SolverSerialPlugins);
 
@@ -424,7 +421,6 @@ bind_primal_dual_solver_trait!(SolverSerialJointSingleHair);
 #[cfg(feature = "python_binding")]
 bind_trait_to_python!(SolverSerialJointSingleHair);
 
-#[cfg_attr(feature = "python_binding", cfg_eval)]
 #[cfg_attr(feature = "python_binding", pyclass)]
 pub struct SolverErrorPatternLogger {
     file: BufWriter<File>,
