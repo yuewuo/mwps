@@ -186,7 +186,7 @@ pub mod hyperion_default_configs {
 
 pub struct SolverSerialPlugins {
     // dual_module: DualModuleSerial,
-    dual_module: DualModulePQ<FutureObstacleQueue<Rational>>,
+    dual_module: DualModulePQ,
     primal_module: PrimalModuleSerial,
     interface_ptr: DualModuleInterfacePtr,
     model_graph: Arc<ModelHyperGraph>,

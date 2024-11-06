@@ -82,7 +82,7 @@ impl Obstacle {
     ///     note: even when the pq cannot hold duplicate events, `is_invalid` approach is more efficient than needing to remove items from the q
     fn is_valid<Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug + Clone>(
         &self,
-        dual_module_pq: &DualModulePQ<Queue>,
+        dual_module_pq: &DualModulePQGeneric<Queue>,
         event_time: &Rational, // time associated with the obstacle
     ) -> bool {
         #[allow(clippy::unnecessary_cast)]
@@ -291,8 +291,10 @@ impl std::fmt::Debug for EdgeWeak {
     }
 }
 
+pub type DualModulePQ = DualModulePQGeneric<FutureObstacleQueue<Rational>>;
+
 /* the actual dual module */
-pub struct DualModulePQ<Queue>
+pub struct DualModulePQGeneric<Queue>
 where
     Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug,
 {
@@ -314,7 +316,7 @@ where
     total_tuning_time: Option<f64>,
 }
 
-impl<Queue> DualModulePQ<Queue>
+impl<Queue> DualModulePQGeneric<Queue>
 where
     Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug + Clone,
 {
@@ -397,10 +399,10 @@ where
     }
 }
 
-pub type DualModulePQlPtr<Queue> = ArcRwLock<DualModulePQ<Queue>>;
-pub type DualModulePQWeak<Queue> = WeakRwLock<DualModulePQ<Queue>>;
+pub type DualModulePQlPtr<Queue> = ArcRwLock<DualModulePQGeneric<Queue>>;
+pub type DualModulePQWeak<Queue> = WeakRwLock<DualModulePQGeneric<Queue>>;
 
-impl<Queue> DualModuleImpl for DualModulePQ<Queue>
+impl<Queue> DualModuleImpl for DualModulePQGeneric<Queue>
 where
     Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug + Clone,
 {
@@ -876,7 +878,7 @@ where
     }
 }
 
-impl<Queue> MWPSVisualizer for DualModulePQ<Queue>
+impl<Queue> MWPSVisualizer for DualModulePQGeneric<Queue>
 where
     Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug + Clone,
 {
@@ -980,7 +982,7 @@ mod tests {
         .unwrap();
         // create dual module
         let model_graph = code.get_model_graph();
-        let mut dual_module: DualModulePQ<FutureObstacleQueue<Rational>> = DualModulePQ::new_empty(&model_graph.initializer);
+        let mut dual_module = DualModulePQ::new_empty(&model_graph.initializer);
         // try to work on a simple syndrome
         let decoding_graph = DecodingHyperGraph::new_defects(model_graph, vec![3, 12]);
         let interface_ptr = DualModuleInterfacePtr::new_load(decoding_graph, &mut dual_module);
@@ -1031,7 +1033,7 @@ mod tests {
         .unwrap();
         // create dual module
         let model_graph = code.get_model_graph();
-        let mut dual_module: DualModulePQ<FutureObstacleQueue<Rational>> = DualModulePQ::new_empty(&model_graph.initializer);
+        let mut dual_module = DualModulePQ::new_empty(&model_graph.initializer);
         // try to work on a simple syndrome
         let decoding_graph = DecodingHyperGraph::new_defects(model_graph, vec![23, 24, 29, 30]);
         let interface_ptr = DualModuleInterfacePtr::new_load(decoding_graph, &mut dual_module);
@@ -1077,7 +1079,7 @@ mod tests {
         .unwrap();
         // create dual module
         let model_graph = code.get_model_graph();
-        let mut dual_module: DualModulePQ<FutureObstacleQueue<Rational>> = DualModulePQ::new_empty(&model_graph.initializer);
+        let mut dual_module = DualModulePQ::new_empty(&model_graph.initializer);
         // try to work on a simple syndrome
         let decoding_graph = DecodingHyperGraph::new_defects(model_graph, vec![17, 23, 29, 30]);
         let interface_ptr = DualModuleInterfacePtr::new_load(decoding_graph, &mut dual_module);

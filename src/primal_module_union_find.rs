@@ -313,7 +313,7 @@ pub mod tests {
             code,
             defect_vertices,
             final_dual,
-            DualModulePQ::<FutureObstacleQueue<Rational>>::new_empty(&model_graph.initializer),
+            DualModulePQ::new_empty(&model_graph.initializer),
             model_graph,
             Some(visualizer),
         )
