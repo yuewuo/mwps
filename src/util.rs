@@ -531,8 +531,7 @@ pub fn json_to_pyobject(value: serde_json::Value) -> PyObject {
 }
 
 #[cfg(feature = "python_binding")]
-pub fn pyobject_to_json_locked(value: PyObject, py: Python) -> serde_json::Value {
-    let value: &Bound<PyAny> = value.bind(py);
+pub fn pyobject_to_json_locked(value: &Bound<PyAny>) -> serde_json::Value {
     if value.is_none() {
         serde_json::Value::Null
     } else if value.is_instance_of::<pyo3::types::PyBool>() {
@@ -545,20 +544,17 @@ pub fn pyobject_to_json_locked(value: PyObject, py: Python) -> serde_json::Value
         json!(value.extract::<String>().unwrap())
     } else if value.is_instance_of::<PyList>() {
         let elements: Vec<serde_json::Value> = value
-            .extract::<Vec<PyObject>>()
+            .downcast::<PyList>()
             .unwrap()
             .into_iter()
-            .map(|object| pyobject_to_json_locked(object, py))
+            .map(|object| pyobject_to_json_locked(&object))
             .collect();
         json!(elements)
     } else if value.is_instance_of::<PyDict>() {
         let map: &Bound<PyDict> = value.downcast().unwrap();
         let mut json_map = serde_json::Map::new();
         for (key, value) in map.iter() {
-            json_map.insert(
-                key.extract::<String>().unwrap(),
-                pyobject_to_json_locked(value.to_object(py), py),
-            );
+            json_map.insert(key.extract::<String>().unwrap(), pyobject_to_json_locked(&value));
         }
         serde_json::Value::Object(json_map)
     } else {
@@ -568,7 +564,7 @@ pub fn pyobject_to_json_locked(value: PyObject, py: Python) -> serde_json::Value
 
 #[cfg(feature = "python_binding")]
 pub fn pyobject_to_json(value: PyObject) -> serde_json::Value {
-    Python::with_gil(|py| pyobject_to_json_locked(value, py))
+    Python::with_gil(|py| pyobject_to_json_locked(value.bind(py)))
 }
 
 #[cfg(feature = "python_binding")]

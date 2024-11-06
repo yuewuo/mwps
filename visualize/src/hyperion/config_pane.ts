@@ -40,6 +40,8 @@ export class Config {
         this.data = data
         this.config_prop = config_prop
         this.basic = new BasicConfig(config_prop)
+        // by default showing the most recent snapshot; user can move back if they want
+        this.snapshot_config.index = this.data.visualizer.snapshots.length > 0 ? 0 : -1
     }
 
     export_visualizer_parameters () {

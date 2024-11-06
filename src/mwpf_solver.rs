@@ -16,13 +16,20 @@ use crate::primal_module::*;
 use crate::primal_module_serial::*;
 use crate::util::*;
 use crate::visualize::*;
-#[cfg(feature = "python_binding")]
-use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::io::prelude::*;
 use std::io::BufWriter;
 use std::sync::Arc;
+
+cfg_if::cfg_if! {
+    if #[cfg(feature="python_binding")] {
+        use crate::invalid_subgraph::*;
+        use crate::util_py::*;
+        use pyo3::prelude::*;
+        use std::collections::BTreeSet;
+    }
+}
 
 pub trait PrimalDualSolver {
     fn clear(&mut self);
@@ -53,24 +60,77 @@ macro_rules! bind_trait_to_python {
         #[pymethods]
         impl $struct_name {
             #[pyo3(name = "clear")]
-            fn trait_clear(&mut self) {
+            fn py_clear(&mut self) {
                 self.clear()
             }
             #[pyo3(name = "solve", signature = (syndrome_pattern, visualizer=None))] // in Python, `solve` and `solve_visualizer` is the same because it can take optional parameter
-            fn trait_solve(&mut self, syndrome_pattern: &SyndromePattern, visualizer: Option<&mut Visualizer>) {
+            fn py_solve(&mut self, syndrome_pattern: &SyndromePattern, visualizer: Option<&mut Visualizer>) {
                 self.solve_visualizer(syndrome_pattern, visualizer)
             }
             #[pyo3(name = "subgraph_range", signature = (visualizer=None))] // in Python, `subgraph_range` and `subgraph_range_visualizer` is the same
-            fn trait_subgraph_range(&mut self, visualizer: Option<&mut Visualizer>) -> (Subgraph, WeightRange) {
+            fn py_subgraph_range(&mut self, visualizer: Option<&mut Visualizer>) -> (Subgraph, WeightRange) {
                 self.subgraph_range_visualizer(visualizer)
             }
             #[pyo3(name = "subgraph", signature = (visualizer=None))]
-            fn trait_subgraph(&mut self, visualizer: Option<&mut Visualizer>) -> Subgraph {
+            fn py_subgraph(&mut self, visualizer: Option<&mut Visualizer>) -> Subgraph {
                 self.subgraph_range_visualizer(visualizer).0
             }
             #[pyo3(name = "sum_dual_variables")]
-            fn trait_sum_dual_variables(&self) -> PyResult<Py<PyAny>> {
+            fn py_sum_dual_variables(&self) -> PyResult<Py<PyAny>> {
                 rational_to_pyobject(&self.sum_dual_variables())
+            }
+            #[pyo3(name = "load_syndrome", signature = (syndrome_pattern, visualizer=None))]
+            pub fn py_load_syndrome(&mut self, syndrome_pattern: &SyndromePattern, visualizer: Option<&mut Visualizer>) {
+                self.0.load_syndrome(syndrome_pattern, visualizer)
+            }
+            #[pyo3(name = "get_node", signature = (node_index))]
+            pub fn py_get_node(&mut self, node_index: NodeIndex) -> Option<PyDualNodePtr> {
+                self.0.interface_ptr.get_node(node_index).map(|x| x.into())
+            }
+            #[pyo3(name = "find_node", signature = (vertices=None, edges=None))]
+            pub fn py_find_node(
+                &self,
+                vertices: Option<&Bound<PyAny>>,
+                edges: Option<&Bound<PyAny>>,
+            ) -> PyResult<Option<PyDualNodePtr>> {
+                let invalid_subgraph = Arc::new(self.py_construct_invalid_subgraph(vertices, edges)?);
+                Ok(self.0.interface_ptr.find_node(&invalid_subgraph).map(|x| x.into()))
+            }
+            #[pyo3(name = "create_node", signature = (vertices=None, edges=None))]
+            pub fn py_create_node(
+                &mut self,
+                vertices: Option<&Bound<PyAny>>,
+                edges: Option<&Bound<PyAny>>,
+            ) -> PyResult<PyDualNodePtr> {
+                let invalid_subgraph = Arc::new(self.py_construct_invalid_subgraph(vertices, edges)?);
+                let interface_ptr = self.0.interface_ptr.clone();
+                Ok(match self.0.dual_module.mode() {
+                    DualModuleMode::Search => interface_ptr.create_node(invalid_subgraph, &mut self.0.dual_module),
+                    DualModuleMode::Tune => interface_ptr.create_node_tune(invalid_subgraph, &mut self.0.dual_module),
+                }
+                .into())
+            }
+        }
+        impl $struct_name {
+            pub fn py_construct_invalid_subgraph(
+                &self,
+                vertices: Option<&Bound<PyAny>>,
+                edges: Option<&Bound<PyAny>>,
+            ) -> PyResult<InvalidSubgraph> {
+                // edges default to empty set
+                let edges = if let Some(edges) = edges {
+                    py_into_btree_set(edges)?
+                } else {
+                    BTreeSet::new()
+                };
+                // vertices must be superset of the union of all edges
+                let interface = self.0.interface_ptr.read_recursive();
+                Ok(if let Some(vertices) = vertices {
+                    let vertices = py_into_btree_set(vertices)?;
+                    InvalidSubgraph::new_complete(vertices, edges, &interface.decoding_graph)
+                } else {
+                    InvalidSubgraph::new(edges, &interface.decoding_graph)
+                })
             }
         }
     };
@@ -135,6 +195,25 @@ impl SolverSerialPlugins {
             primal_module,
             interface_ptr: DualModuleInterfacePtr::new(model_graph.clone()),
             model_graph,
+        }
+    }
+}
+
+impl SolverSerialPlugins {
+    // APIs for step-by-step solving in Python
+    pub fn load_syndrome(&mut self, syndrome_pattern: &SyndromePattern, visualizer: Option<&mut Visualizer>) {
+        self.primal_module.solve_step_load_syndrome(
+            &self.interface_ptr,
+            Arc::new(syndrome_pattern.clone()),
+            &mut self.dual_module,
+        );
+        if let Some(visualizer) = visualizer {
+            visualizer
+                .snapshot_combined(
+                    "syndrome loaded".to_string(),
+                    vec![&self.interface_ptr, &self.dual_module, &self.primal_module],
+                )
+                .unwrap();
         }
     }
 }

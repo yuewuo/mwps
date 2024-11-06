@@ -125,19 +125,25 @@ pub type DualNodeWeak = WeakRwLock<DualNode>;
 impl std::fmt::Debug for DualNodePtr {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         let dual_node = self.read_recursive(); // reading index is consistent
-        let new = ArcRwLock::new_value(Rational::zero());
-        let global_time = dual_node.global_time.as_ref().unwrap_or(&new).read_recursive();
-        write!(
-            f,
-            "\n\t\tindex: {}, global_time: {:?}, grow_rate: {:?}, dual_variable: {}\n\t\tdual_variable_at_last_updated_time: {}, last_updated_time: {}\n\timpacted_edges: {:?}\n",
-            dual_node.index,
-            global_time,
-            dual_node.grow_rate,
-            dual_node.get_dual_variable(),
-            dual_node.dual_variable_at_last_updated_time,
-            dual_node.last_updated_time,
-            dual_node.invalid_subgraph.hair
-        )
+        f.debug_struct("DualNode")
+            .field("index", &dual_node.index)
+            .field("dual_variable", &dual_node.get_dual_variable())
+            .field("grow_rate", &dual_node.grow_rate)
+            .field("hair", &dual_node.invalid_subgraph.hair)
+            .finish()
+        // let new = ArcRwLock::new_value(Rational::zero());
+        // let global_time = dual_node.global_time.as_ref().unwrap_or(&new).read_recursive();
+        // write!(
+        //     f,
+        //     "\n\t\tindex: {}, global_time: {:?}, grow_rate: {:?}, dual_variable: {}\n\t\tdual_variable_at_last_updated_time: {}, last_updated_time: {}\n\timpacted_edges: {:?}\n",
+        //     dual_node.index,
+        //     global_time,
+        //     dual_node.grow_rate,
+        //     dual_node.get_dual_variable(),
+        //     dual_node.dual_variable_at_last_updated_time,
+        //     dual_node.last_updated_time,
+        //     dual_node.invalid_subgraph.hair
+        // )
     }
 }
 

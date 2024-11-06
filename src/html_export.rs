@@ -163,7 +163,7 @@ impl HTMLExport {
         let (_, bootstrap_code, _) = Self::slice_content(template_html, bootstrap_flag);
         // generate the javascript code
         let js_code = format!(
-            r###"{bootstrap_code}
+            r###"<script>{bootstrap_code}
             async function main() {{
                 const visualizer_data = '{javascript_data}';
                 const override_config = {override_str};
@@ -197,12 +197,12 @@ impl HTMLExport {
                     }}
                 }}).observe(document, {{ childList: true, subtree: true }});
             }}
-            on_hyperion_library_ready(main)
+            on_hyperion_library_ready(main)</script>
         "###
         );
         Python::with_gil(|py| -> PyResult<()> {
             let display = PyModule::import_bound(py, "IPython.display")?;
-            display.call_method1("display", (display.call_method1("Javascript", (js_code,))?,))?;
+            display.call_method1("display", (display.call_method1("HTML", (js_code,))?,))?;
             Ok(())
         })
         .unwrap();
