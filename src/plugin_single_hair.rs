@@ -111,7 +111,10 @@ pub mod tests {
             visualize_filename,
             defect_vertices,
             4,
-            vec![PluginSingleHair::entry_with_strategy(RepeatStrategy::Once)],
+            vec![
+                PluginUnionFind::entry(),
+                PluginSingleHair::entry_with_strategy(RepeatStrategy::Once),
+            ],
             GrowingStrategy::ModeBased,
         );
     }
@@ -218,7 +221,7 @@ pub mod tests {
                 PluginUnionFind::entry(),
                 PluginSingleHair::entry_with_strategy(RepeatStrategy::Once),
             ],
-            GrowingStrategy::SingleCluster,
+            GrowingStrategy::ModeBased,
         );
     }
 
