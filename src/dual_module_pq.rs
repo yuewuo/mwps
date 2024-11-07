@@ -57,64 +57,6 @@ impl<T: Ord + PartialEq + Eq, E> PartialOrd for FutureEvent<T, E> {
     }
 }
 
-#[derive(PartialEq, Eq, Debug, Clone)]
-pub enum Obstacle {
-    Conflict { edge_index: EdgeIndex },
-    ShrinkToZero { dual_node_ptr: DualNodePtr },
-}
-
-// implement hash for Obstacle
-impl std::hash::Hash for Obstacle {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        match self {
-            Obstacle::Conflict { edge_index } => {
-                (0, *edge_index as u64).hash(state);
-            }
-            Obstacle::ShrinkToZero { dual_node_ptr } => {
-                (1, dual_node_ptr.read_recursive().index as u64).hash(state); // todo: perhaps swap to using OrderedDualNodePtr
-            }
-        }
-    }
-}
-
-impl Obstacle {
-    /// return if the current obstacle is valid
-    ///     note: even when the pq cannot hold duplicate events, `is_invalid` approach is more efficient than needing to remove items from the q
-    fn is_valid<Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug + Clone>(
-        &self,
-        dual_module_pq: &DualModulePQGeneric<Queue>,
-        event_time: &Rational, // time associated with the obstacle
-    ) -> bool {
-        #[allow(clippy::unnecessary_cast)]
-        return match self {
-            Obstacle::Conflict { edge_index } => {
-                let edge = dual_module_pq.edges[*edge_index as usize].read_recursive();
-                // not changing, cannot have conflict
-                if !edge.grow_rate.is_positive() {
-                    return false;
-                }
-                let growth_at_event_time =
-                    &edge.growth_at_last_updated_time + (event_time - &edge.last_updated_time) * &edge.grow_rate;
-
-                // we have a postivie grow rate, should become tight
-                growth_at_event_time == edge.weight
-            }
-            Obstacle::ShrinkToZero { dual_node_ptr } => {
-                let node = dual_node_ptr.read_recursive();
-                // only negative grow rates can shrink to zero
-                if !node.grow_rate.is_negative() {
-                    return false;
-                }
-                let growth_at_event_time =
-                    &node.dual_variable_at_last_updated_time + (event_time - &node.last_updated_time) * &node.grow_rate;
-
-                // we have a negative grow rate, should become zero
-                growth_at_event_time.is_zero()
-            }
-        };
-    }
-}
-
 pub type FutureObstacle<T> = FutureEvent<T, Obstacle>;
 pub type MinBinaryHeap<F> = BinaryHeap<Reverse<F>>;
 pub type _FutureObstacleQueue<T> = MinBinaryHeap<FutureObstacle<T>>;
@@ -385,7 +327,7 @@ where
         // getting rid of all the invalid events
         while let Some((time, event)) = self.obstacle_queue.peek_event() {
             // found a valid event
-            if event.is_valid(self, time) {
+            if self.is_valid_obstacle(event, time) {
                 // valid grow
                 if time != &global_time {
                     return Some(time - global_time.clone());
@@ -396,6 +338,42 @@ where
             self.obstacle_queue.pop_event();
         }
         None
+    }
+
+    /// return if the current obstacle is valid
+    ///     note: even when the pq cannot hold duplicate events, `is_invalid` approach is more efficient than needing to remove items from the q
+    fn is_valid_obstacle(
+        &self,
+        obstacle: &Obstacle,
+        event_time: &Rational, // time associated with the obstacle
+    ) -> bool {
+        #[allow(clippy::unnecessary_cast)]
+        return match obstacle {
+            Obstacle::Conflict { edge_index } => {
+                let edge = self.edges[*edge_index as usize].read_recursive();
+                // not changing, cannot have conflict
+                if !edge.grow_rate.is_positive() {
+                    return false;
+                }
+                let growth_at_event_time =
+                    &edge.growth_at_last_updated_time + (event_time - &edge.last_updated_time) * &edge.grow_rate;
+
+                // we have a postivie grow rate, should become tight
+                growth_at_event_time == edge.weight
+            }
+            Obstacle::ShrinkToZero { dual_node_ptr } => {
+                let node = dual_node_ptr.read_recursive();
+                // only negative grow rates can shrink to zero
+                if !node.grow_rate.is_negative() {
+                    return false;
+                }
+                let growth_at_event_time =
+                    &node.dual_variable_at_last_updated_time + (event_time - &node.last_updated_time) * &node.grow_rate;
+
+                // we have a negative grow rate, should become zero
+                growth_at_event_time.is_zero()
+            }
+        };
     }
 }
 
@@ -600,9 +578,9 @@ where
 
             // append all conflicts that happen at the same time as now
             while let Some((time, _)) = self.obstacle_queue.peek_event() {
-                if &global_time == time {
+                if global_time == time {
                     let (time, event) = self.obstacle_queue.pop_event().unwrap();
-                    if !event.is_valid(self, &time) {
+                    if !self.is_valid_obstacle(&event, &time) {
                         continue;
                     }
                     // add

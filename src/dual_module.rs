@@ -259,7 +259,7 @@ pub enum GroupMaxUpdateLength {
     /// non-zero maximum update length
     ValidGrow(Rational),
     /// conflicting reasons and pending VertexShrinkStop events (empty in a single serial dual module)
-    Conflicts(Vec<MaxUpdateLength>),
+    Obstacles(Vec<MaxUpdateLength>),
 }
 
 /// common trait that must be implemented for each implementation of dual module
@@ -552,6 +552,26 @@ impl MaxUpdateLength {
     }
 }
 
+#[derive(PartialEq, Eq, Debug, Clone)]
+pub enum Obstacle {
+    Conflict { edge_index: EdgeIndex },
+    ShrinkToZero { dual_node_ptr: DualNodePtr },
+}
+
+// implement hash for Obstacle
+impl std::hash::Hash for Obstacle {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        match self {
+            Obstacle::Conflict { edge_index } => {
+                (0, *edge_index as u64).hash(state);
+            }
+            Obstacle::ShrinkToZero { dual_node_ptr } => {
+                (1, dual_node_ptr.read_recursive().index as u64).hash(state); // todo: perhaps swap to using OrderedDualNodePtr
+            }
+        }
+    }
+}
+
 impl GroupMaxUpdateLength {
     pub fn add(&mut self, max_update_length: MaxUpdateLength) {
         match self {
@@ -559,7 +579,7 @@ impl GroupMaxUpdateLength {
                 match max_update_length {
                     MaxUpdateLength::Unbounded => {} // do nothing
                     MaxUpdateLength::ValidGrow(length) => *self = Self::ValidGrow(length),
-                    _ => *self = Self::Conflicts(vec![max_update_length]),
+                    _ => *self = Self::Obstacles(vec![max_update_length]),
                 }
             }
             Self::ValidGrow(current_length) => {
@@ -568,15 +588,15 @@ impl GroupMaxUpdateLength {
                     MaxUpdateLength::ValidGrow(length) => {
                         *self = Self::ValidGrow(std::cmp::min(current_length.clone(), length))
                     }
-                    _ => *self = Self::Conflicts(vec![max_update_length]),
+                    _ => *self = Self::Obstacles(vec![max_update_length]),
                 }
             }
-            Self::Conflicts(conflicts) => {
+            Self::Obstacles(obstacles) => {
                 match max_update_length {
                     MaxUpdateLength::Unbounded => {}    // do nothing
                     MaxUpdateLength::ValidGrow(_) => {} // do nothing
                     _ => {
-                        conflicts.push(max_update_length);
+                        obstacles.push(max_update_length);
                     }
                 }
             }
@@ -602,7 +622,7 @@ impl GroupMaxUpdateLength {
             Self::Unbounded | Self::ValidGrow(_) => {
                 panic!("please call GroupMaxUpdateLength::get_valid_growth to check if this group is none_zero_growth");
             }
-            Self::Conflicts(conflicts) => conflicts.pop(),
+            Self::Obstacles(obstacles) => obstacles.pop(),
         }
     }
 
@@ -611,7 +631,7 @@ impl GroupMaxUpdateLength {
             Self::Unbounded | Self::ValidGrow(_) => {
                 panic!("please call GroupMaxUpdateLength::get_valid_growth to check if this group is none_zero_growth");
             }
-            Self::Conflicts(conflicts) => conflicts.last(),
+            Self::Obstacles(obstacles) => obstacles.last(),
         }
     }
 }
