@@ -563,6 +563,13 @@ impl DualReport {
             Self::Obstacles(obstacles) => obstacles.last(),
         }
     }
+
+    pub fn iter(&self) -> Option<std::slice::Iter<Obstacle>> {
+        match self {
+            Self::Unbounded | Self::ValidGrow(_) => None,
+            Self::Obstacles(obstacles) => Some(obstacles.iter()),
+        }
+    }
 }
 
 impl DualModuleInterfacePtr {

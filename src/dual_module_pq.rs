@@ -572,7 +572,7 @@ where
 
             // append all conflicts that happen at the same time as now
             while let Some((time, _)) = self.obstacle_queue.peek_event() {
-                if global_time == time {
+                if global_time == *time {
                     let (time, event) = self.obstacle_queue.pop_event().unwrap();
                     if !self.is_valid_obstacle(&event, &time) {
                         continue;
@@ -584,6 +584,9 @@ where
                 }
             }
 
+            for obstacle in dual_report.iter().unwrap() {
+                self.obstacle_queue.will_happen(global_time.clone(), obstacle.clone());
+            }
             return dual_report;
         }
 

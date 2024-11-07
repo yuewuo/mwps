@@ -127,10 +127,22 @@ macro_rules! bind_trait_to_python {
             fn py_snapshot(&mut self, abbrev: bool) -> PyObject {
                 json_to_pyobject(self.0.snapshot(abbrev))
             }
-            #[pyo3(name = "get_obstacle")]
+            #[pyo3(name = "dual_report")]
             fn py_dual_report(&mut self) -> PyDualReport {
-                // self.0.dual_module.report().into()
-                unimplemented!()
+                self.0.dual_module.report().into()
+            }
+            #[pyo3(name = "get_edge_nodes")]
+            fn py_get_edge_nodes(&self, edge_index: EdgeIndex) -> Vec<PyDualNodePtr> {
+                self.0
+                    .dual_module
+                    .get_edge_nodes(edge_index)
+                    .into_iter()
+                    .map(|x| x.into())
+                    .collect()
+            }
+            #[pyo3(name = "set_grow_rate")]
+            fn py_set_grow_rate(&mut self, dual_node_ptr: PyDualNodePtr, grow_rate: PyRational) {
+                self.0.dual_module.set_grow_rate(&dual_node_ptr.0, grow_rate.into())
             }
         }
         impl $struct_name {
