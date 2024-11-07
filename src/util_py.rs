@@ -158,7 +158,7 @@ pub enum PyObstacle {
 }
 
 #[derive(Clone)]
-#[pyclass(name = "GroupMaxUpdateLength")]
+#[pyclass(name = "DualReport")]
 pub enum PyGroupMaxUpdateLength {
     Unbounded(),
     ValidGrow(PyRational),

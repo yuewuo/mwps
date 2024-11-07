@@ -128,8 +128,8 @@ macro_rules! bind_trait_to_python {
                 json_to_pyobject(self.0.snapshot(abbrev))
             }
             #[pyo3(name = "get_obstacle")]
-            fn py_get_obstacle(&mut self) -> PyMaxUpdateLength {
-                // self.0.dual_module.compute_maximum_update_length().into()
+            fn py_dual_report(&mut self) -> PyDualReport {
+                // self.0.dual_module.report().into()
                 unimplemented!()
             }
         }

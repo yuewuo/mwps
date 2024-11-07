@@ -217,36 +217,36 @@ impl PrimalModuleImpl for PrimalModuleSerial {
 
     fn resolve(
         &mut self,
-        group_max_update_length: GroupMaxUpdateLength,
+        dual_report: DualReport,
         interface_ptr: &DualModuleInterfacePtr,
         dual_module: &mut impl DualModuleImpl,
     ) -> bool {
         let begin = Instant::now();
-        let res = self.resolve_core(group_max_update_length, interface_ptr, dual_module);
+        let res = self.resolve_core(dual_report, interface_ptr, dual_module);
         self.time_resolve += begin.elapsed().as_secs_f64();
         res
     }
 
     fn old_resolve(
         &mut self,
-        group_max_update_length: GroupMaxUpdateLength,
+        dual_report: DualReport,
         interface_ptr: &DualModuleInterfacePtr,
         dual_module: &mut impl DualModuleImpl,
     ) -> bool {
         let begin = Instant::now();
-        let res = self.old_resolve_core(group_max_update_length, interface_ptr, dual_module);
+        let res = self.old_resolve_core(dual_report, interface_ptr, dual_module);
         self.time_resolve += begin.elapsed().as_secs_f64();
         res
     }
 
     fn resolve_tune(
         &mut self,
-        group_max_update_length: BTreeSet<Obstacle>,
+        dual_report: BTreeSet<Obstacle>,
         interface_ptr: &DualModuleInterfacePtr,
         dual_module: &mut impl DualModuleImpl,
     ) -> (BTreeSet<Obstacle>, bool) {
         let begin = Instant::now();
-        let res = self.resolve_core_tune(group_max_update_length, interface_ptr, dual_module);
+        let res = self.resolve_core_tune(dual_report, interface_ptr, dual_module);
         self.time_resolve += begin.elapsed().as_secs_f64();
         res
     }
@@ -818,15 +818,15 @@ impl PrimalModuleSerial {
     #[allow(clippy::unnecessary_cast)]
     fn resolve_core(
         &mut self,
-        mut group_max_update_length: GroupMaxUpdateLength,
+        mut dual_report: DualReport,
         interface_ptr: &DualModuleInterfacePtr,
         dual_module: &mut impl DualModuleImpl,
     ) -> bool {
-        debug_assert!(!group_max_update_length.is_unbounded() && group_max_update_length.get_valid_growth().is_none());
+        debug_assert!(!dual_report.is_unbounded() && dual_report.get_valid_growth().is_none());
         let mut active_clusters = BTreeSet::<NodeIndex>::new();
         let interface = interface_ptr.read_recursive();
         let decoding_graph = &interface.decoding_graph;
-        while let Some(obstacle) = group_max_update_length.pop() {
+        while let Some(obstacle) = dual_report.pop() {
             match obstacle {
                 Obstacle::Conflict { edge_index } => {
                     // union all the dual nodes in the edge index and create new dual node by adding this edge to `internal_edges`
@@ -890,15 +890,15 @@ impl PrimalModuleSerial {
     /// for backwards-compatibility
     fn old_resolve_core(
         &mut self,
-        mut group_max_update_length: GroupMaxUpdateLength,
+        mut dual_report: DualReport,
         interface_ptr: &DualModuleInterfacePtr,
         dual_module: &mut impl DualModuleImpl,
     ) -> bool {
-        debug_assert!(!group_max_update_length.is_unbounded() && group_max_update_length.get_valid_growth().is_none());
+        debug_assert!(!dual_report.is_unbounded() && dual_report.get_valid_growth().is_none());
         let mut active_clusters = BTreeSet::<NodeIndex>::new();
         let interface = interface_ptr.read_recursive();
         let decoding_graph = &interface.decoding_graph;
-        while let Some(obstacle) = group_max_update_length.pop() {
+        while let Some(obstacle) = dual_report.pop() {
             match obstacle {
                 Obstacle::Conflict { edge_index } => {
                     // union all the dual nodes in the edge index and create new dual node by adding this edge to `internal_edges`
@@ -990,7 +990,7 @@ impl PrimalModuleSerial {
     // returns (obstacles_needing_to_be_resolved, should_grow)
     fn resolve_core_tune(
         &mut self,
-        group_max_update_length: BTreeSet<Obstacle>,
+        dual_report: BTreeSet<Obstacle>,
         interface_ptr: &DualModuleInterfacePtr,
         dual_module: &mut impl DualModuleImpl,
     ) -> (BTreeSet<Obstacle>, bool) {
@@ -998,7 +998,7 @@ impl PrimalModuleSerial {
         let interface = interface_ptr.read_recursive();
         let decoding_graph = &interface.decoding_graph;
 
-        for obstacle in group_max_update_length.into_iter() {
+        for obstacle in dual_report.into_iter() {
             match obstacle {
                 Obstacle::Conflict { edge_index } => {
                     // union all the dual nodes in the edge index and create new dual node by adding this edge to `internal_edges`

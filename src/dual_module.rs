@@ -235,7 +235,7 @@ impl Ord for OrderedDualNodeWeak {
 
 #[derive(Derivative, Clone)]
 #[derivative(Debug, Default(new = "true"))]
-pub enum GroupMaxUpdateLength {
+pub enum DualReport {
     /// unbounded
     #[derivative(Default)]
     Unbounded,
@@ -264,7 +264,7 @@ pub trait DualModuleImpl {
 
     /// check the maximum length to grow (shrink) for all nodes, return a list of conflicting reason and a single number indicating the maximum rate to grow:
     /// this number will be 0 if any conflicting reason presents
-    fn compute_maximum_update_length(&mut self) -> GroupMaxUpdateLength;
+    fn report(&mut self) -> DualReport;
 
     /// An optional function that can manipulate individual dual node, not necessarily supported by all implementations
     fn grow_dual_node(&mut self, _dual_node_ptr: &DualNodePtr, _length: Rational) {
@@ -520,7 +520,7 @@ impl std::hash::Hash for Obstacle {
     }
 }
 
-impl GroupMaxUpdateLength {
+impl DualReport {
     pub fn add_obstacle(&mut self, obstacle: Obstacle) {
         match self {
             Self::Unbounded | Self::ValidGrow(_) => {
@@ -539,7 +539,7 @@ impl GroupMaxUpdateLength {
     pub fn get_valid_growth(&self) -> Option<Rational> {
         match self {
             Self::Unbounded => {
-                panic!("please call GroupMaxUpdateLength::is_unbounded to check if it's unbounded");
+                panic!("please call DualReport::is_unbounded to check if it's unbounded");
             }
             Self::ValidGrow(length) => Some(length.clone()),
             _ => None,
@@ -549,7 +549,7 @@ impl GroupMaxUpdateLength {
     pub fn pop(&mut self) -> Option<Obstacle> {
         match self {
             Self::Unbounded | Self::ValidGrow(_) => {
-                panic!("please call GroupMaxUpdateLength::get_valid_growth to check if this group is none_zero_growth");
+                panic!("please call DualReport::get_valid_growth to check if this group is none_zero_growth");
             }
             Self::Obstacles(obstacles) => obstacles.pop(),
         }
@@ -558,7 +558,7 @@ impl GroupMaxUpdateLength {
     pub fn peek(&self) -> Option<&Obstacle> {
         match self {
             Self::Unbounded | Self::ValidGrow(_) => {
-                panic!("please call GroupMaxUpdateLength::get_valid_growth to check if this group is none_zero_growth");
+                panic!("please call DualReport::get_valid_growth to check if this group is none_zero_growth");
             }
             Self::Obstacles(obstacles) => obstacles.last(),
         }

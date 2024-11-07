@@ -551,11 +551,11 @@ where
         }
     }
 
-    fn compute_maximum_update_length(&mut self) -> GroupMaxUpdateLength {
+    fn report(&mut self) -> DualReport {
         // self.debug_print();
 
         if let Some(max_valid_grow) = self.compute_max_valid_grow() {
-            return GroupMaxUpdateLength::ValidGrow(max_valid_grow);
+            return DualReport::ValidGrow(max_valid_grow);
         }
 
         let global_time = self.global_time.read_recursive().clone();
@@ -567,8 +567,8 @@ where
             // let mut group_max_update_length_set = BTreeSet::default();
 
             // Note: With de-dup queue implementation, we could use vectors here
-            let mut group_max_update_length = GroupMaxUpdateLength::new();
-            group_max_update_length.add_obstacle(event);
+            let mut dual_report = DualReport::new();
+            dual_report.add_obstacle(event);
 
             // append all conflicts that happen at the same time as now
             while let Some((time, _)) = self.obstacle_queue.peek_event() {
@@ -578,20 +578,20 @@ where
                         continue;
                     }
                     // add
-                    group_max_update_length.add_obstacle(event);
+                    dual_report.add_obstacle(event);
                 } else {
                     break;
                 }
             }
 
-            return group_max_update_length;
+            return dual_report;
         }
 
         // nothing useful could be done, return unbounded
-        GroupMaxUpdateLength::new()
+        DualReport::new()
     }
 
-    /// for pq implementation, simply updating the global time is enough, could be part of the `compute_maximum_update_length` function
+    /// for pq implementation, simply updating the global time is enough, could be part of the `report` function
     fn grow(&mut self, length: Rational) {
         assert!(
             length.is_positive(),

@@ -103,13 +103,13 @@ impl PrimalModuleImpl for PrimalModuleUnionFind {
     #[allow(clippy::unnecessary_cast)]
     fn resolve(
         &mut self,
-        mut group_max_update_length: GroupMaxUpdateLength,
+        mut dual_report: DualReport,
         interface_ptr: &DualModuleInterfacePtr,
         dual_module: &mut impl DualModuleImpl,
     ) -> bool {
-        debug_assert!(!group_max_update_length.is_unbounded() && group_max_update_length.get_valid_growth().is_none());
+        debug_assert!(!dual_report.is_unbounded() && dual_report.get_valid_growth().is_none());
         let mut active_clusters = BTreeSet::<NodeIndex>::new();
-        while let Some(obstacle) = group_max_update_length.pop() {
+        while let Some(obstacle) = dual_report.pop() {
             match obstacle {
                 Obstacle::Conflict { edge_index } => {
                     // union all the dual nodes in the edge index and create new dual node by adding this edge to `internal_edges`

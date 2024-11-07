@@ -39,7 +39,7 @@ pub trait PrimalModuleImpl {
     /// note: this is only ran in the "search" mode
     fn resolve(
         &mut self,
-        group_max_update_length: GroupMaxUpdateLength,
+        dual_report: DualReport,
         interface: &DualModuleInterfacePtr,
         dual_module: &mut impl DualModuleImpl,
     ) -> bool;
@@ -47,7 +47,7 @@ pub trait PrimalModuleImpl {
     /// kept in case of future need for this deprecated function (backwards compatibility for cases such as `SingleCluster` growing strategy)
     fn old_resolve(
         &mut self,
-        _group_max_update_length: GroupMaxUpdateLength,
+        _group_max_update_length: DualReport,
         _interface: &DualModuleInterfacePtr,
         _dual_module: &mut impl DualModuleImpl,
     ) -> bool {
@@ -76,28 +76,25 @@ pub trait PrimalModuleImpl {
 
     fn visualizer_callback<D: DualModuleImpl + MWPSVisualizer>(
         visualizer: &mut Visualizer,
-    ) -> impl FnMut(&DualModuleInterfacePtr, &mut D, &mut Self, &GroupMaxUpdateLength)
+    ) -> impl FnMut(&DualModuleInterfacePtr, &mut D, &mut Self, &DualReport)
     where
         Self: MWPSVisualizer + Sized,
     {
-        |interface: &DualModuleInterfacePtr,
-         dual_module: &mut D,
-         primal_module: &mut Self,
-         group_max_update_length: &GroupMaxUpdateLength| {
+        |interface: &DualModuleInterfacePtr, dual_module: &mut D, primal_module: &mut Self, dual_report: &DualReport| {
             if cfg!(debug_assertions) {
-                println!("group_max_update_length: {:?}", group_max_update_length);
+                println!("dual_report: {:?}", dual_report);
                 // dual_module.debug_print();
             }
-            if group_max_update_length.is_unbounded() {
+            if dual_report.is_unbounded() {
                 visualizer
                     .snapshot_combined("unbounded grow".to_string(), vec![interface, dual_module, primal_module])
                     .unwrap();
-            } else if let Some(length) = group_max_update_length.get_valid_growth() {
+            } else if let Some(length) = dual_report.get_valid_growth() {
                 visualizer
                     .snapshot_combined(format!("grow {length}"), vec![interface, dual_module, primal_module])
                     .unwrap();
             } else {
-                let first_conflict = format!("{:?}", group_max_update_length.peek().unwrap());
+                let first_conflict = format!("{:?}", dual_report.peek().unwrap());
                 visualizer
                     .snapshot_combined(
                         format!("resolve {first_conflict}"),
@@ -145,20 +142,20 @@ pub trait PrimalModuleImpl {
         dual_module: &mut D,
         mut callback: F,
     ) where
-        F: FnMut(&DualModuleInterfacePtr, &mut D, &mut Self, &GroupMaxUpdateLength),
+        F: FnMut(&DualModuleInterfacePtr, &mut D, &mut Self, &DualReport),
     {
         // Search, this part is unchanged
-        let mut group_max_update_length = dual_module.compute_maximum_update_length();
+        let mut dual_report = dual_module.report();
 
-        while !group_max_update_length.is_unbounded() {
-            callback(interface, dual_module, self, &group_max_update_length);
-            match group_max_update_length.get_valid_growth() {
+        while !dual_report.is_unbounded() {
+            callback(interface, dual_module, self, &dual_report);
+            match dual_report.get_valid_growth() {
                 Some(length) => dual_module.grow(length),
                 None => {
-                    self.resolve(group_max_update_length, interface, dual_module);
+                    self.resolve(dual_report, interface, dual_module);
                 }
             }
-            group_max_update_length = dual_module.compute_maximum_update_length();
+            dual_report = dual_module.report();
         }
 
         // from here, all states should be syncronized
