@@ -109,9 +109,9 @@ impl PrimalModuleImpl for PrimalModuleUnionFind {
     ) -> bool {
         debug_assert!(!group_max_update_length.is_unbounded() && group_max_update_length.get_valid_growth().is_none());
         let mut active_clusters = BTreeSet::<NodeIndex>::new();
-        while let Some(conflict) = group_max_update_length.pop() {
-            match conflict {
-                MaxUpdateLength::Conflicting(edge_index) => {
+        while let Some(obstacle) = group_max_update_length.pop() {
+            match obstacle {
+                Obstacle::Conflict { edge_index } => {
                     // union all the dual nodes in the edge index and create new dual node by adding this edge to `internal_edges`
                     let dual_nodes = dual_module.get_edge_nodes(edge_index);
                     debug_assert!(

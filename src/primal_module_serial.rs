@@ -241,10 +241,10 @@ impl PrimalModuleImpl for PrimalModuleSerial {
 
     fn resolve_tune(
         &mut self,
-        group_max_update_length: BTreeSet<MaxUpdateLength>,
+        group_max_update_length: BTreeSet<Obstacle>,
         interface_ptr: &DualModuleInterfacePtr,
         dual_module: &mut impl DualModuleImpl,
-    ) -> (BTreeSet<MaxUpdateLength>, bool) {
+    ) -> (BTreeSet<Obstacle>, bool) {
         let begin = Instant::now();
         let res = self.resolve_core_tune(group_max_update_length, interface_ptr, dual_module);
         self.time_resolve += begin.elapsed().as_secs_f64();
@@ -826,9 +826,9 @@ impl PrimalModuleSerial {
         let mut active_clusters = BTreeSet::<NodeIndex>::new();
         let interface = interface_ptr.read_recursive();
         let decoding_graph = &interface.decoding_graph;
-        while let Some(conflict) = group_max_update_length.pop() {
-            match conflict {
-                MaxUpdateLength::Conflicting(edge_index) => {
+        while let Some(obstacle) = group_max_update_length.pop() {
+            match obstacle {
+                Obstacle::Conflict { edge_index } => {
                     // union all the dual nodes in the edge index and create new dual node by adding this edge to `internal_edges`
                     let dual_nodes = dual_module.get_edge_nodes(edge_index);
                     debug_assert!(
@@ -860,16 +860,13 @@ impl PrimalModuleSerial {
                     // add to active cluster so that it's processed later
                     active_clusters.insert(cluster.cluster_index);
                 }
-                MaxUpdateLength::ShrinkProhibited(dual_node_ptr) => {
+                Obstacle::ShrinkToZero { dual_node_ptr } => {
                     let cluster_ptr = self.nodes[dual_node_ptr.index as usize]
                         .read_recursive()
                         .cluster_weak
                         .upgrade_force();
                     let cluster_index = cluster_ptr.read_recursive().cluster_index;
                     active_clusters.insert(cluster_index);
-                }
-                _ => {
-                    unreachable!()
                 }
             }
         }
@@ -901,9 +898,9 @@ impl PrimalModuleSerial {
         let mut active_clusters = BTreeSet::<NodeIndex>::new();
         let interface = interface_ptr.read_recursive();
         let decoding_graph = &interface.decoding_graph;
-        while let Some(conflict) = group_max_update_length.pop() {
-            match conflict {
-                MaxUpdateLength::Conflicting(edge_index) => {
+        while let Some(obstacle) = group_max_update_length.pop() {
+            match obstacle {
+                Obstacle::Conflict { edge_index } => {
                     // union all the dual nodes in the edge index and create new dual node by adding this edge to `internal_edges`
                     let dual_nodes = dual_module.get_edge_nodes(edge_index);
                     debug_assert!(
@@ -935,16 +932,13 @@ impl PrimalModuleSerial {
                     // add to active cluster so that it's processed later
                     active_clusters.insert(cluster.cluster_index);
                 }
-                MaxUpdateLength::ShrinkProhibited(dual_node_ptr) => {
+                Obstacle::ShrinkToZero { dual_node_ptr } => {
                     let cluster_ptr = self.nodes[dual_node_ptr.index as usize]
                         .read_recursive()
                         .cluster_weak
                         .upgrade_force();
                     let cluster_index = cluster_ptr.read_recursive().cluster_index;
                     active_clusters.insert(cluster_index);
-                }
-                _ => {
-                    unreachable!()
                 }
             }
         }
@@ -993,20 +987,20 @@ impl PrimalModuleSerial {
     }
 
     #[allow(clippy::unnecessary_cast)]
-    // returns (conflicts_needing_to_be_resolved, should_grow)
+    // returns (obstacles_needing_to_be_resolved, should_grow)
     fn resolve_core_tune(
         &mut self,
-        group_max_update_length: BTreeSet<MaxUpdateLength>,
+        group_max_update_length: BTreeSet<Obstacle>,
         interface_ptr: &DualModuleInterfacePtr,
         dual_module: &mut impl DualModuleImpl,
-    ) -> (BTreeSet<MaxUpdateLength>, bool) {
+    ) -> (BTreeSet<Obstacle>, bool) {
         let mut active_clusters = BTreeSet::<NodeIndex>::new();
         let interface = interface_ptr.read_recursive();
         let decoding_graph = &interface.decoding_graph;
 
-        for conflict in group_max_update_length.into_iter() {
-            match conflict {
-                MaxUpdateLength::Conflicting(edge_index) => {
+        for obstacle in group_max_update_length.into_iter() {
+            match obstacle {
+                Obstacle::Conflict { edge_index } => {
                     // union all the dual nodes in the edge index and create new dual node by adding this edge to `internal_edges`
                     let dual_nodes = dual_module.get_edge_nodes(edge_index);
                     debug_assert!(
@@ -1039,16 +1033,13 @@ impl PrimalModuleSerial {
                     // add to active cluster so that it's processed later
                     active_clusters.insert(cluster.cluster_index);
                 }
-                MaxUpdateLength::ShrinkProhibited(dual_node_ptr) => {
+                Obstacle::ShrinkToZero { dual_node_ptr } => {
                     let cluster_ptr = self.nodes[dual_node_ptr.index as usize]
                         .read_recursive()
                         .cluster_weak
                         .upgrade_force();
                     let cluster_index = cluster_ptr.read_recursive().cluster_index;
                     active_clusters.insert(cluster_index);
-                }
-                _ => {
-                    unreachable!()
                 }
             }
         }
@@ -1065,15 +1056,15 @@ impl PrimalModuleSerial {
                 self.resolve_cluster_tune(cluster_index, interface_ptr, dual_module, &mut dual_node_deltas);
             if !solved {
                 // todo: investigate more
-                return (dual_module.get_conflicts_tune(other, dual_node_deltas), false);
+                return (dual_module.get_obstacles_tune(other, dual_node_deltas), false);
             }
             all_solved &= solved;
             optimizer_result.or(other);
         }
 
-        let all_conflicts = dual_module.get_conflicts_tune(optimizer_result, dual_node_deltas);
+        let all_obstacles = dual_module.get_obstacles_tune(optimizer_result, dual_node_deltas);
 
-        (all_conflicts, all_solved)
+        (all_obstacles, all_solved)
     }
 
     pub fn print_clusters(&self) {

@@ -151,12 +151,10 @@ impl PyDualNodePtr {
 }
 
 #[derive(Clone)]
-#[pyclass(name = "MaxUpdateLength")]
-pub enum PyMaxUpdateLength {
-    Unbounded(),
-    ValidGrow(PyRational),
-    Conflicting(EdgeIndex),
-    ShrinkProhibited(PyDualNodePtr),
+#[pyclass(name = "Obstacle")]
+pub enum PyObstacle {
+    Conflict { edge_index: EdgeIndex },
+    ShrinkToZero { dual_node_ptr: PyDualNodePtr },
 }
 
 #[derive(Clone)]
@@ -195,7 +193,7 @@ pub fn py_into_btree_set<'py, T: Ord + Clone + FromPyObject<'py>>(value: &Bound<
 pub(crate) fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyRational>()?;
     m.add_class::<PyDualNodePtr>()?;
-    m.add_class::<PyMaxUpdateLength>()?;
+    m.add_class::<PyObstacle>()?;
     m.add_class::<PyGroupMaxUpdateLength>()?;
     m.add_class::<DualModuleMode>()?;
     Ok(())

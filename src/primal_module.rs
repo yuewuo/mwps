@@ -57,10 +57,10 @@ pub trait PrimalModuleImpl {
     /// resolve the conflicts in the "tune" mode
     fn resolve_tune(
         &mut self,
-        _group_max_update_length: BTreeSet<MaxUpdateLength>,
+        _obstacles: BTreeSet<Obstacle>,
         _interface: &DualModuleInterfacePtr,
         _dual_module: &mut impl DualModuleImpl,
-    ) -> (BTreeSet<MaxUpdateLength>, bool) {
+    ) -> (BTreeSet<Obstacle>, bool) {
         panic!("`resolve_tune` not implemented, this primal module does not work with tuning mode");
     }
 
@@ -180,23 +180,23 @@ pub trait PrimalModuleImpl {
                 let (mut resolved, optimizer_result) =
                     self.resolve_cluster_tune(cluster_index, interface, dual_module, &mut dual_node_deltas);
 
-                let mut conflicts = dual_module.get_conflicts_tune(optimizer_result, dual_node_deltas);
+                let mut obstacles = dual_module.get_obstacles_tune(optimizer_result, dual_node_deltas);
 
                 // for cycle resolution
-                let mut order: VecDeque<BTreeSet<MaxUpdateLength>> = VecDeque::with_capacity(MAX_HISTORY); // fifo order of the conflicts sets seen
-                let mut current_sequences: Vec<(usize, BTreeSet<MaxUpdateLength>)> = Vec::new(); // the indexes that are currently being processed
+                let mut order: VecDeque<BTreeSet<Obstacle>> = VecDeque::with_capacity(MAX_HISTORY); // fifo order of the obstacles sets seen
+                let mut current_sequences: Vec<(usize, BTreeSet<Obstacle>)> = Vec::new(); // the indexes that are currently being processed
 
                 '_resolving: while !resolved {
-                    let (_conflicts, _resolved) = self.resolve_tune(conflicts.clone(), interface, dual_module);
+                    let (_obstacles, _resolved) = self.resolve_tune(obstacles.clone(), interface, dual_module);
 
                     // cycle resolution
-                    let drained: Vec<(usize, BTreeSet<MaxUpdateLength>)> = std::mem::take(&mut current_sequences);
+                    let drained: Vec<(usize, BTreeSet<Obstacle>)> = std::mem::take(&mut current_sequences);
                     for (idx, start) in drained.into_iter() {
-                        if _conflicts.eq(&start) {
+                        if obstacles.eq(&start) {
                             dual_module.end_tuning();
                             break '_resolving;
                         }
-                        if _conflicts.eq(order
+                        if _obstacles.eq(order
                             .get(MAX_HISTORY - idx - 1)
                             .unwrap_or(order.get(order.len() - idx - 1).unwrap()))
                         {
@@ -204,7 +204,7 @@ pub trait PrimalModuleImpl {
                         }
                     }
 
-                    order.push_back(_conflicts.clone());
+                    order.push_back(_obstacles.clone());
                     if order.len() > MAX_HISTORY {
                         order.pop_front();
                         current_sequences = current_sequences
@@ -214,7 +214,7 @@ pub trait PrimalModuleImpl {
                     }
 
                     for (idx, c) in order.iter().enumerate() {
-                        if c.eq(&_conflicts) {
+                        if c.eq(&_obstacles) {
                             current_sequences.push((idx, c.clone()));
                         }
                     }
@@ -224,7 +224,7 @@ pub trait PrimalModuleImpl {
                         break;
                     }
 
-                    conflicts = _conflicts;
+                    obstacles = _obstacles;
                     resolved = _resolved;
                 }
             }

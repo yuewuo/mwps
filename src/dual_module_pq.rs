@@ -362,7 +362,7 @@ where
                 growth_at_event_time == edge.weight
             }
             Obstacle::ShrinkToZero { dual_node_ptr } => {
-                let node = dual_node_ptr.read_recursive();
+                let node = dual_node_ptr.ptr.read_recursive();
                 // only negative grow rates can shrink to zero
                 if !node.grow_rate.is_negative() {
                     return false;
@@ -476,7 +476,7 @@ where
                 // it is okay to use global_time now, as this must be up-to-speed
                 dual_node.get_dual_variable().clone() / (-dual_node.grow_rate.clone()) + global_time.clone(),
                 Obstacle::ShrinkToZero {
-                    dual_node_ptr: dual_node_ptr.clone(),
+                    dual_node_ptr: OrderedDualNodePtr::new(dual_node.index, dual_node_ptr.clone()),
                 },
             );
         }
@@ -529,7 +529,7 @@ where
         if dual_node.grow_rate.is_negative() {
             let time = dual_node.get_dual_variable().clone() / (-grow_rate) + global_time.clone();
             let event = Obstacle::ShrinkToZero {
-                dual_node_ptr: dual_node_ptr.clone(),
+                dual_node_ptr: OrderedDualNodePtr::new(dual_node.index, dual_node_ptr.clone()),
             };
             self.obstacle_queue.will_happen(time, event);
         }
@@ -568,13 +568,7 @@ where
 
             // Note: With de-dup queue implementation, we could use vectors here
             let mut group_max_update_length = GroupMaxUpdateLength::new();
-            group_max_update_length.add(match event {
-                Obstacle::Conflict { edge_index } => MaxUpdateLength::Conflicting(edge_index),
-                Obstacle::ShrinkToZero { dual_node_ptr } => {
-                    let index = dual_node_ptr.read_recursive().index;
-                    MaxUpdateLength::ShrinkProhibited(OrderedDualNodePtr::new(index, dual_node_ptr))
-                }
-            });
+            group_max_update_length.add_obstacle(event);
 
             // append all conflicts that happen at the same time as now
             while let Some((time, _)) = self.obstacle_queue.peek_event() {
@@ -584,13 +578,7 @@ where
                         continue;
                     }
                     // add
-                    group_max_update_length.add(match event {
-                        Obstacle::Conflict { edge_index } => MaxUpdateLength::Conflicting(edge_index),
-                        Obstacle::ShrinkToZero { dual_node_ptr } => {
-                            let index = dual_node_ptr.read_recursive().index;
-                            MaxUpdateLength::ShrinkProhibited(OrderedDualNodePtr::new(index, dual_node_ptr))
-                        }
-                    });
+                    group_max_update_length.add_obstacle(event);
                 } else {
                     break;
                 }
