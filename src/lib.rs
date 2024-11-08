@@ -51,6 +51,8 @@ pub mod util;
 pub mod util_py;
 pub mod visualize;
 
+pub use bp;
+
 #[cfg(feature = "python_binding")]
 use pyo3::prelude::*;
 

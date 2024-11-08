@@ -5,7 +5,6 @@
 //!
 
 use crate::dual_module::*;
-// use crate::dual_module_serial::*;
 use crate::dual_module_pq::*;
 use crate::example_codes::*;
 use crate::model_hypergraph::*;
@@ -16,6 +15,8 @@ use crate::primal_module::*;
 use crate::primal_module_serial::*;
 use crate::util::*;
 use crate::visualize::*;
+use core::panic;
+use hashbrown::HashSet;
 use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::io::prelude::*;
@@ -32,16 +33,19 @@ cfg_if::cfg_if! {
 }
 
 pub trait SolverTrait {
+    fn debug_print(&self) {
+        unimplemented!();
+    }
     fn clear(&mut self);
-    fn solve_visualizer(&mut self, syndrome_pattern: &SyndromePattern, visualizer: Option<&mut Visualizer>);
-    fn solve(&mut self, syndrome_pattern: &SyndromePattern) {
+    fn solve_visualizer(&mut self, syndrome_pattern: &mut SyndromePattern, visualizer: Option<&mut Visualizer>);
+    fn solve(&mut self, syndrome_pattern: &mut SyndromePattern) {
         self.solve_visualizer(syndrome_pattern, None)
     }
-    fn subgraph_range_visualizer(&mut self, visualizer: Option<&mut Visualizer>) -> (Subgraph, WeightRange);
-    fn subgraph_range(&mut self) -> (Subgraph, WeightRange) {
+    fn subgraph_range_visualizer(&mut self, visualizer: Option<&mut Visualizer>) -> (OutputSubgraph, WeightRange);
+    fn subgraph_range(&mut self) -> (OutputSubgraph, WeightRange) {
         self.subgraph_range_visualizer(None)
     }
-    fn subgraph(&mut self) -> Subgraph {
+    fn subgraph(&mut self) -> OutputSubgraph {
         self.subgraph_range().0
     }
     fn sum_dual_variables(&self) -> Rational;
@@ -52,6 +56,8 @@ pub trait SolverTrait {
     fn print_clusters(&self) {
         panic!();
     }
+    fn update_weights(&mut self, _new_weights: &mut Vec<f64>);
+    fn get_model_graph(&self) -> Arc<ModelHyperGraph>;
 }
 
 #[cfg(feature = "python_binding")]
@@ -204,7 +210,7 @@ impl MWPSVisualizer for SolverSerialPlugins {
 impl SolverSerialPlugins {
     pub fn new(initializer: &SolverInitializer, plugins: Arc<Vec<PluginEntry>>, config: serde_json::Value) -> Self {
         let model_graph = Arc::new(ModelHyperGraph::new(Arc::new(initializer.clone())));
-        let mut primal_module = PrimalModuleSerial::new_empty(initializer);
+        let mut primal_module = PrimalModuleSerial::new_empty(initializer); // question: why does this need initializer?
         let config: SolverSerialPluginsConfig = serde_json::from_value(config).unwrap();
         primal_module.plugins = plugins;
         primal_module.config = config.primal.clone();
@@ -243,7 +249,21 @@ impl SolverTrait for SolverSerialPlugins {
         self.dual_module.clear();
         self.interface_ptr.clear();
     }
-    fn solve_visualizer(&mut self, syndrome_pattern: &SyndromePattern, visualizer: Option<&mut Visualizer>) {
+    fn solve_visualizer(&mut self, syndrome_pattern: &mut SyndromePattern, visualizer: Option<&mut Visualizer>) {
+        let moved_out_vec = std::mem::take(&mut syndrome_pattern.defect_vertices);
+
+        let mut moved_out_set = moved_out_vec.into_iter().collect::<HashSet<VertexIndex>>();
+
+        for to_flip in self.dual_module.get_flip_vertices().iter() {
+            if moved_out_set.contains(to_flip) {
+                moved_out_set.remove(to_flip);
+            } else {
+                moved_out_set.insert(*to_flip);
+            }
+        }
+
+        syndrome_pattern.defect_vertices = moved_out_set.into_iter().collect();
+
         let syndrome_pattern = Arc::new(syndrome_pattern.clone());
         if !syndrome_pattern.erasures.is_empty() {
             unimplemented!();
@@ -263,7 +283,7 @@ impl SolverTrait for SolverSerialPlugins {
             "the subgraph does not generate the syndrome"
         );
     }
-    fn subgraph_range_visualizer(&mut self, visualizer: Option<&mut Visualizer>) -> (Subgraph, WeightRange) {
+    fn subgraph_range_visualizer(&mut self, visualizer: Option<&mut Visualizer>) -> (OutputSubgraph, WeightRange) {
         let (subgraph, weight_range) = self.primal_module.subgraph_range(&self.interface_ptr, &mut self.dual_module);
         if let Some(visualizer) = visualizer {
             visualizer
@@ -293,6 +313,35 @@ impl SolverTrait for SolverSerialPlugins {
     fn print_clusters(&self) {
         self.primal_module.print_clusters();
     }
+    fn update_weights(&mut self, llrs: &mut Vec<f64>) {
+        // note: this will be fix bp with incr_lp problem, but the bp results are scaled, such that could be less accurate/slower...
+
+        // should update or not? If updated, then need to reset
+        // let mut_model_graph = unsafe { Arc::get_mut_unchecked(&mut self.model_graph) };
+        // let mut_initializer = unsafe { Arc::get_mut_unchecked(&mut mut_model_graph.initializer) };
+
+        // for (hyper_edge, new_weight) in self.model_graph.initializer.weighted_edges.iter().zip(llrs.iter_mut()) {
+        //     let mut temp = 1. / (1. + new_weight.exp()) * hyper_edge.weight as f64;
+        //     let eps = 1e-14;
+        //     temp = if temp > 1. - eps {
+        //         1. - eps
+        //     } else if temp < eps {
+        //         eps
+        //     } else {
+        //         temp
+        //     };
+        //     *new_weight = -temp.ln();
+        //     // hyper_edge.weight = (*new_weight).round() as usize;
+        // }
+
+        self.dual_module.update_weights(llrs);
+    }
+    fn get_model_graph(&self) -> Arc<ModelHyperGraph> {
+        self.model_graph.clone()
+    }
+    fn debug_print(&self) {
+        self.dual_module.debug_print();
+    }
 }
 
 macro_rules! bind_solver_trait {
@@ -301,10 +350,10 @@ macro_rules! bind_solver_trait {
             fn clear(&mut self) {
                 self.0.clear()
             }
-            fn solve_visualizer(&mut self, syndrome_pattern: &SyndromePattern, visualizer: Option<&mut Visualizer>) {
+            fn solve_visualizer(&mut self, syndrome_pattern: &mut SyndromePattern, visualizer: Option<&mut Visualizer>) {
                 self.0.solve_visualizer(syndrome_pattern, visualizer)
             }
-            fn subgraph_range_visualizer(&mut self, visualizer: Option<&mut Visualizer>) -> (Subgraph, WeightRange) {
+            fn subgraph_range_visualizer(&mut self, visualizer: Option<&mut Visualizer>) -> (OutputSubgraph, WeightRange) {
                 self.0.subgraph_range_visualizer(visualizer)
             }
             fn sum_dual_variables(&self) -> Rational {
@@ -321,6 +370,15 @@ macro_rules! bind_solver_trait {
             }
             fn print_clusters(&self) {
                 self.0.print_clusters()
+            }
+            fn update_weights(&mut self, llrs: &mut Vec<f64>) {
+                self.0.update_weights(llrs)
+            }
+            fn get_model_graph(&self) -> Arc<ModelHyperGraph> {
+                self.0.model_graph.clone()
+            }
+            fn debug_print(&self) {
+                self.0.debug_print()
             }
         }
     };
@@ -447,7 +505,7 @@ impl SolverErrorPatternLogger {
 
 impl SolverTrait for SolverErrorPatternLogger {
     fn clear(&mut self) {}
-    fn solve_visualizer(&mut self, syndrome_pattern: &SyndromePattern, _visualizer: Option<&mut Visualizer>) {
+    fn solve_visualizer(&mut self, syndrome_pattern: &mut SyndromePattern, _visualizer: Option<&mut Visualizer>) {
         self.file
             .write_all(
                 serde_json::to_string(&serde_json::json!(syndrome_pattern))
@@ -457,7 +515,7 @@ impl SolverTrait for SolverErrorPatternLogger {
             .unwrap();
         self.file.write_all(b"\n").unwrap();
     }
-    fn subgraph_range_visualizer(&mut self, _visualizer: Option<&mut Visualizer>) -> (Subgraph, WeightRange) {
+    fn subgraph_range_visualizer(&mut self, _visualizer: Option<&mut Visualizer>) -> (OutputSubgraph, WeightRange) {
         panic!("error pattern logger do not actually solve the problem, please use Verifier::None by `--verifier none`")
     }
     fn sum_dual_variables(&self) -> Rational {
@@ -470,6 +528,12 @@ impl SolverTrait for SolverErrorPatternLogger {
         None
     }
     fn clear_tuning_time(&mut self) {}
+    fn get_model_graph(&self) -> Arc<ModelHyperGraph> {
+        panic!("error pattern logger do not actually solve the problem")
+    }
+    fn update_weights(&mut self, _new_weights: &mut Vec<f64>) {
+        panic!("error pattern logger do not actually solve the problem")
+    }
 }
 
 #[cfg(feature = "python_binding")]

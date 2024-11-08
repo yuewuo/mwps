@@ -3,6 +3,7 @@ use crate::matrix::*;
 use crate::mwpf_solver::*;
 use crate::util::*;
 use crate::visualize::*;
+use bp::bp::{BpDecoder, BpSparse};
 use clap::builder::{StringValueParser, TypedValueParser, ValueParser};
 use clap::error::{ContextKind, ContextValue, ErrorKind};
 use clap::{Parser, Subcommand, ValueEnum};
@@ -114,6 +115,9 @@ pub struct BenchmarkParameters {
     /// only execute a single seed for debugging purposes
     #[clap(long, action)]
     single_seed: Option<u64>,
+    /// to use bp or not
+    #[clap(long, action)]
+    use_bp: bool,
 }
 
 #[derive(Subcommand, Clone, Debug)]
@@ -309,17 +313,37 @@ impl Cli {
                 print_error_pattern,
                 apply_deterministic_seed,
                 single_seed,
+                use_bp,
             }) => {
                 // whether to disable progress bar, useful when running jobs in background
                 #[cfg(feature = "progress_bar")]
                 let disable_progress_bar = env::var("DISABLE_PROGRESS_BAR").is_ok();
                 let mut code: Box<dyn ExampleCode> = code_type.build(d, p, noisy_measurements, max_weight, code_config);
+
+                // setting up the BP decoder
+                let mut pcm = BpSparse::new(code.vertex_num(), code.edge_num(), 0);
+                for (col_index, edge) in code.edges().iter().enumerate() {
+                    for &row_index in edge.vertices.iter() {
+                        pcm.insert_entry(row_index, col_index);
+                    }
+                }
+
+                let mut bp_decoder_option = None;
+                let mut initial_log_ratios_option = None;
+
+                if use_bp {
+                    let channel_probabilities = vec![p; code.edge_num()];
+                    let bp_decoder = BpDecoder::new_3(pcm, channel_probabilities, 1).unwrap();
+                    bp_decoder_option = Some(bp_decoder);
+                    initial_log_ratios_option = Some(code.get_unscaled_weights().clone());
+                }
+
                 if pe != 0. {
                     code.set_erasure_probability(pe);
                 }
                 // create initializer and solver
                 let initializer = code.get_initializer();
-                let mut solver = solver_type.build(&initializer, &*code, solver_config);
+                let mut solver = solver_type.build(&initializer, &*code, solver_config.clone());
                 let mut result_verifier = verifier.build(&initializer);
                 // prepare progress bar display
                 #[cfg(feature = "progress_bar")]
@@ -336,7 +360,28 @@ impl Cli {
 
                 // single seed mode, intended only execute a single failing round
                 if let Some(seed) = single_seed {
-                    let (syndrome_pattern, error_pattern) = code.generate_random_errors(seed);
+                    let (mut syndrome_pattern, error_pattern) = code.generate_random_errors(seed);
+
+                    if use_bp {
+                        let mut syndrome_array = vec![0; code.vertex_num()];
+                        for &dv in syndrome_pattern.defect_vertices.iter() {
+                            syndrome_array[dv] = 1;
+                        }
+                        let bp_decoder = bp_decoder_option.as_mut().unwrap();
+                        let initial_log_ratios = initial_log_ratios_option.as_ref().unwrap();
+
+                        bp_decoder.set_log_domain_bp(initial_log_ratios);
+                        bp_decoder.decode(&syndrome_array);
+                        let mut llrs = bp_decoder.log_prob_ratios.clone();
+
+                        primal_dual_solver.update_weights(&mut llrs);
+
+                        // note: may/may not be needed
+                        // code.update_weights(&llrs);
+                        // initializer = code.get_initializer();
+                        // let mut result_verifier = verifier.build(&initializer);
+                    }
+
                     if print_syndrome_pattern {
                         println!("syndrome_pattern: {:?}", syndrome_pattern);
                     }
@@ -349,7 +394,8 @@ impl Cli {
                             Visualizer::new(visualizer_json_filepath.clone(), code.get_positions(), true).unwrap();
                         visualizer = Some(new_visualizer);
                     }
-                    solver.solve_visualizer(&syndrome_pattern, visualizer.as_mut());
+
+                    solver.solve_visualizer(&mut syndrome_pattern, visualizer.as_mut());
                     result_verifier.verify(&mut solver, &syndrome_pattern, &error_pattern, visualizer.as_mut(), seed);
                     if let Some(html_path) = &visualizer_html_filepath {
                         if let Some(visualizer) = visualizer.as_mut() {
@@ -372,7 +418,28 @@ impl Cli {
                     #[cfg(feature = "progress_bar")]
                     pb.as_mut().map(|pb| pb.set(round));
                     seed = if use_deterministic_seed { round } else { rng.next_u64() };
-                    let (syndrome_pattern, error_pattern) = code.generate_random_errors(seed);
+                    let (mut syndrome_pattern, error_pattern) = code.generate_random_errors(seed);
+
+                    if use_bp {
+                        let mut syndrome_array = vec![0; code.vertex_num()];
+                        for &dv in syndrome_pattern.defect_vertices.iter() {
+                            syndrome_array[dv] = 1;
+                        }
+                        let bp_decoder = bp_decoder_option.as_mut().unwrap();
+                        let initial_log_ratios = initial_log_ratios_option.as_ref().unwrap();
+
+                        bp_decoder.set_log_domain_bp(initial_log_ratios);
+                        bp_decoder.decode(&syndrome_array);
+                        let mut llrs = bp_decoder.log_prob_ratios.clone();
+
+                        primal_dual_solver.update_weights(&mut llrs);
+
+                        // note: may/may not be needed
+                        // code.update_weights(&llrs);
+                        // initializer = code.get_initializer();
+                        // let mut result_verifier = verifier.build(&initializer);
+                    }
+
                     if print_syndrome_pattern {
                         println!("syndrome_pattern: {:?}", syndrome_pattern);
                     }
@@ -387,7 +454,7 @@ impl Cli {
                         visualizer = Some(new_visualizer);
                     }
                     benchmark_profiler.begin(&syndrome_pattern, &error_pattern);
-                    solver.solve_visualizer(&syndrome_pattern, visualizer.as_mut());
+                    solver.solve_visualizer(&mut syndrome_pattern, visualizer.as_mut());
                     benchmark_profiler.event("decoded".to_string());
                     result_verifier.verify(&mut solver, &syndrome_pattern, &error_pattern, visualizer.as_mut(), seed);
                     benchmark_profiler.event("verified".to_string());
@@ -667,7 +734,11 @@ impl ResultVerifier for VerifierActualError {
             // error pattern is not generated by the simulator
             Rational::from_usize(usize::MAX).unwrap()
         } else {
-            Rational::from_usize(self.initializer.get_subgraph_total_weight(error_pattern)).unwrap()
+            Rational::from_usize(
+                self.initializer
+                    .get_subgraph_total_weight(&OutputSubgraph::new(error_pattern.clone(), Default::default())),
+            )
+            .unwrap()
         };
         let (subgraph, weight_range) = solver.subgraph_range_visualizer(visualizer);
 

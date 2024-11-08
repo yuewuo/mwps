@@ -228,27 +228,28 @@ pub trait PrimalModuleImpl {
         }
     }
 
-    fn subgraph(&mut self, interface: &DualModuleInterfacePtr, dual_module: &mut impl DualModuleImpl) -> Subgraph;
+    fn subgraph(&mut self, interface: &DualModuleInterfacePtr, dual_module: &mut impl DualModuleImpl) -> OutputSubgraph;
 
     fn subgraph_range(
         &mut self,
         interface: &DualModuleInterfacePtr,
         dual_module: &mut impl DualModuleImpl,
-    ) -> (Subgraph, WeightRange) {
-        let subgraph = self.subgraph(interface, dual_module);
+    ) -> (OutputSubgraph, WeightRange) {
+        let output_subgraph = self.subgraph(interface, dual_module);
         let weight_range = WeightRange::new(
-            interface.sum_dual_variables(),
+            interface.sum_dual_variables() + dual_module.get_negative_weight_sum(),
             Rational::from_usize(
                 interface
                     .read_recursive()
                     .decoding_graph
                     .model_graph
                     .initializer
-                    .get_subgraph_total_weight(&subgraph),
+                    .get_subgraph_total_weight(&output_subgraph),
             )
-            .unwrap(),
+            .unwrap()
+                + dual_module.get_negative_weight_sum(), // this uses the initailizer, we would need to update this if were to keep this consistent
         );
-        (subgraph, weight_range)
+        (output_subgraph, weight_range)
     }
 
     /// performance profiler report

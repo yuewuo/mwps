@@ -101,16 +101,33 @@ pub trait ExampleCode {
         self.immutable_vertices_edges().0.len() as VertexNum
     }
 
+    /// get the number of edges
+    fn edge_num(&self) -> usize {
+        self.immutable_vertices_edges().1.len()
+    }
+
+    /// get edges for iteration
+    fn edges(&self) -> &Vec<CodeEdge> {
+        self.immutable_vertices_edges().1
+    }
+
+    /// get mutable edges for iteration
+    fn edges_mut(&mut self) -> &mut Vec<CodeEdge> {
+        self.vertices_edges().1
+    }
+
     /// generic method that automatically computes integer weights from probabilities,
     /// scales such that the maximum integer weight is 10000 and the minimum is 1
     fn compute_weights(&mut self, max_weight: Weight) {
         let (_vertices, edges) = self.vertices_edges();
+        let mut unscaled_weights = Vec::<f64>::with_capacity(edges.len());
         let mut original_max_weight = 0.;
         for edge in edges.iter() {
             let weight = weight_of_p(edge.p);
             if weight > original_max_weight {
                 original_max_weight = weight;
             }
+            unscaled_weights.push(weight);
         }
         assert!(original_max_weight > 0., "max weight is not expected to be 0.");
         // scale all weights but set the smallest to 1
@@ -119,7 +136,14 @@ pub trait ExampleCode {
             let new_weight: Weight = ((max_weight as f64) * weight / original_max_weight).round() as Weight;
             edge.weight = if new_weight == 0 { 1 } else { new_weight }; // weight is required to be even
         }
+        self.set_unscaled_weights(unscaled_weights);
     }
+
+    /// get unscaled weights for BP
+    fn get_unscaled_weights(&self) -> &Vec<f64>;
+
+    /// set unscaled weights for BP
+    fn set_unscaled_weights(&mut self, unscaled_weights: Vec<f64>);
 
     /// remove duplicate edges by keeping one with largest probability
     #[allow(clippy::unnecessary_cast)]
@@ -387,6 +411,13 @@ pub trait ExampleCode {
         let (vertices, _edges) = self.immutable_vertices_edges();
         vertices[vertex_idx].is_defect
     }
+
+    /// update code's weights based on the log probability ratios, this is majorly used for maintaining up-to-date initializer (for generating corret result-verifier)
+    fn update_weights(&mut self, _log_prob_ratios: &[f64]) {
+        for (edge, &new_weight) in self.edges_mut().iter_mut().zip(_log_prob_ratios.iter()) {
+            edge.weight = new_weight.round() as usize;
+        }
+    }
 }
 
 #[cfg(feature = "python_binding")]
@@ -510,6 +541,8 @@ pub struct CodeCapacityRepetitionCode {
     pub vertices: Vec<CodeVertex>,
     /// nearest-neighbor edges in the decoding graph
     pub edges: Vec<CodeEdge>,
+    /// unscaled weights for BP
+    pub unscaled_weights: Vec<f64>,
 }
 
 impl ExampleCode for CodeCapacityRepetitionCode {
@@ -518,6 +551,12 @@ impl ExampleCode for CodeCapacityRepetitionCode {
     }
     fn immutable_vertices_edges(&self) -> (&Vec<CodeVertex>, &Vec<CodeEdge>) {
         (&self.vertices, &self.edges)
+    }
+    fn get_unscaled_weights(&self) -> &Vec<f64> {
+        &self.unscaled_weights
+    }
+    fn set_unscaled_weights(&mut self, unscaled_weights: Vec<f64>) {
+        self.unscaled_weights = unscaled_weights;
     }
 }
 
@@ -545,6 +584,7 @@ impl CodeCapacityRepetitionCode {
         let mut code = Self {
             vertices: Vec::new(),
             edges,
+            unscaled_weights: Vec::new(),
         };
         // create vertices
         code.fill_vertices(vertex_num);
@@ -584,6 +624,8 @@ pub struct CodeCapacityPlanarCode {
     pub vertices: Vec<CodeVertex>,
     /// nearest-neighbor edges in the decoding graph
     pub edges: Vec<CodeEdge>,
+    /// unscaled weights for BP
+    pub unscaled_weights: Vec<f64>,
 }
 
 impl ExampleCode for CodeCapacityPlanarCode {
@@ -592,6 +634,12 @@ impl ExampleCode for CodeCapacityPlanarCode {
     }
     fn immutable_vertices_edges(&self) -> (&Vec<CodeVertex>, &Vec<CodeEdge>) {
         (&self.vertices, &self.edges)
+    }
+    fn get_unscaled_weights(&self) -> &Vec<f64> {
+        &self.unscaled_weights
+    }
+    fn set_unscaled_weights(&mut self, unscaled_weights: Vec<f64>) {
+        self.unscaled_weights = unscaled_weights;
     }
 }
 
@@ -628,6 +676,7 @@ impl CodeCapacityPlanarCode {
         let mut code = Self {
             vertices: Vec::new(),
             edges,
+            unscaled_weights: Vec::new(),
         };
         // create vertices
         code.fill_vertices(vertex_num);
@@ -809,6 +858,8 @@ pub struct CodeCapacityTailoredCode {
     pub vertices: Vec<CodeVertex>,
     /// nearest-neighbor edges in the decoding graph
     pub edges: Vec<CodeEdge>,
+    /// unscaled weights for BP
+    pub unscaled_weights: Vec<f64>,
 }
 
 impl ExampleCode for CodeCapacityTailoredCode {
@@ -817,6 +868,12 @@ impl ExampleCode for CodeCapacityTailoredCode {
     }
     fn immutable_vertices_edges(&self) -> (&Vec<CodeVertex>, &Vec<CodeEdge>) {
         (&self.vertices, &self.edges)
+    }
+    fn get_unscaled_weights(&self) -> &Vec<f64> {
+        &self.unscaled_weights
+    }
+    fn set_unscaled_weights(&mut self, unscaled_weights: Vec<f64>) {
+        self.unscaled_weights = unscaled_weights;
     }
 }
 
@@ -903,6 +960,7 @@ impl CodeCapacityTailoredCode {
         let mut code = Self {
             vertices: Vec::new(),
             edges,
+            unscaled_weights: Vec::new(),
         };
         // there might be duplicate edges; select a larger probability one
         code.remove_duplicate_edges();
@@ -941,6 +999,8 @@ pub struct CodeCapacityColorCode {
     pub vertices: Vec<CodeVertex>,
     /// nearest-neighbor edges in the decoding graph
     pub edges: Vec<CodeEdge>,
+    /// unscaled weights for BP
+    pub unscaled_weights: Vec<f64>,
 }
 
 impl ExampleCode for CodeCapacityColorCode {
@@ -949,6 +1009,12 @@ impl ExampleCode for CodeCapacityColorCode {
     }
     fn immutable_vertices_edges(&self) -> (&Vec<CodeVertex>, &Vec<CodeEdge>) {
         (&self.vertices, &self.edges)
+    }
+    fn get_unscaled_weights(&self) -> &Vec<f64> {
+        &self.unscaled_weights
+    }
+    fn set_unscaled_weights(&mut self, unscaled_weights: Vec<f64>) {
+        self.unscaled_weights = unscaled_weights;
     }
 }
 
@@ -1014,6 +1080,7 @@ impl CodeCapacityColorCode {
         let mut code = Self {
             vertices: Vec::new(),
             edges,
+            unscaled_weights: Vec::new(),
         };
         // create vertices
         code.fill_vertices(vertex_num);
@@ -1053,6 +1120,8 @@ pub struct QECPlaygroundCode {
     pub vertices: Vec<CodeVertex>,
     /// nearest-neighbor edges in the decoding graph
     pub edges: Vec<CodeEdge>,
+    /// unscaled weights for BP
+    pub unscaled_weights: Vec<f64>,
 }
 
 #[cfg(all(feature = "python_binding", feature = "qecp_integrate"))]
@@ -1124,6 +1193,112 @@ impl ExampleCode for QECPlaygroundCode {
         }
         // TODO: generate the real error pattern
         (self.get_syndrome(), vec![])
+    }
+    fn get_unscaled_weights(&self) -> &Vec<f64> {
+        &self.unscaled_weights
+    }
+    fn set_unscaled_weights(&mut self, unscaled_weights: Vec<f64>) {
+        self.unscaled_weights = unscaled_weights;
+    }
+}
+
+#[cfg(feature = "qecp_integrate")]
+impl QECPlaygroundCode {
+    #[allow(clippy::unnecessary_cast)]
+    pub fn new(d: usize, p: f64, config: serde_json::Value) -> Self {
+        let config: QECPlaygroundCodeConfig = serde_json::from_value(config).unwrap();
+        let di = config.di.unwrap_or(d);
+        let dj = config.dj.unwrap_or(d);
+        let nm = config.nm.unwrap_or(d);
+        let mut simulator = qecp::simulator::Simulator::new(config.code_type, qecp::code_builder::CodeSize::new(nm, di, dj));
+        let mut noise_model = qecp::noise_model::NoiseModel::new(&simulator);
+        let px = p / (1. + config.bias_eta) / 2.;
+        let py = px;
+        let pz = p - 2. * px;
+        simulator.set_error_rates(&mut noise_model, px, py, pz, config.pe);
+        // apply customized noise model
+        if let Some(noise_model_builder) = &config.noise_model {
+            noise_model_builder.apply(
+                &mut simulator,
+                &mut noise_model,
+                &config.noise_model_configuration,
+                p,
+                config.bias_eta,
+                config.pe,
+            );
+        }
+        simulator.compress_error_rates(&mut noise_model); // by default compress all error rates
+        let noise_model = std::sync::Arc::new(noise_model);
+        // construct vertices and edges
+        let hyperion_config: HyperionDecoderConfig = serde_json::from_value(json!({})).unwrap();
+        let mut model_hypergraph = qecp::model_hypergraph::ModelHypergraph::new(&simulator);
+        model_hypergraph.build(
+            &mut simulator,
+            Arc::clone(&noise_model),
+            &hyperion_config.weight_function,
+            config.parallel_init,
+            hyperion_config.use_combined_probability,
+            config.use_brief_edge,
+        );
+        let model_hypergraph = Arc::new(model_hypergraph);
+        // implementing: model_hypergraph.generate_mwpf_hypergraph(config.max_weight);
+        let mut maximum_weight = 0.;
+        let mut unscaled_weights = Vec::with_capacity(model_hypergraph.weighted_edges.len());
+        for (_, hyperedge_group) in model_hypergraph.weighted_edges.iter() {
+            unscaled_weights.push(hyperedge_group.hyperedge.weight);
+            if hyperedge_group.hyperedge.probability > 0. && hyperedge_group.hyperedge.weight > maximum_weight {
+                maximum_weight = hyperedge_group.hyperedge.weight;
+            }
+        }
+        let mut weighted_edges = Vec::with_capacity(model_hypergraph.weighted_edges.len());
+        for (defect_vertices, hyperedge_group) in model_hypergraph.weighted_edges.iter() {
+            if hyperedge_group.hyperedge.probability > 0. {
+                // only add those possible edges; for erasures, handle later
+                let scaled_weight = hyperedge_group.hyperedge.weight * config.max_weight as f64 / maximum_weight;
+                let int_weight = scaled_weight.round();
+                assert!(int_weight.is_finite(), "weight must be normal");
+                assert!(int_weight >= 0., "weight must be non-negative");
+                assert!(
+                    int_weight <= config.max_weight as f64,
+                    "weight must be smaller than max weight"
+                );
+                let vertex_indices: Vec<_> = defect_vertices.0.iter().map(|x| model_hypergraph.vertex_indices[x]).collect();
+                weighted_edges.push(HyperEdge::new(vertex_indices, int_weight as usize));
+            }
+        }
+        let vertex_num = model_hypergraph.vertex_positions.len();
+        let initializer = Arc::new(SolverInitializer::new(vertex_num, weighted_edges));
+        let positions = &model_hypergraph.vertex_positions;
+        let mut code = Self {
+            simulator,
+            noise_model,
+            model_hypergraph: model_hypergraph.clone(),
+            edge_index_map: std::sync::Arc::new(HashMap::new()), // overwrite later
+            vertices: Vec::with_capacity(initializer.vertex_num),
+            edges: Vec::with_capacity(initializer.weighted_edges.len()),
+            unscaled_weights,
+        };
+        let mut edge_index_map = HashMap::new();
+        for (edge_index, hyperedge) in initializer.weighted_edges.iter().cloned().enumerate() {
+            let new_index = edge_index_map.len() as EdgeIndex;
+            edge_index_map.insert(edge_index, new_index);
+            code.edges.push(CodeEdge {
+                vertices: hyperedge.vertices,
+                p: 0.,  // doesn't matter
+                pe: 0., // doesn't matter
+                weight: hyperedge.weight,
+                is_erasure: false, // doesn't matter
+            });
+        }
+        code.edge_index_map = std::sync::Arc::new(edge_index_map);
+        // automatically create the vertices and nearest-neighbor connection
+        code.fill_vertices(code.model_hypergraph.vertex_positions.len());
+        // set virtual vertices and positions
+        for (vertex_index, position) in positions.iter().cloned().enumerate() {
+            code.vertices[vertex_index].position =
+                VisualizePosition::new(position.i as f64, position.j as f64, position.t as f64 / 3.0);
+        }
+        code
     }
 }
 
@@ -1213,103 +1388,6 @@ pub mod hyperion_default_configs {
     } // default use combined probability for better accuracy
 }
 
-#[cfg(feature = "qecp_integrate")]
-impl QECPlaygroundCode {
-    #[allow(clippy::unnecessary_cast)]
-    pub fn new(d: usize, p: f64, config: serde_json::Value) -> Self {
-        let config: QECPlaygroundCodeConfig = serde_json::from_value(config).unwrap();
-        let di = config.di.unwrap_or(d);
-        let dj = config.dj.unwrap_or(d);
-        let nm = config.nm.unwrap_or(d);
-        let mut simulator = qecp::simulator::Simulator::new(config.code_type, qecp::code_builder::CodeSize::new(nm, di, dj));
-        let mut noise_model = qecp::noise_model::NoiseModel::new(&simulator);
-        let px = p / (1. + config.bias_eta) / 2.;
-        let py = px;
-        let pz = p - 2. * px;
-        simulator.set_error_rates(&mut noise_model, px, py, pz, config.pe);
-        // apply customized noise model
-        if let Some(noise_model_builder) = &config.noise_model {
-            noise_model_builder.apply(
-                &mut simulator,
-                &mut noise_model,
-                &config.noise_model_configuration,
-                p,
-                config.bias_eta,
-                config.pe,
-            );
-        }
-        simulator.compress_error_rates(&mut noise_model); // by default compress all error rates
-        let noise_model = std::sync::Arc::new(noise_model);
-        // construct vertices and edges
-        let hyperion_config: HyperionDecoderConfig = serde_json::from_value(json!({})).unwrap();
-        let mut model_hypergraph = qecp::model_hypergraph::ModelHypergraph::new(&simulator);
-        model_hypergraph.build(
-            &mut simulator,
-            Arc::clone(&noise_model),
-            &hyperion_config.weight_function,
-            config.parallel_init,
-            hyperion_config.use_combined_probability,
-            config.use_brief_edge,
-        );
-        let model_hypergraph = Arc::new(model_hypergraph);
-        // implementing: model_hypergraph.generate_mwpf_hypergraph(config.max_weight);
-        let mut maximum_weight = 0.;
-        for (_, hyperedge_group) in model_hypergraph.weighted_edges.iter() {
-            if hyperedge_group.hyperedge.probability > 0. && hyperedge_group.hyperedge.weight > maximum_weight {
-                maximum_weight = hyperedge_group.hyperedge.weight;
-            }
-        }
-        let mut weighted_edges = Vec::with_capacity(model_hypergraph.weighted_edges.len());
-        for (defect_vertices, hyperedge_group) in model_hypergraph.weighted_edges.iter() {
-            if hyperedge_group.hyperedge.probability > 0. {
-                // only add those possible edges; for erasures, handle later
-                let scaled_weight = hyperedge_group.hyperedge.weight * config.max_weight as f64 / maximum_weight;
-                let int_weight = scaled_weight.round();
-                assert!(int_weight.is_finite(), "weight must be normal");
-                assert!(int_weight >= 0., "weight must be non-negative");
-                assert!(
-                    int_weight <= config.max_weight as f64,
-                    "weight must be smaller than max weight"
-                );
-                let vertex_indices: Vec<_> = defect_vertices.0.iter().map(|x| model_hypergraph.vertex_indices[x]).collect();
-                weighted_edges.push(HyperEdge::new(vertex_indices, int_weight as usize));
-            }
-        }
-        let vertex_num = model_hypergraph.vertex_positions.len();
-        let initializer = Arc::new(SolverInitializer::new(vertex_num, weighted_edges));
-        let positions = &model_hypergraph.vertex_positions;
-        let mut code = Self {
-            simulator,
-            noise_model,
-            model_hypergraph: model_hypergraph.clone(),
-            edge_index_map: std::sync::Arc::new(HashMap::new()), // overwrite later
-            vertices: Vec::with_capacity(initializer.vertex_num),
-            edges: Vec::with_capacity(initializer.weighted_edges.len()),
-        };
-        let mut edge_index_map = HashMap::new();
-        for (edge_index, hyperedge) in initializer.weighted_edges.iter().cloned().enumerate() {
-            let new_index = edge_index_map.len() as EdgeIndex;
-            edge_index_map.insert(edge_index, new_index);
-            code.edges.push(CodeEdge {
-                vertices: hyperedge.vertices,
-                p: 0.,  // doesn't matter
-                pe: 0., // doesn't matter
-                weight: hyperedge.weight,
-                is_erasure: false, // doesn't matter
-            });
-        }
-        code.edge_index_map = std::sync::Arc::new(edge_index_map);
-        // automatically create the vertices and nearest-neighbor connection
-        code.fill_vertices(code.model_hypergraph.vertex_positions.len());
-        // set virtual vertices and positions
-        for (vertex_index, position) in positions.iter().cloned().enumerate() {
-            code.vertices[vertex_index].position =
-                VisualizePosition::new(position.i as f64, position.j as f64, position.t as f64 / 3.0);
-        }
-        code
-    }
-}
-
 /// read from file, including the error patterns;
 /// the point is to avoid bad cache performance, because generating random error requires iterating over a large memory space,
 /// invalidating all cache. also, this can reduce the time of decoding by prepare the data before hand and could be shared between
@@ -1341,6 +1419,12 @@ impl ExampleCode for ErrorPatternReader {
         let syndrome_pattern = self.syndrome_patterns[self.syndrome_index].clone();
         self.syndrome_index += 1;
         (syndrome_pattern, vec![])
+    }
+    fn get_unscaled_weights(&self) -> &Vec<f64> {
+        unimplemented!()
+    }
+    fn set_unscaled_weights(&mut self, _unscaled_weights: Vec<f64>) {
+        unimplemented!()
     }
 }
 

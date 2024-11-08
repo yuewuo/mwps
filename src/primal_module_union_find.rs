@@ -160,7 +160,11 @@ impl PrimalModuleImpl for PrimalModuleUnionFind {
         false
     }
 
-    fn subgraph(&mut self, interface_ptr: &DualModuleInterfacePtr, _dual_module: &mut impl DualModuleImpl) -> Subgraph {
+    fn subgraph(
+        &mut self,
+        interface_ptr: &DualModuleInterfacePtr,
+        _dual_module: &mut impl DualModuleImpl,
+    ) -> OutputSubgraph {
         let mut valid_clusters = BTreeSet::new();
         let mut subgraph = vec![];
         for i in 0..self.union_find.size() {
@@ -175,7 +179,19 @@ impl PrimalModuleImpl for PrimalModuleUnionFind {
                 subgraph.extend(cluster_subgraph.iter());
             }
         }
-        subgraph
+
+        // let mut subgraph_set = subgraph.into_iter().collect::<hashbrown::HashSet<EdgeIndex>>();
+        // for to_flip in _dual_module.get_negative_edges().iter() {
+        //     if subgraph_set.contains(to_flip) {
+        //         subgraph_set.remove(to_flip);
+        //     } else {
+        //         subgraph_set.insert(*to_flip);
+        //     }
+        // }
+        // OutputSubgraph::new(subgraph_set.into_iter().collect(), Default::default())
+
+        // note: note implmented to handle negative weights yet
+        OutputSubgraph::new(subgraph, _dual_module.get_negative_edges())
     }
 }
 

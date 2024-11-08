@@ -49,7 +49,7 @@ impl ModelHyperGraph {
         vertices
     }
 
-    pub fn matches_subgraph_syndrome(&self, subgraph: &Subgraph, defect_vertices: &[VertexIndex]) -> bool {
+    pub fn matches_subgraph_syndrome(&self, subgraph: &OutputSubgraph, defect_vertices: &[VertexIndex]) -> bool {
         self.initializer.matches_subgraph_syndrome(subgraph, defect_vertices)
     }
 }
