@@ -21,26 +21,27 @@ code.set_defect_vertices([10, 11, 16, 17])
 initializer = code.get_initializer()
 
 # solver configuration
-config = {
-    "growing_strategy": "SingleCluster",
-    # "growing_strategy": "MultipleClusters",
-}
-
-# pick a solver
-# solver = mwpf.SolverSerialUnionFind(initializer)
-# solver = mwpf.SolverSerialSingleHair(initializer)
+config = {"cluster_node_limit": 100, "timeout": 10.0}
 solver = mwpf.SolverSerialJointSingleHair(initializer, config)
 
 """
 run the solver
 """
 
-git_root_dir = subprocess.run("git rev-parse --show-toplevel", cwd=os.path.dirname(os.path.abspath(__file__)),
-                              shell=True, check=True, capture_output=True).stdout.decode(sys.stdout.encoding).strip(" \r\n")
+git_root_dir = (
+    subprocess.run(
+        "git rev-parse --show-toplevel",
+        cwd=os.path.dirname(os.path.abspath(__file__)),
+        shell=True,
+        check=True,
+        capture_output=True,
+    )
+    .stdout.decode(sys.stdout.encoding)
+    .strip(" \r\n")
+)
 data_folder = os.path.join(git_root_dir, "visualize", "data")
-filename = f"python_test_visualize.json"
-visualizer = mwpf.Visualizer(
-    filepath=os.path.join(data_folder, filename), positions=code.get_positions())
+
+visualizer = mwpf.Visualizer(positions=code.get_positions())
 visualizer.snapshot("syndrome", code)
 
 syndrome = code.get_syndrome()
@@ -54,3 +55,8 @@ if bound.lower == bound.upper:
     print("[success] optimal! 🤩")
 else:
     print("[potential failure] may be suboptimal... 😅")
+
+with open(
+    os.path.join(os.path.dirname(__file__), f"python_test_visualize.html"), "w"
+) as f:
+    f.write(visualizer.generate_html())

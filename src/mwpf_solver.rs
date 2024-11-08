@@ -16,15 +16,22 @@ use crate::primal_module::*;
 use crate::primal_module_serial::*;
 use crate::util::*;
 use crate::visualize::*;
-#[cfg(feature = "python_binding")]
-use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::io::prelude::*;
 use std::io::BufWriter;
 use std::sync::Arc;
 
-pub trait PrimalDualSolver {
+cfg_if::cfg_if! {
+    if #[cfg(feature="python_binding")] {
+        use crate::invalid_subgraph::*;
+        use crate::util_py::*;
+        use pyo3::prelude::*;
+        use std::collections::BTreeSet;
+    }
+}
+
+pub trait SolverTrait {
     fn clear(&mut self);
     fn solve_visualizer(&mut self, syndrome_pattern: &SyndromePattern, visualizer: Option<&mut Visualizer>);
     fn solve(&mut self, syndrome_pattern: &SyndromePattern) {
@@ -53,24 +60,111 @@ macro_rules! bind_trait_to_python {
         #[pymethods]
         impl $struct_name {
             #[pyo3(name = "clear")]
-            fn trait_clear(&mut self) {
+            fn py_clear(&mut self) {
                 self.clear()
             }
-            #[pyo3(name = "solve")] // in Python, `solve` and `solve_visualizer` is the same because it can take optional parameter
-            fn trait_solve(&mut self, syndrome_pattern: &SyndromePattern, visualizer: Option<&mut Visualizer>) {
+            #[pyo3(name = "solve", signature = (syndrome_pattern, visualizer=None))] // in Python, `solve` and `solve_visualizer` is the same because it can take optional parameter
+            fn py_solve(&mut self, syndrome_pattern: &SyndromePattern, visualizer: Option<&mut Visualizer>) {
                 self.solve_visualizer(syndrome_pattern, visualizer)
             }
-            #[pyo3(name = "subgraph_range")] // in Python, `subgraph_range` and `subgraph_range_visualizer` is the same
-            fn trait_subgraph_range(&mut self, visualizer: Option<&mut Visualizer>) -> (Subgraph, WeightRange) {
+            #[pyo3(name = "subgraph_range", signature = (visualizer=None))] // in Python, `subgraph_range` and `subgraph_range_visualizer` is the same
+            fn py_subgraph_range(&mut self, visualizer: Option<&mut Visualizer>) -> (Subgraph, WeightRange) {
                 self.subgraph_range_visualizer(visualizer)
             }
-            #[pyo3(name = "subgraph")]
-            fn trait_subgraph(&mut self, visualizer: Option<&mut Visualizer>) -> Subgraph {
+            #[pyo3(name = "subgraph", signature = (visualizer=None))]
+            fn py_subgraph(&mut self, visualizer: Option<&mut Visualizer>) -> Subgraph {
                 self.subgraph_range_visualizer(visualizer).0
             }
             #[pyo3(name = "sum_dual_variables")]
-            fn trait_sum_dual_variables(&self) -> PyResult<Py<PyAny>> {
-                rational_to_pyobject(&self.sum_dual_variables())
+            fn py_sum_dual_variables(&self) -> PyRational {
+                self.sum_dual_variables().clone().into()
+            }
+            #[pyo3(name = "load_syndrome", signature = (syndrome_pattern, visualizer=None))]
+            pub fn py_load_syndrome(&mut self, syndrome_pattern: &SyndromePattern, visualizer: Option<&mut Visualizer>) {
+                self.0.load_syndrome(syndrome_pattern, visualizer)
+            }
+            #[pyo3(name = "get_node", signature = (node_index))]
+            pub fn py_get_node(&mut self, node_index: NodeIndex) -> Option<PyDualNodePtr> {
+                self.0.interface_ptr.get_node(node_index).map(|x| x.into())
+            }
+            #[pyo3(name = "find_node", signature = (vertices=None, edges=None))]
+            pub fn py_find_node(
+                &self,
+                vertices: Option<&Bound<PyAny>>,
+                edges: Option<&Bound<PyAny>>,
+            ) -> PyResult<Option<PyDualNodePtr>> {
+                let invalid_subgraph = Arc::new(self.py_construct_invalid_subgraph(vertices, edges)?);
+                Ok(self.0.interface_ptr.find_node(&invalid_subgraph).map(|x| x.into()))
+            }
+            #[pyo3(name = "create_node", signature = (vertices=None, edges=None))]
+            pub fn py_create_node(
+                &mut self,
+                vertices: Option<&Bound<PyAny>>,
+                edges: Option<&Bound<PyAny>>,
+            ) -> PyResult<PyDualNodePtr> {
+                let invalid_subgraph = Arc::new(self.py_construct_invalid_subgraph(vertices, edges)?);
+                let interface_ptr = self.0.interface_ptr.clone();
+                Ok(match self.0.dual_module.mode() {
+                    DualModuleMode::Search => interface_ptr.create_node(invalid_subgraph, &mut self.0.dual_module),
+                    DualModuleMode::Tune => interface_ptr.create_node_tune(invalid_subgraph, &mut self.0.dual_module),
+                }
+                .into())
+            }
+            #[pyo3(name = "grow", signature = (length))]
+            fn py_grow(&mut self, length: PyRational) {
+                let length: Rational = length.into();
+                if let Some(max_valid_grow) = self.0.dual_module.compute_max_valid_grow() {
+                    assert!(
+                        length <= max_valid_grow,
+                        "growth overflow: attempting to grow {} but can only grow {} maximum",
+                        length,
+                        max_valid_grow
+                    );
+                };
+                self.0.dual_module.grow(length)
+            }
+            #[pyo3(name = "snapshot", signature = (abbrev=true))]
+            fn py_snapshot(&mut self, abbrev: bool) -> PyObject {
+                json_to_pyobject(self.0.snapshot(abbrev))
+            }
+            #[pyo3(name = "dual_report")]
+            fn py_dual_report(&mut self) -> PyDualReport {
+                self.0.dual_module.report().into()
+            }
+            #[pyo3(name = "get_edge_nodes")]
+            fn py_get_edge_nodes(&self, edge_index: EdgeIndex) -> Vec<PyDualNodePtr> {
+                self.0
+                    .dual_module
+                    .get_edge_nodes(edge_index)
+                    .into_iter()
+                    .map(|x| x.into())
+                    .collect()
+            }
+            #[pyo3(name = "set_grow_rate")]
+            fn py_set_grow_rate(&mut self, dual_node_ptr: PyDualNodePtr, grow_rate: PyRational) {
+                self.0.dual_module.set_grow_rate(&dual_node_ptr.0, grow_rate.into())
+            }
+        }
+        impl $struct_name {
+            pub fn py_construct_invalid_subgraph(
+                &self,
+                vertices: Option<&Bound<PyAny>>,
+                edges: Option<&Bound<PyAny>>,
+            ) -> PyResult<InvalidSubgraph> {
+                // edges default to empty set
+                let edges = if let Some(edges) = edges {
+                    py_into_btree_set(edges)?
+                } else {
+                    BTreeSet::new()
+                };
+                // vertices must be superset of the union of all edges
+                let interface = self.0.interface_ptr.read_recursive();
+                Ok(if let Some(vertices) = vertices {
+                    let vertices = py_into_btree_set(vertices)?;
+                    InvalidSubgraph::new_complete(vertices, edges, &interface.decoding_graph)
+                } else {
+                    InvalidSubgraph::new(edges, &interface.decoding_graph)
+                })
             }
         }
     };
@@ -79,15 +173,8 @@ macro_rules! bind_trait_to_python {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SolverSerialPluginsConfig {
-    /// timeout for the whole solving process in millisecond
-    #[serde(default = "hyperion_default_configs::primal")]
+    #[serde(flatten, default = "hyperion_default_configs::primal")]
     primal: PrimalModuleSerialConfig,
-    /// growing strategy
-    #[serde(default = "hyperion_default_configs::growing_strategy")]
-    growing_strategy: GrowingStrategy,
-    /// cluster size limit for the primal module in the tuning phase
-    /// this is the threshold for which LP will not be ran on a specific cluster to optimize the solution
-    pub tuning_cluster_size_limit: Option<usize>,
 }
 
 pub mod hyperion_default_configs {
@@ -96,15 +183,10 @@ pub mod hyperion_default_configs {
     pub fn primal() -> PrimalModuleSerialConfig {
         serde_json::from_value(json!({})).unwrap()
     }
-
-    pub fn growing_strategy() -> GrowingStrategy {
-        GrowingStrategy::MultipleClusters
-    }
 }
 
 pub struct SolverSerialPlugins {
-    // dual_module: DualModuleSerial,
-    dual_module: DualModulePQ<FutureObstacleQueue<Rational>>,
+    dual_module: DualModulePQ,
     primal_module: PrimalModuleSerial,
     interface_ptr: DualModuleInterfacePtr,
     model_graph: Arc<ModelHyperGraph>,
@@ -124,14 +206,11 @@ impl SolverSerialPlugins {
         let model_graph = Arc::new(ModelHyperGraph::new(Arc::new(initializer.clone())));
         let mut primal_module = PrimalModuleSerial::new_empty(initializer);
         let config: SolverSerialPluginsConfig = serde_json::from_value(config).unwrap();
-        primal_module.growing_strategy = config.growing_strategy;
         primal_module.plugins = plugins;
         primal_module.config = config.primal.clone();
-        primal_module.cluster_node_limit = config.tuning_cluster_size_limit;
 
         Self {
             dual_module: DualModulePQ::new_empty(initializer),
-            // dual_module: DualModuleSerial::new_empty(initializer),
             primal_module,
             interface_ptr: DualModuleInterfacePtr::new(model_graph.clone()),
             model_graph,
@@ -139,7 +218,26 @@ impl SolverSerialPlugins {
     }
 }
 
-impl PrimalDualSolver for SolverSerialPlugins {
+impl SolverSerialPlugins {
+    // APIs for step-by-step solving in Python
+    pub fn load_syndrome(&mut self, syndrome_pattern: &SyndromePattern, visualizer: Option<&mut Visualizer>) {
+        self.primal_module.solve_step_load_syndrome(
+            &self.interface_ptr,
+            Arc::new(syndrome_pattern.clone()),
+            &mut self.dual_module,
+        );
+        if let Some(visualizer) = visualizer {
+            visualizer
+                .snapshot_combined(
+                    "syndrome loaded".to_string(),
+                    vec![&self.interface_ptr, &self.dual_module, &self.primal_module],
+                )
+                .unwrap();
+        }
+    }
+}
+
+impl SolverTrait for SolverSerialPlugins {
     fn clear(&mut self) {
         self.primal_module.clear();
         self.dual_module.clear();
@@ -197,9 +295,9 @@ impl PrimalDualSolver for SolverSerialPlugins {
     }
 }
 
-macro_rules! bind_primal_dual_solver_trait {
+macro_rules! bind_solver_trait {
     ($struct_name:ident) => {
-        impl PrimalDualSolver for $struct_name {
+        impl SolverTrait for $struct_name {
             fn clear(&mut self) {
                 self.0.clear()
             }
@@ -228,7 +326,6 @@ macro_rules! bind_primal_dual_solver_trait {
     };
 }
 
-#[cfg_attr(feature = "python_binding", cfg_eval)]
 #[cfg_attr(feature = "python_binding", pyclass)]
 pub struct SolverSerialUnionFind(SolverSerialPlugins);
 
@@ -242,18 +339,18 @@ impl SolverSerialUnionFind {
 #[pymethods]
 impl SolverSerialUnionFind {
     #[new]
+    #[pyo3(signature = (initializer, config=None))]
     pub fn new_python(initializer: &SolverInitializer, config: Option<PyObject>) -> Self {
         let config = config.map(|x| pyobject_to_json(x)).unwrap_or(json!({}));
         Self::new(initializer, config)
     }
 }
 
-bind_primal_dual_solver_trait!(SolverSerialUnionFind);
+bind_solver_trait!(SolverSerialUnionFind);
 
 #[cfg(feature = "python_binding")]
 bind_trait_to_python!(SolverSerialUnionFind);
 
-#[cfg_attr(feature = "python_binding", cfg_eval)]
 #[cfg_attr(feature = "python_binding", pyclass)]
 pub struct SolverSerialSingleHair(SolverSerialPlugins);
 
@@ -274,18 +371,18 @@ impl SolverSerialSingleHair {
 #[pymethods]
 impl SolverSerialSingleHair {
     #[new]
+    #[pyo3(signature = (initializer, config=None))]
     pub fn new_python(initializer: &SolverInitializer, config: Option<PyObject>) -> Self {
         let config = config.map(|x| pyobject_to_json(x)).unwrap_or(json!({}));
         Self::new(initializer, config)
     }
 }
 
-bind_primal_dual_solver_trait!(SolverSerialSingleHair);
+bind_solver_trait!(SolverSerialSingleHair);
 
 #[cfg(feature = "python_binding")]
 bind_trait_to_python!(SolverSerialSingleHair);
 
-#[cfg_attr(feature = "python_binding", cfg_eval)]
 #[cfg_attr(feature = "python_binding", pyclass)]
 pub struct SolverSerialJointSingleHair(SolverSerialPlugins);
 
@@ -309,18 +406,18 @@ impl SolverSerialJointSingleHair {
 #[pymethods]
 impl SolverSerialJointSingleHair {
     #[new]
+    #[pyo3(signature = (initializer, config=None))]
     pub fn new_python(initializer: &SolverInitializer, config: Option<PyObject>) -> Self {
         let config = config.map(|x| pyobject_to_json(x)).unwrap_or(json!({}));
         Self::new(initializer, config)
     }
 }
 
-bind_primal_dual_solver_trait!(SolverSerialJointSingleHair);
+bind_solver_trait!(SolverSerialJointSingleHair);
 
 #[cfg(feature = "python_binding")]
 bind_trait_to_python!(SolverSerialJointSingleHair);
 
-#[cfg_attr(feature = "python_binding", cfg_eval)]
 #[cfg_attr(feature = "python_binding", pyclass)]
 pub struct SolverErrorPatternLogger {
     file: BufWriter<File>,
@@ -348,7 +445,7 @@ impl SolverErrorPatternLogger {
     }
 }
 
-impl PrimalDualSolver for SolverErrorPatternLogger {
+impl SolverTrait for SolverErrorPatternLogger {
     fn clear(&mut self) {}
     fn solve_visualizer(&mut self, syndrome_pattern: &SyndromePattern, _visualizer: Option<&mut Visualizer>) {
         self.file
@@ -377,10 +474,12 @@ impl PrimalDualSolver for SolverErrorPatternLogger {
 
 #[cfg(feature = "python_binding")]
 #[pyfunction]
-pub(crate) fn register(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
+pub(crate) fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<SolverSerialUnionFind>()?;
     m.add_class::<SolverSerialSingleHair>()?;
     m.add_class::<SolverSerialJointSingleHair>()?;
     m.add_class::<SolverErrorPatternLogger>()?;
+    // add Solver as default class
+    m.add("Solver", m.getattr("SolverSerialJointSingleHair")?)?;
     Ok(())
 }

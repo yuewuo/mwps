@@ -30,7 +30,6 @@ lazy_static! {
     };
 }
 
-#[cfg_attr(feature = "python_binding", cfg_eval)]
 #[cfg_attr(feature = "python_binding", pyclass)]
 pub struct HTMLExport {}
 
@@ -103,17 +102,24 @@ impl HTMLExport {
     }
 
     #[cfg(feature = "python_binding")]
+    pub fn library_injected() -> bool {
+        *HYPERION_VISUAL_JUPYTER_LOADED.lock().unwrap()
+    }
+
+    #[cfg(feature = "python_binding")]
     pub fn force_inject_library() {
+        *HYPERION_VISUAL_JUPYTER_LOADED.lock().unwrap() = true;
         let script_body = Self::get_library_body().unwrap();
         let script_block = format!(
-            r#"<div><span style="color: white; font-size: 8px; padding: 4px; background-color: rgba(36, 110, 36); border-radius: 4px;">MWPF visualization library embedded</span></div><script type="module" id='hyperion_visual_compressed_js_caller'>
+            r#"<div><span style="color: white; font-size: 8px; padding: 4px; background-color: rgba(36, 110, 36); border-radius: 4px;">MWPF visualization library embedded ({}kB)</span></div><script type="module" id='hyperion_visual_compressed_js_caller'>
 /* HYPERION_VISUAL_MODULE_CODE_BEGIN */
 {script_body}
 /* HYPERION_VISUAL_MODULE_CODE_END */
-</script>"#
+</script>"#,
+            script_body.len() / 1024
         );
         Python::with_gil(|py| -> PyResult<()> {
-            let display = PyModule::import(py, "IPython.display")?;
+            let display = PyModule::import_bound(py, "IPython.display")?;
             display.call_method1("display", (display.call_method1("HTML", (script_block,))?,))?;
             Ok(())
         })
@@ -125,8 +131,7 @@ impl HTMLExport {
         let template_html =
             Self::get_template_html().expect("template html not available, please rebuild with `embed_visualizer` feature");
         // if the hyperion_visual library is not loaded yet, load it
-        if !*HYPERION_VISUAL_JUPYTER_LOADED.lock().unwrap() {
-            *HYPERION_VISUAL_JUPYTER_LOADED.lock().unwrap() = true;
+        if !Self::library_injected() {
             Self::force_inject_library();
         }
         // create a div block
@@ -138,7 +143,7 @@ impl HTMLExport {
         };
         let div_block = format!(r#"<div id="{div_id}" style="width: auto; height: min(max(60vh, 400px), 100vw);"></div>"#);
         Python::with_gil(|py| -> PyResult<()> {
-            let display = PyModule::import(py, "IPython.display")?;
+            let display = PyModule::import_bound(py, "IPython.display")?;
             display.call_method1("display", (display.call_method1("HTML", (div_block,))?,))?;
             Ok(())
         })
@@ -157,7 +162,7 @@ impl HTMLExport {
         let (_, bootstrap_code, _) = Self::slice_content(template_html, bootstrap_flag);
         // generate the javascript code
         let js_code = format!(
-            r###"{bootstrap_code}
+            r###"<script>{bootstrap_code}
             async function main() {{
                 const visualizer_data = '{javascript_data}';
                 const override_config = {override_str};
@@ -168,32 +173,42 @@ impl HTMLExport {
                     override_config.initial_aspect_ratio = initial_aspect_ratio;
                 }}
                 // bind the visualizer to the div block
-                const app = await window.hyperion_visual.bind_to_div("#{div_id}", visualizer_data, {{ ...window.hyperion_visual.default_config(), ...override_config }});
-                // observe the div block for removal
-                const script_dom = document.getElementById('{div_id}');
+                let app_currently_exist = false;
+                async function create_app() {{
+                    if (app_currently_exist) return;
+                    app_currently_exist = true;
+                    const script_dom = document.getElementById('{div_id}');
+                    const app = await window.hyperion_visual.bind_to_div("#{div_id}", visualizer_data, {{ ...window.hyperion_visual.default_config(), ...override_config }});
+                    // observe the div block for removal
+                    new MutationObserver(function(mutations) {{
+                        if(!document.body.contains(script_dom)) {{
+                            app.unmount()
+                            this.disconnect()
+                            app_currently_exist = false
+                        }}
+                    }}).observe(script_dom.parentElement.parentElement.parentElement.parentElement.parentElement, {{ childList: true, subtree: true }});
+                }}
+                create_app()
                 new MutationObserver(function(mutations) {{
-                    if(!document.body.contains(script_dom)) {{
-                        app.unmount()
-                        this.disconnect()
+                    const script_dom = document.getElementById('{div_id}');
+                    if(script_dom != undefined && script_dom.getAttribute('data-engine') == null) {{
+                        create_app()
                     }}
-                }}).observe(script_dom.parentElement.parentElement.parentElement.parentElement.parentElement, {{ childList: true, subtree: true }});
+                }}).observe(document, {{ childList: true, subtree: true }});
             }}
-            on_hyperion_library_ready(main)
+            on_hyperion_library_ready(main)</script>
         "###
         );
         Python::with_gil(|py| -> PyResult<()> {
-            let display = PyModule::import(py, "IPython.display")?;
-            display.call_method1("display", (display.call_method1("Javascript", (js_code,))?,))?;
+            let display = PyModule::import_bound(py, "IPython.display")?;
+            display.call_method1("display", (display.call_method1("HTML", (js_code,))?,))?;
             Ok(())
         })
         .unwrap();
     }
 }
 
-#[cfg_attr(feature = "python_binding", cfg_eval)]
-#[cfg_attr(feature = "python_binding", pymethods)]
 impl HTMLExport {
-    #[cfg_attr(feature = "python_binding", staticmethod)]
     pub fn get_template_html() -> Option<&'static str> {
         cfg_if::cfg_if! {
             if #[cfg(feature="embed_visualizer")] {
@@ -204,7 +219,6 @@ impl HTMLExport {
         }
     }
 
-    #[cfg_attr(feature = "python_binding", staticmethod)]
     pub fn get_library_body() -> Option<&'static str> {
         cfg_if::cfg_if! {
             if #[cfg(feature="embed_visualizer")] {
@@ -215,7 +229,6 @@ impl HTMLExport {
         }
     }
 
-    #[cfg_attr(feature = "python_binding", staticmethod)]
     pub fn compress_content(data: &str) -> String {
         let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
         encoder.write_all(data.as_bytes()).unwrap();
@@ -223,7 +236,6 @@ impl HTMLExport {
         BASE64_STANDARD.encode(compressed).to_string()
     }
 
-    #[cfg_attr(feature = "python_binding", staticmethod)]
     pub fn decompress_content(base64_str: &str) -> String {
         let compressed = BASE64_STANDARD.decode(base64_str.as_bytes()).unwrap();
         let mut decoder = GzDecoder::new(compressed.as_slice());
@@ -231,8 +243,32 @@ impl HTMLExport {
         decoder.read_to_string(&mut uncompressed).unwrap();
         uncompressed
     }
+}
 
-    #[cfg(feature = "python_binding")]
+#[cfg(feature = "python_binding")]
+#[pymethods]
+impl HTMLExport {
+    #[staticmethod]
+    #[pyo3(name = "get_template_html")]
+    fn py_get_template_html() -> Option<&'static str> {
+        Self::get_template_html()
+    }
+    #[staticmethod]
+    #[pyo3(name = "get_library_body")]
+    fn py_get_library_body() -> Option<&'static str> {
+        Self::get_library_body()
+    }
+    #[staticmethod]
+    #[pyo3(name = "compress_content")]
+    fn py_compress_content(data: &str) -> String {
+        Self::compress_content(data)
+    }
+    #[staticmethod]
+    #[pyo3(name = "decompress_content")]
+    fn py_decompress_content(base64_str: &str) -> String {
+        Self::decompress_content(base64_str)
+    }
+
     #[staticmethod]
     #[pyo3(name = "generate_html", signature = (visualizer_data, override_config = None))]
     pub fn generate_html_py(visualizer_data: PyObject, override_config: Option<PyObject>) -> std::io::Result<String> {
@@ -245,7 +281,6 @@ impl HTMLExport {
         Ok(Self::generate_html(visualizer_data, override_config))
     }
 
-    #[cfg(feature = "python_binding")]
     #[staticmethod]
     #[pyo3(name = "display_jupyter_html", signature = (visualizer_data, override_config = None))]
     pub fn display_jupyter_html_py(visualizer_data: PyObject, override_config: Option<PyObject>) -> std::io::Result<()> {
@@ -268,7 +303,7 @@ impl HTMLExport {
 
 #[cfg(feature = "python_binding")]
 #[pyfunction]
-pub(crate) fn register(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
+pub(crate) fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<HTMLExport>()?;
     Ok(())
 }

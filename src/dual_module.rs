@@ -15,13 +15,16 @@ use crate::primal_module_serial::PrimalClusterPtr;
 use crate::relaxer_optimizer::OptimizerResult;
 use crate::util::*;
 use crate::visualize::*;
+#[cfg(feature = "python_binding")]
+use pyo3::prelude::*;
 
 use std::collections::BTreeMap;
 use std::collections::{BTreeSet, HashMap};
 use std::sync::Arc;
 
-// this is not effecitively doing much right now due to the My (Leo's) desire for ultra performance (inlining function > branches)
-#[derive(Default, Debug)]
+// this is not effectively doing much right now due to the My (Leo's) desire for ultra performance (inlining function > branches)
+#[derive(Default, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "python_binding", pyclass(eq, eq_int))]
 pub enum DualModuleMode {
     /// Mode 1
     #[default]
@@ -121,19 +124,25 @@ pub type DualNodeWeak = WeakRwLock<DualNode>;
 impl std::fmt::Debug for DualNodePtr {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         let dual_node = self.read_recursive(); // reading index is consistent
-        let new = ArcRwLock::new_value(Rational::zero());
-        let global_time = dual_node.global_time.as_ref().unwrap_or(&new).read_recursive();
-        write!(
-            f,
-            "\n\t\tindex: {}, global_time: {:?}, grow_rate: {:?}, dual_variable: {}\n\t\tdual_variable_at_last_updated_time: {}, last_updated_time: {}\n\timpacted_edges: {:?}\n",
-            dual_node.index,
-            global_time,
-            dual_node.grow_rate,
-            dual_node.get_dual_variable(),
-            dual_node.dual_variable_at_last_updated_time,
-            dual_node.last_updated_time,
-            dual_node.invalid_subgraph.hair
-        )
+        f.debug_struct("DualNode")
+            .field("index", &dual_node.index)
+            .field("dual_variable", &dual_node.get_dual_variable())
+            .field("grow_rate", &dual_node.grow_rate)
+            .field("hair", &dual_node.invalid_subgraph.hair)
+            .finish()
+        // let new = ArcRwLock::new_value(Rational::zero());
+        // let global_time = dual_node.global_time.as_ref().unwrap_or(&new).read_recursive();
+        // write!(
+        //     f,
+        //     "\n\t\tindex: {}, global_time: {:?}, grow_rate: {:?}, dual_variable: {}\n\t\tdual_variable_at_last_updated_time: {}, last_updated_time: {}\n\timpacted_edges: {:?}\n",
+        //     dual_node.index,
+        //     global_time,
+        //     dual_node.grow_rate,
+        //     dual_node.get_dual_variable(),
+        //     dual_node.dual_variable_at_last_updated_time,
+        //     dual_node.last_updated_time,
+        //     dual_node.invalid_subgraph.hair
+        // )
     }
 }
 
@@ -147,8 +156,10 @@ impl std::fmt::Debug for DualNodeWeak {
 /// dual nodes, once created, will never be deconstructed until the next run
 #[derive(Derivative)]
 #[derivative(Debug)]
+#[cfg_attr(feature = "python_binding", pyclass)]
 pub struct DualModuleInterface {
     /// all the dual node that can be used to control a concrete dual module implementation
+    // #[cfg_attr(feature = "python_binding", pyo3(get))]
     pub nodes: Vec<DualNodePtr>,
     /// given an invalid subgraph, find its corresponding dual node
     pub hashmap: HashMap<Arc<InvalidSubgraph>, NodeIndex>,
@@ -170,23 +181,6 @@ impl std::fmt::Debug for DualModuleInterfaceWeak {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         self.upgrade_force().fmt(f)
     }
-}
-
-/// gives the maximum absolute length to grow, if not possible, give the reason;
-/// note that strong reference is stored in `MaxUpdateLength` so dropping these temporary messages are necessary to avoid memory leakage
-#[derive(Derivative, PartialEq, Eq, Clone, PartialOrd, Ord)]
-#[derivative(Debug, Default(new = "true"))]
-pub enum MaxUpdateLength {
-    /// unbounded
-    #[derivative(Default)]
-    Unbounded,
-    /// non-zero maximum update length
-    ValidGrow(Rational),
-    /// conflicting growth, violating the slackness constraint
-    Conflicting(EdgeIndex),
-    /// hitting 0 dual variable while shrinking, only happens when `grow_rate` < 0
-    ///     note: Using OrderedDualNodePtr since we can compare without acquiring the lock, for enabling btreeset/hashset/pq etc. with lower overhead
-    ShrinkProhibited(OrderedDualNodePtr),
 }
 
 /// a pair of node index and dual node pointer, used for comparison without acquiring the lock
@@ -241,14 +235,14 @@ impl Ord for OrderedDualNodeWeak {
 
 #[derive(Derivative, Clone)]
 #[derivative(Debug, Default(new = "true"))]
-pub enum GroupMaxUpdateLength {
+pub enum DualReport {
     /// unbounded
     #[derivative(Default)]
     Unbounded,
     /// non-zero maximum update length
     ValidGrow(Rational),
     /// conflicting reasons and pending VertexShrinkStop events (empty in a single serial dual module)
-    Conflicts(Vec<MaxUpdateLength>),
+    Obstacles(Vec<Obstacle>),
 }
 
 /// common trait that must be implemented for each implementation of dual module
@@ -268,20 +262,9 @@ pub trait DualModuleImpl {
     /// update grow rate
     fn set_grow_rate(&mut self, dual_node_ptr: &DualNodePtr, grow_rate: Rational);
 
-    /// An optional function that helps to break down the implementation of [`DualModuleImpl::compute_maximum_update_length`]
-    /// check the maximum length to grow (shrink) specific dual node, if length is 0, give the reason of why it cannot further grow (shrink).
-    /// if `simultaneous_update` is true, also check for the peer node according to [`DualNode::grow_state`].
-    fn compute_maximum_update_length_dual_node(
-        &mut self,
-        _dual_node_ptr: &DualNodePtr,
-        _simultaneous_update: bool,
-    ) -> MaxUpdateLength {
-        panic!("the dual module implementation doesn't support this function, please use another dual module")
-    }
-
     /// check the maximum length to grow (shrink) for all nodes, return a list of conflicting reason and a single number indicating the maximum rate to grow:
     /// this number will be 0 if any conflicting reason presents
-    fn compute_maximum_update_length(&mut self) -> GroupMaxUpdateLength;
+    fn report(&mut self) -> DualReport;
 
     /// An optional function that can manipulate individual dual node, not necessarily supported by all implementations
     fn grow_dual_node(&mut self, _dual_node_ptr: &DualNodePtr, _length: Rational) {
@@ -302,7 +285,7 @@ pub trait DualModuleImpl {
     fn is_edge_tight(&self, edge_index: EdgeIndex) -> bool;
 
     /* New tuning-related methods */
-    // mode mangements
+    // mode managements
 
     /// get the current mode of the dual module
     fn mode(&self) -> &DualModuleMode;
@@ -381,33 +364,32 @@ pub trait DualModuleImpl {
         Some(OrderedFloat::from(100.0))
     }
 
-    /// In the tuning phase, given the optimizer result and the dual node deltas, return the conflicts that are caused by the current dual node deltas
-    fn get_conflicts_tune(
+    /// In the tuning phase, given the optimizer result and the dual node deltas, return the Obstacles that are caused by the current dual node deltas
+    fn get_obstacles_tune(
         &self,
         optimizer_result: OptimizerResult,
         dual_node_deltas: BTreeMap<OrderedDualNodePtr, (Rational, NodeIndex)>,
-    ) -> BTreeSet<MaxUpdateLength> {
-        let mut conflicts = BTreeSet::new();
+    ) -> BTreeSet<Obstacle> {
+        let mut obstacles = BTreeSet::new();
         match optimizer_result {
             OptimizerResult::EarlyReturned => {
-                // if early returned, meaning optimizer didn't optimize, but simply should find current conflicts and return
+                // if early returned, meaning optimizer didn't optimize, but simply should find current obstacles and return
                 for (dual_node_ptr, (grow_rate, _)) in dual_node_deltas.into_iter() {
                     let node_ptr_read = dual_node_ptr.ptr.read_recursive();
                     if grow_rate.is_negative() && node_ptr_read.dual_variable_at_last_updated_time.is_zero() {
-                        conflicts.insert(MaxUpdateLength::ShrinkProhibited(OrderedDualNodePtr::new(
-                            node_ptr_read.index,
-                            dual_node_ptr.ptr.clone(),
-                        )));
+                        obstacles.insert(Obstacle::ShrinkToZero {
+                            dual_node_ptr: dual_node_ptr.clone(),
+                        });
                     }
                     for edge_index in node_ptr_read.invalid_subgraph.hair.iter() {
                         if grow_rate.is_positive() && self.is_edge_tight_tune(*edge_index) {
-                            conflicts.insert(MaxUpdateLength::Conflicting(*edge_index));
+                            obstacles.insert(Obstacle::Conflict { edge_index: *edge_index });
                         }
                     }
                 }
             }
             OptimizerResult::Skipped => {
-                // if skipped, should check if is growable, if not return the conflicts that leads to that conclusion
+                // if skipped, should check if is growable, if not return the obstacles that leads to that conclusion
                 for (dual_node_ptr, (grow_rate, _cluster_index)) in dual_node_deltas.into_iter() {
                     // check if the single direction is growable
                     let mut actual_grow_rate = Rational::from_usize(std::usize::MAX).unwrap();
@@ -416,20 +398,19 @@ pub trait DualModuleImpl {
                         actual_grow_rate = std::cmp::min(actual_grow_rate, self.get_edge_slack_tune(*edge_index));
                     }
                     if actual_grow_rate.is_zero() {
-                        // if not, return the current conflicts
+                        // if not, return the current obstacles
                         for edge_index in node_ptr_read.invalid_subgraph.hair.iter() {
                             if grow_rate.is_positive() && self.is_edge_tight_tune(*edge_index) {
-                                conflicts.insert(MaxUpdateLength::Conflicting(*edge_index));
+                                obstacles.insert(Obstacle::Conflict { edge_index: *edge_index });
                             }
                         }
                         if grow_rate.is_negative() && node_ptr_read.dual_variable_at_last_updated_time.is_zero() {
-                            conflicts.insert(MaxUpdateLength::ShrinkProhibited(OrderedDualNodePtr::new(
-                                node_ptr_read.index,
-                                dual_node_ptr.ptr.clone(),
-                            )));
+                            obstacles.insert(Obstacle::ShrinkToZero {
+                                dual_node_ptr: dual_node_ptr.clone(),
+                            });
                         }
                     } else {
-                        // if yes, grow and return new conflicts
+                        // if yes, grow and return new obstacles
                         //      note: can grow directly here because this is guaranteed to only have a single direction
                         drop(node_ptr_read);
                         let mut node_ptr_write = dual_node_ptr.ptr.write();
@@ -438,33 +419,31 @@ pub trait DualModuleImpl {
                             #[cfg(feature = "incr_lp")]
                             self.update_edge_cluster_weights(*edge_index, _cluster_index, actual_grow_rate); // note: comment out if not using cluster-based
                             if actual_grow_rate.is_positive() && self.is_edge_tight_tune(*edge_index) {
-                                conflicts.insert(MaxUpdateLength::Conflicting(*edge_index));
+                                obstacles.insert(Obstacle::Conflict { edge_index: *edge_index });
                             }
                         }
                         node_ptr_write.dual_variable_at_last_updated_time += actual_grow_rate.clone();
                         if actual_grow_rate.is_negative() && node_ptr_write.dual_variable_at_last_updated_time.is_zero() {
-                            conflicts.insert(MaxUpdateLength::ShrinkProhibited(OrderedDualNodePtr::new(
-                                node_ptr_write.index,
-                                dual_node_ptr.ptr.clone(),
-                            )));
+                            obstacles.insert(Obstacle::ShrinkToZero {
+                                dual_node_ptr: dual_node_ptr.clone(),
+                            });
                         }
                     }
                 }
             }
             _ => {
-                // in other cases, optimizer should have optimized, so we should apply the deltas and return the nwe conflicts
+                // in other cases, optimizer should have optimized, so we should apply the deltas and return the nwe obstacles
 
-                // edge deltas needs to be applied at once for accurate conflicts calculation
+                // edge deltas needs to be applied at once for accurate obstacles calculation
                 let mut edge_deltas = BTreeMap::new();
                 for (dual_node_ptr, (grow_rate, _cluster_index)) in dual_node_deltas.into_iter() {
-                    // update the dual node and check for conflicts
+                    // update the dual node and check for obstacles
                     let mut node_ptr_write = dual_node_ptr.ptr.write();
                     node_ptr_write.dual_variable_at_last_updated_time += grow_rate.clone();
                     if grow_rate.is_negative() && node_ptr_write.dual_variable_at_last_updated_time.is_zero() {
-                        conflicts.insert(MaxUpdateLength::ShrinkProhibited(OrderedDualNodePtr::new(
-                            node_ptr_write.index,
-                            dual_node_ptr.ptr.clone(),
-                        )));
+                        obstacles.insert(Obstacle::ShrinkToZero {
+                            dual_node_ptr: dual_node_ptr.clone(),
+                        });
                     }
 
                     // calculate the total edge deltas
@@ -484,19 +463,19 @@ pub trait DualModuleImpl {
                     }
                 }
 
-                // apply the edge deltas and check for conflicts
+                // apply the edge deltas and check for obstacles
                 for (edge_index, grow_rate) in edge_deltas.into_iter() {
                     if grow_rate.is_zero() {
                         continue;
                     }
                     self.grow_edge(edge_index, &grow_rate);
                     if grow_rate.is_positive() && self.is_edge_tight_tune(edge_index) {
-                        conflicts.insert(MaxUpdateLength::Conflicting(edge_index));
+                        obstacles.insert(Obstacle::Conflict { edge_index });
                     }
                 }
             }
         }
-        conflicts
+        obstacles
     }
 
     /// get the edge free weight, for each edge what is the weight that are free to use by the given participating dual variables
@@ -521,53 +500,34 @@ pub trait DualModuleImpl {
     );
 }
 
-impl MaxUpdateLength {
-    pub fn merge(&mut self, max_update_length: MaxUpdateLength) {
+#[derive(PartialEq, Eq, Debug, Clone, PartialOrd, Ord)]
+pub enum Obstacle {
+    Conflict { edge_index: EdgeIndex },
+    ShrinkToZero { dual_node_ptr: OrderedDualNodePtr },
+}
+
+// implement hash for Obstacle
+impl std::hash::Hash for Obstacle {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         match self {
-            Self::Unbounded => {
-                *self = max_update_length;
+            Obstacle::Conflict { edge_index } => {
+                (0, *edge_index as u64).hash(state);
             }
-            Self::ValidGrow(current_length) => {
-                match max_update_length {
-                    MaxUpdateLength::Unbounded => {} // do nothing
-                    MaxUpdateLength::ValidGrow(length) => {
-                        *self = Self::ValidGrow(std::cmp::min(current_length.clone(), length))
-                    }
-                    _ => *self = max_update_length,
-                }
+            Obstacle::ShrinkToZero { dual_node_ptr } => {
+                (1, dual_node_ptr.index).hash(state);
             }
-            _ => {} // do nothing if it's already a conflict
         }
     }
 }
 
-impl GroupMaxUpdateLength {
-    pub fn add(&mut self, max_update_length: MaxUpdateLength) {
+impl DualReport {
+    pub fn add_obstacle(&mut self, obstacle: Obstacle) {
         match self {
-            Self::Unbounded => {
-                match max_update_length {
-                    MaxUpdateLength::Unbounded => {} // do nothing
-                    MaxUpdateLength::ValidGrow(length) => *self = Self::ValidGrow(length),
-                    _ => *self = Self::Conflicts(vec![max_update_length]),
-                }
+            Self::Unbounded | Self::ValidGrow(_) => {
+                *self = Self::Obstacles(vec![obstacle]);
             }
-            Self::ValidGrow(current_length) => {
-                match max_update_length {
-                    MaxUpdateLength::Unbounded => {} // do nothing
-                    MaxUpdateLength::ValidGrow(length) => {
-                        *self = Self::ValidGrow(std::cmp::min(current_length.clone(), length))
-                    }
-                    _ => *self = Self::Conflicts(vec![max_update_length]),
-                }
-            }
-            Self::Conflicts(conflicts) => {
-                match max_update_length {
-                    MaxUpdateLength::Unbounded => {}    // do nothing
-                    MaxUpdateLength::ValidGrow(_) => {} // do nothing
-                    _ => {
-                        conflicts.push(max_update_length);
-                    }
-                }
+            Self::Obstacles(obstacles) => {
+                obstacles.push(obstacle);
             }
         }
     }
@@ -579,28 +539,35 @@ impl GroupMaxUpdateLength {
     pub fn get_valid_growth(&self) -> Option<Rational> {
         match self {
             Self::Unbounded => {
-                panic!("please call GroupMaxUpdateLength::is_unbounded to check if it's unbounded");
+                panic!("please call DualReport::is_unbounded to check if it's unbounded");
             }
             Self::ValidGrow(length) => Some(length.clone()),
             _ => None,
         }
     }
 
-    pub fn pop(&mut self) -> Option<MaxUpdateLength> {
+    pub fn pop(&mut self) -> Option<Obstacle> {
         match self {
             Self::Unbounded | Self::ValidGrow(_) => {
-                panic!("please call GroupMaxUpdateLength::get_valid_growth to check if this group is none_zero_growth");
+                panic!("please call DualReport::get_valid_growth to check if this group is none_zero_growth");
             }
-            Self::Conflicts(conflicts) => conflicts.pop(),
+            Self::Obstacles(obstacles) => obstacles.pop(),
         }
     }
 
-    pub fn peek(&self) -> Option<&MaxUpdateLength> {
+    pub fn peek(&self) -> Option<&Obstacle> {
         match self {
             Self::Unbounded | Self::ValidGrow(_) => {
-                panic!("please call GroupMaxUpdateLength::get_valid_growth to check if this group is none_zero_growth");
+                panic!("please call DualReport::get_valid_growth to check if this group is none_zero_growth");
             }
-            Self::Conflicts(conflicts) => conflicts.last(),
+            Self::Obstacles(obstacles) => obstacles.last(),
+        }
+    }
+
+    pub fn iter(&self) -> Option<std::slice::Iter<Obstacle>> {
+        match self {
+            Self::Unbounded | Self::ValidGrow(_) => None,
+            Self::Obstacles(obstacles) => Some(obstacles.iter()),
         }
     }
 }

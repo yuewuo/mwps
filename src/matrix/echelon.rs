@@ -429,7 +429,7 @@ pub mod tests {
     }
 
     #[test]
-    #[should_panic]
+    #[cfg_attr(debug_assertions, should_panic)]
     fn echelon_matrix_cannot_call_dirty_echelon_info() {
         // cargo test echelon_matrix_cannot_call_dirty_echelon_info -- --nocapture
         let mut matrix = EchelonMatrix::new();

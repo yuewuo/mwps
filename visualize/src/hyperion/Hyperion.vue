@@ -67,7 +67,6 @@ onMounted(() => {
 
     // listen to orbit control events and mouse over events, and focus on the canvas so that the key listener works
     orbit_controls.addEventListener('change', () => {
-        canvas.focus()
         config.value.camera.position = camera.position.clone()
         // @ts-expect-error _scale is a private property
         const orbit_control_scale: number = orbit_controls._scale
@@ -75,7 +74,9 @@ onMounted(() => {
         config.value.pane.refresh()
     })
     canvas.addEventListener('mouseenter', () => {
-        canvas.focus()
+        if (config.value.config_prop.full_screen) {
+            canvas.focus()
+        }
     })
 
     // hover and click handlers
@@ -104,6 +105,7 @@ onMounted(() => {
     watchEffect(() => {
         const webgl_renderer: WebGLRenderer = (renderer.value as any).renderer
         webgl_renderer.setSize(width.value, height.value)
+        webgl_renderer.setPixelRatio(window.devicePixelRatio)
     })
 
     // observe container size change and update the width and height values

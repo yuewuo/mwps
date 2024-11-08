@@ -36,7 +36,7 @@ const edge_states = computed(() => {
             sum_position = sum_position.add(compute_vector3(vertex_position))
         }
         const center_position = sum_position.multiplyScalar(1 / edge.v.length)
-        const is_tight = edge.g >= edge.w
+        const is_tight = edge.u == 0
         for (let j = 0; j < edge.v.length; ++j) {
             const vertex_index = edge.v[j]
             const vertex_position = config.value.data.visualizer.positions[vertex_index]

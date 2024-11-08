@@ -25,24 +25,19 @@ use std::sync::Arc;
 /// Vertex corresponds to a stabilizer measurement bit
 #[derive(Derivative, Clone)]
 #[derivative(Debug)]
-#[cfg_attr(feature = "python_binding", cfg_eval)]
-#[cfg_attr(feature = "python_binding", pyclass)]
+#[cfg_attr(feature = "python_binding", pyclass(get_all, set_all))]
 pub struct CodeVertex {
     /// position helps to visualize
-    #[cfg_attr(feature = "python_binding", pyo3(get, set))]
     pub position: VisualizePosition,
     /// neighbor edges helps to set find individual edge
-    #[cfg_attr(feature = "python_binding", pyo3(get, set))]
     pub neighbor_edges: Vec<EdgeIndex>,
     /// whether it's a defect
-    #[cfg_attr(feature = "python_binding", pyo3(get, set))]
     pub is_defect: bool,
 }
 
-#[cfg_attr(feature = "python_binding", cfg_eval)]
-#[cfg_attr(feature = "python_binding", pymethods)]
+#[cfg(feature = "python_binding")]
+#[pymethods]
 impl CodeVertex {
-    #[cfg(feature = "python_binding")]
     fn __repr__(&self) -> String {
         format!("{:?}", self)
     }
@@ -51,30 +46,21 @@ impl CodeVertex {
 /// Edge flips the measurement result of two vertices
 #[derive(Derivative, Clone)]
 #[derivative(Debug)]
-#[cfg_attr(feature = "python_binding", cfg_eval)]
-#[cfg_attr(feature = "python_binding", pyclass)]
+#[cfg_attr(feature = "python_binding", pyclass(get_all, set_all))]
 pub struct CodeEdge {
     /// the two vertices incident to this edge; in quantum LDPC codes this should be only a handful of vertices
-    #[cfg_attr(feature = "python_binding", pyo3(get, set))]
     pub vertices: Vec<VertexIndex>,
     /// probability of flipping the results of these vertices; do not set p to 0 to remove edge: if desired, create a new code type without those edges
-    #[cfg_attr(feature = "python_binding", pyo3(get, set))]
     pub p: f64,
     /// probability of having a reported event of error on this edge (aka erasure errors)
-    #[cfg_attr(feature = "python_binding", pyo3(get, set))]
     pub pe: f64,
     /// the integer weight of this edge
-    #[cfg_attr(feature = "python_binding", pyo3(get, set))]
     pub weight: Weight,
     /// whether this edge is erased
-    #[cfg_attr(feature = "python_binding", pyo3(get, set))]
     pub is_erasure: bool,
 }
 
-#[cfg_attr(feature = "python_binding", cfg_eval)]
-#[cfg_attr(feature = "python_binding", pymethods)]
 impl CodeEdge {
-    #[cfg_attr(feature = "python_binding", new)]
     pub fn new(vertices: Vec<VertexIndex>) -> Self {
         Self {
             vertices,
@@ -84,7 +70,15 @@ impl CodeEdge {
             is_erasure: false,
         }
     }
-    #[cfg(feature = "python_binding")]
+}
+
+#[cfg(feature = "python_binding")]
+#[pymethods]
+impl CodeEdge {
+    #[new]
+    fn py_new(vertices: Vec<VertexIndex>) -> Self {
+        Self::new(vertices)
+    }
     fn __repr__(&self) -> String {
         format!("{:?}", self)
     }
@@ -109,20 +103,20 @@ pub trait ExampleCode {
 
     /// generic method that automatically computes integer weights from probabilities,
     /// scales such that the maximum integer weight is 10000 and the minimum is 1
-    fn compute_weights(&mut self, weight_upper_limit: Weight) {
+    fn compute_weights(&mut self, max_weight: Weight) {
         let (_vertices, edges) = self.vertices_edges();
-        let mut max_weight = 0.;
+        let mut original_max_weight = 0.;
         for edge in edges.iter() {
             let weight = weight_of_p(edge.p);
-            if weight > max_weight {
-                max_weight = weight;
+            if weight > original_max_weight {
+                original_max_weight = weight;
             }
         }
-        assert!(max_weight > 0., "max weight is not expected to be 0.");
+        assert!(original_max_weight > 0., "max weight is not expected to be 0.");
         // scale all weights but set the smallest to 1
         for edge in edges.iter_mut() {
             let weight = weight_of_p(edge.p);
-            let new_weight: Weight = ((weight_upper_limit as f64) * weight / max_weight).round() as Weight;
+            let new_weight: Weight = ((max_weight as f64) * weight / original_max_weight).round() as Weight;
             edge.weight = if new_weight == 0 { 1 } else { new_weight }; // weight is required to be even
         }
     }
@@ -411,8 +405,8 @@ macro_rules! bind_trait_example_code {
                 self.vertex_num()
             }
             #[pyo3(name = "compute_weights")]
-            fn trait_compute_weights(&mut self, weight_upper_limit: Weight) {
-                self.compute_weights(weight_upper_limit)
+            fn trait_compute_weights(&mut self, max_weight: Weight) {
+                self.compute_weights(max_weight)
             }
             #[pyo3(name = "sanity_check")]
             fn trait_sanity_check(&self) -> Option<String> {
@@ -510,14 +504,11 @@ where
 
 /// perfect quantum repetition code
 #[derive(Clone, Debug)]
-#[cfg_attr(feature = "python_binding", cfg_eval)]
-#[cfg_attr(feature = "python_binding", pyclass)]
+#[cfg_attr(feature = "python_binding", pyclass(get_all, set_all))]
 pub struct CodeCapacityRepetitionCode {
     /// vertices in the code
-    #[cfg_attr(feature = "python_binding", pyo3(get, set))]
     pub vertices: Vec<CodeVertex>,
     /// nearest-neighbor edges in the decoding graph
-    #[cfg_attr(feature = "python_binding", pyo3(get, set))]
     pub edges: Vec<CodeEdge>,
 }
 
@@ -533,19 +524,14 @@ impl ExampleCode for CodeCapacityRepetitionCode {
 #[cfg(feature = "python_binding")]
 bind_trait_example_code! {CodeCapacityRepetitionCode}
 
-#[cfg_attr(feature = "python_binding", cfg_eval)]
-#[cfg_attr(feature = "python_binding", pymethods)]
 impl CodeCapacityRepetitionCode {
-    #[cfg_attr(feature = "python_binding", new)]
-    #[cfg_attr(feature = "python_binding", pyo3(signature = (d, p, weight_upper_limit=1000)))]
-    pub fn new(d: VertexNum, p: f64, weight_upper_limit: Weight) -> Self {
+    pub fn new(d: VertexNum, p: f64, max_weight: Weight) -> Self {
         let mut code = Self::create_code(d);
         code.set_probability(p);
-        code.compute_weights(weight_upper_limit);
+        code.compute_weights(max_weight);
         code
     }
 
-    #[cfg_attr(feature = "python_binding", staticmethod)]
     pub fn create_code(d: VertexNum) -> Self {
         assert!(d >= 3 && d % 2 == 1, "d must be odd integer >= 3");
         let vertex_num = d - 1;
@@ -573,17 +559,30 @@ impl CodeCapacityRepetitionCode {
     }
 }
 
+#[cfg(feature = "python_binding")]
+#[pymethods]
+impl CodeCapacityRepetitionCode {
+    #[new]
+    #[pyo3(signature = (d, p, max_weight=1000))]
+    fn py_new(d: VertexNum, p: f64, max_weight: Weight) -> Self {
+        Self::new(d, p, max_weight)
+    }
+
+    #[staticmethod]
+    #[pyo3(name = "create_code")]
+    fn py_create_code(d: VertexNum) -> Self {
+        Self::create_code(d)
+    }
+}
+
 /// code capacity noise model is a single measurement round with perfect stabilizer measurements;
 /// e.g. this is the decoding graph of a CSS surface code (standard one, not rotated one) with X-type stabilizers
 #[derive(Clone, Debug)]
-#[cfg_attr(feature = "python_binding", cfg_eval)]
-#[cfg_attr(feature = "python_binding", pyclass)]
+#[cfg_attr(feature = "python_binding", pyclass(get_all, set_all))]
 pub struct CodeCapacityPlanarCode {
     /// vertices in the code
-    #[cfg_attr(feature = "python_binding", pyo3(get, set))]
     pub vertices: Vec<CodeVertex>,
     /// nearest-neighbor edges in the decoding graph
-    #[cfg_attr(feature = "python_binding", pyo3(get, set))]
     pub edges: Vec<CodeEdge>,
 }
 
@@ -599,19 +598,14 @@ impl ExampleCode for CodeCapacityPlanarCode {
 #[cfg(feature = "python_binding")]
 bind_trait_example_code! {CodeCapacityPlanarCode}
 
-#[cfg_attr(feature = "python_binding", cfg_eval)]
-#[cfg_attr(feature = "python_binding", pymethods)]
 impl CodeCapacityPlanarCode {
-    #[cfg_attr(feature = "python_binding", new)]
-    #[cfg_attr(feature = "python_binding", pyo3(signature = (d, p, weight_upper_limit=1000)))]
-    pub fn new(d: VertexNum, p: f64, weight_upper_limit: Weight) -> Self {
+    pub fn new(d: VertexNum, p: f64, max_weight: Weight) -> Self {
         let mut code = Self::create_code(d);
         code.set_probability(p);
-        code.compute_weights(weight_upper_limit);
+        code.compute_weights(max_weight);
         code
     }
 
-    #[cfg_attr(feature = "python_binding", staticmethod)]
     pub fn create_code(d: VertexNum) -> Self {
         assert!(d >= 3 && d % 2 == 1, "d must be odd integer >= 3");
         let row_vertex_num = d - 1;
@@ -650,18 +644,31 @@ impl CodeCapacityPlanarCode {
     }
 }
 
+#[cfg(feature = "python_binding")]
+#[pymethods]
+impl CodeCapacityPlanarCode {
+    #[new]
+    #[pyo3(signature = (d, p, max_weight=1000))]
+    fn py_new(d: VertexNum, p: f64, max_weight: Weight) -> Self {
+        Self::new(d, p, max_weight)
+    }
+
+    #[staticmethod]
+    #[pyo3(name = "create_code")]
+    fn py_create_code(d: VertexNum) -> Self {
+        Self::create_code(d)
+    }
+}
+
 /// code capacity noise model is a single measurement round with perfect stabilizer measurements;
 /// e.g. this is the decoding graph of a CSS surface code (standard one, not rotated one) with both stabilizers and
 /// depolarizing noise model (X, Y, Z)
 #[derive(Clone, Debug)]
-#[cfg_attr(feature = "python_binding", cfg_eval)]
-#[cfg_attr(feature = "python_binding", pyclass)]
+#[cfg_attr(feature = "python_binding", pyclass(get_all, set_all))]
 pub struct CodeCapacityDepolarizePlanarCode {
     /// vertices in the code
-    #[cfg_attr(feature = "python_binding", pyo3(get, set))]
     pub vertices: Vec<CodeVertex>,
     /// nearest-neighbor edges in the decoding graph
-    #[cfg_attr(feature = "python_binding", pyo3(get, set))]
     pub edges: Vec<CodeEdge>,
 }
 
@@ -677,27 +684,21 @@ impl ExampleCode for CodeCapacityDepolarizePlanarCode {
 #[cfg(feature = "python_binding")]
 bind_trait_example_code! {CodeCapacityDepolarizePlanarCode}
 
-#[cfg_attr(feature = "python_binding", cfg_eval)]
-#[cfg_attr(feature = "python_binding", pymethods)]
 impl CodeCapacityDepolarizePlanarCode {
-    #[cfg_attr(feature = "python_binding", new)]
-    #[cfg_attr(feature = "python_binding", pyo3(signature = (d, p, weight_upper_limit=1000)))]
-    pub fn new(d: VertexNum, p: f64, weight_upper_limit: Weight) -> Self {
+    pub fn new(d: VertexNum, p: f64, max_weight: Weight) -> Self {
         let mut code = Self::create_code(d, true);
         code.set_probability(p);
-        code.compute_weights(weight_upper_limit);
+        code.compute_weights(max_weight);
         code
     }
 
-    #[cfg_attr(feature = "python_binding", staticmethod)]
-    pub fn new_no_y(d: VertexNum, p: f64, weight_upper_limit: Weight) -> Self {
+    pub fn new_no_y(d: VertexNum, p: f64, max_weight: Weight) -> Self {
         let mut code = Self::create_code(d, false);
         code.set_probability(p);
-        code.compute_weights(weight_upper_limit);
+        code.compute_weights(max_weight);
         code
     }
 
-    #[cfg_attr(feature = "python_binding", staticmethod)]
     pub fn create_code(d: VertexNum, with_y: bool) -> Self {
         assert!(d >= 3 && d % 2 == 1, "d must be odd integer >= 3");
         let row_vertex_num = d - 1;
@@ -776,18 +777,37 @@ impl CodeCapacityDepolarizePlanarCode {
     }
 }
 
+#[cfg(feature = "python_binding")]
+#[pymethods]
+impl CodeCapacityDepolarizePlanarCode {
+    #[new]
+    #[pyo3(signature = (d, p, max_weight=1000))]
+    fn py_new(d: VertexNum, p: f64, max_weight: Weight) -> Self {
+        Self::new(d, p, max_weight)
+    }
+
+    #[staticmethod]
+    #[pyo3(name = "new_no_y", signature = (d, p, max_weight=1000))]
+    fn py_new_no_y(d: VertexNum, p: f64, max_weight: Weight) -> Self {
+        Self::new_no_y(d, p, max_weight)
+    }
+
+    #[staticmethod]
+    #[pyo3(name = "create_code")]
+    fn py_create_code(d: VertexNum, with_y: bool) -> Self {
+        Self::create_code(d, with_y)
+    }
+}
+
 /// code capacity noise model is a single measurement round with perfect stabilizer measurements;
 /// e.g. this is the decoding hypergraph of a rotated tailored surface code that have all the stabilizers and including degree-4 hyperedges;
 /// the noise is biased to Z errors, with X and Y-typed stabilizers
 #[derive(Clone, Debug)]
-#[cfg_attr(feature = "python_binding", cfg_eval)]
-#[cfg_attr(feature = "python_binding", pyclass)]
+#[cfg_attr(feature = "python_binding", pyclass(get_all, set_all))]
 pub struct CodeCapacityTailoredCode {
     /// vertices in the code
-    #[cfg_attr(feature = "python_binding", pyo3(get, set))]
     pub vertices: Vec<CodeVertex>,
     /// nearest-neighbor edges in the decoding graph
-    #[cfg_attr(feature = "python_binding", pyo3(get, set))]
     pub edges: Vec<CodeEdge>,
 }
 
@@ -803,18 +823,13 @@ impl ExampleCode for CodeCapacityTailoredCode {
 #[cfg(feature = "python_binding")]
 bind_trait_example_code! {CodeCapacityTailoredCode}
 
-#[cfg_attr(feature = "python_binding", cfg_eval)]
-#[cfg_attr(feature = "python_binding", pymethods)]
 impl CodeCapacityTailoredCode {
-    #[cfg_attr(feature = "python_binding", new)]
-    #[cfg_attr(feature = "python_binding", pyo3(signature = (d, pxy, pz, weight_upper_limit=1000)))]
-    pub fn new(d: VertexNum, pxy: f64, pz: f64, weight_upper_limit: Weight) -> Self {
+    pub fn new(d: VertexNum, pxy: f64, pz: f64, max_weight: Weight) -> Self {
         let mut code = Self::create_code(d, pxy, pz);
-        code.compute_weights(weight_upper_limit);
+        code.compute_weights(max_weight);
         code
     }
 
-    #[cfg_attr(feature = "python_binding", staticmethod)]
     #[allow(clippy::unnecessary_cast)]
     pub fn create_code(d: VertexNum, pxy: f64, pz: f64) -> Self {
         assert!(d >= 3 && d % 2 == 1, "d must be odd integer >= 3");
@@ -900,18 +915,31 @@ impl CodeCapacityTailoredCode {
     }
 }
 
+#[cfg(feature = "python_binding")]
+#[pymethods]
+impl CodeCapacityTailoredCode {
+    #[new]
+    #[pyo3(signature = (d, pxy, pz, max_weight=1000))]
+    fn py_new(d: VertexNum, pxy: f64, pz: f64, max_weight: Weight) -> Self {
+        Self::new(d, pxy, pz, max_weight)
+    }
+
+    #[staticmethod]
+    #[pyo3(name = "create_code")]
+    fn py_create_code(d: VertexNum, pxy: f64, pz: f64) -> Self {
+        Self::create_code(d, pxy, pz)
+    }
+}
+
 /// code capacity noise model is a single measurement round with perfect stabilizer measurements;
 /// e.g. this is the decoding hypergraph of a color code that have all only the Z stabilizers
 /// (because X and Z have the same location, for simplicity and better visual)
 #[derive(Clone, Debug)]
-#[cfg_attr(feature = "python_binding", cfg_eval)]
-#[cfg_attr(feature = "python_binding", pyclass)]
+#[cfg_attr(feature = "python_binding", pyclass(get_all, set_all))]
 pub struct CodeCapacityColorCode {
     /// vertices in the code
-    #[cfg_attr(feature = "python_binding", pyo3(get, set))]
     pub vertices: Vec<CodeVertex>,
     /// nearest-neighbor edges in the decoding graph
-    #[cfg_attr(feature = "python_binding", pyo3(get, set))]
     pub edges: Vec<CodeEdge>,
 }
 
@@ -927,19 +955,14 @@ impl ExampleCode for CodeCapacityColorCode {
 #[cfg(feature = "python_binding")]
 bind_trait_example_code! {CodeCapacityColorCode}
 
-#[cfg_attr(feature = "python_binding", cfg_eval)]
-#[cfg_attr(feature = "python_binding", pymethods)]
 impl CodeCapacityColorCode {
-    #[cfg_attr(feature = "python_binding", new)]
-    #[cfg_attr(feature = "python_binding", pyo3(signature = (d, p, weight_upper_limit=1000)))]
-    pub fn new(d: VertexNum, p: f64, weight_upper_limit: Weight) -> Self {
+    pub fn new(d: VertexNum, p: f64, max_weight: Weight) -> Self {
         let mut code = Self::create_code(d);
         code.set_probability(p);
-        code.compute_weights(weight_upper_limit);
+        code.compute_weights(max_weight);
         code
     }
 
-    #[cfg_attr(feature = "python_binding", staticmethod)]
     #[allow(clippy::unnecessary_cast)]
     pub fn create_code(d: VertexNum) -> Self {
         assert!(d >= 3 && d % 2 == 1, "d must be odd integer >= 3");
@@ -1001,9 +1024,24 @@ impl CodeCapacityColorCode {
     }
 }
 
+#[cfg(feature = "python_binding")]
+#[pymethods]
+impl CodeCapacityColorCode {
+    #[new]
+    #[pyo3(signature = (d, p, max_weight=1000))]
+    fn py_new(d: VertexNum, p: f64, max_weight: Weight) -> Self {
+        Self::new(d, p, max_weight)
+    }
+
+    #[staticmethod]
+    #[pyo3(name = "create_code")]
+    fn py_create_code(d: VertexNum) -> Self {
+        Self::create_code(d)
+    }
+}
+
 /// example code with QEC-Playground as simulator
 #[cfg(feature = "qecp_integrate")]
-#[cfg_attr(feature = "python_binding", cfg_eval)]
 #[cfg_attr(feature = "python_binding", pyclass)]
 #[derive(Debug, Clone)]
 pub struct QECPlaygroundCode {
@@ -1012,11 +1050,30 @@ pub struct QECPlaygroundCode {
     edge_index_map: std::sync::Arc<HashMap<usize, EdgeIndex>>,
     model_hypergraph: Arc<qecp::model_hypergraph::ModelHypergraph>,
     /// vertices in the code
-    #[cfg_attr(feature = "python_binding", pyo3(get, set))]
     pub vertices: Vec<CodeVertex>,
     /// nearest-neighbor edges in the decoding graph
-    #[cfg_attr(feature = "python_binding", pyo3(get, set))]
     pub edges: Vec<CodeEdge>,
+}
+
+#[cfg(all(feature = "python_binding", feature = "qecp_integrate"))]
+#[pymethods]
+impl QECPlaygroundCode {
+    #[getter]
+    fn get_vertices(&self) -> Vec<CodeVertex> {
+        self.vertices.clone()
+    }
+    #[setter]
+    fn set_vertices(&mut self, vertices: Vec<CodeVertex>) {
+        self.vertices = vertices;
+    }
+    #[getter]
+    fn get_edges(&self) -> Vec<CodeEdge> {
+        self.edges.clone()
+    }
+    #[setter]
+    fn set_edges(&mut self, edges: Vec<CodeEdge>) {
+        self.edges = edges;
+    }
 }
 
 #[cfg(feature = "qecp_integrate")]
@@ -1257,20 +1314,15 @@ impl QECPlaygroundCode {
 /// the point is to avoid bad cache performance, because generating random error requires iterating over a large memory space,
 /// invalidating all cache. also, this can reduce the time of decoding by prepare the data before hand and could be shared between
 /// different partition configurations
-#[cfg_attr(feature = "python_binding", cfg_eval)]
-#[cfg_attr(feature = "python_binding", pyclass)]
+#[cfg_attr(feature = "python_binding", pyclass(get_all, set_all))]
 pub struct ErrorPatternReader {
     /// vertices in the code
-    #[cfg_attr(feature = "python_binding", pyo3(get, set))]
     pub vertices: Vec<CodeVertex>,
     /// nearest-neighbor edges in the decoding graph
-    #[cfg_attr(feature = "python_binding", pyo3(get, set))]
     pub edges: Vec<CodeEdge>,
     /// pre-generated syndrome patterns
-    #[cfg_attr(feature = "python_binding", pyo3(get, set))]
     pub syndrome_patterns: Vec<SyndromePattern>,
     /// cursor of current syndrome
-    #[cfg_attr(feature = "python_binding", pyo3(get, set))]
     pub syndrome_index: usize,
 }
 
@@ -1363,7 +1415,7 @@ impl ErrorPatternReader {
 
 #[cfg(feature = "python_binding")]
 #[pyfunction]
-pub(crate) fn register(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
+pub(crate) fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<CodeVertex>()?;
     m.add_class::<CodeEdge>()?;
     m.add_function(wrap_pyfunction!(weight_of_p, m)?)?;

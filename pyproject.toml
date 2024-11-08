@@ -30,6 +30,11 @@ classifiers = [
 
 [tool.maturin]
 no-default-features = true
-features = ["python_binding", "f64_weight", "embed_visualizer"]
+features = [
+    "python_binding",
+    "f64_weight",
+    "embed_visualizer",
+    "qecp_integrate",
+]
 bindings = "pyo3"
-cargo-extra-args = "--no-default-features --features python_binding,f64_weight,embed_visualizer"
+cargo-extra-args = "--no-default-features --features python_binding,f64_weight,embed_visualizer,qecp_integrate"
