@@ -17,18 +17,18 @@ jobs: # Workflow credit to https://github.com/samuelcolvin/rtoml/blob/main/.gith
       # fail-fast: false
       matrix:
         os:
-          # - ubuntu
-          # - macos
+          - ubuntu
+          - macos
           - windows
         python-version: # Yue 2022.10.9: I enabled abi3-py37 in pyo3, so everything built will be py37-abi3 which is compatible with py37+
           - '8' # use python 3.8 to build because macos universal2 requires at least python 3.8; however the result will be py37-abi3
         include:
-          # - os: ubuntu
-          #   platform: linux
+          - os: ubuntu
+            platform: linux
           - os: windows
             ls: dir
         build-feature:
-          # - default
+          - default
           - rational  # will execute pyproject-rational.py before build
     runs-on: ${{ format('{0}-latest', matrix.os) }}
 
