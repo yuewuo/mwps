@@ -91,11 +91,11 @@ pub struct BenchmarkParameters {
     #[clap(short = 'r', long, default_value_t = 1000)]
     total_rounds: usize,
     /// select the combination of primal and dual module
-    #[clap(short = 'p', long, value_enum, default_value_t = PrimalDualType::UnionFind)]
-    primal_dual_type: PrimalDualType,
+    #[clap(short = 'p', long, value_enum, default_value_t = SolverType::UnionFind)]
+    solver_type: SolverType,
     /// the configuration of primal and dual module
     #[clap(long, default_value_t = json!({}), value_parser = ValueParser::new(SerdeJsonParser))]
-    primal_dual_config: serde_json::Value,
+    solver_config: serde_json::Value,
     /// message on the progress bar
     #[clap(long, default_value_t = format!(""))]
     pb_message: String,
@@ -135,11 +135,11 @@ pub enum TestCommands {
         #[clap(short = 's', long, action)]
         print_syndrome_pattern: bool,
         /// select the combination of primal and dual module
-        #[clap(short = 'p', long, value_enum, default_value_t = PrimalDualType::UnionFind)]
-        primal_dual_type: PrimalDualType,
+        #[clap(short = 'p', long, value_enum, default_value_t = SolverType::UnionFind)]
+        solver_type: SolverType,
         /// the configuration of primal and dual module
         #[clap(long, default_value_t = json!({}), value_parser = ValueParser::new(SerdeJsonParser))]
-        primal_dual_config: serde_json::Value,
+        solver_config: serde_json::Value,
     },
 }
 
@@ -155,7 +155,7 @@ pub enum ExampleCodeType {
     CodeCapacityColorCode,
     /// tailored surface code, which is essentially rotated planar code with depolarizing noise model
     CodeCapacityTailoredCode,
-    /// read from error pattern file, generated using option `--primal-dual-type error-pattern-logger`
+    /// read from error pattern file, generated using option `--solver-type error-pattern-logger`
     ErrorPatternReader,
     /// code constructed by QEC-Playground, pass configurations using `--code-config`
     #[cfg(feature = "qecp_integrate")]
@@ -165,7 +165,7 @@ pub enum ExampleCodeType {
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum, Serialize, Debug)]
 #[serde(rename_all = "kebab-case")]
-pub enum PrimalDualType {
+pub enum SolverType {
     /// the solver from Union-Find decoder
     UnionFind,
     /// the single-hair solver
@@ -295,12 +295,12 @@ impl Cli {
                 visualizer_html_filepath,
                 verifier,
                 total_rounds,
-                primal_dual_type,
+                solver_type,
                 #[cfg(feature = "progress_bar")]
                 pb_message,
                 #[cfg(not(feature = "progress_bar"))]
                     pb_message: _,
-                primal_dual_config,
+                solver_config,
                 code_config,
                 use_deterministic_seed,
                 benchmark_profiler_output,
@@ -319,7 +319,7 @@ impl Cli {
                 }
                 // create initializer and solver
                 let initializer = code.get_initializer();
-                let mut primal_dual_solver = primal_dual_type.build(&initializer, &*code, primal_dual_config);
+                let mut solver = solver_type.build(&initializer, &*code, solver_config);
                 let mut result_verifier = verifier.build(&initializer);
                 // prepare progress bar display
                 #[cfg(feature = "progress_bar")]
@@ -349,20 +349,14 @@ impl Cli {
                             Visualizer::new(visualizer_json_filepath.clone(), code.get_positions(), true).unwrap();
                         visualizer = Some(new_visualizer);
                     }
-                    primal_dual_solver.solve_visualizer(&syndrome_pattern, visualizer.as_mut());
-                    result_verifier.verify(
-                        &mut primal_dual_solver,
-                        &syndrome_pattern,
-                        &error_pattern,
-                        visualizer.as_mut(),
-                        seed,
-                    );
+                    solver.solve_visualizer(&syndrome_pattern, visualizer.as_mut());
+                    result_verifier.verify(&mut solver, &syndrome_pattern, &error_pattern, visualizer.as_mut(), seed);
                     if let Some(html_path) = &visualizer_html_filepath {
                         if let Some(visualizer) = visualizer.as_mut() {
                             visualizer.save_html(html_path);
                         }
                     }
-                    primal_dual_solver.clear();
+                    solver.clear();
 
                     return;
                 }
@@ -393,22 +387,16 @@ impl Cli {
                         visualizer = Some(new_visualizer);
                     }
                     benchmark_profiler.begin(&syndrome_pattern, &error_pattern);
-                    primal_dual_solver.solve_visualizer(&syndrome_pattern, visualizer.as_mut());
+                    solver.solve_visualizer(&syndrome_pattern, visualizer.as_mut());
                     benchmark_profiler.event("decoded".to_string());
-                    result_verifier.verify(
-                        &mut primal_dual_solver,
-                        &syndrome_pattern,
-                        &error_pattern,
-                        visualizer.as_mut(),
-                        seed,
-                    );
+                    result_verifier.verify(&mut solver, &syndrome_pattern, &error_pattern, visualizer.as_mut(), seed);
                     benchmark_profiler.event("verified".to_string());
-                    primal_dual_solver.clear(); // also count the clear operation
+                    solver.clear(); // also count the clear operation
 
-                    benchmark_profiler.end(Some(&*primal_dual_solver));
+                    benchmark_profiler.end(Some(&*solver));
 
-                    if primal_dual_solver.get_tuning_time().is_some() {
-                        primal_dual_solver.clear_tuning_time();
+                    if solver.get_tuning_time().is_some() {
+                        solver.clear_tuning_time();
                     }
                     if let Some(html_path) = &visualizer_html_filepath {
                         if let Some(visualizer) = visualizer.as_mut() {
@@ -473,8 +461,8 @@ impl Cli {
                     enable_visualizer,
                     use_strict,
                     print_syndrome_pattern,
-                    primal_dual_type,
-                    primal_dual_config,
+                    solver_type,
+                    solver_config,
                 } => {
                     let mut parameters = vec![];
                     let code_types = ["repetition", "planar", "tailored", "color"];
@@ -511,10 +499,10 @@ impl Cli {
                         command_tail.append(&mut vec![format!("--print-syndrome-pattern")]);
                     }
                     command_tail.append(&mut vec![
-                        format!("--primal-dual-type"),
-                        format!("{}", to_variant_name(&primal_dual_type).unwrap()),
-                        format!("--primal-dual-config"),
-                        serde_json::to_string(&primal_dual_config).unwrap(),
+                        format!("--solver-type"),
+                        format!("{}", to_variant_name(&solver_type).unwrap()),
+                        format!("--solver-config"),
+                        serde_json::to_string(&solver_config).unwrap(),
                     ]);
                     for parameter in parameters.iter() {
                         execute_in_cli(
@@ -580,18 +568,18 @@ impl ExampleCodeType {
     }
 }
 
-impl PrimalDualType {
+impl SolverType {
     fn build(
         &self,
         initializer: &SolverInitializer,
         code: &dyn ExampleCode,
-        primal_dual_config: serde_json::Value,
-    ) -> Box<dyn PrimalDualSolver> {
+        solver_config: serde_json::Value,
+    ) -> Box<dyn SolverTrait> {
         match self {
-            Self::UnionFind => Box::new(SolverSerialUnionFind::new(initializer, primal_dual_config)),
-            Self::SingleHair => Box::new(SolverSerialSingleHair::new(initializer, primal_dual_config)),
-            Self::JointSingleHair => Box::new(SolverSerialJointSingleHair::new(initializer, primal_dual_config)),
-            Self::ErrorPatternLogger => Box::new(SolverErrorPatternLogger::new(initializer, code, primal_dual_config)),
+            Self::UnionFind => Box::new(SolverSerialUnionFind::new(initializer, solver_config)),
+            Self::SingleHair => Box::new(SolverSerialSingleHair::new(initializer, solver_config)),
+            Self::JointSingleHair => Box::new(SolverSerialJointSingleHair::new(initializer, solver_config)),
+            Self::ErrorPatternLogger => Box::new(SolverErrorPatternLogger::new(initializer, code, solver_config)),
         }
     }
 }
@@ -618,7 +606,7 @@ impl Verifier {
 trait ResultVerifier {
     fn verify(
         &mut self,
-        primal_dual_solver: &mut Box<dyn PrimalDualSolver>,
+        solver: &mut Box<dyn SolverTrait>,
         syndrome_pattern: &SyndromePattern,
         error_pattern: &Subgraph,
         visualizer: Option<&mut Visualizer>,
@@ -631,7 +619,7 @@ struct VerifierNone {}
 impl ResultVerifier for VerifierNone {
     fn verify(
         &mut self,
-        _primal_dual_solver: &mut Box<dyn PrimalDualSolver>,
+        _solver: &mut Box<dyn SolverTrait>,
         _syndrome_pattern: &SyndromePattern,
         _error_pattern: &Subgraph,
         _visualizer: Option<&mut Visualizer>,
@@ -647,7 +635,7 @@ struct VerifierFusionSerial {
 impl ResultVerifier for VerifierFusionSerial {
     fn verify(
         &mut self,
-        _primal_dual_solver: &mut Box<dyn PrimalDualSolver>,
+        _solver: &mut Box<dyn SolverTrait>,
         _syndrome_pattern: &SyndromePattern,
         _error_pattern: &Subgraph,
         _visualizer: Option<&mut Visualizer>,
@@ -666,7 +654,7 @@ struct VerifierActualError {
 impl ResultVerifier for VerifierActualError {
     fn verify(
         &mut self,
-        primal_dual_solver: &mut Box<dyn PrimalDualSolver>,
+        solver: &mut Box<dyn SolverTrait>,
         syndrome_pattern: &SyndromePattern,
         error_pattern: &Subgraph,
         visualizer: Option<&mut Visualizer>,
@@ -681,9 +669,9 @@ impl ResultVerifier for VerifierActualError {
         } else {
             Rational::from_usize(self.initializer.get_subgraph_total_weight(error_pattern)).unwrap()
         };
-        let (subgraph, weight_range) = primal_dual_solver.subgraph_range_visualizer(visualizer);
+        let (subgraph, weight_range) = solver.subgraph_range_visualizer(visualizer);
 
-        // primal_dual_solver.print_clusters();
+        // solver.print_clusters();
         assert!(
             self.initializer
                 .matches_subgraph_syndrome(&subgraph, &syndrome_pattern.defect_vertices),

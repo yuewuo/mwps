@@ -27,8 +27,6 @@ use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 
 pub struct PrimalModuleSerial {
-    /// growing strategy, default to single-tree approach for easier debugging and better locality
-    pub growing_strategy: GrowingStrategy,
     /// dual nodes information
     pub nodes: Vec<PrimalModuleSerialNodePtr>,
     /// clusters of dual nodes
@@ -49,9 +47,6 @@ pub struct PrimalModuleSerial {
     #[cfg(feature = "incr_lp")]
     /// parameter indicating if the primal module has initialized states necessary for `incr_lp` slack calculation
     pub cluster_weights_initialized: bool,
-    /// cluster size limit in tuning phase, possibly based on the code-distance
-    ///     note: this is not monitored in the searching phase because then there will be no solution
-    pub cluster_node_limit: Option<usize>,
 }
 
 #[derive(Eq, Debug)]
@@ -98,23 +93,19 @@ pub struct PrimalModuleSerialConfig {
     /// timeout for the whole solving process
     #[serde(default = "primal_serial_default_configs::timeout")]
     pub timeout: f64,
+    /// cluster size limit in tuning phase, possibly based on the code-distance
+    ///     note: this is not monitored in the searching phase because we need to ensure at least one valid solution is generated
+    #[serde(default = "primal_serial_default_configs::cluster_node_limit")]
+    pub cluster_node_limit: usize,
 }
 
 pub mod primal_serial_default_configs {
     pub fn timeout() -> f64 {
         (10 * 60) as f64
     }
-}
-
-/// strategy of growing the dual variables
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-pub enum GrowingStrategy {
-    /// focus on a single cluster at a time, for easier debugging and better locality
-    SingleCluster, // Question: Should this be deprecated?
-    /// all clusters grow at the same time at the same speed
-    MultipleClusters,
-    /// utilizing the search/tune mode separation
-    ModeBased,
+    pub fn cluster_node_limit() -> usize {
+        usize::MAX
+    }
 }
 
 pub struct PrimalModuleSerialNode {
@@ -155,7 +146,6 @@ pub type PrimalClusterWeak = WeakRwLock<PrimalCluster>;
 impl PrimalModuleImpl for PrimalModuleSerial {
     fn new_empty(_initializer: &SolverInitializer) -> Self {
         Self {
-            growing_strategy: GrowingStrategy::SingleCluster,
             nodes: vec![],
             clusters: vec![],
             pending_nodes: VecDeque::new(),
@@ -167,7 +157,6 @@ impl PrimalModuleImpl for PrimalModuleSerial {
             sorted_clusters_aff: None,
             #[cfg(feature = "incr_lp")]
             cluster_weights_initialized: false,
-            cluster_node_limit: None,
         }
     }
 
@@ -183,7 +172,7 @@ impl PrimalModuleImpl for PrimalModuleSerial {
     }
 
     #[allow(clippy::unnecessary_cast)]
-    fn load<D: DualModuleImpl>(&mut self, interface_ptr: &DualModuleInterfacePtr, dual_module: &mut D) {
+    fn load<D: DualModuleImpl>(&mut self, interface_ptr: &DualModuleInterfacePtr, _dual_module: &mut D) {
         let interface = interface_ptr.read_recursive();
         for index in 0..interface.nodes.len() as NodeIndex {
             let dual_node_ptr = &interface.nodes[index as usize];
@@ -224,47 +213,40 @@ impl PrimalModuleImpl for PrimalModuleSerial {
             self.nodes.push(primal_node_ptr);
             self.clusters.push(primal_cluster_ptr);
         }
-        if matches!(self.growing_strategy, GrowingStrategy::SingleCluster) {
-            for primal_node_ptr in self.nodes.iter().skip(1) {
-                let dual_node_ptr = primal_node_ptr.read_recursive().dual_node_ptr.clone();
-                dual_module.set_grow_rate(&dual_node_ptr, Rational::zero());
-                self.pending_nodes.push_back(primal_node_ptr.downgrade());
-            }
-        }
     }
 
     fn resolve(
         &mut self,
-        group_max_update_length: GroupMaxUpdateLength,
+        dual_report: DualReport,
         interface_ptr: &DualModuleInterfacePtr,
         dual_module: &mut impl DualModuleImpl,
     ) -> bool {
         let begin = Instant::now();
-        let res = self.resolve_core(group_max_update_length, interface_ptr, dual_module);
+        let res = self.resolve_core(dual_report, interface_ptr, dual_module);
         self.time_resolve += begin.elapsed().as_secs_f64();
         res
     }
 
     fn old_resolve(
         &mut self,
-        group_max_update_length: GroupMaxUpdateLength,
+        dual_report: DualReport,
         interface_ptr: &DualModuleInterfacePtr,
         dual_module: &mut impl DualModuleImpl,
     ) -> bool {
         let begin = Instant::now();
-        let res = self.old_resolve_core(group_max_update_length, interface_ptr, dual_module);
+        let res = self.old_resolve_core(dual_report, interface_ptr, dual_module);
         self.time_resolve += begin.elapsed().as_secs_f64();
         res
     }
 
     fn resolve_tune(
         &mut self,
-        group_max_update_length: BTreeSet<MaxUpdateLength>,
+        dual_report: BTreeSet<Obstacle>,
         interface_ptr: &DualModuleInterfacePtr,
         dual_module: &mut impl DualModuleImpl,
-    ) -> (BTreeSet<MaxUpdateLength>, bool) {
+    ) -> (BTreeSet<Obstacle>, bool) {
         let begin = Instant::now();
-        let res = self.resolve_core_tune(group_max_update_length, interface_ptr, dual_module);
+        let res = self.resolve_core_tune(dual_report, interface_ptr, dual_module);
         self.time_resolve += begin.elapsed().as_secs_f64();
         res
     }
@@ -403,10 +385,8 @@ impl PrimalModuleImpl for PrimalModuleSerial {
         if cluster_temp.nodes.is_empty() {
             return (true, optimizer_result); // no longer a cluster, no need to handle
         }
-        if let Some(len_limit) = self.cluster_node_limit {
-            if cluster_temp.nodes.len() >= len_limit {
-                return (true, optimizer_result);
-            }
+        if cluster_temp.nodes.len() >= self.config.cluster_node_limit {
+            return (true, optimizer_result);
         }
         // update the matrix with new tight edges
         #[cfg(feature = "incr_lp")]
@@ -838,17 +818,17 @@ impl PrimalModuleSerial {
     #[allow(clippy::unnecessary_cast)]
     fn resolve_core(
         &mut self,
-        mut group_max_update_length: GroupMaxUpdateLength,
+        mut dual_report: DualReport,
         interface_ptr: &DualModuleInterfacePtr,
         dual_module: &mut impl DualModuleImpl,
     ) -> bool {
-        debug_assert!(!group_max_update_length.is_unbounded() && group_max_update_length.get_valid_growth().is_none());
+        debug_assert!(!dual_report.is_unbounded() && dual_report.get_valid_growth().is_none());
         let mut active_clusters = BTreeSet::<NodeIndex>::new();
         let interface = interface_ptr.read_recursive();
         let decoding_graph = &interface.decoding_graph;
-        while let Some(conflict) = group_max_update_length.pop() {
-            match conflict {
-                MaxUpdateLength::Conflicting(edge_index) => {
+        while let Some(obstacle) = dual_report.pop() {
+            match obstacle {
+                Obstacle::Conflict { edge_index } => {
                     // union all the dual nodes in the edge index and create new dual node by adding this edge to `internal_edges`
                     let dual_nodes = dual_module.get_edge_nodes(edge_index);
                     debug_assert!(
@@ -880,16 +860,13 @@ impl PrimalModuleSerial {
                     // add to active cluster so that it's processed later
                     active_clusters.insert(cluster.cluster_index);
                 }
-                MaxUpdateLength::ShrinkProhibited(dual_node_ptr) => {
+                Obstacle::ShrinkToZero { dual_node_ptr } => {
                     let cluster_ptr = self.nodes[dual_node_ptr.index as usize]
                         .read_recursive()
                         .cluster_weak
                         .upgrade_force();
                     let cluster_index = cluster_ptr.read_recursive().cluster_index;
                     active_clusters.insert(cluster_index);
-                }
-                _ => {
-                    unreachable!()
                 }
             }
         }
@@ -913,17 +890,17 @@ impl PrimalModuleSerial {
     /// for backwards-compatibility
     fn old_resolve_core(
         &mut self,
-        mut group_max_update_length: GroupMaxUpdateLength,
+        mut dual_report: DualReport,
         interface_ptr: &DualModuleInterfacePtr,
         dual_module: &mut impl DualModuleImpl,
     ) -> bool {
-        debug_assert!(!group_max_update_length.is_unbounded() && group_max_update_length.get_valid_growth().is_none());
+        debug_assert!(!dual_report.is_unbounded() && dual_report.get_valid_growth().is_none());
         let mut active_clusters = BTreeSet::<NodeIndex>::new();
         let interface = interface_ptr.read_recursive();
         let decoding_graph = &interface.decoding_graph;
-        while let Some(conflict) = group_max_update_length.pop() {
-            match conflict {
-                MaxUpdateLength::Conflicting(edge_index) => {
+        while let Some(obstacle) = dual_report.pop() {
+            match obstacle {
+                Obstacle::Conflict { edge_index } => {
                     // union all the dual nodes in the edge index and create new dual node by adding this edge to `internal_edges`
                     let dual_nodes = dual_module.get_edge_nodes(edge_index);
                     debug_assert!(
@@ -955,16 +932,13 @@ impl PrimalModuleSerial {
                     // add to active cluster so that it's processed later
                     active_clusters.insert(cluster.cluster_index);
                 }
-                MaxUpdateLength::ShrinkProhibited(dual_node_ptr) => {
+                Obstacle::ShrinkToZero { dual_node_ptr } => {
                     let cluster_ptr = self.nodes[dual_node_ptr.index as usize]
                         .read_recursive()
                         .cluster_weak
                         .upgrade_force();
                     let cluster_index = cluster_ptr.read_recursive().cluster_index;
                     active_clusters.insert(cluster_index);
-                }
-                _ => {
-                    unreachable!()
                 }
             }
         }
@@ -1013,20 +987,20 @@ impl PrimalModuleSerial {
     }
 
     #[allow(clippy::unnecessary_cast)]
-    // returns (conflicts_needing_to_be_resolved, should_grow)
+    // returns (obstacles_needing_to_be_resolved, should_grow)
     fn resolve_core_tune(
         &mut self,
-        group_max_update_length: BTreeSet<MaxUpdateLength>,
+        dual_report: BTreeSet<Obstacle>,
         interface_ptr: &DualModuleInterfacePtr,
         dual_module: &mut impl DualModuleImpl,
-    ) -> (BTreeSet<MaxUpdateLength>, bool) {
+    ) -> (BTreeSet<Obstacle>, bool) {
         let mut active_clusters = BTreeSet::<NodeIndex>::new();
         let interface = interface_ptr.read_recursive();
         let decoding_graph = &interface.decoding_graph;
 
-        for conflict in group_max_update_length.into_iter() {
-            match conflict {
-                MaxUpdateLength::Conflicting(edge_index) => {
+        for obstacle in dual_report.into_iter() {
+            match obstacle {
+                Obstacle::Conflict { edge_index } => {
                     // union all the dual nodes in the edge index and create new dual node by adding this edge to `internal_edges`
                     let dual_nodes = dual_module.get_edge_nodes(edge_index);
                     debug_assert!(
@@ -1059,16 +1033,13 @@ impl PrimalModuleSerial {
                     // add to active cluster so that it's processed later
                     active_clusters.insert(cluster.cluster_index);
                 }
-                MaxUpdateLength::ShrinkProhibited(dual_node_ptr) => {
+                Obstacle::ShrinkToZero { dual_node_ptr } => {
                     let cluster_ptr = self.nodes[dual_node_ptr.index as usize]
                         .read_recursive()
                         .cluster_weak
                         .upgrade_force();
                     let cluster_index = cluster_ptr.read_recursive().cluster_index;
                     active_clusters.insert(cluster_index);
-                }
-                _ => {
-                    unreachable!()
                 }
             }
         }
@@ -1085,15 +1056,15 @@ impl PrimalModuleSerial {
                 self.resolve_cluster_tune(cluster_index, interface_ptr, dual_module, &mut dual_node_deltas);
             if !solved {
                 // todo: investigate more
-                return (dual_module.get_conflicts_tune(other, dual_node_deltas), false);
+                return (dual_module.get_obstacles_tune(other, dual_node_deltas), false);
             }
             all_solved &= solved;
             optimizer_result.or(other);
         }
 
-        let all_conflicts = dual_module.get_conflicts_tune(optimizer_result, dual_node_deltas);
+        let all_obstacles = dual_module.get_obstacles_tune(optimizer_result, dual_node_deltas);
 
-        (all_conflicts, all_solved)
+        (all_obstacles, all_solved)
     }
 
     pub fn print_clusters(&self) {
@@ -1153,7 +1124,6 @@ impl MWPSVisualizer for PrimalModuleSerial {
 #[cfg(test)]
 pub mod tests {
     use super::super::dual_module_pq::*;
-    use super::super::dual_module_serial::*;
     use super::super::example_codes::*;
     use super::*;
     use crate::num_traits::FromPrimitive;
@@ -1166,7 +1136,6 @@ pub mod tests {
         defect_vertices: Vec<VertexIndex>,
         final_dual: Weight,
         plugins: PluginVec,
-        growing_strategy: GrowingStrategy,
         mut dual_module: impl DualModuleImpl + MWPSVisualizer,
         model_graph: Arc<crate::model_hypergraph::ModelHyperGraph>,
         mut visualizer: Option<Visualizer>,
@@ -1177,7 +1146,6 @@ pub mod tests {
     ) {
         // create primal module
         let mut primal_module = PrimalModuleSerial::new_empty(&model_graph.initializer);
-        primal_module.growing_strategy = growing_strategy;
         primal_module.plugins = Arc::new(plugins);
         // primal_module.config = serde_json::from_value(json!({"timeout":1})).unwrap();
         // try to work on a simple syndrome
@@ -1226,7 +1194,6 @@ pub mod tests {
         defect_vertices: Vec<VertexIndex>,
         final_dual: Weight,
         plugins: PluginVec,
-        growing_strategy: GrowingStrategy,
     ) -> (
         DualModuleInterfacePtr,
         PrimalModuleSerial,
@@ -1246,40 +1213,6 @@ pub mod tests {
             defect_vertices,
             final_dual,
             plugins,
-            growing_strategy,
-            DualModuleSerial::new_empty(&model_graph.initializer),
-            model_graph,
-            Some(visualizer),
-        )
-    }
-
-    pub fn primal_module_serial_basic_standard_syndrome_with_dual_pq_impl(
-        code: impl ExampleCode,
-        visualize_filename: String,
-        defect_vertices: Vec<VertexIndex>,
-        final_dual: Weight,
-        plugins: PluginVec,
-        growing_strategy: GrowingStrategy,
-    ) -> (
-        DualModuleInterfacePtr,
-        PrimalModuleSerial,
-        impl DualModuleImpl + MWPSVisualizer,
-    ) {
-        println!("{defect_vertices:?}");
-        let visualizer = Visualizer::new(
-            Some(visualize_data_folder() + visualize_filename.as_str()),
-            code.get_positions(),
-            true,
-        )
-        .unwrap();
-        // create dual module
-        let model_graph = code.get_model_graph();
-        primal_module_serial_basic_standard_syndrome_optional_viz(
-            code,
-            defect_vertices,
-            final_dual,
-            plugins,
-            growing_strategy,
             DualModulePQ::new_empty(&model_graph.initializer),
             model_graph,
             Some(visualizer),
@@ -1288,108 +1221,36 @@ pub mod tests {
 
     /// test a simple case
     #[test]
-    fn primal_module_serial_basic_1_m() {
-        // cargo test primal_module_serial_basic_1_m -- --nocapture
-        let visualize_filename = "primal_module_serial_basic_1_m.json".to_string();
+    fn primal_module_serial_basic_1() {
+        // cargo test primal_module_serial_basic_1 -- --nocapture
+        let visualize_filename = "primal_module_serial_basic_1.json".to_string();
         let defect_vertices = vec![23, 24, 29, 30];
         let code = CodeCapacityTailoredCode::new(7, 0., 0.01, 1);
-        primal_module_serial_basic_standard_syndrome(
-            code,
-            visualize_filename,
-            defect_vertices,
-            1,
-            vec![],
-            GrowingStrategy::ModeBased,
-        );
+        primal_module_serial_basic_standard_syndrome(code, visualize_filename, defect_vertices, 1, vec![]);
     }
 
     #[test]
-    fn primal_module_serial_basic_1_with_dual_pq_impl_m() {
-        // cargo test primal_module_serial_basic_1_with_dual_pq_impl_m -- --nocapture
-        let visualize_filename = "primal_module_serial_basic_1_with_dual_pq_impl_m.json".to_string();
-        let defect_vertices = vec![23, 24, 29, 30];
-        let code = CodeCapacityTailoredCode::new(7, 0., 0.01, 1);
-        primal_module_serial_basic_standard_syndrome_with_dual_pq_impl(
-            code,
-            visualize_filename,
-            defect_vertices,
-            1,
-            vec![],
-            GrowingStrategy::ModeBased,
-        );
-    }
-
-    #[test]
-    fn primal_module_serial_basic_2_m() {
-        // cargo test primal_module_serial_basic_2_m -- --nocapture
-        let visualize_filename = "primal_module_serial_basic_2_m.json".to_string();
+    fn primal_module_serial_basic_2() {
+        // cargo test primal_module_serial_basic_2 -- --nocapture
+        let visualize_filename = "primal_module_serial_basic_2.json".to_string();
         let defect_vertices = vec![16, 17, 23, 25, 29, 30];
         let code = CodeCapacityTailoredCode::new(7, 0., 0.01, 1);
-        primal_module_serial_basic_standard_syndrome(
-            code,
-            visualize_filename,
-            defect_vertices,
-            2,
-            vec![],
-            GrowingStrategy::ModeBased,
-        );
+        primal_module_serial_basic_standard_syndrome(code, visualize_filename, defect_vertices, 2, vec![]);
     }
 
     #[test]
-    fn primal_module_serial_basic_2_with_dual_pq_impl_m() {
-        // cargo test primal_module_serial_basic_2_with_dual_pq_impl_m -- --nocapture
-        let visualize_filename = "primal_module_serial_basic_2_with_dual_pq_impl_m.json".to_string();
-        let defect_vertices = vec![16, 17, 23, 25, 29, 30];
-        let code = CodeCapacityTailoredCode::new(7, 0., 0.01, 1);
-        primal_module_serial_basic_standard_syndrome_with_dual_pq_impl(
-            code,
-            visualize_filename,
-            defect_vertices,
-            2,
-            vec![],
-            GrowingStrategy::ModeBased,
-        );
-    }
-
-    // should fail because single growing will have sum y_S = 3 instead of 5
-    #[test]
-    // #[should_panic] no more panics, as we are not using the single growing strategy
-    fn primal_module_serial_basic_3_single_m() {
-        // cargo test primal_module_serial_basic_3_single_m -- --nocapture
-        let visualize_filename = "primal_module_serial_basic_3_single_m.json".to_string();
+    fn primal_module_serial_basic_3() {
+        // cargo test primal_module_serial_basic_3 -- --nocapture
+        let visualize_filename = "primal_module_serial_basic_3.json".to_string();
         let defect_vertices = vec![14, 15, 16, 17, 22, 25, 28, 31, 36, 37, 38, 39];
         let code = CodeCapacityTailoredCode::new(7, 0., 0.01, 1);
-        primal_module_serial_basic_standard_syndrome(
-            code,
-            visualize_filename,
-            defect_vertices,
-            5,
-            vec![],
-            GrowingStrategy::ModeBased,
-        );
+        primal_module_serial_basic_standard_syndrome(code, visualize_filename, defect_vertices, 5, vec![]);
     }
 
     #[test]
-    // #[should_panic] no more panics, as we are not using the single growing strategy
-    fn primal_module_serial_basic_3_single_with_dual_pq_impl_m() {
-        // cargo test primal_module_serial_basic_3_single_with_dual_pq_impl_m -- --nocapture
-        let visualize_filename = "primal_module_serial_basic_3_single_with_dual_pq_impl_m.json".to_string();
-        let defect_vertices = vec![14, 15, 16, 17, 22, 25, 28, 31, 36, 37, 38, 39];
-        let code = CodeCapacityTailoredCode::new(7, 0., 0.01, 1);
-        primal_module_serial_basic_standard_syndrome_with_dual_pq_impl(
-            code,
-            visualize_filename,
-            defect_vertices,
-            5,
-            vec![],
-            GrowingStrategy::ModeBased,
-        );
-    }
-
-    #[test]
-    fn primal_module_serial_basic_3_improved_m() {
-        // cargo test primal_module_serial_basic_3_improved_m -- --nocapture
-        let visualize_filename = "primal_module_serial_basic_3_improved_m.json".to_string();
+    fn primal_module_serial_basic_3_improved() {
+        // cargo test primal_module_serial_basic_3_improved -- --nocapture
+        let visualize_filename = "primal_module_serial_basic_3_improved.json".to_string();
         let defect_vertices = vec![14, 15, 16, 17, 22, 25, 28, 31, 36, 37, 38, 39];
         let code = CodeCapacityTailoredCode::new(7, 0., 0.01, 1);
         primal_module_serial_basic_standard_syndrome(
@@ -1401,130 +1262,6 @@ pub mod tests {
                 PluginUnionFind::entry(),
                 PluginSingleHair::entry_with_strategy(RepeatStrategy::Once),
             ],
-            GrowingStrategy::ModeBased,
-        );
-    }
-
-    #[test]
-    fn primal_module_serial_basic_3_improved_with_dual_pq_impl_m() {
-        // cargo test primal_module_serial_basic_3_improved_with_dual_pq_impl_m -- --nocapture
-        let visualize_filename = "primal_module_serial_basic_3_improved_with_dual_pq_impl_m.json".to_string();
-        let defect_vertices = vec![14, 15, 16, 17, 22, 25, 28, 31, 36, 37, 38, 39];
-        let code = CodeCapacityTailoredCode::new(7, 0., 0.01, 1);
-        primal_module_serial_basic_standard_syndrome_with_dual_pq_impl(
-            code,
-            visualize_filename,
-            defect_vertices,
-            5,
-            vec![
-                PluginUnionFind::entry(),
-                PluginSingleHair::entry_with_strategy(RepeatStrategy::Once),
-            ],
-            GrowingStrategy::ModeBased,
-        );
-    }
-
-    #[test]
-    fn primal_module_serial_basic_3_multi_m() {
-        // cargo test primal_module_serial_basic_3_multi_m -- --nocapture
-        let visualize_filename = "primal_module_serial_basic_3_multi_m.json".to_string();
-        let defect_vertices = vec![14, 15, 16, 17, 22, 25, 28, 31, 36, 37, 38, 39];
-        let code = CodeCapacityTailoredCode::new(7, 0., 0.01, 1);
-        primal_module_serial_basic_standard_syndrome(
-            code,
-            visualize_filename,
-            defect_vertices,
-            5,
-            vec![],
-            GrowingStrategy::ModeBased,
-        );
-    }
-
-    #[test]
-    fn primal_module_serial_basic_3_multi_with_dual_pq_impl_m() {
-        // cargo test primal_module_serial_basic_3_multi_with_dual_pq_impl_m -- --nocapture
-        let visualize_filename = "primal_module_serial_basic_3_multi_with_dual_pq_impl_m.json".to_string();
-        let defect_vertices = vec![14, 15, 16, 17, 22, 25, 28, 31, 36, 37, 38, 39];
-        let code = CodeCapacityTailoredCode::new(7, 0., 0.01, 1);
-        primal_module_serial_basic_standard_syndrome_with_dual_pq_impl(
-            code,
-            visualize_filename,
-            defect_vertices,
-            5,
-            vec![],
-            GrowingStrategy::ModeBased,
-        );
-    }
-
-    #[test]
-    #[should_panic]
-    fn primal_module_serial_basic_4_single_m() {
-        // cargo test primal_module_serial_basic_4_single_m -- --nocapture
-        let visualize_filename = "primal_module_serial_basic_4_single_m.json".to_string();
-        let defect_vertices = vec![10, 11, 12, 15, 16, 17, 18];
-        let code = CodeCapacityTailoredCode::new(5, 0., 0.01, 1);
-        primal_module_serial_basic_standard_syndrome(
-            code,
-            visualize_filename,
-            defect_vertices,
-            4,
-            vec![],
-            GrowingStrategy::ModeBased,
-        );
-    }
-
-    #[test]
-    #[should_panic]
-    fn primal_module_serial_basic_4_single_with_dual_pq_impl_m() {
-        // cargo test primal_module_serial_basic_4_single_with_dual_pq_impl_m -- --nocapture
-        let visualize_filename = "primal_module_serial_basic_4_single_with_dual_pq_impl_m.json".to_string();
-        let defect_vertices = vec![10, 11, 12, 15, 16, 17, 18];
-        let code = CodeCapacityTailoredCode::new(5, 0., 0.01, 1);
-        primal_module_serial_basic_standard_syndrome_with_dual_pq_impl(
-            code,
-            visualize_filename,
-            defect_vertices,
-            4,
-            vec![],
-            GrowingStrategy::ModeBased,
-        );
-    }
-
-    // #[test]
-    // fn primal_module_serial_basic_4_single_improved_m() {
-    //     // cargo test primal_module_serial_basic_4_single_improved_m -- --nocapture
-    //     let visualize_filename = "primal_module_serial_basic_4_single_improved_m.json".to_string();
-    //     let defect_vertices = vec![10, 11, 12, 15, 16, 17, 18];
-    //     let code = CodeCapacityTailoredCode::new(5, 0., 0.01, 1);
-    //     primal_module_serial_basic_standard_syndrome(
-    //         code,
-    //         visualize_filename,
-    //         defect_vertices,
-    //         4,
-    //         vec![
-    //             PluginUnionFind::entry(),
-    //             PluginSingleHair::entry_with_strategy(RepeatStrategy::Once),
-    //         ],
-    //         GrowingStrategy::ModeBased,
-    //     );
-    // }
-
-    #[test]
-    fn primal_module_serial_basic_4_single_improved_with_dual_pq_impl_m() {
-        // cargo test primal_module_serial_basic_4_single_improved_with_dual_pq_impl_m -- --nocapture
-        let visualize_filename = "primal_module_serial_basic_4_single_improved_with_dual_pq_impl_m.json".to_string();
-        let defect_vertices = vec![10, 11, 12, 15, 16, 17, 18];
-        let code = CodeCapacityTailoredCode::new(5, 0., 0.01, 1);
-        primal_module_serial_basic_standard_syndrome_with_dual_pq_impl(
-            code,
-            visualize_filename,
-            defect_vertices,
-            4,
-            vec![
-                PluginUnionFind::entry(),
-                PluginSingleHair::entry_with_strategy(RepeatStrategy::Once),
-            ],
-            GrowingStrategy::MultipleClusters,
         );
     }
 
@@ -1532,9 +1269,18 @@ pub mod tests {
     /// because not all edges are fully grown and those fully grown edges lead to suboptimal result
     #[test]
     #[should_panic]
-    fn primal_module_serial_basic_4_multi_m() {
-        // cargo test primal_module_serial_basic_4_multi_m -- --nocapture
-        let visualize_filename = "primal_module_serial_basic_4_multi_m.json".to_string();
+    fn primal_module_serial_basic_4() {
+        // cargo test primal_module_serial_basic_4 -- --nocapture
+        let visualize_filename = "primal_module_serial_basic_4.json".to_string();
+        let defect_vertices = vec![10, 11, 12, 15, 16, 17, 18];
+        let code = CodeCapacityTailoredCode::new(5, 0., 0.01, 1);
+        primal_module_serial_basic_standard_syndrome(code, visualize_filename, defect_vertices, 4, vec![]);
+    }
+
+    #[test]
+    fn primal_module_serial_basic_4_single_improved() {
+        // cargo test primal_module_serial_basic_4_single_improved -- --nocapture
+        let visualize_filename = "primal_module_serial_basic_4_single_improved.json".to_string();
         let defect_vertices = vec![10, 11, 12, 15, 16, 17, 18];
         let code = CodeCapacityTailoredCode::new(5, 0., 0.01, 1);
         primal_module_serial_basic_standard_syndrome(
@@ -1542,88 +1288,29 @@ pub mod tests {
             visualize_filename,
             defect_vertices,
             4,
-            vec![],
-            GrowingStrategy::ModeBased,
+            vec![
+                PluginUnionFind::entry(),
+                PluginSingleHair::entry_with_strategy(RepeatStrategy::Once),
+            ],
         );
     }
 
     #[test]
-    #[should_panic]
-    fn primal_module_serial_basic_4_multi_with_dual_pq_impl_m() {
-        // cargo test primal_module_serial_basic_4_multi_with_dual_pq_impl_m -- --nocapture
-        let visualize_filename = "primal_module_serial_basic_4_multi_with_dual_pq_impl_m.json".to_string();
-        let defect_vertices = vec![10, 11, 12, 15, 16, 17, 18];
-        let code = CodeCapacityTailoredCode::new(5, 0., 0.01, 1);
-        primal_module_serial_basic_standard_syndrome_with_dual_pq_impl(
-            code,
-            visualize_filename,
-            defect_vertices,
-            4,
-            vec![],
-            GrowingStrategy::ModeBased,
-        );
-    }
-
-    /// verify that each cluster is indeed growing one by one
-    #[test]
-    fn primal_module_serial_basic_4_cluster_single_growth_m() {
-        // cargo test primal_module_serial_basic_4_cluster_single_growth_m -- --nocapture
-        let visualize_filename = "primal_module_serial_basic_4_cluster_single_growth_m.json".to_string();
+    fn primal_module_serial_basic_5() {
+        // cargo test primal_module_serial_basic_5 -- --nocapture
+        let visualize_filename = "primal_module_serial_basic_5.json".to_string();
         let defect_vertices = vec![32, 33, 37, 47, 86, 87, 72, 82];
         let code = CodeCapacityPlanarCode::new(11, 0.01, 1);
-        primal_module_serial_basic_standard_syndrome(
-            code,
-            visualize_filename,
-            defect_vertices,
-            4,
-            vec![],
-            GrowingStrategy::ModeBased,
-        );
+        primal_module_serial_basic_standard_syndrome(code, visualize_filename, defect_vertices, 4, vec![]);
     }
 
     #[test]
-    fn primal_module_serial_basic_4_cluster_single_growth_with_dual_pq_impl_m() {
-        // cargo test primal_module_serial_basic_4_cluster_single_growth_with_dual_pq_impl_m -- --nocapture
-        let visualize_filename = "primal_module_serial_basic_4_cluster_single_growth_with_dual_pq_impl_m.json".to_string();
-        let defect_vertices = vec![32, 33, 37, 47, 86, 87, 72, 82];
-        let code = CodeCapacityPlanarCode::new(11, 0.01, 1);
-        primal_module_serial_basic_standard_syndrome_with_dual_pq_impl(
-            code,
-            visualize_filename,
-            defect_vertices,
-            4,
-            vec![],
-            GrowingStrategy::ModeBased,
-        );
-    }
-
-    // /// verify that the plugins are applied one by one
-    // #[test]
-    // fn primal_module_serial_basic_4_plugin_one_by_one_m() {
-    //     // cargo test primal_module_serial_basic_4_plugin_one_by_one_m -- --nocapture
-    //     let visualize_filename = "primal_module_serial_basic_4_plugin_one_by_one_m.json".to_string();
-    //     let defect_vertices = vec![12, 22, 23, 32, 17, 26, 27, 37, 62, 72, 73, 82, 67, 76, 77, 87];
-    //     let code = CodeCapacityPlanarCode::new(11, 0.01, 1);
-    //     primal_module_serial_basic_standard_syndrome(
-    //         code,
-    //         visualize_filename,
-    //         defect_vertices,
-    //         12,
-    //         vec![
-    //             PluginUnionFind::entry(),
-    //             PluginSingleHair::entry_with_strategy(RepeatStrategy::Once),
-    //         ],
-    //         GrowingStrategy::ModeBased,
-    //     );
-    // }
-
-    #[test]
-    fn primal_module_serial_basic_4_plugin_one_by_one_with_dual_pq_impl_m() {
-        // cargo test primal_module_serial_basic_4_plugin_one_by_one_with_dual_pq_impl_m -- --nocapture
-        let visualize_filename = "primal_module_serial_basic_4_plugin_one_by_one_with_dual_pq_impl_m.json".to_string();
+    fn primal_module_serial_basic_6() {
+        // cargo test primal_module_serial_basic_6 -- --nocapture
+        let visualize_filename = "primal_module_serial_basic_6.json".to_string();
         let defect_vertices = vec![12, 22, 23, 32, 17, 26, 27, 37, 62, 72, 73, 82, 67, 76, 77, 87];
         let code = CodeCapacityPlanarCode::new(11, 0.01, 1);
-        primal_module_serial_basic_standard_syndrome_with_dual_pq_impl(
+        primal_module_serial_basic_standard_syndrome(
             code,
             visualize_filename,
             defect_vertices,
@@ -1632,7 +1319,6 @@ pub mod tests {
                 PluginUnionFind::entry(),
                 PluginSingleHair::entry_with_strategy(RepeatStrategy::Once),
             ],
-            GrowingStrategy::ModeBased,
         );
     }
 }

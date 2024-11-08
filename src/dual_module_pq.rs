@@ -57,64 +57,6 @@ impl<T: Ord + PartialEq + Eq, E> PartialOrd for FutureEvent<T, E> {
     }
 }
 
-#[derive(PartialEq, Eq, Debug, Clone)]
-pub enum Obstacle {
-    Conflict { edge_index: EdgeIndex },
-    ShrinkToZero { dual_node_ptr: DualNodePtr },
-}
-
-// implement hash for Obstacle
-impl std::hash::Hash for Obstacle {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        match self {
-            Obstacle::Conflict { edge_index } => {
-                (0, *edge_index as u64).hash(state);
-            }
-            Obstacle::ShrinkToZero { dual_node_ptr } => {
-                (1, dual_node_ptr.read_recursive().index as u64).hash(state); // todo: perhaps swap to using OrderedDualNodePtr
-            }
-        }
-    }
-}
-
-impl Obstacle {
-    /// return if the current obstacle is valid
-    ///     note: even when the pq cannot hold duplicate events, `is_invalid` approach is more efficient than needing to remove items from the q
-    fn is_valid<Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug + Clone>(
-        &self,
-        dual_module_pq: &DualModulePQGeneric<Queue>,
-        event_time: &Rational, // time associated with the obstacle
-    ) -> bool {
-        #[allow(clippy::unnecessary_cast)]
-        return match self {
-            Obstacle::Conflict { edge_index } => {
-                let edge = dual_module_pq.edges[*edge_index as usize].read_recursive();
-                // not changing, cannot have conflict
-                if !edge.grow_rate.is_positive() {
-                    return false;
-                }
-                let growth_at_event_time =
-                    &edge.growth_at_last_updated_time + (event_time - &edge.last_updated_time) * &edge.grow_rate;
-
-                // we have a postivie grow rate, should become tight
-                growth_at_event_time == edge.weight
-            }
-            Obstacle::ShrinkToZero { dual_node_ptr } => {
-                let node = dual_node_ptr.read_recursive();
-                // only negative grow rates can shrink to zero
-                if !node.grow_rate.is_negative() {
-                    return false;
-                }
-                let growth_at_event_time =
-                    &node.dual_variable_at_last_updated_time + (event_time - &node.last_updated_time) * &node.grow_rate;
-
-                // we have a negative grow rate, should become zero
-                growth_at_event_time.is_zero()
-            }
-        };
-    }
-}
-
 pub type FutureObstacle<T> = FutureEvent<T, Obstacle>;
 pub type MinBinaryHeap<F> = BinaryHeap<Reverse<F>>;
 pub type _FutureObstacleQueue<T> = MinBinaryHeap<FutureObstacle<T>>;
@@ -187,7 +129,7 @@ impl<T: Ord + PartialEq + Eq + std::fmt::Debug, E: std::fmt::Debug> FutureQueueM
 #[derive(Derivative)]
 #[derivative(Debug)]
 pub struct Vertex {
-    /// the index of this vertex in the decoding graph, not necessary the index in [`DualModuleSerial::vertices`] if it's partitioned
+    /// the index of this vertex in the decoding graph, not necessary the index in [`DualModulePQ::vertices`] if it's partitioned
     pub vertex_index: VertexIndex,
     /// if a vertex is defect, then [`Vertex::propagated_dual_node`] always corresponds to that root
     pub is_defect: bool,
@@ -385,7 +327,7 @@ where
         // getting rid of all the invalid events
         while let Some((time, event)) = self.obstacle_queue.peek_event() {
             // found a valid event
-            if event.is_valid(self, time) {
+            if self.is_valid_obstacle(event, time) {
                 // valid grow
                 if time != &global_time {
                     return Some(time - global_time.clone());
@@ -396,6 +338,42 @@ where
             self.obstacle_queue.pop_event();
         }
         None
+    }
+
+    /// return if the current obstacle is valid
+    ///     note: even when the pq cannot hold duplicate events, `is_invalid` approach is more efficient than needing to remove items from the q
+    fn is_valid_obstacle(
+        &self,
+        obstacle: &Obstacle,
+        event_time: &Rational, // time associated with the obstacle
+    ) -> bool {
+        #[allow(clippy::unnecessary_cast)]
+        return match obstacle {
+            Obstacle::Conflict { edge_index } => {
+                let edge = self.edges[*edge_index as usize].read_recursive();
+                // not changing, cannot have conflict
+                if !edge.grow_rate.is_positive() {
+                    return false;
+                }
+                let growth_at_event_time =
+                    &edge.growth_at_last_updated_time + (event_time - &edge.last_updated_time) * &edge.grow_rate;
+
+                // we have a postivie grow rate, should become tight
+                growth_at_event_time == edge.weight
+            }
+            Obstacle::ShrinkToZero { dual_node_ptr } => {
+                let node = dual_node_ptr.ptr.read_recursive();
+                // only negative grow rates can shrink to zero
+                if !node.grow_rate.is_negative() {
+                    return false;
+                }
+                let growth_at_event_time =
+                    &node.dual_variable_at_last_updated_time + (event_time - &node.last_updated_time) * &node.grow_rate;
+
+                // we have a negative grow rate, should become zero
+                growth_at_event_time.is_zero()
+            }
+        };
     }
 }
 
@@ -498,7 +476,7 @@ where
                 // it is okay to use global_time now, as this must be up-to-speed
                 dual_node.get_dual_variable().clone() / (-dual_node.grow_rate.clone()) + global_time.clone(),
                 Obstacle::ShrinkToZero {
-                    dual_node_ptr: dual_node_ptr.clone(),
+                    dual_node_ptr: OrderedDualNodePtr::new(dual_node.index, dual_node_ptr.clone()),
                 },
             );
         }
@@ -543,18 +521,17 @@ where
 
         self.update_dual_node_if_necessary(&mut dual_node);
 
-        let global_time = self.global_time.read_recursive();
+        // it is okay to use global_time now, as this must be up-to-speed
+        let global_time = self.global_time.read_recursive().clone();
         let grow_rate_diff = &grow_rate - &dual_node.grow_rate;
 
         dual_node.grow_rate = grow_rate.clone();
         if dual_node.grow_rate.is_negative() {
-            self.obstacle_queue.will_happen(
-                // it is okay to use global_time now, as this must be up-to-speed
-                dual_node.get_dual_variable().clone() / (-grow_rate) + global_time.clone(),
-                Obstacle::ShrinkToZero {
-                    dual_node_ptr: dual_node_ptr.clone(),
-                },
-            );
+            let time = dual_node.get_dual_variable().clone() / (-grow_rate) + global_time.clone();
+            let event = Obstacle::ShrinkToZero {
+                dual_node_ptr: OrderedDualNodePtr::new(dual_node.index, dual_node_ptr.clone()),
+            };
+            self.obstacle_queue.will_happen(time, event);
         }
 
         // don't reacquire the read guard
@@ -574,11 +551,11 @@ where
         }
     }
 
-    fn compute_maximum_update_length(&mut self) -> GroupMaxUpdateLength {
+    fn report(&mut self) -> DualReport {
         // self.debug_print();
 
         if let Some(max_valid_grow) = self.compute_max_valid_grow() {
-            return GroupMaxUpdateLength::ValidGrow(max_valid_grow);
+            return DualReport::ValidGrow(max_valid_grow);
         }
 
         let global_time = self.global_time.read_recursive().clone();
@@ -590,43 +567,34 @@ where
             // let mut group_max_update_length_set = BTreeSet::default();
 
             // Note: With de-dup queue implementation, we could use vectors here
-            let mut group_max_update_length = GroupMaxUpdateLength::new();
-            group_max_update_length.add(match event {
-                Obstacle::Conflict { edge_index } => MaxUpdateLength::Conflicting(edge_index),
-                Obstacle::ShrinkToZero { dual_node_ptr } => {
-                    let index = dual_node_ptr.read_recursive().index;
-                    MaxUpdateLength::ShrinkProhibited(OrderedDualNodePtr::new(index, dual_node_ptr))
-                }
-            });
+            let mut dual_report = DualReport::new();
+            dual_report.add_obstacle(event);
 
             // append all conflicts that happen at the same time as now
             while let Some((time, _)) = self.obstacle_queue.peek_event() {
-                if &global_time == time {
+                if global_time == *time {
                     let (time, event) = self.obstacle_queue.pop_event().unwrap();
-                    if !event.is_valid(self, &time) {
+                    if !self.is_valid_obstacle(&event, &time) {
                         continue;
                     }
                     // add
-                    group_max_update_length.add(match event {
-                        Obstacle::Conflict { edge_index } => MaxUpdateLength::Conflicting(edge_index),
-                        Obstacle::ShrinkToZero { dual_node_ptr } => {
-                            let index = dual_node_ptr.read_recursive().index;
-                            MaxUpdateLength::ShrinkProhibited(OrderedDualNodePtr::new(index, dual_node_ptr))
-                        }
-                    });
+                    dual_report.add_obstacle(event);
                 } else {
                     break;
                 }
             }
 
-            return group_max_update_length;
+            for obstacle in dual_report.iter().unwrap() {
+                self.obstacle_queue.will_happen(global_time.clone(), obstacle.clone());
+            }
+            return dual_report;
         }
 
         // nothing useful could be done, return unbounded
-        GroupMaxUpdateLength::new()
+        DualReport::new()
     }
 
-    /// for pq implementation, simply updating the global time is enough, could be part of the `compute_maximum_update_length` function
+    /// for pq implementation, simply updating the global time is enough, could be part of the `report` function
     fn grow(&mut self, length: Rational) {
         assert!(
             length.is_positive(),

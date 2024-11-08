@@ -31,7 +31,7 @@ cfg_if::cfg_if! {
     }
 }
 
-pub trait PrimalDualSolver {
+pub trait SolverTrait {
     fn clear(&mut self);
     fn solve_visualizer(&mut self, syndrome_pattern: &SyndromePattern, visualizer: Option<&mut Visualizer>);
     fn solve(&mut self, syndrome_pattern: &SyndromePattern) {
@@ -127,10 +127,22 @@ macro_rules! bind_trait_to_python {
             fn py_snapshot(&mut self, abbrev: bool) -> PyObject {
                 json_to_pyobject(self.0.snapshot(abbrev))
             }
-            #[pyo3(name = "get_obstacle")]
-            fn py_get_obstacle(&mut self) -> PyMaxUpdateLength {
-                // self.0.dual_module.compute_maximum_update_length().into()
-                unimplemented!()
+            #[pyo3(name = "dual_report")]
+            fn py_dual_report(&mut self) -> PyDualReport {
+                self.0.dual_module.report().into()
+            }
+            #[pyo3(name = "get_edge_nodes")]
+            fn py_get_edge_nodes(&self, edge_index: EdgeIndex) -> Vec<PyDualNodePtr> {
+                self.0
+                    .dual_module
+                    .get_edge_nodes(edge_index)
+                    .into_iter()
+                    .map(|x| x.into())
+                    .collect()
+            }
+            #[pyo3(name = "set_grow_rate")]
+            fn py_set_grow_rate(&mut self, dual_node_ptr: PyDualNodePtr, grow_rate: PyRational) {
+                self.0.dual_module.set_grow_rate(&dual_node_ptr.0, grow_rate.into())
             }
         }
         impl $struct_name {
@@ -161,15 +173,8 @@ macro_rules! bind_trait_to_python {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SolverSerialPluginsConfig {
-    /// timeout for the whole solving process in millisecond
-    #[serde(default = "hyperion_default_configs::primal")]
+    #[serde(flatten, default = "hyperion_default_configs::primal")]
     primal: PrimalModuleSerialConfig,
-    /// growing strategy
-    #[serde(default = "hyperion_default_configs::growing_strategy")]
-    growing_strategy: GrowingStrategy,
-    /// cluster size limit for the primal module in the tuning phase
-    /// this is the threshold for which LP will not be ran on a specific cluster to optimize the solution
-    pub tuning_cluster_size_limit: Option<usize>,
 }
 
 pub mod hyperion_default_configs {
@@ -178,14 +183,9 @@ pub mod hyperion_default_configs {
     pub fn primal() -> PrimalModuleSerialConfig {
         serde_json::from_value(json!({})).unwrap()
     }
-
-    pub fn growing_strategy() -> GrowingStrategy {
-        GrowingStrategy::MultipleClusters
-    }
 }
 
 pub struct SolverSerialPlugins {
-    // dual_module: DualModuleSerial,
     dual_module: DualModulePQ,
     primal_module: PrimalModuleSerial,
     interface_ptr: DualModuleInterfacePtr,
@@ -206,14 +206,11 @@ impl SolverSerialPlugins {
         let model_graph = Arc::new(ModelHyperGraph::new(Arc::new(initializer.clone())));
         let mut primal_module = PrimalModuleSerial::new_empty(initializer);
         let config: SolverSerialPluginsConfig = serde_json::from_value(config).unwrap();
-        primal_module.growing_strategy = config.growing_strategy;
         primal_module.plugins = plugins;
         primal_module.config = config.primal.clone();
-        primal_module.cluster_node_limit = config.tuning_cluster_size_limit;
 
         Self {
             dual_module: DualModulePQ::new_empty(initializer),
-            // dual_module: DualModuleSerial::new_empty(initializer),
             primal_module,
             interface_ptr: DualModuleInterfacePtr::new(model_graph.clone()),
             model_graph,
@@ -240,7 +237,7 @@ impl SolverSerialPlugins {
     }
 }
 
-impl PrimalDualSolver for SolverSerialPlugins {
+impl SolverTrait for SolverSerialPlugins {
     fn clear(&mut self) {
         self.primal_module.clear();
         self.dual_module.clear();
@@ -298,9 +295,9 @@ impl PrimalDualSolver for SolverSerialPlugins {
     }
 }
 
-macro_rules! bind_primal_dual_solver_trait {
+macro_rules! bind_solver_trait {
     ($struct_name:ident) => {
-        impl PrimalDualSolver for $struct_name {
+        impl SolverTrait for $struct_name {
             fn clear(&mut self) {
                 self.0.clear()
             }
@@ -349,7 +346,7 @@ impl SolverSerialUnionFind {
     }
 }
 
-bind_primal_dual_solver_trait!(SolverSerialUnionFind);
+bind_solver_trait!(SolverSerialUnionFind);
 
 #[cfg(feature = "python_binding")]
 bind_trait_to_python!(SolverSerialUnionFind);
@@ -381,7 +378,7 @@ impl SolverSerialSingleHair {
     }
 }
 
-bind_primal_dual_solver_trait!(SolverSerialSingleHair);
+bind_solver_trait!(SolverSerialSingleHair);
 
 #[cfg(feature = "python_binding")]
 bind_trait_to_python!(SolverSerialSingleHair);
@@ -416,7 +413,7 @@ impl SolverSerialJointSingleHair {
     }
 }
 
-bind_primal_dual_solver_trait!(SolverSerialJointSingleHair);
+bind_solver_trait!(SolverSerialJointSingleHair);
 
 #[cfg(feature = "python_binding")]
 bind_trait_to_python!(SolverSerialJointSingleHair);
@@ -448,7 +445,7 @@ impl SolverErrorPatternLogger {
     }
 }
 
-impl PrimalDualSolver for SolverErrorPatternLogger {
+impl SolverTrait for SolverErrorPatternLogger {
     fn clear(&mut self) {}
     fn solve_visualizer(&mut self, syndrome_pattern: &SyndromePattern, _visualizer: Option<&mut Visualizer>) {
         self.file
@@ -482,5 +479,7 @@ pub(crate) fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<SolverSerialSingleHair>()?;
     m.add_class::<SolverSerialJointSingleHair>()?;
     m.add_class::<SolverErrorPatternLogger>()?;
+    // add Solver as default class
+    m.add("Solver", m.getattr("SolverSerialJointSingleHair")?)?;
     Ok(())
 }

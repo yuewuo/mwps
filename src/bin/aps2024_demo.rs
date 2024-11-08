@@ -1,7 +1,7 @@
 // cargo run --release --features qecp_integrate --bin aps2024_demo
 
 use mwpf::dual_module::*;
-use mwpf::dual_module_serial::*;
+use mwpf::dual_module_pq::*;
 use mwpf::example_codes::*;
 use mwpf::invalid_subgraph::InvalidSubgraph;
 use mwpf::model_hypergraph::*;
@@ -23,7 +23,7 @@ fn debug_demo() {
         let mut code = CodeCapacityTailoredCode::new(3, 0., 0.01, 1);
         let initializer = code.get_initializer();
         let model_graph = Arc::new(ModelHyperGraph::new(Arc::new(initializer.clone())));
-        let mut dual_module = DualModuleSerial::new_empty(&initializer);
+        let mut dual_module = DualModulePQ::new_empty(&initializer);
         let interface_ptr = DualModuleInterfacePtr::new(model_graph.clone());
         code.set_physical_errors(&[4]);
         let syndrome_pattern = Arc::new(code.get_syndrome());
@@ -36,7 +36,6 @@ fn debug_demo() {
         if is_example {
             visualizer.snapshot_combined("code".to_string(), vec![&code]).unwrap();
             let mut primal_module = PrimalModuleSerial::new_empty(&initializer);
-            primal_module.growing_strategy = GrowingStrategy::SingleCluster;
             primal_module.plugins = Arc::new(vec![]);
             primal_module.solve_visualizer(&interface_ptr, syndrome_pattern, &mut dual_module, Some(&mut visualizer));
             let (subgraph, weight_range) = primal_module.subgraph_range(&interface_ptr, &mut dual_module);
@@ -94,7 +93,7 @@ fn simple_demo() {
         let mut code = CodeCapacityTailoredCode::new(3, 0., 0.01, 1);
         let initializer = code.get_initializer();
         let model_graph = Arc::new(ModelHyperGraph::new(Arc::new(initializer.clone())));
-        let mut dual_module = DualModuleSerial::new_empty(&initializer);
+        let mut dual_module = DualModulePQ::new_empty(&initializer);
         let interface_ptr = DualModuleInterfacePtr::new(model_graph.clone());
         code.set_physical_errors(&[4]);
         let syndrome_pattern = Arc::new(code.get_syndrome());
@@ -107,7 +106,6 @@ fn simple_demo() {
         if is_example {
             visualizer.snapshot_combined("code".to_string(), vec![&code]).unwrap();
             let mut primal_module = PrimalModuleSerial::new_empty(&initializer);
-            primal_module.growing_strategy = GrowingStrategy::SingleCluster;
             primal_module.plugins = Arc::new(vec![]);
             primal_module.solve_visualizer(&interface_ptr, syndrome_pattern, &mut dual_module, Some(&mut visualizer));
             let (subgraph, weight_range) = primal_module.subgraph_range(&interface_ptr, &mut dual_module);
@@ -157,7 +155,7 @@ fn challenge_demo() {
         let mut code = CodeCapacityTailoredCode::new(5, 0., 0.01, 1);
         let initializer = code.get_initializer();
         let model_graph = Arc::new(ModelHyperGraph::new(Arc::new(initializer.clone())));
-        let mut dual_module = DualModuleSerial::new_empty(&initializer);
+        let mut dual_module = DualModulePQ::new_empty(&initializer);
         let interface_ptr = DualModuleInterfacePtr::new(model_graph.clone());
         let syndrome_pattern = Arc::new(SyndromePattern::new_vertices(vec![10, 15, 16]));
         code.set_syndrome(&syndrome_pattern);
@@ -170,7 +168,6 @@ fn challenge_demo() {
         if is_example {
             visualizer.snapshot_combined("code".to_string(), vec![&code]).unwrap();
             let mut primal_module = PrimalModuleSerial::new_empty(&initializer);
-            primal_module.growing_strategy = GrowingStrategy::SingleCluster;
             primal_module.plugins = Arc::new(vec![
                 PluginUnionFind::entry(), // to allow timeout using union-find as baseline
                 PluginSingleHair::entry_with_strategy(RepeatStrategy::Once), // first make all clusters valid single hair
@@ -207,7 +204,7 @@ fn challenge_demo() {
             ];
             let mut s_ptr = vec![];
             let set_grow_rate =
-                |dual_module: &mut DualModuleSerial, s_ptr: &mut Vec<DualNodePtr>, speeds: Vec<(usize, Rational)>| {
+                |dual_module: &mut DualModulePQ, s_ptr: &mut Vec<DualNodePtr>, speeds: Vec<(usize, Rational)>| {
                     for ptr in s_ptr.iter() {
                         dual_module.set_grow_rate(ptr, Rational::from_usize(0).unwrap());
                     }
@@ -301,7 +298,7 @@ fn surface_code_example() {
         let mut code = CodeCapacityTailoredCode::new(9, p / 3., p / 3., 1);
         let initializer = code.get_initializer();
         let model_graph = Arc::new(ModelHyperGraph::new(Arc::new(initializer.clone())));
-        let mut dual_module = DualModuleSerial::new_empty(&initializer);
+        let mut dual_module = DualModulePQ::new_empty(&initializer);
         let interface_ptr = DualModuleInterfacePtr::new(model_graph.clone());
         let mut visualizer = Visualizer::new(
             Some(visualize_data_folder() + visualize_filename.as_str()),
@@ -314,7 +311,6 @@ fn surface_code_example() {
             code.generate_random_errors(seed);
             let syndrome_pattern = Arc::new(code.get_syndrome());
             let mut primal_module = PrimalModuleSerial::new_empty(&initializer);
-            primal_module.growing_strategy = GrowingStrategy::MultipleClusters;
             primal_module.plugins = Arc::new(vec![
                 PluginUnionFind::entry(), // to allow timeout using union-find as baseline
                 PluginSingleHair::entry_with_strategy(RepeatStrategy::Once), // first make all clusters valid single hair
@@ -348,7 +344,7 @@ fn triangle_color_code_example() {
         let mut code = CodeCapacityColorCode::new(9, p, 1);
         let initializer = code.get_initializer();
         let model_graph = Arc::new(ModelHyperGraph::new(Arc::new(initializer.clone())));
-        let mut dual_module = DualModuleSerial::new_empty(&initializer);
+        let mut dual_module = DualModulePQ::new_empty(&initializer);
         let interface_ptr = DualModuleInterfacePtr::new(model_graph.clone());
         let mut visualizer = Visualizer::new(
             Some(visualize_data_folder() + visualize_filename.as_str()),
@@ -361,7 +357,6 @@ fn triangle_color_code_example() {
             code.generate_random_errors(seed);
             let syndrome_pattern = Arc::new(code.get_syndrome());
             let mut primal_module = PrimalModuleSerial::new_empty(&initializer);
-            primal_module.growing_strategy = GrowingStrategy::MultipleClusters;
             primal_module.plugins = Arc::new(vec![
                 PluginUnionFind::entry(), // to allow timeout using union-find as baseline
                 PluginSingleHair::entry_with_strategy(RepeatStrategy::Once), // first make all clusters valid single hair
@@ -396,7 +391,7 @@ fn small_color_code_example() {
     let mut code = CodeCapacityColorCode::new(7, p, 1);
     let initializer = code.get_initializer();
     let model_graph = Arc::new(ModelHyperGraph::new(Arc::new(initializer.clone())));
-    let mut dual_module = DualModuleSerial::new_empty(&initializer);
+    let mut dual_module = DualModulePQ::new_empty(&initializer);
     let interface_ptr = DualModuleInterfacePtr::new(model_graph.clone());
     let mut visualizer = Visualizer::new(
         Some(visualize_data_folder() + visualize_filename.as_str()),
@@ -412,7 +407,6 @@ fn small_color_code_example() {
             continue;
         }
         let mut primal_module = PrimalModuleSerial::new_empty(&initializer);
-        primal_module.growing_strategy = GrowingStrategy::MultipleClusters;
         primal_module.plugins = Arc::new(vec![
             PluginUnionFind::entry(), // to allow timeout using union-find as baseline
             PluginSingleHair::entry_with_strategy(RepeatStrategy::Once), // first make all clusters valid single hair
@@ -454,7 +448,7 @@ fn circuit_level_example() {
         );
         let initializer = code.get_initializer();
         let model_graph = Arc::new(ModelHyperGraph::new(Arc::new(initializer.clone())));
-        let mut dual_module = DualModuleSerial::new_empty(&initializer);
+        let mut dual_module = DualModulePQ::new_empty(&initializer);
         let interface_ptr = DualModuleInterfacePtr::new(model_graph.clone());
         let mut visualizer = Visualizer::new(
             Some(visualize_data_folder() + visualize_filename.as_str()),
@@ -467,7 +461,6 @@ fn circuit_level_example() {
             code.generate_random_errors(seed);
             let syndrome_pattern = Arc::new(code.get_syndrome());
             let mut primal_module = PrimalModuleSerial::new_empty(&initializer);
-            primal_module.growing_strategy = GrowingStrategy::MultipleClusters;
             primal_module.plugins = Arc::new(vec![
                 PluginUnionFind::entry(), // to allow timeout using union-find as baseline
                 PluginSingleHair::entry_with_strategy(RepeatStrategy::Once), // first make all clusters valid single hair

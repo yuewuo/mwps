@@ -372,7 +372,7 @@ impl BenchmarkProfiler {
         last_entry.record_event(event_name);
     }
     /// record the ending of a decoding procedure
-    pub fn end(&mut self, solver: Option<&dyn PrimalDualSolver>) {
+    pub fn end(&mut self, solver: Option<&dyn SolverTrait>) {
         let last_entry = self
             .records
             .last_mut()

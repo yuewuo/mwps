@@ -10,6 +10,8 @@ use crate::serde_json;
 use crate::util::*;
 #[cfg(feature = "python_binding")]
 use pyo3::prelude::*;
+#[cfg(feature = "python_binding")]
+use pyo3::types::PyTuple;
 use std::fs::{File, OpenOptions};
 use std::io::{Seek, SeekFrom, Write};
 use tempfile::SpooledTempFile;
@@ -472,25 +474,16 @@ impl Visualizer {
         format!("{:?}", self)
     }
 
-    #[pyo3(name = "snapshot_combined")]
-    pub fn snapshot_combined_py(&mut self, name: String, object_pys: &Bound<pyo3::types::PyList>) -> std::io::Result<()> {
-        let mut values = Vec::<serde_json::Value>::with_capacity(object_pys.len());
-        for object_py in object_pys.into_iter() {
-            values.push(pyobject_to_json(object_py.call_method0("snapshot")?.extract::<PyObject>()?));
+    #[pyo3(name = "snapshot", signature=(name, object, *py_args))]
+    pub fn snapshot_py(&mut self, name: String, object: &Bound<PyAny>, py_args: &Bound<PyTuple>) -> PyResult<()> {
+        let mut values = Vec::<serde_json::Value>::with_capacity(py_args.len() + 1);
+        values.push(pyobject_to_json(object.call_method0("snapshot")?.extract::<PyObject>()?));
+        for i in 0..py_args.len() {
+            let object_arg = py_args.get_item(i)?;
+            values.push(pyobject_to_json(object_arg.call_method0("snapshot")?.extract::<PyObject>()?));
         }
-        self.snapshot_combined_value(name, values)
-    }
-
-    #[pyo3(name = "snapshot")]
-    pub fn snapshot_py(&mut self, name: String, object_py: &Bound<PyAny>) -> std::io::Result<()> {
-        let value = pyobject_to_json(object_py.call_method0("snapshot")?.extract::<PyObject>()?);
-        self.snapshot_value(name, value)
-    }
-
-    #[pyo3(name = "snapshot_combined_value")]
-    pub fn snapshot_combined_value_py(&mut self, name: String, value_pys: Vec<PyObject>) -> std::io::Result<()> {
-        let values: Vec<_> = value_pys.into_iter().map(pyobject_to_json).collect();
-        self.snapshot_combined_value(name, values)
+        self.snapshot_combined_value(name, values)?;
+        Ok(())
     }
 
     #[pyo3(name = "snapshot_value")]

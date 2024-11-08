@@ -385,7 +385,7 @@ export class SnapshotConfig {
         })
         const options: { [Name: string]: number } = {}
         for (const [index, name] of snapshot_names.entries()) {
-            options[name] = index
+            options[`[${index}] ${name}`] = index
         }
         pane.addBinding(this, 'name', { options }).on('change', () => {
             this.index = this.name
