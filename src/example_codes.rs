@@ -719,6 +719,8 @@ pub struct CodeCapacityDepolarizePlanarCode {
     pub vertices: Vec<CodeVertex>,
     /// nearest-neighbor edges in the decoding graph
     pub edges: Vec<CodeEdge>,
+    /// unscaled weights for BP
+    pub unscaled_weights: Vec<f64>,
 }
 
 impl ExampleCode for CodeCapacityDepolarizePlanarCode {
@@ -727,6 +729,12 @@ impl ExampleCode for CodeCapacityDepolarizePlanarCode {
     }
     fn immutable_vertices_edges(&self) -> (&Vec<CodeVertex>, &Vec<CodeEdge>) {
         (&self.vertices, &self.edges)
+    }
+    fn get_unscaled_weights(&self) -> &Vec<f64> {
+        &self.unscaled_weights
+    }
+    fn set_unscaled_weights(&mut self, unscaled_weights: Vec<f64>) {
+        self.unscaled_weights = unscaled_weights;
     }
 }
 
@@ -816,6 +824,7 @@ impl CodeCapacityDepolarizePlanarCode {
         let mut code = Self {
             vertices: Vec::new(),
             edges,
+            unscaled_weights: Vec::new(),
         };
         // create vertices
         code.fill_vertices(vertex_num);

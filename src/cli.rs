@@ -374,7 +374,7 @@ impl Cli {
                         bp_decoder.decode(&syndrome_array);
                         let mut llrs = bp_decoder.log_prob_ratios.clone();
 
-                        primal_dual_solver.update_weights(&mut llrs);
+                        solver.update_weights(&mut llrs);
 
                         // note: may/may not be needed
                         // code.update_weights(&llrs);
@@ -432,7 +432,7 @@ impl Cli {
                         bp_decoder.decode(&syndrome_array);
                         let mut llrs = bp_decoder.log_prob_ratios.clone();
 
-                        primal_dual_solver.update_weights(&mut llrs);
+                        solver.update_weights(&mut llrs);
 
                         // note: may/may not be needed
                         // code.update_weights(&llrs);

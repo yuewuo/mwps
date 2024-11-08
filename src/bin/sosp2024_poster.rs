@@ -13,8 +13,9 @@ fn code_capacity_example() {
         true,
     )
     .unwrap();
-    print_visualize_link(visualize_filename.clone());
     visualizer.snapshot("code".to_string(), &code).unwrap();
+    visualizer.save_html_along_json();
+    println!("open visualizer at {}", visualizer.html_along_json_path());
 }
 
 #[cfg(feature = "qecp_integrate")]
@@ -36,8 +37,9 @@ fn circuit_level_example() {
         true,
     )
     .unwrap();
-    print_visualize_link(visualize_filename.clone());
     visualizer.snapshot("code".to_string(), &code).unwrap();
+    visualizer.save_html_along_json();
+    println!("open visualizer at {}", visualizer.html_along_json_path());
 }
 
 fn main() {
