@@ -264,7 +264,7 @@ impl RelaxerOptimizer {
             }
         }
 
-        for (&edge_index, &slack) in edge_slacks.iter() {
+        for (&edge_index, ref slack) in edge_slacks.iter() {
             let mut row_entries = vec![];
             for &var_index in edge_contributor[&edge_index].iter() {
                 row_entries.push((x_vars[var_index], 1.0));

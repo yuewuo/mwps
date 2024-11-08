@@ -73,9 +73,10 @@ pub mod tests {
             true,
         )
         .unwrap();
-        print_visualize_link(visualize_filename);
         visualizer.snapshot_combined("code".to_string(), vec![&code]).unwrap();
         let model_graph = code.get_model_graph();
+        visualizer.save_html_along_json();
+        println!("open visualizer at {}", visualizer.html_along_json_path());
         (model_graph, visualizer)
     }
 

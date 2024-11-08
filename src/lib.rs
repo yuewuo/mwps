@@ -1,6 +1,3 @@
-#![cfg_attr(feature = "python_binding", feature(cfg_eval))]
-#![feature(get_mut_unchecked)]
-
 extern crate serde;
 #[macro_use]
 extern crate serde_json;
@@ -15,10 +12,9 @@ extern crate more_asserts;
 extern crate num_rational;
 extern crate num_traits;
 extern crate parking_lot;
-#[cfg(feature = "cli")]
-extern crate pbr;
 extern crate prettytable;
 #[cfg(feature = "python_binding")]
+#[macro_use]
 extern crate pyo3;
 extern crate rand;
 extern crate rand_xoshiro;
@@ -28,13 +24,12 @@ extern crate urlencoding;
 #[cfg(feature = "wasm_binding")]
 extern crate wasm_bindgen;
 
-#[cfg(feature = "cli")]
 pub mod cli;
 pub mod decoding_hypergraph;
 pub mod dual_module;
 pub mod dual_module_pq;
-pub mod dual_module_serial;
 pub mod example_codes;
+pub mod html_export;
 pub mod invalid_subgraph;
 pub mod matrix;
 pub mod model_hypergraph;
@@ -52,6 +47,8 @@ pub mod relaxer_forest;
 pub mod relaxer_optimizer;
 pub mod union_find;
 pub mod util;
+#[cfg(feature = "python_binding")]
+pub mod util_py;
 pub mod visualize;
 
 pub use bp;
@@ -59,13 +56,23 @@ pub use bp;
 #[cfg(feature = "python_binding")]
 use pyo3::prelude::*;
 
+/// include the CLI in Python package: python3 -m mwpf --help
+#[cfg_attr(feature = "python_binding", pyfunction)]
+pub fn run_cli(parameters: Vec<String>) {
+    use crate::clap::Parser;
+    cli::Cli::parse_from(parameters).run();
+}
+
 #[cfg(feature = "python_binding")]
 #[pymodule]
-fn mwpf(py: Python<'_>, m: &PyModule) -> PyResult<()> {
-    util::register(py, m)?;
-    visualize::register(py, m)?;
-    example_codes::register(py, m)?;
-    mwpf_solver::register(py, m)?;
+fn mwpf(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    util::register(m)?;
+    visualize::register(m)?;
+    example_codes::register(m)?;
+    mwpf_solver::register(m)?;
+    html_export::register(m)?;
+    util_py::register(m)?;
+    m.add_wrapped(wrap_pyfunction!(run_cli))?;
     Ok(())
 }
 
@@ -76,7 +83,7 @@ use wasm_bindgen::prelude::*;
 pub fn get_version() -> String {
     use decoding_hypergraph::*;
     use dual_module::*;
-    use dual_module_serial::*;
+    use dual_module_pq::*;
     use example_codes::*;
     use primal_module::*;
     use primal_module_serial::*;
@@ -85,10 +92,9 @@ pub fn get_version() -> String {
     let code = CodeCapacityTailoredCode::new(7, 0., 0.01, 1);
     // create dual module
     let model_graph = code.get_model_graph();
-    let mut dual_module = DualModuleSerial::new_empty(&model_graph.initializer);
+    let mut dual_module = DualModulePQ::new_empty(&model_graph.initializer);
     // create primal module
     let mut primal_module = PrimalModuleSerial::new_empty(&model_graph.initializer);
-    primal_module.growing_strategy = GrowingStrategy::SingleCluster;
     primal_module.plugins = std::sync::Arc::new(vec![]);
     // try to work on a simple syndrome
     let decoding_graph = DecodingHyperGraph::new_defects(model_graph, defect_vertices.clone());

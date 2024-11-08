@@ -15,21 +15,15 @@ pub type DualVariableTag = usize;
 /// optimize for small clusters where there are no more than 63 edges
 #[derive(Clone, Debug, Derivative)]
 #[derivative(Default(new = "true"))]
-#[cfg_attr(feature = "python_binding", cfg_eval)]
-#[cfg_attr(feature = "python_binding", pyclass)]
+#[cfg_attr(feature = "python_binding", pyclass(get_all, set_all))]
 pub struct ParityRow {
     /// the first BIT_UNIT_LENGTH-1 edges are stored here, and the last bit is used the right hand bit value
-    #[cfg_attr(feature = "python_binding", pyo3(get, set))]
     first: BitArrayUnit,
     /// the other edges
-    #[cfg_attr(feature = "python_binding", pyo3(get, set))]
     others: Vec<BitArrayUnit>,
 }
 
-#[cfg_attr(feature = "python_binding", cfg_eval)]
-#[cfg_attr(feature = "python_binding", pymethods)]
 impl ParityRow {
-    #[cfg_attr(feature = "python_binding", new)]
     pub fn new_length(variable_count: usize) -> Self {
         let mut row = ParityRow::new();
         let others_len = variable_count / BIT_UNIT_LENGTH;
@@ -101,6 +95,39 @@ impl ParityRow {
             }
         }
         true
+    }
+}
+
+#[cfg(feature = "python_binding")]
+#[pymethods]
+impl ParityRow {
+    #[new]
+    fn py_new_length(variable_count: usize) -> Self {
+        Self::new_length(variable_count)
+    }
+    #[pyo3(name = "set_left")]
+    fn py_set_left(&mut self, var_index: usize, value: bool) {
+        self.set_left(var_index, value);
+    }
+    #[pyo3(name = "get_left")]
+    fn py_get_left(&self, var_index: usize) -> bool {
+        self.get_left(var_index)
+    }
+    #[pyo3(name = "set_right")]
+    fn py_set_right(&mut self, value: bool) {
+        self.set_right(value);
+    }
+    #[pyo3(name = "get_right")]
+    fn py_get_right(&self) -> bool {
+        self.get_right()
+    }
+    #[pyo3(name = "add")]
+    fn py_add(&mut self, other: &Self) {
+        self.add(other);
+    }
+    #[pyo3(name = "is_left_all_zero")]
+    fn py_is_left_all_zero(&self) -> bool {
+        self.is_left_all_zero()
     }
 }
 
@@ -328,7 +355,7 @@ pub mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "size must be the same")]
+    #[cfg_attr(debug_assertions, should_panic(expected = "size must be the same"))]
     fn parity_matrix_row_add_different_length() {
         // cargo test parity_matrix_row_add_different_length -- --nocapture
         let mut row1 = ParityRow::new_length(10);

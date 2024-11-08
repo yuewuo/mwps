@@ -103,15 +103,15 @@ impl PrimalModuleImpl for PrimalModuleUnionFind {
     #[allow(clippy::unnecessary_cast)]
     fn resolve(
         &mut self,
-        mut group_max_update_length: GroupMaxUpdateLength,
+        mut dual_report: DualReport,
         interface_ptr: &DualModuleInterfacePtr,
         dual_module: &mut impl DualModuleImpl,
     ) -> bool {
-        debug_assert!(!group_max_update_length.is_unbounded() && group_max_update_length.get_valid_growth().is_none());
+        debug_assert!(!dual_report.is_unbounded() && dual_report.get_valid_growth().is_none());
         let mut active_clusters = BTreeSet::<NodeIndex>::new();
-        while let Some(conflict) = group_max_update_length.pop() {
-            match conflict {
-                MaxUpdateLength::Conflicting(edge_index) => {
+        while let Some(obstacle) = dual_report.pop() {
+            match obstacle {
+                Obstacle::Conflict { edge_index } => {
                     // union all the dual nodes in the edge index and create new dual node by adding this edge to `internal_edges`
                     let dual_nodes = dual_module.get_edge_nodes(edge_index);
                     debug_assert!(
@@ -207,14 +207,9 @@ impl MWPSVisualizer for PrimalModuleUnionFind {
 
 #[cfg(test)]
 pub mod tests {
-    use super::super::dual_module_serial::*;
-    use super::super::example_codes::*;
     use super::*;
-    use crate::dual_module_pq::DualModulePQ;
-    use crate::dual_module_pq::FutureObstacleQueue;
-    // use crate::dual_module_pq::_FutureObstacleQueue;
-    // use crate::dual_module_pq::PairingPQ;
-    // use crate::dual_module_pq::RankPairingPQ;
+    use crate::dual_module_pq::*;
+    use crate::example_codes::*;
     use crate::more_asserts::*;
     use crate::num_traits::{FromPrimitive, ToPrimitive};
     use std::sync::Arc;
@@ -284,51 +279,12 @@ pub mod tests {
         impl DualModuleImpl + MWPSVisualizer,
     ) {
         println!("{defect_vertices:?}");
-        let visualizer = {
-            let visualizer = Visualizer::new(
-                Some(visualize_data_folder() + visualize_filename.as_str()),
-                code.get_positions(),
-                true,
-            )
-            .unwrap();
-            print_visualize_link(visualize_filename.clone());
-            visualizer
-        };
-
-        // create dual module
-        let model_graph = code.get_model_graph();
-
-        primal_module_union_find_basic_standard_syndrome_optional_viz(
-            code,
-            defect_vertices,
-            final_dual,
-            DualModuleSerial::new_empty(&model_graph.initializer),
-            model_graph,
-            Some(visualizer),
+        let visualizer = Visualizer::new(
+            Some(visualize_data_folder() + visualize_filename.as_str()),
+            code.get_positions(),
+            true,
         )
-    }
-
-    pub fn primal_module_union_find_basic_standard_syndrome_with_dual_pq_impl(
-        code: impl ExampleCode,
-        visualize_filename: String,
-        defect_vertices: Vec<VertexIndex>,
-        final_dual: Weight,
-    ) -> (
-        DualModuleInterfacePtr,
-        PrimalModuleUnionFind,
-        impl DualModuleImpl + MWPSVisualizer,
-    ) {
-        println!("{defect_vertices:?}");
-        let visualizer = {
-            let visualizer = Visualizer::new(
-                Some(visualize_data_folder() + visualize_filename.as_str()),
-                code.get_positions(),
-                true,
-            )
-            .unwrap();
-            print_visualize_link(visualize_filename.clone());
-            visualizer
-        };
+        .unwrap();
 
         // create dual module
         let model_graph = code.get_model_graph();
@@ -337,7 +293,7 @@ pub mod tests {
             code,
             defect_vertices,
             final_dual,
-            DualModulePQ::<FutureObstacleQueue<Rational>>::new_empty(&model_graph.initializer),
+            DualModulePQ::new_empty(&model_graph.initializer),
             model_graph,
             Some(visualizer),
         )
@@ -396,62 +352,5 @@ pub mod tests {
         let defect_vertices = vec![22];
         let code = CodeCapacityTailoredCode::new(5, 0., 0.05, 1);
         primal_module_union_find_basic_standard_syndrome(code, visualize_filename, defect_vertices, 4);
-    }
-
-    /* start of `with_dual_pq_impl` tests */
-
-    /// test a simple case
-    #[test]
-    fn primal_module_union_find_basic_1_with_dual_pq_impl() {
-        // cargo test primal_module_union_find_basic_1_with_dual_pq_impl -- --nocapture
-        let visualize_filename = "primal_module_union_find_basic_1_with_dual_pq_impl.json".to_string();
-        let defect_vertices = vec![23, 24, 29, 30];
-        let code = CodeCapacityTailoredCode::new(7, 0., 0.01, 1);
-        primal_module_union_find_basic_standard_syndrome_with_dual_pq_impl(code, visualize_filename, defect_vertices, 1);
-    }
-
-    #[test]
-    fn primal_module_union_find_basic_2_with_dual_pq_impl() {
-        // cargo test primal_module_union_find_basic_2_with_dual_pq_impl -- --nocapture
-        let visualize_filename = "primal_module_union_find_basic_2_with_dual_pq_impl.json".to_string();
-        let defect_vertices = vec![16, 17, 23, 25, 29, 30];
-        let code = CodeCapacityTailoredCode::new(7, 0., 0.01, 1);
-        primal_module_union_find_basic_standard_syndrome_with_dual_pq_impl(code, visualize_filename, defect_vertices, 2);
-    }
-
-    #[test]
-    fn primal_module_union_find_basic_3_with_dual_pq_impl() {
-        // cargo test primal_module_union_find_basic_3_with_dual_pq_impl -- --nocapture
-        let visualize_filename = "primal_module_union_find_basic_3_with_dual_pq_impl.json".to_string();
-        let defect_vertices = vec![14, 15, 16, 17, 22, 25, 28, 31, 36, 37, 38, 39];
-        let code = CodeCapacityTailoredCode::new(7, 0., 0.01, 1);
-        primal_module_union_find_basic_standard_syndrome_with_dual_pq_impl(code, visualize_filename, defect_vertices, 5);
-    }
-
-    #[test]
-    fn primal_module_union_find_basic_4_with_dual_pq_impl() {
-        // cargo test primal_module_union_find_basic_4_with_dual_pq_impl -- --nocapture
-        let visualize_filename = "primal_module_union_find_basic_4_with_dual_pq_impl.json".to_string();
-        let defect_vertices = vec![3, 12];
-        let code = CodeCapacityColorCode::new(7, 0.01, 1);
-        primal_module_union_find_basic_standard_syndrome_with_dual_pq_impl(code, visualize_filename, defect_vertices, 2);
-    }
-
-    #[test]
-    fn primal_module_union_find_basic_5_with_dual_pq_impl() {
-        // cargo test primal_module_union_find_basic_5_with_dual_pq_impl -- --nocapture
-        let visualize_filename = "primal_module_union_find_basic_5_with_dual_pq_impl.json".to_string();
-        let defect_vertices = vec![3, 5, 10, 12];
-        let code = CodeCapacityColorCode::new(7, 0.01, 1);
-        primal_module_union_find_basic_standard_syndrome_with_dual_pq_impl(code, visualize_filename, defect_vertices, 4);
-    }
-
-    #[test]
-    fn primal_module_union_find_basic_6_with_dual_pq_impl() {
-        // cargo test primal_module_union_find_basic_6_with_dual_pq_impl -- --nocapture
-        let visualize_filename = "primal_module_union_find_basic_6_with_dual_pq_impl.json".to_string();
-        let defect_vertices = vec![22];
-        let code = CodeCapacityTailoredCode::new(5, 0., 0.05, 1);
-        primal_module_union_find_basic_standard_syndrome_with_dual_pq_impl(code, visualize_filename, defect_vertices, 4);
     }
 }
