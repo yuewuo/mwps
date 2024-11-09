@@ -80,3 +80,24 @@ export async function decompress_content (base64_str: string): Promise<ArrayBuff
     const decompressed = await new Response(decompressed_stream).arrayBuffer()
     return decompressed
 }
+
+export function parse_rust_bigint (data: any): bigint | number {
+    if (typeof data === 'number' || typeof data === 'bigint') {
+        return data
+    } else if (typeof data === 'string') {
+        return BigInt(data)
+    } else if (typeof data === 'object') {
+        assert(data.length === 2)
+        const [sign, digits] = data
+        assert(typeof sign === 'number')
+        assert(sign == 1 || sign == -1 || sign == 0)
+        assert(typeof digits === 'object')
+        let value = 0n
+        for (let i = digits.length - 1; i >= 0; i--) {
+            value = (value << 32n) + BigInt(digits[i])
+        }
+        return BigInt(sign) * value
+    } else {
+        throw new Error(`invalid data type: ${typeof data}`)
+    }
+}
