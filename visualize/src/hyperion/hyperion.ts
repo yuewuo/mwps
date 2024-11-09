@@ -147,7 +147,6 @@ export class RuntimeData {
     constructor (visualizer: VisualizerData) {
         // first fix the visualizer data (primarily the BigInts)
         fix_visualizer_data(visualizer)
-        console.log(visualizer)
         this.visualizer = visualizer
     }
 }

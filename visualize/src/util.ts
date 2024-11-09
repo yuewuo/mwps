@@ -1,4 +1,4 @@
-import { JSONParse } from 'json-with-bigint'
+import { JSONParse, JSONStringify } from 'json-with-bigint'
 import stringify from 'json-stringify-pretty-compact'
 
 export function assert (condition: boolean, msg?: string): asserts condition {
@@ -49,9 +49,10 @@ export interface BigIntStringifyOptions {
 
 export const bigInt = {
     JSONParse,
+    JSONStringify,
     // modified from https://github.com/Ivan-Korolenko/json-with-bigint/blob/main/json-with-bigint.js
     // by using json-stringify-pretty-compact to generate a pretty JSON
-    JSONStringify: (data: any, options?: BigIntStringifyOptions): string => {
+    PrettyJSONStringify: (data: any, options?: BigIntStringifyOptions): string => {
         const bigInts = /([[:])?"(-?\d+)n"([,}\]])/g
         const preliminaryJSON = JSON.stringify(data, (_, value) => (typeof value === 'bigint' ? value.toString() + 'n' : value))
         const prettyJSON = stringify(JSON.parse(preliminaryJSON), options)
