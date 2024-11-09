@@ -1,4 +1,5 @@
 import { Vector3, type Intersection, Quaternion } from 'three'
+import { assert, parse_rust_bigint } from '@/util'
 
 export const zero_vector = new Vector3(0, 0, 0)
 export const unit_up_vector = new Vector3(0, 1, 0)
@@ -37,12 +38,12 @@ export interface DualNode {
     h: number[]
     // dual variable (d = dn/dd)
     d: number
-    dn: number
-    dd: number
+    dn: bigint | number
+    dd: bigint | number
     // grow rate (r = rn/rd)
     r: number
-    rn: number
-    rd: number
+    rn: bigint | number
+    rd: bigint | number
 }
 
 export interface Edge {
@@ -52,19 +53,19 @@ export interface Edge {
     v: number[]
     // grown (g = gn/gd)
     g: number
-    gn: number
-    gd: number
+    gn: bigint | number
+    gd: bigint | number
     // un-grown (u = un/ud = w_e - g)
     u: number
-    un: number
-    ud: number
+    un: bigint | number
+    ud: bigint | number
 }
 
 export interface Interface {
     // sum of dual variables (sum_dual = sdn/sdd)
     sum_dual: number
-    sdn: number
-    sdd: number
+    sdn: bigint | number
+    sdd: bigint | number
 }
 
 export interface Vertex {
@@ -77,12 +78,12 @@ export type Subgraph = number[]
 export interface WeightRange {
     // lower (l = ln/ld)
     lower: number
-    ld: number
-    ln: number
+    ld: bigint | number
+    ln: bigint | number
     // upper (u = un/ud)
     upper: number
-    ud: number
-    un: number
+    ud: bigint | number
+    un: bigint | number
 }
 
 export interface Snapshot {
@@ -104,6 +105,39 @@ export interface VisualizerData {
     snapshots: SnapshotTuple[]
 }
 
+export function fix_visualizer_data (visualizer: VisualizerData) {
+    for (const entry of visualizer.snapshots) {
+        assert(entry.length == 2)
+        const snapshot = entry[1] as Snapshot
+        if (snapshot.dual_nodes != undefined) {
+            for (const dual_node of snapshot.dual_nodes) {
+                dual_node.dn = parse_rust_bigint(dual_node.dn)
+                dual_node.dd = parse_rust_bigint(dual_node.dd)
+                dual_node.rn = parse_rust_bigint(dual_node.rn)
+                dual_node.rd = parse_rust_bigint(dual_node.rd)
+            }
+        }
+        if (snapshot.edges != undefined) {
+            for (const edge of snapshot.edges) {
+                edge.gn = parse_rust_bigint(edge.gn)
+                edge.gd = parse_rust_bigint(edge.gd)
+                edge.un = parse_rust_bigint(edge.un)
+                edge.ud = parse_rust_bigint(edge.ud)
+            }
+        }
+        if (snapshot.interface != undefined) {
+            snapshot.interface.sdn = parse_rust_bigint(snapshot.interface.sdn)
+            snapshot.interface.sdd = parse_rust_bigint(snapshot.interface.sdd)
+        }
+        if (snapshot.weight_range != undefined) {
+            snapshot.weight_range.ld = parse_rust_bigint(snapshot.weight_range.ld)
+            snapshot.weight_range.ln = parse_rust_bigint(snapshot.weight_range.ln)
+            snapshot.weight_range.ud = parse_rust_bigint(snapshot.weight_range.ud)
+            snapshot.weight_range.un = parse_rust_bigint(snapshot.weight_range.un)
+        }
+    }
+}
+
 /* runtime data */
 export class RuntimeData {
     visualizer: VisualizerData
@@ -111,6 +145,8 @@ export class RuntimeData {
     selected: Intersection | undefined = undefined
 
     constructor (visualizer: VisualizerData) {
+        // first fix the visualizer data (primarily the BigInts)
+        fix_visualizer_data(visualizer)
         this.visualizer = visualizer
     }
 }

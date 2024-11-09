@@ -26,10 +26,17 @@ cfg_if::cfg_if! {
         pub fn numer_of(value: &Rational) -> f64 {
             value.numer().to_f64().unwrap()
         }
+        pub fn denom_of(value: &Rational) -> i64 {
+            value.denom().to_i64().unwrap()
+        }
     } else if #[cfg(feature="rational_weight")] {
+        use num_bigint::BigInt;
         pub type Rational = num_rational::BigRational;
-        pub fn numer_of(value: &Rational) -> i64 {
-            value.numer().to_i64().unwrap()
+        pub fn numer_of(value: &Rational) -> BigInt {
+            value.numer().clone()
+        }
+        pub fn denom_of(value: &Rational) -> BigInt {
+            value.denom().clone()
         }
     }
 }
@@ -298,10 +305,10 @@ impl MWPSVisualizer for WeightRange {
             "weight_range": {
                 "lower": self.lower.to_f64(),
                 "upper": self.upper.to_f64(),
-                "ln": self.lower.numer().to_i64(),
-                "ld": self.lower.denom().to_i64(),
-                "un": self.upper.numer().to_i64(),
-                "ud": self.upper.denom().to_i64(),
+                "ln": numer_of(&self.lower),
+                "ld": denom_of(&self.lower),
+                "un": numer_of(&self.upper),
+                "ud": denom_of(&self.upper),
             },
         })
     }
@@ -543,4 +550,22 @@ pub(crate) fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<SyndromePattern>()?;
     m.add_class::<HyperEdge>()?;
     Ok(())
+}
+
+#[cfg(test)]
+pub mod tests {
+    use num_bigint::BigInt;
+    use std::str::FromStr;
+
+    #[test]
+    fn util_py_json_bigint() {
+        // cargo test util_py_json_bigint -- --nocapture
+        let small_int = BigInt::from(123);
+        let big_int = BigInt::from_str("123456789012345678901234567890123").unwrap();
+        println!("small_int: {:?}, json: {}", small_int, json!(small_int));
+        println!("positive big_int: {:?}, json: {}", big_int, json!(big_int));
+        println!("negative big_int: {:?}, json: {}", -big_int.clone(), json!(-big_int));
+        let zero_int = BigInt::from(0);
+        println!("zero_int: {:?}, json: {}", zero_int, json!(zero_int));
+    }
 }

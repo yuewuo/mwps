@@ -11,3 +11,7 @@ Rename several structures to better reveal their natures.
 - rename `PrimalDualType` to `SolverType`
 - rename `MaxUpdateLength` to `Obstacle`
 - rename `GroupMaxUpdateLength` to `DualReport`
+
+## 0.1.2 -> 0.1.3
+
+Fixed bug of bigint representation in the visualization tool.

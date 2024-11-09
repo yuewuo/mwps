@@ -240,7 +240,7 @@ export class Config {
         // use prism-js to highlight the code
         const prism = new Prism()
         JsonLoader(prism)
-        div.innerHTML = prism.highlight(bigInt.JSONStringify(this.data.visualizer, { maxLength: 160, indent: 4 }), prism.languages.json, 'json')
+        div.innerHTML = prism.highlight(bigInt.PrettyJSONStringify(this.data.visualizer, { maxLength: 160, indent: 4 }), prism.languages.json, 'json')
     }
 
     download_visualizer_data () {
