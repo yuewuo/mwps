@@ -43,6 +43,7 @@ const width = ref(400)
 const height = computed(() => width.value / config.value.basic.aspect_ratio)
 const orthographic_camera = useTemplateRef('orthographic_camera_ref')
 const raycaster = new Raycaster()
+const stats = useTemplateRef('stats_ref')
 
 onUnmounted(() => {
     console.log('Hyperion.vue unmounted')
@@ -120,6 +121,18 @@ onMounted(() => {
         }
     })
     container_resize_observer.observe(container.value as any)
+})
+
+watchEffect(() => {
+    if (stats.value != undefined) {
+        // set up stats
+        stats.value.stats.showPanel(0) // 0: fps, 1: ms, 2: mb, 3+: custom
+        stats.value.stats.dom.style.position = 'absolute'
+        const renderer_component = renderer.value as any
+        renderer_component.onBeforeRender(stats.value.begin)
+        renderer_component.onAfterRender(stats.value.end)
+        container.value?.appendChild(stats.value.stats.dom)
+    }
 })
 
 onBeforeUnmount(() => {
@@ -225,7 +238,7 @@ function onMouseChange(event: MouseEvent, is_click: boolean = true) {
                 ref="orthographic_camera_ref"
             >
             </OrthographicCamera>
-            <Stats v-if="config.basic.show_stats"></Stats>
+            <Stats v-if="config.basic.show_stats" :noSetup="true" ref="stats_ref"></Stats>
             <Scene :background="config.basic.background">
                 <AmbientLight color="#FFFFFF" :intensity="config.basic.light_intensity"></AmbientLight>
                 <Vertices></Vertices>
