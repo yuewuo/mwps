@@ -59,6 +59,7 @@ export interface RendererInterface extends RendererSetupInterface {
 
     addListener<T extends keyof EventCallbackMap>(t: T, cb: EventCallbackMap[T]): void
     removeListener<T extends keyof EventCallbackMap>(t: T, cb: EventCallbackMap[T]): void
+    isVisibleInViewport(): boolean
 }
 
 export interface RendererPublicInterface extends ComponentPublicInstance, RendererInterface {}
@@ -83,11 +84,6 @@ class GlobalThreeRenderer {
 
     render(time: number) {
         for (const renderer of this.local_renderers) {
-            // TODO: check if the renderer is in the view
-            const is_visible = true
-            if (!is_visible) {
-                continue
-            }
             renderer.render(time)
         }
     }
@@ -146,6 +142,10 @@ class ThreeRenderer {
     render(time: number) {
         if (this.parent && this.parent.raf) {
             const parent: RendererInterface = this.parent
+            // check if the renderer is in the view
+            if (!parent.isVisibleInViewport()) {
+                return
+            }
             parent.beforeRenderCallbacks.forEach(e => e({ type: 'beforerender', renderer: parent, time }))
             parent.renderFn({ renderer: parent, time })
             parent.afterRenderCallbacks.forEach(e => e({ type: 'afterrender', renderer: parent, time }))
@@ -293,6 +293,13 @@ export default defineComponent({
             } else {
                 return []
             }
+        },
+        isVisibleInViewport(partiallyVisible = true) {
+            const { top, left, bottom, right } = this.canvas.getBoundingClientRect()
+            const { innerHeight, innerWidth } = window
+            return partiallyVisible
+                ? ((top > 0 && top < innerHeight) || (bottom > 0 && bottom < innerHeight)) && ((left > 0 && left < innerWidth) || (right > 0 && right < innerWidth))
+                : top >= 0 && left >= 0 && bottom <= innerHeight && right <= innerWidth
         },
     },
     render() {

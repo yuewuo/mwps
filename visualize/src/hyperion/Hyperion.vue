@@ -106,9 +106,11 @@ onMounted(() => {
 
     // update renderer if width or height changes
     watchEffect(() => {
-        const webgl_renderer: WebGLRenderer = (renderer.value as any).renderer
-        webgl_renderer.setSize(width.value, height.value)
-        webgl_renderer.setPixelRatio(window.devicePixelRatio)
+        if (renderer.value != undefined) {
+            const webgl_renderer: WebGLRenderer = (renderer.value as any).renderer
+            webgl_renderer.setSize(width.value, height.value)
+            webgl_renderer.setPixelRatio(window.devicePixelRatio)
+        }
     })
 
     // observe container size change and update the width and height values
