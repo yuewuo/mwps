@@ -75,6 +75,11 @@ class GlobalThreeRenderer {
         this.renderer = new WebGLRenderer({ ...params, preserveDrawingBuffer: true })
         this.renderer.setPixelRatio(window.devicePixelRatio)
         requestAnimationFrame(this.renderLoop.bind(this))
+        setInterval(() => {
+            for (const renderer of this.local_renderers) {
+                renderer.visible = renderer.parent?.isVisibleInViewport() || false
+            }
+        }, 100)
     }
 
     renderLoop(time: number) {
@@ -99,6 +104,7 @@ class ThreeRenderer {
     scene?: Scene // set by the children node
     parent?: RendererInterface
     cameraCtrl?: OrbitControls
+    visible: boolean = true // will be updated every 100ms to reduce cost of `getBoundingClientRect`
 
     constructor(global_renderer: GlobalThreeRenderer) {
         this.renderer = global_renderer.renderer
@@ -140,12 +146,12 @@ class ThreeRenderer {
         }
     }
     render(time: number) {
+        // check if the renderer is in the view
+        if (!this.visible) {
+            return
+        }
         if (this.parent && this.parent.raf) {
             const parent: RendererInterface = this.parent
-            // check if the renderer is in the view
-            if (!parent.isVisibleInViewport()) {
-                return
-            }
             parent.beforeRenderCallbacks.forEach(e => e({ type: 'beforerender', renderer: parent, time }))
             parent.renderFn({ renderer: parent, time })
             parent.afterRenderCallbacks.forEach(e => e({ type: 'afterrender', renderer: parent, time }))
@@ -204,7 +210,7 @@ export default defineComponent({
             three,
             renderer: three.renderer,
             renderFn,
-            raf: true,
+            raf: false,
             initCallbacks,
             mountedCallbacks,
             beforeRenderCallbacks,
@@ -242,6 +248,8 @@ export default defineComponent({
         this.three.init()
 
         this.mountedCallbacks.forEach(e => e({ type: 'mounted', renderer: this }))
+
+        this.raf = true
     },
     beforeUnmount() {
         this.canvas.remove()
