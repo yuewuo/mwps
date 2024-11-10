@@ -1423,6 +1423,7 @@ pub(crate) fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<CodeCapacityPlanarCode>()?;
     m.add_class::<CodeCapacityTailoredCode>()?;
     m.add_class::<CodeCapacityColorCode>()?;
+    m.add_class::<CodeCapacityDepolarizePlanarCode>()?;
     Ok(())
 }
 

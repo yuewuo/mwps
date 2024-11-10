@@ -1,4 +1,4 @@
-import { JSONParse } from 'json-with-bigint'
+import { JSONParse, JSONStringify } from 'json-with-bigint'
 import stringify from 'json-stringify-pretty-compact'
 
 export function assert (condition: boolean, msg?: string): asserts condition {
@@ -49,9 +49,10 @@ export interface BigIntStringifyOptions {
 
 export const bigInt = {
     JSONParse,
+    JSONStringify,
     // modified from https://github.com/Ivan-Korolenko/json-with-bigint/blob/main/json-with-bigint.js
     // by using json-stringify-pretty-compact to generate a pretty JSON
-    JSONStringify: (data: any, options?: BigIntStringifyOptions): string => {
+    PrettyJSONStringify: (data: any, options?: BigIntStringifyOptions): string => {
         const bigInts = /([[:])?"(-?\d+)n"([,}\]])/g
         const preliminaryJSON = JSON.stringify(data, (_, value) => (typeof value === 'bigint' ? value.toString() + 'n' : value))
         const prettyJSON = stringify(JSON.parse(preliminaryJSON), options)
@@ -79,4 +80,25 @@ export async function decompress_content (base64_str: string): Promise<ArrayBuff
     const decompressed_stream = blob.stream().pipeThrough(new DecompressionStream('gzip'))
     const decompressed = await new Response(decompressed_stream).arrayBuffer()
     return decompressed
+}
+
+export function parse_rust_bigint (data: any): bigint | number {
+    if (typeof data === 'number' || typeof data === 'bigint') {
+        return data
+    } else if (typeof data === 'string') {
+        return BigInt(data)
+    } else if (typeof data === 'object') {
+        assert(data.length === 2)
+        const [sign, digits] = data
+        assert(typeof sign === 'number')
+        assert(sign == 1 || sign == -1 || sign == 0)
+        assert(typeof digits === 'object')
+        let value = 0n
+        for (let i = digits.length - 1; i >= 0; i--) {
+            value = (value << 32n) + BigInt(digits[i])
+        }
+        return BigInt(sign) * value
+    } else {
+        throw new Error(`invalid data type: ${typeof data}`)
+    }
 }
