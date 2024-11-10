@@ -1,4 +1,4 @@
-import { computed } from 'vue'
+import { computed, ref, type Ref, watch } from 'vue'
 import { Pane, FolderApi } from 'tweakpane'
 import * as EssentialsPlugin from '@tweakpane/plugin-essentials'
 import { type ButtonGridApi } from '@tweakpane/plugin-essentials'
@@ -308,7 +308,7 @@ export class Config {
     }
 
     public set aspect_ratio (aspect_ratio: number) {
-        this.basic.aspect_ratio = aspect_ratio
+        this.basic.aspect_ratio.value = aspect_ratio
         this.pane.refresh()
     }
 
@@ -344,9 +344,11 @@ export class Config {
     }
 }
 
+const global_aspect_ratio = ref(1)
+
 /* controls basic elements like background and aspect ratio */
 export class BasicConfig {
-    aspect_ratio: number = 1
+    aspect_ratio: Ref<number> = global_aspect_ratio // force all instances to use the same aspect ratio, to share the renderer
     background: string = '#ffffff'
     hovered_color: string = '#6FDFDF'
     selected_color: string = '#4B7BE5'
@@ -358,7 +360,7 @@ export class BasicConfig {
     constructor (config_props: ConfigProps) {
         this.config_props = config_props
         if (config_props.initial_aspect_ratio != undefined) {
-            this.aspect_ratio = config_props.initial_aspect_ratio
+            this.aspect_ratio.value = config_props.initial_aspect_ratio
         }
         this.segments = config_props.segments
     }
@@ -371,6 +373,10 @@ export class BasicConfig {
         pane.addBinding(this, 'light_intensity', { min: 0.1, max: 10 })
         pane.addBinding(this, 'show_stats')
         pane.addBinding(this, 'segments', { step: 1, min: 3, max: 128 })
+        watch(global_aspect_ratio, () => {
+            console.log('aspect ratio changed')
+            pane.refresh()
+        })
     }
 }
 
