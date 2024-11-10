@@ -77,7 +77,11 @@ class GlobalThreeRenderer {
         requestAnimationFrame(this.renderLoop.bind(this))
         setInterval(() => {
             for (const renderer of this.local_renderers) {
-                renderer.visible = renderer.parent?.isVisibleInViewport() || false
+                try {
+                    renderer.visible = renderer.parent?.isVisibleInViewport() || false
+                } catch (e) {
+                    console.error(e)
+                }
             }
         }, 100)
     }
@@ -89,7 +93,12 @@ class GlobalThreeRenderer {
 
     render(time: number) {
         for (const renderer of this.local_renderers) {
-            renderer.render(time)
+            try {
+                renderer.render(time)
+            } catch (e) {
+                renderer.visible = false
+                console.error(e)
+            }
         }
     }
 }
@@ -135,6 +144,7 @@ class ThreeRenderer {
 
             this.parent.renderFn = () => {
                 const canvas: HTMLCanvasElement = this.parent?.canvas as any
+                if (canvas.clientWidth == 0 || canvas.clientHeight == 0) return
                 canvas.width = canvas.clientWidth
                 canvas.height = canvas.clientHeight
                 this.renderer.setSize(canvas.clientWidth, canvas.clientHeight)

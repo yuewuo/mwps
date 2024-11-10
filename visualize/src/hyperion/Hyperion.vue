@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref, computed, provide, watchEffect, onBeforeUnmount, useTemplateRef, onUnmounted } from 'vue'
 import { OrthographicCamera, Scene, AmbientLight } from 'troisjs'
-// import { Renderer } from 'troisjs'  // use individual renderer for each instance
+// import { Renderer } from 'troisjs' // use individual renderer for each instance
 import Renderer from '@/misc/SharedRenderer.vue' // optimization: share a single WebGL renderer across all the instances
 import { type VisualizerData, RuntimeData, ConfigProps, renderer_params } from './hyperion'
 import { Config } from './config_pane'
