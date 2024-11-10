@@ -502,6 +502,11 @@ impl Visualizer {
         HTMLExport::display_jupyter_html(self.get_visualizer_data(), override_config);
     }
 
+    #[pyo3(name = "get_visualizer_data")]
+    pub fn py_get_visualizer_data(&mut self) -> PyObject {
+        json_to_pyobject(self.get_visualizer_data())
+    }
+
     #[staticmethod]
     #[pyo3(name = "embed", signature = (force=false))]
     pub fn embed_py(force: bool) {

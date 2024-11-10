@@ -1,6 +1,6 @@
 # Change Log
 
-## 0.1.1 -> 0.1.2
+## 0.1.2
 
 Rename several structures to better reveal their natures.
 
@@ -12,6 +12,11 @@ Rename several structures to better reveal their natures.
 - rename `MaxUpdateLength` to `Obstacle`
 - rename `GroupMaxUpdateLength` to `DualReport`
 
-## 0.1.2 -> 0.1.3
+## 0.1.3
 
 Fixed bug of bigint representation in the visualization tool.
+
+## 0.1.4
+
+Optimized performance of multiple visualizations in a single Jupyter notebook, by using a single WebGLRenderer and share
+it among all the canvases that are currently in the viewport.
