@@ -352,7 +352,7 @@ export class BasicConfig {
 
     constructor (config_props: ConfigProps) {
         this.config_props = config_props
-        if (config_props.initial_aspect_ratio != undefined) {
+        if (config_props.initial_aspect_ratio != undefined && !isNaN(config_props.initial_aspect_ratio)) {
             this.aspect_ratio = config_props.initial_aspect_ratio
         }
         this.segments = config_props.segments

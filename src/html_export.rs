@@ -185,9 +185,20 @@ impl HTMLExport {
                 const override_config = {override_str};
                 // get the current height and width of the div block
                 const div = document.getElementById("{div_id}");
+                for (let i=0; i<10; ++i) {{
+                    if (div.clientWidth != 0 && div.clientHeight != 0) break;
+                    await new Promise(resolve => setTimeout(resolve, 300));  // 300ms
+                    console.log(`waiting for div block ${div_id} to be rendered [${{i+1}}/10]`);
+                }}
                 const initial_aspect_ratio = div.clientWidth / div.clientHeight;
                 if (override_config.initial_aspect_ratio == undefined) {{
-                    override_config.initial_aspect_ratio = initial_aspect_ratio;
+                    if (!isNaN(initial_aspect_ratio)) {{
+                        override_config.initial_aspect_ratio = initial_aspect_ratio;
+                        // save the data, in just a lot of them are being initialized at once and the aspect ratio is not correct
+                        window.loading_a_lot_hyperion_visual_initial_aspect_ratio = initial_aspect_ratio;
+                    }} else if (window.loading_a_lot_hyperion_visual_initial_aspect_ratio != undefined) {{
+                        override_config.initial_aspect_ratio = window.loading_a_lot_hyperion_visual_initial_aspect_ratio
+                    }}
                 }}
                 // bind the visualizer to the div block
                 let app_currently_exist = false;
