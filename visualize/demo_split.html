@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport"
+        content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no">
+    <title>Hyperion</title>
+    <style>
+        body {
+            margin: 0;
+            border: 0;
+        }
+    </style>
+</head>
+
+<body>
+    <div style="width: calc(50% - 15px);">
+        <div id="hyperion_1"></div>
+    </div>
+    <div style="width: calc(50% - 15px); position: absolute; right: 0; top: 0;">
+        <div id="hyperion_2"></div>
+    </div>
+    <div style="width: calc(50% - 15px); position: absolute; bottom: 0; left: 0">
+        <div id="hyperion_3"></div>
+    </div>
+    <div style="width: calc(50% - 15px); position: absolute; bottom: 0; right: 0;">
+        <div id="hyperion_4"></div>
+    </div>
+
+    <script>
+        /* SCRIPT_BEGIN */
+
+        /* HYPERION_VISUAL_BOOTSTRAP_CODE_BEGIN */
+        function hyperion_sleep(ms) {
+            return new Promise(resolve => setTimeout(resolve, ms))
+        }
+        async function on_hyperion_library_ready(func) {
+            // try it every 100ms, until 10s
+            for (let i = 0; i < 100; ++i) {
+                if (window.hyperion_visual != null) {
+                    break
+                }
+                if (i != 0 && i % 10 == 0) console.log(`window.hyperion_visual not ready, tried ${i} times`)
+                await hyperion_sleep(100)
+            }
+            if (window.hyperion_visual != null) {
+                func()
+            } else {
+                throw new Exception("window.hyperion_visual not found after 10s")
+            }
+        }
+        /* HYPERION_VISUAL_BOOTSTRAP_CODE_END */
+
+        const visualizer_data =
+            /* HYPERION_VISUAL_DATA_BEGIN */
+            { "format": "mwpf", "version": "0.1.1", "positions": [{ "i": -2, "j": -1, "t": 0.0 }, { "i": 2, "j": -1, "t": 0.0 }, { "i": 0, "j": 2, "t": 0.0 }], "snapshots": [["grow 0.5", { "dual_nodes": [{ "d": 1e-15, "dd": 1234567890123456789n, "dn": 1234, "e": [], "h": [0], "r": 1.0, "rd": 1, "rn": 1.0, "v": [0] }], "edges": [{ "g": 0.0, "gd": 1, "gn": 0.0, "u": 1.0, "ud": 1, "un": 1.0, "v": [0, 1, 2], "w": 1.0 }, { "g": 0.0, "gd": 1, "gn": 0.0, "u": 1.0, "ud": 1, "un": 1.0, "v": [1], "w": 1.0 }], "interface": { "sdd": 1, "sdn": 0.0, "sum_dual": 0.0 }, "vertices": [{ "s": 1 }, { "s": 0 }, { "s": 0 }] }], ["middle step", { "dual_nodes": [{ "d": 0.3, "dd": 1, "dn": 0.3, "e": [], "h": [0], "r": 0.0, "rd": 1, "rn": 0.0, "v": [0] }, { "d": 0.5, "dd": 1, "dn": 0.5, "e": [], "h": [1], "r": 0.0, "rd": 1, "rn": 0.0, "v": [1] }], "edges": [{ "g": 0.3, "gd": 1, "gn": 0.3, "u": 0.7, "ud": 1, "un": 0.7, "v": [0, 1, 2], "w": 1.0 }, { "g": 0.5, "gd": 1, "gn": 0.5, "u": 0.5, "ud": 1, "un": 0.5, "v": [1], "w": 1.0 }], "interface": { "sdd": 1, "sdn": 0.8, "sum_dual": 0.8 }, "vertices": [{ "s": 1 }, { "s": 1 }, { "s": 1 }] }], ["solved", { "dual_nodes": [{ "d": 1.0, "dd": 1, "dn": 1.0, "e": [], "h": [0], "r": 0.0, "rd": 1, "rn": 0.0, "v": [0] }], "edges": [{ "g": 1.0, "gd": 1, "gn": 1.0, "u": 0.0, "ud": 1, "un": 0.0, "v": [0, 1, 2], "w": 1.0 }], "interface": { "sdd": 1, "sdn": 1.0, "sum_dual": 1.0 }, "vertices": [{ "s": 1 }, { "s": 1 }, { "s": 1 }], "subgraph": [0], "weight_range": { "lower": 1.0, "ld": 1, "ln": 1.0, "upper": 1.0, "ud": 1, "un": 1.0, } }]] }
+        /* HYPERION_VISUAL_DATA_END */
+
+        function main(div_id) {
+            const override_config =
+            /* HYPERION_VISUAL_OVERRIDE_CONFIG_BEGIN */
+            {
+                // show_config: false,
+                full_screen: true,  // to keep aspect ratio the same
+                visualizer_config: { "disabled": false, "hidden": false, "children": [{ "disabled": false, "hidden": false, "children": [{ "disabled": false, "hidden": false, "max": 2, "min": 0, "binding": { "key": "index", "value": 0 } }, { "disabled": false, "hidden": false, "label": "name", "options": [{ "text": "grow 0.5", "value": 0 }, { "text": "middle step", "value": 1 }, { "text": "solved", "value": 2 }], "binding": { "key": "name", "value": 0 } }], "expanded": true, "title": "Snapshot" }, { "disabled": false, "hidden": false, "children": [{ "disabled": false, "hidden": false }, { "disabled": false, "hidden": false, "label": "zoom", "max": 1000, "min": 0.001, "binding": { "key": "zoom", "value": 0.1998 } }, { "disabled": false, "hidden": false, "label": "position", "binding": { "key": "position", "value": { "x": 261.767288897019, "y": 393.3471779458625, "z": 881.337553985719 } } }], "expanded": false, "title": "Camera" }], "expanded": true, "title": "MWPF Visualizer (1/3)" },
+            }
+            /* HYPERION_VISUAL_OVERRIDE_CONFIG_END */
+
+            window.hyperion_visual.bind_to_div(div_id, visualizer_data, { ...window.hyperion_visual.default_config(), ...override_config })
+        }
+
+        window.onload = () => {
+            on_hyperion_library_ready(
+                () => {
+                    for (let i = 1; i <= 4; ++i) {
+                        main(`#hyperion_${i}`)
+                    }
+                }
+            )
+        }
+        /* SCRIPT_END */
+    </script>
+
+    <!-- load library globally (either in browser page or in Jupyter notebook) -->
+    <script type="module" id="hyperion_visual_compressed_js_caller">
+        /* HYPERION_VISUAL_MODULE_LOADER_BEGIN */
+        import { hyperion_visual } from './src/main.ts'
+        window.hyperion_visual = hyperion_visual
+        /* HYPERION_VISUAL_MODULE_LOADER_END */
+    </script>
+</body>
+
+</html>
