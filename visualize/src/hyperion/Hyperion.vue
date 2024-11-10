@@ -211,8 +211,8 @@ function onMouseChange(event: MouseEvent, is_click: boolean = true) {
 <template>
     <div ref="container_ref" class="hyperion-container" @keydown="onKeyDown">
         <!-- placeholder for controller pane container -->
-        <div v-show="show_config" ref="container_config_ref" class="config-container"></div>
         <div v-show="show_info" ref="container_info_ref" class="info-container"></div>
+        <div v-show="show_config" ref="container_config_ref" class="config-container"></div>
 
         <Renderer ref="renderer_ref" :width="width + 'px'" :height="height + 'px'" :orbit-ctrl="true" :params="renderer_params">
             <OrthographicCamera

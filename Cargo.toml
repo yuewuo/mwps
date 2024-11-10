@@ -101,6 +101,9 @@ base64 = "0.22.1"
 [dev-dependencies]
 test-case = "3.1.0"
 
+[build-dependencies]
+chrono = "0.4.19"
+
 [package.metadata.docs.rs]
 # to run locally: `RUSTDOCFLAGS="--html-in-header katex-header.html" cargo doc --no-deps`
 rustdoc-args = ["--html-in-header", "katex-header.html"]
