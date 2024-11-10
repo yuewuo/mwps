@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { onMounted, ref, computed, provide, watchEffect, onBeforeUnmount, useTemplateRef, onUnmounted } from 'vue'
-import { Renderer, OrthographicCamera, Scene, AmbientLight } from 'troisjs'
+import { OrthographicCamera, Scene, AmbientLight } from 'troisjs'
+// import { Renderer } from 'troisjs'  // use individual renderer for each instance
+import Renderer from '@/misc/SharedRenderer.vue' // optimization: share a single WebGL renderer across all the instances
 import { type VisualizerData, RuntimeData, ConfigProps, renderer_params } from './hyperion'
 import { Config } from './config_pane'
 import { Info } from './info_pane'
@@ -115,7 +117,7 @@ onMounted(() => {
             const container_width = entry.contentRect.width
             width.value = container_width
             if (props.config.full_screen) {
-                config.value.aspect_ratio = (document.documentElement.clientWidth / document.documentElement.clientHeight) * 1.02
+                config.value.basic.aspect_ratio = (document.documentElement.clientWidth / document.documentElement.clientHeight) * 1.02
                 config.value.pane.refresh()
             }
         }

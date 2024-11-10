@@ -8,13 +8,13 @@ export default defineComponent({
     props: {
         count: { type: Number, required: true },
         maxcount: { type: Number },
-        myData: { type: Object }
+        myData: { type: Object },
     },
     emits: ['reinstantiated'],
     data() {
         const current_count = this.maxcount == undefined ? this.count : this.maxcount
         return {
-            current_count
+            current_count,
         }
     },
     methods: {
@@ -30,7 +30,7 @@ export default defineComponent({
                     // dispose current mesh (see troisjs/src/core/Object3D.ts), without disposing materials and geometries
                     if (!this.disableRemove) this.removeFromParent()
                     if (this.o3d) {
-                        if (this.renderer) this.renderer.three.removeIntersectObject(this.o3d)
+                        if (this.renderer) this.renderer.three.removeIntersectObject?.(this.o3d)
                     }
                     // create new mesh
                     this.current_count = this.count
@@ -62,8 +62,8 @@ export default defineComponent({
             }
 
             this.initObject3D(this.mesh)
-        }
+        },
     },
-    __hmrId: 'MyInstancedMesh'
+    __hmrId: 'MyInstancedMesh',
 })
 </script>
