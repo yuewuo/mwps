@@ -871,7 +871,7 @@ where
                         self.flip_vertices.insert(temp);
                     }
                 });
-                edge.weight = Rational::from_f64(*log_prob_ratio).unwrap();
+                edge.weight = Rational::from_f64(-log_prob_ratio).unwrap();
                 // eprintln!("!!!!!, negative edge: {:?}", edge.edge_index);
             } else {
                 edge.weight = Rational::from_f64(*log_prob_ratio).unwrap();
