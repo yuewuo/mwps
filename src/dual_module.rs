@@ -502,7 +502,7 @@ pub trait DualModuleImpl {
     );
 
     /// update weights of dual_module, majorly for BP decoding
-    fn update_weights(&mut self, _log_prob_ratios: &[f64]) {
+    fn update_weights_bp(&mut self, _log_prob_ratios: &[f64], _log_prob_ratios_len: f64) {
         unimplemented!()
     }
 

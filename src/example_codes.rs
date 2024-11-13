@@ -411,13 +411,6 @@ pub trait ExampleCode {
         let (vertices, _edges) = self.immutable_vertices_edges();
         vertices[vertex_idx].is_defect
     }
-
-    /// update code's weights based on the log probability ratios, this is majorly used for maintaining up-to-date initializer (for generating corret result-verifier)
-    fn update_weights(&mut self, _log_prob_ratios: &[f64]) {
-        for (edge, &new_weight) in self.edges_mut().iter_mut().zip(_log_prob_ratios.iter()) {
-            edge.weight = new_weight.round() as usize;
-        }
-    }
 }
 
 #[cfg(feature = "python_binding")]

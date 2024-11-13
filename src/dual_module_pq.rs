@@ -857,10 +857,14 @@ where
         }
     }
 
-    fn update_weights(&mut self, _log_prob_ratios: &[f64]) {
+    fn update_weights_bp(&mut self, _log_prob_ratios: &[f64], bp_applicaiton_ratio: f64) {
         for (edge, log_prob_ratio) in self.edges.iter().zip(_log_prob_ratios.iter()) {
             let mut edge = edge.write();
-            if log_prob_ratio.is_sign_negative() {
+
+            let current_edge_weight = edge.weight.to_f64().unwrap();
+            let new_weight = current_edge_weight + bp_applicaiton_ratio * (*log_prob_ratio - current_edge_weight);
+
+            if new_weight.is_sign_negative() {
                 self.negative_edges.insert(edge.edge_index);
                 edge.vertices.iter().for_each(|vertex| {
                     let temp = vertex.upgrade_force().read_recursive().vertex_index;
@@ -871,10 +875,10 @@ where
                         self.flip_vertices.insert(temp);
                     }
                 });
-                edge.weight = Rational::from_f64(-log_prob_ratio).unwrap();
+                edge.weight = Rational::from_f64(-new_weight).unwrap();
                 // eprintln!("!!!!!, negative edge: {:?}", edge.edge_index);
             } else {
-                edge.weight = Rational::from_f64(*log_prob_ratio).unwrap();
+                edge.weight = Rational::from_f64(new_weight).unwrap();
             }
         }
     }

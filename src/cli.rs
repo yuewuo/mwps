@@ -118,6 +118,8 @@ pub struct BenchmarkParameters {
     /// to use bp or not
     #[clap(long, action)]
     use_bp: bool,
+    #[clap(long, action)]
+    bp_application_ratio: Option<f64>,
 }
 
 #[derive(Subcommand, Clone, Debug)]
@@ -314,6 +316,7 @@ impl Cli {
                 apply_deterministic_seed,
                 single_seed,
                 use_bp,
+                bp_application_ratio,
             }) => {
                 // whether to disable progress bar, useful when running jobs in background
                 #[cfg(feature = "progress_bar")]
@@ -374,12 +377,7 @@ impl Cli {
                         bp_decoder.decode(&syndrome_array);
                         let mut llrs = bp_decoder.log_prob_ratios.clone();
 
-                        solver.update_weights(&mut llrs);
-
-                        // note: may/may not be needed
-                        // code.update_weights(&llrs);
-                        // initializer = code.get_initializer();
-                        // let mut result_verifier = verifier.build(&initializer);
+                        solver.update_weights_bp(&mut llrs, bp_application_ratio.unwrap_or(0.5));
                     }
 
                     if print_syndrome_pattern {
@@ -432,12 +430,7 @@ impl Cli {
                         bp_decoder.decode(&syndrome_array);
                         let mut llrs = bp_decoder.log_prob_ratios.clone();
 
-                        solver.update_weights(&mut llrs);
-
-                        // note: may/may not be needed
-                        // code.update_weights(&llrs);
-                        // initializer = code.get_initializer();
-                        // let mut result_verifier = verifier.build(&initializer);
+                        solver.update_weights_bp(&mut llrs, bp_application_ratio.unwrap_or(0.5));
                     }
 
                     if print_syndrome_pattern {
