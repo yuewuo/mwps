@@ -511,7 +511,7 @@ impl SolverTrait for SolverErrorPatternLogger {
     fn get_model_graph(&self) -> Arc<ModelHyperGraph> {
         panic!("error pattern logger do not actually solve the problem")
     }
-    fn update_weights_bp(&mut self, _new_weights: &mut Vec<f64>, bp_application_ratio: f64) {
+    fn update_weights_bp(&mut self, _new_weights: &mut Vec<f64>, _bp_application_ratio: f64) {
         panic!("error pattern logger do not actually solve the problem")
     }
 }

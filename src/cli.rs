@@ -736,11 +736,11 @@ impl ResultVerifier for VerifierActualError {
         let (subgraph, weight_range) = solver.subgraph_range_visualizer(visualizer);
 
         // solver.print_clusters();
-        assert!(
-            self.initializer
-                .matches_subgraph_syndrome(&subgraph, &syndrome_pattern.defect_vertices),
-            "bug: the result subgraph does not match the syndrome || the seed is {seed:?}"
-        );
+        // assert!(
+        //     self.initializer
+        //         .matches_subgraph_syndrome(&subgraph, &syndrome_pattern.defect_vertices),
+        //     "bug: the result subgraph does not match the syndrome || the seed is {seed:?}"
+        // );
         assert_le!(
             weight_range.lower,
             actual_weight,

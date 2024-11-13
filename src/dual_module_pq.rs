@@ -394,6 +394,12 @@ where
     #[allow(clippy::unnecessary_cast)]
     fn new_empty(initializer: &SolverInitializer) -> Self {
         initializer.sanity_check().unwrap();
+
+        // datastructures for handling negative weights
+        let mut negative_weight_sum: OrderedFloat = Default::default();
+        let mut negative_edges: HashSet<EdgeIndex> = Default::default();
+        let mut flip_vertices: HashSet<VertexIndex> = Default::default();
+
         // create vertices
         let vertices: Vec<VertexPtr> = (0..initializer.vertex_num)
             .map(|vertex_index| {
@@ -407,7 +413,7 @@ where
         // set edges
         let mut edges = Vec::<EdgePtr>::new();
         for hyperedge in initializer.weighted_edges.iter() {
-            let edge_ptr = EdgePtr::new_value(Edge {
+            let mut edge = Edge {
                 edge_index: edges.len() as EdgeIndex,
                 weight: Rational::from_usize(hyperedge.weight).unwrap(),
                 dual_nodes: vec![],
@@ -421,10 +427,34 @@ where
                 grow_rate: Rational::zero(),
                 #[cfg(feature = "incr_lp")]
                 cluster_weights: hashbrown::HashMap::new(),
-            });
-            for &vertex_index in hyperedge.vertices.iter() {
-                vertices[vertex_index as usize].write().edges.push(edge_ptr.downgrade());
+            };
+
+            let mut negative = false;
+
+            if edge.weight.is_negative() {
+                negative = true;
+                negative_edges.insert(edge.edge_index);
+                negative_weight_sum += &edge.weight;
+                edge.weight = -edge.weight;
             }
+
+            let edge_ptr = EdgePtr::new_value(edge);
+
+            if negative {
+                for &vertex_index in hyperedge.vertices.iter() {
+                    vertices[vertex_index as usize].write().edges.push(edge_ptr.downgrade());
+                    if flip_vertices.contains(&vertex_index) {
+                        flip_vertices.remove(&vertex_index);
+                    } else {
+                        flip_vertices.insert(vertex_index);
+                    }
+                }
+            } else {
+                for &vertex_index in hyperedge.vertices.iter() {
+                    vertices[vertex_index as usize].write().edges.push(edge_ptr.downgrade());
+                }
+            }
+
             edges.push(edge_ptr);
         }
         Self {
@@ -435,9 +465,9 @@ where
             mode: DualModuleMode::default(),
             tuning_start_time: None,
             total_tuning_time: None,
-            negative_weight_sum: Rational::zero(),
-            negative_edges: HashSet::new(),
-            flip_vertices: HashSet::new(),
+            negative_weight_sum,
+            negative_edges,
+            flip_vertices,
         }
     }
 
@@ -876,7 +906,7 @@ where
                     }
                 });
                 edge.weight = Rational::from_f64(-new_weight).unwrap();
-                // eprintln!("!!!!!, negative edge: {:?}", edge.edge_index);
+                self.negative_weight_sum += edge.weight.clone();
             } else {
                 edge.weight = Rational::from_f64(new_weight).unwrap();
             }
