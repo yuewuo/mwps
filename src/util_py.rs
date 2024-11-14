@@ -267,12 +267,133 @@ impl PySubgraph {
     }
 }
 
+macro_rules! bind_trait_matrix_basic {
+    ($struct_name:ident) => {
+        #[pymethods]
+        impl $struct_name {
+            // MatrixBasic trait functions
+            fn add_variable(&mut self, edge_index: EdgeIndex) -> Option<VarIndex> {
+                self.0.add_variable(edge_index)
+            }
+            fn add_constraint(
+                &mut self,
+                vertex_index: VertexIndex,
+                incident_edges: Vec<EdgeIndex>,
+                parity: bool,
+            ) -> Option<Vec<VarIndex>> {
+                self.0.add_constraint(vertex_index, &incident_edges, parity)
+            }
+            fn get_lhs(&self, row: RowIndex, var_index: VarIndex) -> bool {
+                self.0.get_lhs(row, var_index)
+            }
+            fn get_rhs(&self, row: RowIndex) -> bool {
+                self.0.get_rhs(row)
+            }
+            fn var_to_edge_index(&self, var_index: VarIndex) -> EdgeIndex {
+                self.0.var_to_edge_index(var_index)
+            }
+            fn edge_to_var_index(&self, edge_index: EdgeIndex) -> Option<VarIndex> {
+                self.0.edge_to_var_index(edge_index)
+            }
+            fn exists_edge(&self, edge_index: EdgeIndex) -> bool {
+                self.0.exists_edge(edge_index)
+            }
+            fn get_vertices(&self) -> BTreeSet<VertexIndex> {
+                self.0.get_vertices()
+            }
+            // MatrixView trait functions
+            #[getter]
+            fn get_columns(&mut self) -> usize {
+                self.0.columns()
+            }
+            fn column_to_var_index(&self, column: ColumnIndex) -> VarIndex {
+                self.0.column_to_var_index(column)
+            }
+            fn column_to_edge_index(&self, column: ColumnIndex) -> EdgeIndex {
+                self.0.column_to_edge_index(column)
+            }
+            #[getter]
+            fn get_rows(&mut self) -> usize {
+                self.0.rows()
+            }
+            fn get_view_edges(&mut self) -> Vec<EdgeIndex> {
+                self.0.get_view_edges()
+            }
+            fn var_to_column_index(&mut self, var_index: VarIndex) -> Option<ColumnIndex> {
+                self.0.var_to_column_index(var_index)
+            }
+            fn edge_to_column_index(&mut self, edge_index: EdgeIndex) -> Option<ColumnIndex> {
+                self.0.edge_to_column_index(edge_index)
+            }
+        }
+    };
+}
+
+macro_rules! bind_trait_matrix_tight {
+    ($struct_name:ident) => {
+        #[pymethods]
+        impl $struct_name {
+            // MatrixTight trait functions
+            fn update_edge_tightness(&mut self, edge_index: EdgeIndex, is_tight: bool) {
+                self.0.update_edge_tightness(edge_index, is_tight)
+            }
+            fn is_tight(&self, edge_index: usize) -> bool {
+                self.0.is_tight(edge_index)
+            }
+            fn add_variable_with_tightness(&mut self, edge_index: EdgeIndex, is_tight: bool) {
+                self.0.add_variable_with_tightness(edge_index, is_tight)
+            }
+            fn add_tight_variable(&mut self, edge_index: EdgeIndex) {
+                self.0.add_tight_variable(edge_index)
+            }
+        }
+    };
+}
+
+macro_rules! bind_trait_matrix_tail {
+    ($struct_name:ident) => {
+        #[pymethods]
+        impl $struct_name {
+            // MatrixTail trait functions
+            fn get_tail_edges(&self) -> BTreeSet<EdgeIndex> {
+                self.0.get_tail_edges().clone()
+            }
+            fn set_tail_edges(&mut self, edges: BTreeSet<EdgeIndex>) {
+                self.0.set_tail_edges(edges.into_iter())
+            }
+        }
+    };
+}
+
+macro_rules! bind_trait_matrix_echelon {
+    ($struct_name:ident) => {
+        #[pymethods]
+        impl $struct_name {
+            // MatrixEchelon trait functions
+            fn get_echelon_info(&mut self) -> EchelonInfo {
+                self.0.get_echelon_info().clone()
+            }
+            fn get_solution(&mut self) -> Option<PySubgraph> {
+                self.0.get_solution().map(|x| x.into())
+            }
+            fn get_solution_local_minimum(&mut self, weight_of: &Bound<PyAny>) -> Option<Subgraph> {
+                self.0
+                    .get_solution_local_minimum(|x| weight_of.call1((x,)).unwrap().extract::<usize>().unwrap())
+            }
+        }
+    };
+}
+
 type EchelonMatrix = Echelon<Tail<Tight<BasicMatrix>>>;
 
 #[derive(Clone)]
 #[pyclass(name = "EchelonMatrix")]
 pub struct PyEchelonMatrix(pub EchelonMatrix);
 bind_trait_simple_wrapper!(EchelonMatrix, PyEchelonMatrix);
+bind_trait_matrix_basic!(PyEchelonMatrix);
+bind_trait_matrix_tight!(PyEchelonMatrix);
+bind_trait_matrix_tail!(PyEchelonMatrix);
+bind_trait_matrix_echelon!(PyEchelonMatrix);
 
 #[pymethods]
 impl PyEchelonMatrix {
@@ -286,91 +407,6 @@ impl PyEchelonMatrix {
     fn __str__(&mut self) -> String {
         self.__repr__()
     }
-    // MatrixBasic trait functions
-    fn add_variable(&mut self, edge_index: EdgeIndex) -> Option<VarIndex> {
-        self.0.add_variable(edge_index)
-    }
-    fn add_constraint(
-        &mut self,
-        vertex_index: VertexIndex,
-        incident_edges: Vec<EdgeIndex>,
-        parity: bool,
-    ) -> Option<Vec<VarIndex>> {
-        self.0.add_constraint(vertex_index, &incident_edges, parity)
-    }
-    fn get_lhs(&self, row: RowIndex, var_index: VarIndex) -> bool {
-        self.0.get_lhs(row, var_index)
-    }
-    fn get_rhs(&self, row: RowIndex) -> bool {
-        self.0.get_rhs(row)
-    }
-    fn var_to_edge_index(&self, var_index: VarIndex) -> EdgeIndex {
-        self.0.var_to_edge_index(var_index)
-    }
-    fn edge_to_var_index(&self, edge_index: EdgeIndex) -> Option<VarIndex> {
-        self.0.edge_to_var_index(edge_index)
-    }
-    fn exists_edge(&self, edge_index: EdgeIndex) -> bool {
-        self.0.exists_edge(edge_index)
-    }
-    fn get_vertices(&self) -> BTreeSet<VertexIndex> {
-        self.0.get_vertices()
-    }
-    // MatrixView trait functions
-    #[getter]
-    fn get_columns(&mut self) -> usize {
-        self.0.columns()
-    }
-    fn column_to_var_index(&self, column: ColumnIndex) -> VarIndex {
-        self.0.column_to_var_index(column)
-    }
-    fn column_to_edge_index(&self, column: ColumnIndex) -> EdgeIndex {
-        self.0.column_to_edge_index(column)
-    }
-    #[getter]
-    fn get_rows(&mut self) -> usize {
-        self.0.rows()
-    }
-    fn get_view_edges(&mut self) -> Vec<EdgeIndex> {
-        self.0.get_view_edges()
-    }
-    fn var_to_column_index(&mut self, var_index: VarIndex) -> Option<ColumnIndex> {
-        self.0.var_to_column_index(var_index)
-    }
-    fn edge_to_column_index(&mut self, edge_index: EdgeIndex) -> Option<ColumnIndex> {
-        self.0.edge_to_column_index(edge_index)
-    }
-    // MatrixTight trait functions
-    fn update_edge_tightness(&mut self, edge_index: EdgeIndex, is_tight: bool) {
-        self.0.update_edge_tightness(edge_index, is_tight)
-    }
-    fn is_tight(&self, edge_index: usize) -> bool {
-        self.0.is_tight(edge_index)
-    }
-    fn add_variable_with_tightness(&mut self, edge_index: EdgeIndex, is_tight: bool) {
-        self.0.add_variable_with_tightness(edge_index, is_tight)
-    }
-    fn add_tight_variable(&mut self, edge_index: EdgeIndex) {
-        self.0.add_tight_variable(edge_index)
-    }
-    // MatrixTail trait functions
-    fn get_tail_edges(&self) -> BTreeSet<EdgeIndex> {
-        self.0.get_tail_edges().clone()
-    }
-    fn set_tail_edges(&mut self, edges: BTreeSet<EdgeIndex>) {
-        self.0.set_tail_edges(edges.into_iter())
-    }
-    // MatrixEchelon trait functions
-    fn get_echelon_info(&mut self) -> EchelonInfo {
-        self.0.get_echelon_info().clone()
-    }
-    fn get_solution(&mut self) -> Option<PySubgraph> {
-        self.0.get_solution().map(|x| x.into())
-    }
-    fn get_solution_local_minimum(&mut self, weight_of: &Bound<PyAny>) -> Option<Subgraph> {
-        self.0
-            .get_solution_local_minimum(|x| weight_of.call1((x,)).unwrap().extract::<usize>().unwrap())
-    }
 }
 
 type TailMatrix = Tail<Tight<BasicMatrix>>;
@@ -380,6 +416,9 @@ type TailMatrix = Tail<Tight<BasicMatrix>>;
 #[pyclass(name = "TailMatrix")]
 pub struct PyTailMatrix(pub TailMatrix);
 bind_trait_simple_wrapper!(TailMatrix, PyTailMatrix);
+bind_trait_matrix_basic!(PyTailMatrix);
+bind_trait_matrix_tight!(PyTailMatrix);
+bind_trait_matrix_tail!(PyTailMatrix);
 
 #[pymethods]
 impl PyTailMatrix {
@@ -394,84 +433,11 @@ impl PyTailMatrix {
         self.__repr__()
     }
     // MatrixBasic trait functions
-    fn add_variable(&mut self, edge_index: EdgeIndex) -> Option<VarIndex> {
-        self.0.add_variable(edge_index)
-    }
-    fn add_constraint(
-        &mut self,
-        vertex_index: VertexIndex,
-        incident_edges: Vec<EdgeIndex>,
-        parity: bool,
-    ) -> Option<Vec<VarIndex>> {
-        self.0.add_constraint(vertex_index, &incident_edges, parity)
-    }
     fn xor_row(&mut self, target: RowIndex, source: RowIndex) {
         self.0.xor_row(target, source)
     }
     fn swap_row(&mut self, a: RowIndex, b: RowIndex) {
         self.0.swap_row(a, b)
-    }
-    fn get_lhs(&self, row: RowIndex, var_index: VarIndex) -> bool {
-        self.0.get_lhs(row, var_index)
-    }
-    fn get_rhs(&self, row: RowIndex) -> bool {
-        self.0.get_rhs(row)
-    }
-    fn var_to_edge_index(&self, var_index: VarIndex) -> EdgeIndex {
-        self.0.var_to_edge_index(var_index)
-    }
-    fn edge_to_var_index(&self, edge_index: EdgeIndex) -> Option<VarIndex> {
-        self.0.edge_to_var_index(edge_index)
-    }
-    fn exists_edge(&self, edge_index: EdgeIndex) -> bool {
-        self.0.exists_edge(edge_index)
-    }
-    fn get_vertices(&self) -> BTreeSet<VertexIndex> {
-        self.0.get_vertices()
-    }
-    // MatrixView trait functions
-    #[getter]
-    fn get_columns(&mut self) -> usize {
-        self.0.columns()
-    }
-    fn column_to_var_index(&self, column: ColumnIndex) -> VarIndex {
-        self.0.column_to_var_index(column)
-    }
-    fn column_to_edge_index(&self, column: ColumnIndex) -> EdgeIndex {
-        self.0.column_to_edge_index(column)
-    }
-    #[getter]
-    fn get_rows(&mut self) -> usize {
-        self.0.rows()
-    }
-    fn get_view_edges(&mut self) -> Vec<EdgeIndex> {
-        self.0.get_view_edges()
-    }
-    fn var_to_column_index(&mut self, var_index: VarIndex) -> Option<ColumnIndex> {
-        self.0.var_to_column_index(var_index)
-    }
-    fn edge_to_column_index(&mut self, edge_index: EdgeIndex) -> Option<ColumnIndex> {
-        self.0.edge_to_column_index(edge_index)
-    }
-    // MatrixTight trait functions
-    fn update_edge_tightness(&mut self, edge_index: EdgeIndex, is_tight: bool) {
-        self.0.update_edge_tightness(edge_index, is_tight)
-    }
-    fn is_tight(&self, edge_index: usize) -> bool {
-        self.0.is_tight(edge_index)
-    }
-    fn add_variable_with_tightness(&mut self, edge_index: EdgeIndex, is_tight: bool) {
-        self.0.add_variable_with_tightness(edge_index, is_tight)
-    }
-    fn add_tight_variable(&mut self, edge_index: EdgeIndex) {
-        self.0.add_tight_variable(edge_index)
-    }
-    // MatrixTail trait functions
-    fn get_tail_edges(&self) -> BTreeSet<EdgeIndex> {
-        self.0.get_tail_edges().clone()
-    }
-    fn set_tail_edges(&mut self, edges: BTreeSet<EdgeIndex>) {
-        self.0.set_tail_edges(edges.into_iter())
     }
 }
 
@@ -482,6 +448,8 @@ type TightMatrix = Tight<BasicMatrix>;
 #[pyclass(name = "TightMatrix")]
 pub struct PyTightMatrix(pub TightMatrix);
 bind_trait_simple_wrapper!(TightMatrix, PyTightMatrix);
+bind_trait_matrix_basic!(PyTightMatrix);
+bind_trait_matrix_tight!(PyTightMatrix);
 
 #[pymethods]
 impl PyTightMatrix {
@@ -496,77 +464,11 @@ impl PyTightMatrix {
         self.__repr__()
     }
     // MatrixBasic trait functions
-    fn add_variable(&mut self, edge_index: EdgeIndex) -> Option<VarIndex> {
-        self.0.add_variable(edge_index)
-    }
-    fn add_constraint(
-        &mut self,
-        vertex_index: VertexIndex,
-        incident_edges: Vec<EdgeIndex>,
-        parity: bool,
-    ) -> Option<Vec<VarIndex>> {
-        self.0.add_constraint(vertex_index, &incident_edges, parity)
-    }
     fn xor_row(&mut self, target: RowIndex, source: RowIndex) {
         self.0.xor_row(target, source)
     }
     fn swap_row(&mut self, a: RowIndex, b: RowIndex) {
         self.0.swap_row(a, b)
-    }
-    fn get_lhs(&self, row: RowIndex, var_index: VarIndex) -> bool {
-        self.0.get_lhs(row, var_index)
-    }
-    fn get_rhs(&self, row: RowIndex) -> bool {
-        self.0.get_rhs(row)
-    }
-    fn var_to_edge_index(&self, var_index: VarIndex) -> EdgeIndex {
-        self.0.var_to_edge_index(var_index)
-    }
-    fn edge_to_var_index(&self, edge_index: EdgeIndex) -> Option<VarIndex> {
-        self.0.edge_to_var_index(edge_index)
-    }
-    fn exists_edge(&self, edge_index: EdgeIndex) -> bool {
-        self.0.exists_edge(edge_index)
-    }
-    fn get_vertices(&self) -> BTreeSet<VertexIndex> {
-        self.0.get_vertices()
-    }
-    // MatrixView trait functions
-    #[getter]
-    fn get_columns(&mut self) -> usize {
-        self.0.columns()
-    }
-    fn column_to_var_index(&self, column: ColumnIndex) -> VarIndex {
-        self.0.column_to_var_index(column)
-    }
-    fn column_to_edge_index(&self, column: ColumnIndex) -> EdgeIndex {
-        self.0.column_to_edge_index(column)
-    }
-    #[getter]
-    fn get_rows(&mut self) -> usize {
-        self.0.rows()
-    }
-    fn get_view_edges(&mut self) -> Vec<EdgeIndex> {
-        self.0.get_view_edges()
-    }
-    fn var_to_column_index(&mut self, var_index: VarIndex) -> Option<ColumnIndex> {
-        self.0.var_to_column_index(var_index)
-    }
-    fn edge_to_column_index(&mut self, edge_index: EdgeIndex) -> Option<ColumnIndex> {
-        self.0.edge_to_column_index(edge_index)
-    }
-    // MatrixTight trait functions
-    fn update_edge_tightness(&mut self, edge_index: EdgeIndex, is_tight: bool) {
-        self.0.update_edge_tightness(edge_index, is_tight)
-    }
-    fn is_tight(&self, edge_index: usize) -> bool {
-        self.0.is_tight(edge_index)
-    }
-    fn add_variable_with_tightness(&mut self, edge_index: EdgeIndex, is_tight: bool) {
-        self.0.add_variable_with_tightness(edge_index, is_tight)
-    }
-    fn add_tight_variable(&mut self, edge_index: EdgeIndex) {
-        self.0.add_tight_variable(edge_index)
     }
 }
 
@@ -575,6 +477,7 @@ impl PyTightMatrix {
 #[pyclass(name = "BasicMatrix")]
 pub struct PyBasicMatrix(pub BasicMatrix);
 bind_trait_simple_wrapper!(BasicMatrix, PyBasicMatrix);
+bind_trait_matrix_basic!(PyBasicMatrix);
 
 #[pymethods]
 impl PyBasicMatrix {
@@ -589,64 +492,11 @@ impl PyBasicMatrix {
         self.__repr__()
     }
     // MatrixBasic trait functions
-    fn add_variable(&mut self, edge_index: EdgeIndex) -> Option<VarIndex> {
-        self.0.add_variable(edge_index)
-    }
-    fn add_constraint(
-        &mut self,
-        vertex_index: VertexIndex,
-        incident_edges: Vec<EdgeIndex>,
-        parity: bool,
-    ) -> Option<Vec<VarIndex>> {
-        self.0.add_constraint(vertex_index, &incident_edges, parity)
-    }
     fn xor_row(&mut self, target: RowIndex, source: RowIndex) {
         self.0.xor_row(target, source)
     }
     fn swap_row(&mut self, a: RowIndex, b: RowIndex) {
         self.0.swap_row(a, b)
-    }
-    fn get_lhs(&self, row: RowIndex, var_index: VarIndex) -> bool {
-        self.0.get_lhs(row, var_index)
-    }
-    fn get_rhs(&self, row: RowIndex) -> bool {
-        self.0.get_rhs(row)
-    }
-    fn var_to_edge_index(&self, var_index: VarIndex) -> EdgeIndex {
-        self.0.var_to_edge_index(var_index)
-    }
-    fn edge_to_var_index(&self, edge_index: EdgeIndex) -> Option<VarIndex> {
-        self.0.edge_to_var_index(edge_index)
-    }
-    fn exists_edge(&self, edge_index: EdgeIndex) -> bool {
-        self.0.exists_edge(edge_index)
-    }
-    fn get_vertices(&self) -> BTreeSet<VertexIndex> {
-        self.0.get_vertices()
-    }
-    // MatrixView trait functions
-    #[getter]
-    fn get_columns(&mut self) -> usize {
-        self.0.columns()
-    }
-    fn column_to_var_index(&self, column: ColumnIndex) -> VarIndex {
-        self.0.column_to_var_index(column)
-    }
-    fn column_to_edge_index(&self, column: ColumnIndex) -> EdgeIndex {
-        self.0.column_to_edge_index(column)
-    }
-    #[getter]
-    fn get_rows(&mut self) -> usize {
-        self.0.rows()
-    }
-    fn get_view_edges(&mut self) -> Vec<EdgeIndex> {
-        self.0.get_view_edges()
-    }
-    fn var_to_column_index(&mut self, var_index: VarIndex) -> Option<ColumnIndex> {
-        self.0.var_to_column_index(var_index)
-    }
-    fn edge_to_column_index(&mut self, edge_index: EdgeIndex) -> Option<ColumnIndex> {
-        self.0.edge_to_column_index(edge_index)
     }
 }
 
