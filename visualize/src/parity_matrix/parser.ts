@@ -7,14 +7,13 @@ export class ParityMatrixData {
     public is_echelon_form: string // TODO: fix
     public start_index: number
 
-    constructor (object: object) {
+    constructor (data: object) {
         let table: PrintTable | null = null
         let version: string | null = null
         let edges: number[] | null = null
         let is_echelon_form: string | null = null
         let start_index: number | null = null
-        // @ts-expect-error parsing the object data, do not know the exact structure
-        for (const [key, value] of object.entries(object)) {
+        for (const [key, value] of Object.entries(data)) {
             switch (key) {
                 case 'table':
                     table = new PrintTable(value)
