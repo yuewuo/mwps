@@ -51,3 +51,4 @@ rustc-ice*
 
 src/python/**/*.so
 vite.config.ts.timestamp-*.mjs
+tmp_*

@@ -70,8 +70,9 @@ impl HyperEdge {
 #[pymethods]
 impl HyperEdge {
     #[new]
-    fn py_new(vertices: Vec<VertexIndex>, weight: Weight) -> Self {
-        Self::new(vertices, weight)
+    fn py_new(vertices: &Bound<PyAny>, weight: Weight) -> PyResult<Self> {
+        let vertices: Vec<VertexIndex> = py_into_btree_set::<VertexIndex>(vertices)?.into_iter().collect();
+        Ok(Self::new(vertices, weight))
     }
     fn __repr__(&self) -> String {
         format!("{:?}", self)
@@ -217,9 +218,19 @@ impl SyndromePattern {
 #[pymethods]
 impl SyndromePattern {
     #[new]
-    #[pyo3(signature = (defect_vertices=vec![], erasures=vec![]))]
-    fn py_new(defect_vertices: Vec<VertexIndex>, erasures: Vec<EdgeIndex>) -> Self {
-        Self::new(defect_vertices, erasures)
+    #[pyo3(signature = (defect_vertices=None, erasures=None))]
+    fn py_new(defect_vertices: Option<&Bound<PyAny>>, erasures: Option<&Bound<PyAny>>) -> PyResult<Self> {
+        let defect_vertices: Vec<VertexIndex> = if let Some(defect_vertices) = defect_vertices {
+            py_into_btree_set(defect_vertices)?.into_iter().collect()
+        } else {
+            vec![]
+        };
+        let erasures: Vec<EdgeIndex> = if let Some(erasures) = erasures {
+            py_into_btree_set(erasures)?.into_iter().collect()
+        } else {
+            vec![]
+        };
+        Ok(Self::new(defect_vertices, erasures))
     }
     fn __repr__(&self) -> String {
         format!("{:?}", self)

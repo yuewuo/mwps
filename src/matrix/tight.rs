@@ -21,6 +21,16 @@ impl<M: MatrixView> Tight<M> {
     pub fn get_base(&self) -> &M {
         &self.base
     }
+    pub fn from_base(base: M) -> Self {
+        let mut value = Self {
+            base,
+            tight_edges: BTreeSet::new(),
+            is_var_indices_outdated: true,
+            var_indices: vec![],
+        };
+        value.var_indices_lazy_update();
+        value
+    }
 }
 
 impl<M: MatrixView> MatrixTight for Tight<M> {
