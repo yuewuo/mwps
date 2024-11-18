@@ -393,7 +393,8 @@ impl Cli {
                         visualizer = Some(new_visualizer);
                     }
 
-                    solver.solve_visualizer(&mut syndrome_pattern, visualizer.as_mut());
+                    solver.adjust_syndrome_for_negative_edges(&mut syndrome_pattern);
+                    solver.solve_visualizer(&syndrome_pattern, visualizer.as_mut());
                     result_verifier.verify(&mut solver, &syndrome_pattern, &error_pattern, visualizer.as_mut(), seed);
                     if let Some(html_path) = &visualizer_html_filepath {
                         if let Some(visualizer) = visualizer.as_mut() {
@@ -447,7 +448,7 @@ impl Cli {
                         visualizer = Some(new_visualizer);
                     }
                     benchmark_profiler.begin(&syndrome_pattern, &error_pattern);
-                    solver.solve_visualizer(&mut syndrome_pattern, visualizer.as_mut());
+                    solver.solve_visualizer(&syndrome_pattern, visualizer.as_mut());
                     benchmark_profiler.event("decoded".to_string());
                     result_verifier.verify(&mut solver, &syndrome_pattern, &error_pattern, visualizer.as_mut(), seed);
                     benchmark_profiler.event("verified".to_string());
