@@ -70,7 +70,8 @@ pub trait PrimalModuleImpl {
         syndrome_pattern: Arc<SyndromePattern>,
         dual_module: &mut impl DualModuleImpl,
     ) {
-        self.solve_step_load_syndrome(interface, syndrome_pattern, dual_module);
+        interface.load(syndrome_pattern, dual_module);
+        self.load(interface, dual_module);
         self.solve_step_callback_interface_loaded(interface, dual_module, |_, _, _, _| {})
     }
 
@@ -116,7 +117,8 @@ pub trait PrimalModuleImpl {
     {
         if let Some(visualizer) = visualizer {
             let callback = Self::visualizer_callback(visualizer);
-            self.solve_step_load_syndrome(interface, syndrome_pattern, dual_module);
+            interface.load(syndrome_pattern, dual_module);
+            self.load(interface, dual_module);
             self.solve_step_callback_interface_loaded(interface, dual_module, callback);
             visualizer
                 .snapshot_combined("solved".to_string(), vec![interface, dual_module, self])
@@ -124,16 +126,6 @@ pub trait PrimalModuleImpl {
         } else {
             self.solve(interface, syndrome_pattern, dual_module);
         }
-    }
-
-    fn solve_step_load_syndrome<D: DualModuleImpl>(
-        &mut self,
-        interface: &DualModuleInterfacePtr,
-        syndrome_pattern: Arc<SyndromePattern>,
-        dual_module: &mut D,
-    ) {
-        interface.load(syndrome_pattern, dual_module);
-        self.load(interface, dual_module);
     }
 
     fn solve_step_callback_interface_loaded<D: DualModuleImpl, F>(

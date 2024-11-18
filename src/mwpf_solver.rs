@@ -79,9 +79,14 @@ macro_rules! bind_trait_to_python {
             fn py_sum_dual_variables(&self) -> PyRational {
                 self.sum_dual_variables().clone().into()
             }
-            #[pyo3(name = "load_syndrome", signature = (syndrome_pattern, visualizer=None))]
-            pub fn py_load_syndrome(&mut self, syndrome_pattern: &SyndromePattern, visualizer: Option<&mut Visualizer>) {
-                self.0.load_syndrome(syndrome_pattern, visualizer)
+            #[pyo3(name = "load_syndrome", signature = (syndrome_pattern, visualizer=None, skip_initial_duals=false))]
+            pub fn py_load_syndrome(
+                &mut self,
+                syndrome_pattern: &SyndromePattern,
+                visualizer: Option<&mut Visualizer>,
+                skip_initial_duals: bool,
+            ) {
+                self.0.load_syndrome(syndrome_pattern, visualizer, skip_initial_duals)
             }
             #[pyo3(name = "get_node", signature = (node_index))]
             pub fn py_get_node(&mut self, node_index: NodeIndex) -> Option<PyDualNodePtr> {
@@ -257,12 +262,22 @@ impl SolverSerialPlugins {
 
 impl SolverSerialPlugins {
     // APIs for step-by-step solving in Python
-    pub fn load_syndrome(&mut self, syndrome_pattern: &SyndromePattern, visualizer: Option<&mut Visualizer>) {
-        self.primal_module.solve_step_load_syndrome(
-            &self.interface_ptr,
-            Arc::new(syndrome_pattern.clone()),
-            &mut self.dual_module,
-        );
+    pub fn load_syndrome(
+        &mut self,
+        syndrome_pattern: &SyndromePattern,
+        visualizer: Option<&mut Visualizer>,
+        skip_initial_duals: bool,
+    ) {
+        if !skip_initial_duals {
+            self.interface_ptr
+                .load(Arc::new(syndrome_pattern.clone()), &mut self.dual_module);
+            self.primal_module.load(&self.interface_ptr, &mut self.dual_module);
+        } else {
+            self.interface_ptr
+                .write()
+                .decoding_graph
+                .set_syndrome(Arc::new(syndrome_pattern.clone()));
+        }
         if let Some(visualizer) = visualizer {
             visualizer
                 .snapshot_combined(
