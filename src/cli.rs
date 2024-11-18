@@ -377,7 +377,7 @@ impl Cli {
                         bp_decoder.decode(&syndrome_array);
                         let mut llrs = bp_decoder.log_prob_ratios.clone();
 
-                        solver.update_weights_bp(&mut llrs, bp_application_ratio.unwrap_or(0.5));
+                        solver.update_weights(&mut llrs, bp_application_ratio.unwrap_or(0.5));
                     }
 
                     if print_syndrome_pattern {
@@ -430,7 +430,7 @@ impl Cli {
                         bp_decoder.decode(&syndrome_array);
                         let mut llrs = bp_decoder.log_prob_ratios.clone();
 
-                        solver.update_weights_bp(&mut llrs, bp_application_ratio.unwrap_or(0.5));
+                        solver.update_weights(&mut llrs, bp_application_ratio.unwrap_or(0.5));
                     }
 
                     if print_syndrome_pattern {

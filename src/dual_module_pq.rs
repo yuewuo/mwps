@@ -170,7 +170,7 @@ pub struct Edge {
     /// total weight of this edge
     weight: Rational,
     #[derivative(Debug = "ignore")]
-    vertices: Vec<VertexWeak>,
+    vertices: Vec<VertexWeak>, // note: consider using/constructing ordered vertex, this will speed up `adjust_weights_for_negative_edges`
     /// the dual nodes that contributes to this edge
     dual_nodes: Vec<OrderedDualNodeWeak>,
 
@@ -395,11 +395,6 @@ where
     fn new_empty(initializer: &SolverInitializer) -> Self {
         initializer.sanity_check().unwrap();
 
-        // datastructures for handling negative weights
-        let mut negative_weight_sum: OrderedFloat = Default::default();
-        let mut negative_edges: HashSet<EdgeIndex> = Default::default();
-        let mut flip_vertices: HashSet<VertexIndex> = Default::default();
-
         // create vertices
         let vertices: Vec<VertexPtr> = (0..initializer.vertex_num)
             .map(|vertex_index| {
@@ -413,7 +408,7 @@ where
         // set edges
         let mut edges = Vec::<EdgePtr>::new();
         for hyperedge in initializer.weighted_edges.iter() {
-            let mut edge = Edge {
+            let edge = Edge {
                 edge_index: edges.len() as EdgeIndex,
                 weight: Rational::from_usize(hyperedge.weight).unwrap(),
                 dual_nodes: vec![],
@@ -429,30 +424,10 @@ where
                 cluster_weights: hashbrown::HashMap::new(),
             };
 
-            let mut negative = false;
-
-            if edge.weight.is_negative() {
-                negative = true;
-                negative_edges.insert(edge.edge_index);
-                negative_weight_sum += &edge.weight;
-                edge.weight = -edge.weight;
-            }
-
             let edge_ptr = EdgePtr::new_value(edge);
 
-            if negative {
-                for &vertex_index in hyperedge.vertices.iter() {
-                    vertices[vertex_index as usize].write().edges.push(edge_ptr.downgrade());
-                    if flip_vertices.contains(&vertex_index) {
-                        flip_vertices.remove(&vertex_index);
-                    } else {
-                        flip_vertices.insert(vertex_index);
-                    }
-                }
-            } else {
-                for &vertex_index in hyperedge.vertices.iter() {
-                    vertices[vertex_index as usize].write().edges.push(edge_ptr.downgrade());
-                }
+            for &vertex_index in hyperedge.vertices.iter() {
+                vertices[vertex_index as usize].write().edges.push(edge_ptr.downgrade());
             }
 
             edges.push(edge_ptr);
@@ -465,9 +440,9 @@ where
             mode: DualModuleMode::default(),
             tuning_start_time: None,
             total_tuning_time: None,
-            negative_weight_sum,
-            negative_edges,
-            flip_vertices,
+            negative_weight_sum: Default::default(),
+            negative_edges: Default::default(),
+            flip_vertices: Default::default(),
         }
     }
 
@@ -887,29 +862,35 @@ where
         }
     }
 
-    fn update_weights_bp(&mut self, _log_prob_ratios: &[f64], bp_applicaiton_ratio: f64) {
+    fn adjust_weights_for_negative_edges(&mut self) {
+        for edge in self.edges.iter() {
+            let mut edge = edge.write();
+            if edge.weight.is_negative() {
+                self.negative_edges.insert(edge.edge_index);
+                self.negative_weight_sum += edge.weight.clone();
+
+                for vertex in edge.vertices.iter() {
+                    let vertex = vertex.upgrade_force();
+                    if self.flip_vertices.contains(&vertex.read_recursive().vertex_index) {
+                        self.flip_vertices.remove(&vertex.read_recursive().vertex_index);
+                    } else {
+                        self.flip_vertices.insert(vertex.read_recursive().vertex_index);
+                    }
+                }
+
+                edge.weight = -edge.weight.clone();
+            }
+        }
+    }
+
+    fn update_weights(&mut self, _log_prob_ratios: &[f64], bp_applicaiton_ratio: f64) {
         for (edge, log_prob_ratio) in self.edges.iter().zip(_log_prob_ratios.iter()) {
             let mut edge = edge.write();
 
             let current_edge_weight = edge.weight.to_f64().unwrap();
             let new_weight = current_edge_weight + bp_applicaiton_ratio * (*log_prob_ratio - current_edge_weight);
 
-            if new_weight.is_sign_negative() {
-                self.negative_edges.insert(edge.edge_index);
-                edge.vertices.iter().for_each(|vertex| {
-                    let temp = vertex.upgrade_force().read_recursive().vertex_index;
-
-                    if self.flip_vertices.contains(&temp) {
-                        self.flip_vertices.remove(&temp);
-                    } else {
-                        self.flip_vertices.insert(temp);
-                    }
-                });
-                edge.weight = Rational::from_f64(-new_weight).unwrap();
-                self.negative_weight_sum += edge.weight.clone();
-            } else {
-                edge.weight = Rational::from_f64(new_weight).unwrap();
-            }
+            edge.weight = Rational::from_f64(new_weight).unwrap();
         }
     }
 

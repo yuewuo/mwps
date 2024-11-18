@@ -501,8 +501,12 @@ pub trait DualModuleImpl {
         absorbing_cluster_index: NodeIndex,
     );
 
-    /// update weights of dual_module, majorly for BP decoding
-    fn update_weights_bp(&mut self, _log_prob_ratios: &[f64], _log_prob_ratios_len: f64) {
+    fn adjust_weights_for_negative_edges(&mut self) {
+        unimplemented!()
+    }
+
+    /// update weights of dual_module
+    fn update_weights(&mut self, _log_prob_ratios: &[f64], _bp_applicaiton_ratio: f64) {
         unimplemented!()
     }
 
