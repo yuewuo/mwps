@@ -410,7 +410,7 @@ where
         for hyperedge in initializer.weighted_edges.iter() {
             let edge = Edge {
                 edge_index: edges.len() as EdgeIndex,
-                weight: Rational::from_usize(hyperedge.weight).unwrap(),
+                weight: Rational::from(hyperedge.weight),
                 dual_nodes: vec![],
                 vertices: hyperedge
                     .vertices
@@ -883,7 +883,7 @@ where
         }
     }
 
-    fn update_weights(&mut self, _log_prob_ratios: &[f64], bp_applicaiton_ratio: f64) {
+    fn update_weights_bp(&mut self, _log_prob_ratios: &[f64], bp_applicaiton_ratio: f64) {
         for (edge, log_prob_ratio) in self.edges.iter().zip(_log_prob_ratios.iter()) {
             let mut edge = edge.write();
 
@@ -1002,7 +1002,7 @@ mod tests {
         // cargo test dual_module_pq_basics_1 -- --nocapture
         let visualize_filename = "dual_module_pq_basics_1.json".to_string();
         let weight = 1000;
-        let code = CodeCapacityColorCode::new(7, 0.1, weight);
+        let code = CodeCapacityColorCode::new(7, 0.1);
         let mut visualizer = Visualizer::new(
             Some(visualize_data_folder() + visualize_filename.as_str()),
             code.get_positions(),
@@ -1053,7 +1053,7 @@ mod tests {
         // cargo test dual_module_pq_basics_2 -- --nocapture
         let visualize_filename = "dual_module_pq_basics_2.json".to_string();
         let weight = 1000;
-        let code = CodeCapacityTailoredCode::new(7, 0., 0.1, weight);
+        let code = CodeCapacityTailoredCode::new(7, 0., 0.1);
         let mut visualizer = Visualizer::new(
             Some(visualize_data_folder() + visualize_filename.as_str()),
             code.get_positions(),
@@ -1099,7 +1099,7 @@ mod tests {
         let visualize_filename = "dual_module_pq_basics_3.json".to_string();
         let weight = 600; // do not change, the data is hard-coded
         let pxy = 0.0602828812732227;
-        let code = CodeCapacityTailoredCode::new(7, pxy, 0.1, weight); // do not change probabilities: the data is hard-coded
+        let code = CodeCapacityTailoredCode::new(7, pxy, 0.1); // do not change probabilities: the data is hard-coded
         let mut visualizer = Visualizer::new(
             Some(visualize_data_folder() + visualize_filename.as_str()),
             code.get_positions(),

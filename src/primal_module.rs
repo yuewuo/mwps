@@ -8,7 +8,6 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use crate::dual_module::*;
-use crate::num_traits::FromPrimitive;
 use crate::ordered_float::OrderedFloat;
 use crate::pointers::*;
 use crate::primal_module_serial::ClusterAffinity;
@@ -238,16 +237,14 @@ pub trait PrimalModuleImpl {
         let output_subgraph = self.subgraph(interface, dual_module);
         let weight_range = WeightRange::new(
             interface.sum_dual_variables() + dual_module.get_negative_weight_sum(),
-            Rational::from_usize(
+            Rational::from(
                 interface
                     .read_recursive()
                     .decoding_graph
                     .model_graph
                     .initializer
                     .get_subgraph_total_weight(&output_subgraph),
-            )
-            .unwrap()
-                + dual_module.get_negative_weight_sum(), // this uses the initailizer, we would need to update this if were to keep this consistent
+            ) + dual_module.get_negative_weight_sum(), // this uses the initailizer, we would need to update this if were to keep this consistent
         );
         (output_subgraph, weight_range)
     }

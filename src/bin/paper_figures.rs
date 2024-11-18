@@ -15,12 +15,12 @@ use sugar::*;
 fn hyperedge_example() {
     let visualize_filename = "paper_hyperedge_example.json".to_string();
     // create the example code, but we'll not use the default vertices and edges; rather, we'll construct them manually
-    let mut code = CodeCapacityRepetitionCode::new(3, 0.001, 1);
+    let mut code = CodeCapacityRepetitionCode::new(3, 0.001);
     // manually construct 7 vertices connected to this edge
     code.vertices.clear();
     code.edges = vec![CodeEdge::new(vec![0, 1, 2, 3, 4, 5, 6])];
     for edge in code.edges.iter_mut() {
-        edge.weight = 1;
+        edge.weight = 1.;
     }
     code.fill_vertices(7);
     let radius = 2.;

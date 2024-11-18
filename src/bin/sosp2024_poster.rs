@@ -5,7 +5,7 @@ use mwpf::visualize::*;
 
 fn code_capacity_example() {
     let visualize_filename = "sosp2024_code_capacity_example.json".to_string();
-    let code = CodeCapacityTailoredCode::new(5, 0.001, 0.001, 100);
+    let code = CodeCapacityTailoredCode::new(5, 0.001, 0.001);
     code.sanity_check().unwrap();
     let mut visualizer = Visualizer::new(
         Some(visualize_data_folder() + visualize_filename.as_str()),
@@ -28,7 +28,7 @@ fn circuit_level_example() {
             "nm": 4,
             "code_type": "RotatedPlanarCode",
             "noise_model": "StimNoiseModel",
-            "max_weight": 100,
+            // "max_weight": 100,
         }),
     );
     let mut visualizer = Visualizer::new(

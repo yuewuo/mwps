@@ -61,9 +61,6 @@ pub struct BenchmarkParameters {
     /// rounds of noisy measurement, valid only when multiple rounds
     #[clap(short = 'n', long, default_value_t = 0)]
     noisy_measurements: VertexNum,
-    /// maximum weight of edges
-    #[clap(long, default_value_t = 1000)]
-    max_weight: Weight,
     /// example code type
     #[clap(short = 'c', long, value_enum, default_value_t = ExampleCodeType::CodeCapacityTailoredCode)]
     code_type: ExampleCodeType,
@@ -294,7 +291,6 @@ impl Cli {
                 p,
                 pe,
                 noisy_measurements,
-                max_weight,
                 code_type,
                 enable_visualizer,
                 visualizer_json_filepath,
@@ -321,7 +317,7 @@ impl Cli {
                 // whether to disable progress bar, useful when running jobs in background
                 #[cfg(feature = "progress_bar")]
                 let disable_progress_bar = env::var("DISABLE_PROGRESS_BAR").is_ok();
-                let mut code: Box<dyn ExampleCode> = code_type.build(d, p, noisy_measurements, max_weight, code_config);
+                let mut code: Box<dyn ExampleCode> = code_type.build(d, p, noisy_measurements, code_config);
 
                 // setting up the BP decoder
                 let mut pcm = BpSparse::new(code.vertex_num(), code.edge_num(), 0);
@@ -338,7 +334,7 @@ impl Cli {
                     let channel_probabilities = vec![p; code.edge_num()];
                     let bp_decoder = BpDecoder::new_3(pcm, channel_probabilities, 1).unwrap();
                     bp_decoder_option = Some(bp_decoder);
-                    initial_log_ratios_option = Some(code.get_unscaled_weights().clone());
+                    initial_log_ratios_option = Some(code.get_weights().clone());
                 }
 
                 if pe != 0. {
@@ -377,7 +373,7 @@ impl Cli {
                         bp_decoder.decode(&syndrome_array);
                         let mut llrs = bp_decoder.log_prob_ratios.clone();
 
-                        solver.update_weights(&mut llrs, bp_application_ratio.unwrap_or(0.5));
+                        solver.update_weights_bp(&mut llrs, bp_application_ratio.unwrap_or(0.5));
                     }
 
                     if print_syndrome_pattern {
@@ -417,7 +413,7 @@ impl Cli {
                     #[cfg(feature = "progress_bar")]
                     pb.as_mut().map(|pb| pb.set(round));
                     seed = if use_deterministic_seed { round } else { rng.next_u64() };
-                    let (mut syndrome_pattern, error_pattern) = code.generate_random_errors(seed);
+                    let (syndrome_pattern, error_pattern) = code.generate_random_errors(seed);
 
                     if use_bp {
                         let mut syndrome_array = vec![0; code.vertex_num()];
@@ -431,7 +427,7 @@ impl Cli {
                         bp_decoder.decode(&syndrome_array);
                         let mut llrs = bp_decoder.log_prob_ratios.clone();
 
-                        solver.update_weights(&mut llrs, bp_application_ratio.unwrap_or(0.5));
+                        solver.update_weights_bp(&mut llrs, bp_application_ratio.unwrap_or(0.5));
                     }
 
                     if print_syndrome_pattern {
@@ -598,17 +594,16 @@ impl ExampleCodeType {
         d: VertexNum,
         p: f64,
         _noisy_measurements: VertexNum,
-        max_weight: Weight,
         mut code_config: serde_json::Value,
     ) -> Box<dyn ExampleCode> {
         match self {
             Self::CodeCapacityRepetitionCode => {
                 assert_eq!(code_config, json!({}), "config not supported");
-                Box::new(CodeCapacityRepetitionCode::new(d, p, max_weight))
+                Box::new(CodeCapacityRepetitionCode::new(d, p))
             }
             Self::CodeCapacityPlanarCode => {
                 assert_eq!(code_config, json!({}), "config not supported");
-                Box::new(CodeCapacityPlanarCode::new(d, p, max_weight))
+                Box::new(CodeCapacityPlanarCode::new(d, p))
             }
             Self::CodeCapacityTailoredCode => {
                 let mut pxy = 0.; // default to infinite bias
@@ -616,11 +611,11 @@ impl ExampleCodeType {
                 if let Some(value) = config.remove("pxy") {
                     pxy = value.as_f64().expect("code_count number");
                 }
-                Box::new(CodeCapacityTailoredCode::new(d, pxy, p, max_weight))
+                Box::new(CodeCapacityTailoredCode::new(d, pxy, p))
             }
             Self::CodeCapacityColorCode => {
                 assert_eq!(code_config, json!({}), "config not supported");
-                Box::new(CodeCapacityColorCode::new(d, p, max_weight))
+                Box::new(CodeCapacityColorCode::new(d, p))
             }
             Self::ErrorPatternReader => Box::new(ErrorPatternReader::new(code_config)),
             #[cfg(feature = "qecp_integrate")]
@@ -728,11 +723,10 @@ impl ResultVerifier for VerifierActualError {
             // error pattern is not generated by the simulator
             Rational::from_usize(usize::MAX).unwrap()
         } else {
-            Rational::from_usize(
+            Rational::from(
                 self.initializer
                     .get_subgraph_total_weight(&OutputSubgraph::new(error_pattern.clone(), Default::default())),
             )
-            .unwrap()
         };
         let (subgraph, weight_range) = solver.subgraph_range_visualizer(visualizer);
 
@@ -748,7 +742,7 @@ impl ResultVerifier for VerifierActualError {
             "bug: the lower bound of weight range is larger than the actual weight || the seed is {seed:?}"
         );
         if self.is_strict {
-            let subgraph_weight = Rational::from_usize(self.initializer.get_subgraph_total_weight(&subgraph)).unwrap();
+            let subgraph_weight = Rational::from(self.initializer.get_subgraph_total_weight(&subgraph));
             assert_le!(subgraph_weight, actual_weight, "it's not a minimum-weight parity subgraph: the actual error pattern has smaller weight, range: {weight_range:?}");
             assert_eq!(
                 weight_range.lower, weight_range.upper,

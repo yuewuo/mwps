@@ -18,7 +18,7 @@ use std::fs::File;
 use std::io::prelude::*;
 use std::time::Instant;
 
-pub type Weight = usize; // only used as input, all internal weight representation will use `Rational`
+pub type Weight = f64; // only used as input, all internal weight representation will use `Rational`
 
 cfg_if::cfg_if! {
     if #[cfg(feature="f64_weight")] {
@@ -134,7 +134,7 @@ impl SolverInitializer {
 
     #[allow(clippy::unnecessary_cast)]
     pub fn get_subgraph_total_weight(&self, subgraph: &OutputSubgraph) -> Weight {
-        let mut weight = 0;
+        let mut weight = 0.;
         for &edge_index in subgraph.iter() {
             weight += self.weighted_edges[edge_index as usize].weight;
         }

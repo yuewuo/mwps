@@ -66,7 +66,7 @@ pub mod tests {
     use super::*;
 
     pub fn color_code_5_model_graph(visualize_filename: String) -> (Arc<ModelHyperGraph>, Visualizer) {
-        let code = CodeCapacityColorCode::new(5, 0.1, 1000);
+        let code = CodeCapacityColorCode::new(5, 0.1);
         let mut visualizer = Visualizer::new(
             Some(visualize_data_folder() + visualize_filename.as_str()),
             code.get_positions(),
