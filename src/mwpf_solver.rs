@@ -76,11 +76,12 @@ macro_rules! bind_trait_to_python {
             }
             #[pyo3(name = "subgraph_range", signature = (visualizer=None))] // in Python, `subgraph_range` and `subgraph_range_visualizer` is the same
             fn py_subgraph_range(&mut self, visualizer: Option<&mut Visualizer>) -> (Subgraph, WeightRange) {
-                self.subgraph_range_visualizer(visualizer)
+                let (subgraph, range) = self.subgraph_range_visualizer(visualizer);
+                (subgraph.into_iter().collect(), range)
             }
             #[pyo3(name = "subgraph", signature = (visualizer=None))]
             fn py_subgraph(&mut self, visualizer: Option<&mut Visualizer>) -> Subgraph {
-                self.subgraph_range_visualizer(visualizer).0
+                self.subgraph_range_visualizer(visualizer).0.into_iter().collect()
             }
             #[pyo3(name = "sum_dual_variables")]
             fn py_sum_dual_variables(&self) -> PyRational {

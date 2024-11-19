@@ -583,7 +583,7 @@ impl CodeCapacityRepetitionCode {
 #[pymethods]
 impl CodeCapacityRepetitionCode {
     #[new]
-    #[pyo3(signature = (d, pairs))]
+    #[pyo3(signature = (d, p))]
     fn py_new(d: VertexNum, p: f64) -> Self {
         Self::new(d, p)
     }
