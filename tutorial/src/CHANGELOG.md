@@ -15,3 +15,11 @@ Rename several structures to better reveal their natures.
 ## 0.1.2 -> 0.1.3
 
 Fixed bug of bigint representation in the visualization tool.
+
+## 0.1.3 -> 0.1.4
+
+upgrade visualization engine to support multiple views in a single Jupyter notebook efficiently (by sharing WebGL renderers)
+
+## 0.1.4 -> 0.1.5
+
+fix critical bug when renaming `MaxUpdateLength` to `Obstacle`... which results in much higher logical error rates
