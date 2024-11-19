@@ -37,8 +37,8 @@ pub trait SolverTrait {
         unimplemented!();
     }
     fn clear(&mut self);
-    fn solve_visualizer(&mut self, syndrome_pattern: &SyndromePattern, visualizer: Option<&mut Visualizer>);
-    fn solve(&mut self, syndrome_pattern: &SyndromePattern) {
+    fn solve_visualizer(&mut self, syndrome_pattern: SyndromePattern, visualizer: Option<&mut Visualizer>);
+    fn solve(&mut self, syndrome_pattern: SyndromePattern) {
         self.solve_visualizer(syndrome_pattern, None)
     }
     fn subgraph_range_visualizer(&mut self, visualizer: Option<&mut Visualizer>) -> (OutputSubgraph, WeightRange);
@@ -58,7 +58,6 @@ pub trait SolverTrait {
     }
     fn update_weights(&mut self, new_weights: &mut Vec<f64>, mix_ratio: f64);
     fn get_model_graph(&self) -> Arc<ModelHyperGraph>;
-    fn adjust_syndrome_for_negative_edges(&mut self, syndrome_pattern: &mut SyndromePattern);
 }
 
 #[cfg(feature = "python_binding")]
@@ -251,8 +250,24 @@ impl SolverTrait for SolverSerialPlugins {
         self.dual_module.clear();
         self.interface_ptr.clear();
     }
-    fn solve_visualizer(&mut self, syndrome_pattern: &SyndromePattern, visualizer: Option<&mut Visualizer>) {
+    fn solve_visualizer(&mut self, mut syndrome_pattern: SyndromePattern, visualizer: Option<&mut Visualizer>) {
+        self.dual_module.adjust_weights_for_negative_edges();
+
+        let moved_out_vec = std::mem::take(&mut syndrome_pattern.defect_vertices);
+        let mut moved_out_set = moved_out_vec.into_iter().collect::<HashSet<VertexIndex>>();
+
+        for to_flip in self.dual_module.get_flip_vertices().iter() {
+            if moved_out_set.contains(to_flip) {
+                moved_out_set.remove(to_flip);
+            } else {
+                moved_out_set.insert(*to_flip);
+            }
+        }
+
+        syndrome_pattern.defect_vertices = moved_out_set.into_iter().collect();
+
         let syndrome_pattern = Arc::new(syndrome_pattern.clone());
+
         if !syndrome_pattern.erasures.is_empty() {
             unimplemented!();
         }
@@ -310,22 +325,6 @@ impl SolverTrait for SolverSerialPlugins {
     fn debug_print(&self) {
         self.dual_module.debug_print();
     }
-    fn adjust_syndrome_for_negative_edges(&mut self, syndrome_pattern: &mut SyndromePattern) {
-        self.dual_module.adjust_weights_for_negative_edges();
-        let moved_out_vec = std::mem::take(&mut syndrome_pattern.defect_vertices);
-
-        let mut moved_out_set = moved_out_vec.into_iter().collect::<HashSet<VertexIndex>>();
-
-        for to_flip in self.dual_module.get_flip_vertices().iter() {
-            if moved_out_set.contains(to_flip) {
-                moved_out_set.remove(to_flip);
-            } else {
-                moved_out_set.insert(*to_flip);
-            }
-        }
-
-        syndrome_pattern.defect_vertices = moved_out_set.into_iter().collect();
-    }
 }
 
 macro_rules! bind_solver_trait {
@@ -334,7 +333,7 @@ macro_rules! bind_solver_trait {
             fn clear(&mut self) {
                 self.0.clear()
             }
-            fn solve_visualizer(&mut self, syndrome_pattern: &SyndromePattern, visualizer: Option<&mut Visualizer>) {
+            fn solve_visualizer(&mut self, syndrome_pattern: SyndromePattern, visualizer: Option<&mut Visualizer>) {
                 self.0.solve_visualizer(syndrome_pattern, visualizer)
             }
             fn subgraph_range_visualizer(&mut self, visualizer: Option<&mut Visualizer>) -> (OutputSubgraph, WeightRange) {
@@ -363,9 +362,6 @@ macro_rules! bind_solver_trait {
             }
             fn debug_print(&self) {
                 self.0.debug_print()
-            }
-            fn adjust_syndrome_for_negative_edges(&mut self, syndrome_pattern: &mut SyndromePattern) {
-                self.0.adjust_syndrome_for_negative_edges(syndrome_pattern)
             }
         }
     };
@@ -492,7 +488,7 @@ impl SolverErrorPatternLogger {
 
 impl SolverTrait for SolverErrorPatternLogger {
     fn clear(&mut self) {}
-    fn solve_visualizer(&mut self, syndrome_pattern: &SyndromePattern, _visualizer: Option<&mut Visualizer>) {
+    fn solve_visualizer(&mut self, syndrome_pattern: SyndromePattern, _visualizer: Option<&mut Visualizer>) {
         self.file
             .write_all(
                 serde_json::to_string(&serde_json::json!(syndrome_pattern))
@@ -519,9 +515,6 @@ impl SolverTrait for SolverErrorPatternLogger {
         panic!("error pattern logger do not actually solve the problem")
     }
     fn update_weights(&mut self, _new_weights: &mut Vec<f64>, _mix_ratio: f64) {
-        panic!("error pattern logger do not actually solve the problem")
-    }
-    fn adjust_syndrome_for_negative_edges(&mut self, _syndrome_pattern: &mut SyndromePattern) {
         panic!("error pattern logger do not actually solve the problem")
     }
 }
