@@ -68,12 +68,18 @@ async function decompress_content(base64_str) {
 async function load_module() {
     const decompressed = await decompress_content(module_base64)
     const text_decoder = new TextDecoder("utf-8")
-    const module_code = text_decoder.decode(decompressed)
+    let module_code = text_decoder.decode(decompressed)
+    /* HYPERION_VISUAL_MODULE_CODE_DECODED */
     // add script to html root
-    const script = document.createElement('script')
-    script.type = "module"
-    script.innerHTML = module_code
-    document.body.appendChild(script)
+    if (window.hyperion_visual != undefined) {
+        console.warn("window.hyperion_visual already loaded; skip loading")
+    } else {
+        console.log("window.hyperion_visual not loaded; loading")
+        const script = document.createElement('script')
+        script.type = "module"
+        script.innerHTML = module_code
+        document.body.appendChild(script)
+    }
 }
 load_module()
 `

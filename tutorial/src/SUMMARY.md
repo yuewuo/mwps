@@ -11,3 +11,5 @@
 - [Visualizer Usage](demo/visualizer-usage.md)
 
 [Developer Notes](developer-notes.md) 
+
+[CHANGELOG](CHANGELOG.md)

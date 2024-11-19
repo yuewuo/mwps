@@ -111,29 +111,29 @@ export function fix_visualizer_data (visualizer: VisualizerData) {
         const snapshot = entry[1] as Snapshot
         if (snapshot.dual_nodes != undefined) {
             for (const dual_node of snapshot.dual_nodes) {
-                dual_node.dn = parse_rust_bigint(dual_node.dn)
-                dual_node.dd = parse_rust_bigint(dual_node.dd)
-                dual_node.rn = parse_rust_bigint(dual_node.rn)
-                dual_node.rd = parse_rust_bigint(dual_node.rd)
+                if (dual_node.dn != undefined) dual_node.dn = parse_rust_bigint(dual_node.dn)
+                if (dual_node.dd != undefined) dual_node.dd = parse_rust_bigint(dual_node.dd)
+                if (dual_node.rn != undefined) dual_node.rn = parse_rust_bigint(dual_node.rn)
+                if (dual_node.rd != undefined) dual_node.rd = parse_rust_bigint(dual_node.rd)
             }
         }
         if (snapshot.edges != undefined) {
             for (const edge of snapshot.edges) {
-                edge.gn = parse_rust_bigint(edge.gn)
-                edge.gd = parse_rust_bigint(edge.gd)
-                edge.un = parse_rust_bigint(edge.un)
-                edge.ud = parse_rust_bigint(edge.ud)
+                if (edge.gn != undefined) edge.gn = parse_rust_bigint(edge.gn)
+                if (edge.gd != undefined) edge.gd = parse_rust_bigint(edge.gd)
+                if (edge.un != undefined) edge.un = parse_rust_bigint(edge.un)
+                if (edge.ud != undefined) edge.ud = parse_rust_bigint(edge.ud)
             }
         }
         if (snapshot.interface != undefined) {
-            snapshot.interface.sdn = parse_rust_bigint(snapshot.interface.sdn)
-            snapshot.interface.sdd = parse_rust_bigint(snapshot.interface.sdd)
+            if (snapshot.interface.sdn != undefined) snapshot.interface.sdn = parse_rust_bigint(snapshot.interface.sdn)
+            if (snapshot.interface.sdd != undefined) snapshot.interface.sdd = parse_rust_bigint(snapshot.interface.sdd)
         }
         if (snapshot.weight_range != undefined) {
-            snapshot.weight_range.ld = parse_rust_bigint(snapshot.weight_range.ld)
-            snapshot.weight_range.ln = parse_rust_bigint(snapshot.weight_range.ln)
-            snapshot.weight_range.ud = parse_rust_bigint(snapshot.weight_range.ud)
-            snapshot.weight_range.un = parse_rust_bigint(snapshot.weight_range.un)
+            if (snapshot.weight_range.ld != undefined) snapshot.weight_range.ld = parse_rust_bigint(snapshot.weight_range.ld)
+            if (snapshot.weight_range.ln != undefined) snapshot.weight_range.ln = parse_rust_bigint(snapshot.weight_range.ln)
+            if (snapshot.weight_range.ud != undefined) snapshot.weight_range.ud = parse_rust_bigint(snapshot.weight_range.ud)
+            if (snapshot.weight_range.un != undefined) snapshot.weight_range.un = parse_rust_bigint(snapshot.weight_range.un)
         }
     }
 }

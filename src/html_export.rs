@@ -20,13 +20,30 @@ lazy_static! {
     static ref HYPERION_VISUAL_JUPYTER_LOADED: Mutex<bool> = Mutex::new(false);
 }
 
+const WINDOW_HYPERION_VISUAL: &str = concat!("window.hyperion_visual_", env!("MWPF_BUILD_RS_TIMESTAMP"));
+
 #[cfg(feature = "embed_visualizer")]
 lazy_static! {
-    static ref HYPERION_VISUAL_LIBRARY_BODY: &'static str = {
-        let template_html = include_str!("../visualize/dist/standalone.html");
+    static ref HYPERION_VISUAL_TEMPLATE_HTML: String = {
+        let content = include_str!("../visualize/dist/standalone.html");
+        content.replace("window.hyperion_visual", WINDOW_HYPERION_VISUAL)
+    };
+    static ref HYPERION_VISUAL_LIBRARY_BODY: String = {
+        let template_html = HYPERION_VISUAL_TEMPLATE_HTML.as_str();
         let library_flag = "HYPERION_VISUAL_MODULE_LOADER";
         let (_, library_body, _) = HTMLExport::slice_content(template_html, library_flag);
-        library_body
+        let decoded_flag = "/* HYPERION_VISUAL_MODULE_CODE_DECODED */";
+        let decoded_index = library_body
+            .find(decoded_flag)
+            .unwrap_or_else(|| panic!("begin flag {} not found in content", decoded_flag));
+        let inserted_code =
+            format!(";module_code = module_code.replaceAll('window.hyperion_visual', '{WINDOW_HYPERION_VISUAL}');");
+        format!(
+            "{}{}{}",
+            &library_body[0..decoded_index],
+            inserted_code,
+            &library_body[decoded_index..]
+        )
     };
 }
 
@@ -59,8 +76,8 @@ impl HTMLExport {
         );
         (
             &content[0..start_index],
-            &content[start_index + begin.len()..end_index].trim(),
-            &content[end_index + end.len()..].trim(),
+            content[start_index + begin.len()..end_index].trim(),
+            content[end_index + end.len()..].trim(),
         )
     }
 
@@ -168,9 +185,20 @@ impl HTMLExport {
                 const override_config = {override_str};
                 // get the current height and width of the div block
                 const div = document.getElementById("{div_id}");
+                for (let i=0; i<10; ++i) {{
+                    if (div.clientWidth != 0 && div.clientHeight != 0) break;
+                    await new Promise(resolve => setTimeout(resolve, 300));  // 300ms
+                    console.log(`waiting for div block ${div_id} to be rendered [${{i+1}}/10]`);
+                }}
                 const initial_aspect_ratio = div.clientWidth / div.clientHeight;
                 if (override_config.initial_aspect_ratio == undefined) {{
-                    override_config.initial_aspect_ratio = initial_aspect_ratio;
+                    if (!isNaN(initial_aspect_ratio)) {{
+                        override_config.initial_aspect_ratio = initial_aspect_ratio;
+                        // save the data, in just a lot of them are being initialized at once and the aspect ratio is not correct
+                        window.loading_a_lot_hyperion_visual_initial_aspect_ratio = initial_aspect_ratio;
+                    }} else if (window.loading_a_lot_hyperion_visual_initial_aspect_ratio != undefined) {{
+                        override_config.initial_aspect_ratio = window.loading_a_lot_hyperion_visual_initial_aspect_ratio
+                    }}
                 }}
                 // bind the visualizer to the div block
                 let app_currently_exist = false;
@@ -178,7 +206,7 @@ impl HTMLExport {
                     if (app_currently_exist) return;
                     app_currently_exist = true;
                     const script_dom = document.getElementById('{div_id}');
-                    const app = await window.hyperion_visual.bind_to_div("#{div_id}", visualizer_data, {{ ...window.hyperion_visual.default_config(), ...override_config }});
+                    const app = await {WINDOW_HYPERION_VISUAL}.bind_to_div("#{div_id}", visualizer_data, {{ ...{WINDOW_HYPERION_VISUAL}.default_config(), ...override_config }});
                     // observe the div block for removal
                     new MutationObserver(function(mutations) {{
                         if(!document.body.contains(script_dom)) {{
@@ -209,20 +237,20 @@ impl HTMLExport {
 }
 
 impl HTMLExport {
-    pub fn get_template_html() -> Option<&'static str> {
+    pub fn get_template_html() -> Option<&'static String> {
         cfg_if::cfg_if! {
             if #[cfg(feature="embed_visualizer")] {
-                Some(include_str!("../visualize/dist/standalone.html"))
+                Some(&*HYPERION_VISUAL_TEMPLATE_HTML)
             } else {
                 None
             }
         }
     }
 
-    pub fn get_library_body() -> Option<&'static str> {
+    pub fn get_library_body() -> Option<&'static String> {
         cfg_if::cfg_if! {
             if #[cfg(feature="embed_visualizer")] {
-                Some(*HYPERION_VISUAL_LIBRARY_BODY)
+                Some(&*HYPERION_VISUAL_LIBRARY_BODY)
             } else {
                 None
             }
@@ -250,13 +278,13 @@ impl HTMLExport {
 impl HTMLExport {
     #[staticmethod]
     #[pyo3(name = "get_template_html")]
-    fn py_get_template_html() -> Option<&'static str> {
-        Self::get_template_html()
+    fn py_get_template_html() -> Option<String> {
+        Self::get_template_html().map(|s| s.clone())
     }
     #[staticmethod]
     #[pyo3(name = "get_library_body")]
-    fn py_get_library_body() -> Option<&'static str> {
-        Self::get_library_body()
+    fn py_get_library_body() -> Option<String> {
+        Self::get_library_body().map(|s| s.clone())
     }
     #[staticmethod]
     #[pyo3(name = "compress_content")]
@@ -321,5 +349,12 @@ mod tests {
         let decompressed = HTMLExport::decompress_content(compressed.as_str());
         println!("decompressed: {decompressed}");
         assert_eq!(data, decompressed);
+    }
+
+    #[cfg(feature = "embed_visualizer")]
+    #[test]
+    fn html_export_window_hyperion_visual_name() {
+        // cargo test html_export_window_hyperion_visual_name -- --nocapture
+        println!("{}", WINDOW_HYPERION_VISUAL);
     }
 }
