@@ -4,8 +4,6 @@ use crate::num_rational;
 use crate::num_traits::ToPrimitive;
 use crate::rand_xoshiro;
 use crate::rand_xoshiro::rand_core::RngCore;
-#[cfg(feature = "python_binding")]
-use crate::util_py::*;
 use crate::visualize::*;
 #[cfg(feature = "python_binding")]
 use pyo3::prelude::*;
@@ -485,7 +483,6 @@ impl MWPSVisualizer for Subgraph {
 
 /// the range of the optimal MWPF solution's weight
 #[derive(Clone, Debug)]
-#[cfg_attr(feature = "python_binding", pyclass)]
 pub struct WeightRange {
     pub lower: Rational,
     pub upper: Rational,
@@ -498,35 +495,6 @@ impl WeightRange {
     /// a solution is optimal only if the range is a single point
     pub fn is_optimal(&self) -> bool {
         self.lower == self.upper
-    }
-}
-
-#[cfg(feature = "python_binding")]
-#[pymethods]
-impl WeightRange {
-    #[new]
-    #[pyo3(signature=(lower, upper))]
-    fn py_new(lower: PyRational, upper: PyRational) -> Self {
-        Self::new(lower.0, upper.0)
-    }
-    #[getter]
-    fn get_lower(&self) -> PyRational {
-        self.lower.clone().into()
-    }
-    #[setter]
-    fn set_lower(&mut self, value: PyRational) {
-        self.lower = value.0;
-    }
-    #[getter]
-    fn get_upper(&self) -> PyRational {
-        self.upper.clone().into()
-    }
-    #[setter]
-    fn set_upper(&mut self, value: PyRational) {
-        self.upper = value.0;
-    }
-    fn __repr__(&self) -> String {
-        format!("{:?}", self)
     }
 }
 

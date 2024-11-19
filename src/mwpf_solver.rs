@@ -75,9 +75,9 @@ macro_rules! bind_trait_to_python {
                 self.solve_visualizer(syndrome_pattern, visualizer)
             }
             #[pyo3(name = "subgraph_range", signature = (visualizer=None))] // in Python, `subgraph_range` and `subgraph_range_visualizer` is the same
-            fn py_subgraph_range(&mut self, visualizer: Option<&mut Visualizer>) -> (Subgraph, WeightRange) {
+            fn py_subgraph_range(&mut self, visualizer: Option<&mut Visualizer>) -> (PySubgraph, PyWeightRange) {
                 let (subgraph, range) = self.subgraph_range_visualizer(visualizer);
-                (subgraph.into_iter().collect(), range)
+                (subgraph.into_iter().collect::<Vec<EdgeIndex>>().into(), range.into())
             }
             #[pyo3(name = "subgraph", signature = (visualizer=None))]
             fn py_subgraph(&mut self, visualizer: Option<&mut Visualizer>) -> Subgraph {
