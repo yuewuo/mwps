@@ -50,3 +50,4 @@ rustc-ice*
 .ipynb_checkpoints
 
 src/python/**/*.so
+vite.config.ts.timestamp-*.mjs

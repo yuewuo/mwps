@@ -117,7 +117,7 @@ export class Config {
         })
         pane.addBinding(this, 'parameters')
         // add figure export
-        pane.addBinding(this, 'png_scale', { min: 0.5, max: 2 })
+        pane.addBinding(this, 'png_scale', { min: 0.2, max: 4 })
         const png_buttons: ButtonGridApi = pane.addBlade({
             view: 'buttongrid',
             size: [2, 1],
@@ -194,7 +194,7 @@ export class Config {
         const old_renderer: WebGLRenderer = (this.renderer as any).renderer
         const size = old_renderer.getSize(new Vector2())
         renderer.setSize(size.x * this.png_scale, size.y * this.png_scale, false)
-        renderer.setPixelRatio(window.devicePixelRatio * this.png_scale)
+        renderer.setPixelRatio(window.devicePixelRatio)
         renderer.render((this.renderer as any).scene, (this.renderer as any).camera)
         return renderer.domElement.toDataURL()
     }
@@ -307,11 +307,6 @@ export class Config {
         return `MWPF Visualizer (${this.snapshot_index + 1}/${this.snapshot_num})`
     }
 
-    public set aspect_ratio (aspect_ratio: number) {
-        this.basic.aspect_ratio = aspect_ratio
-        this.pane.refresh()
-    }
-
     public set snapshot_index (index: number) {
         this.snapshot_config.index = index
         this.snapshot_config.name = index
@@ -357,7 +352,7 @@ export class BasicConfig {
 
     constructor (config_props: ConfigProps) {
         this.config_props = config_props
-        if (config_props.initial_aspect_ratio != undefined) {
+        if (config_props.initial_aspect_ratio != undefined && !isNaN(config_props.initial_aspect_ratio)) {
             this.aspect_ratio = config_props.initial_aspect_ratio
         }
         this.segments = config_props.segments
