@@ -188,7 +188,7 @@ pub trait PrimalModuleImpl {
                     // cycle resolution
                     let drained: Vec<(usize, BTreeSet<Obstacle>)> = std::mem::take(&mut current_sequences);
                     for (idx, start) in drained.into_iter() {
-                        if obstacles.eq(&start) {
+                        if _obstacles.eq(&start) {
                             dual_module.end_tuning();
                             break '_resolving;
                         }
