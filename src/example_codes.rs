@@ -290,6 +290,19 @@ pub trait ExampleCode {
         }
     }
 
+    /// check if the correction is valid, i.e., has the same syndrome with the input
+    fn validate_correction(&mut self, correction: &[EdgeIndex]) {
+        // first check if the correction is valid, i.e., has the same defect
+        let original_defect_vertices = self.get_defect_vertices();
+        self.set_physical_errors(correction);
+        let new_defect_vertices = self.get_defect_vertices();
+        assert_eq!(
+            original_defect_vertices, new_defect_vertices,
+            "invalid correction: parity check does not match input"
+        );
+        self.set_defect_vertices(&original_defect_vertices);
+    }
+
     /// set erasure edges
     #[allow(clippy::unnecessary_cast)]
     fn set_erasures(&mut self, erasures: &[EdgeIndex]) {
@@ -451,6 +464,10 @@ macro_rules! bind_trait_example_code {
             #[pyo3(name = "get_defect_vertices")]
             fn trait_get_defect_vertices(&self) -> Vec<VertexIndex> {
                 self.get_defect_vertices()
+            }
+            #[pyo3(name = "validate_correction")]
+            fn trait_validate_correction(&mut self, correction: Vec<EdgeIndex>) {
+                self.validate_correction(&correction)
             }
             #[pyo3(name = "get_erasures")]
             fn trait_get_erasures(&self) -> Vec<EdgeIndex> {
@@ -1430,6 +1447,8 @@ pub(crate) fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::cli::*;
+    use rand::{thread_rng, Rng};
 
     fn visualize_code(code: &mut impl ExampleCode, visualize_filename: String) {
         let visualizer_path = visualize_data_folder() + visualize_filename.as_str();
@@ -1492,5 +1511,77 @@ mod tests {
         let mut code = CodeCapacityColorCode::new(7, 0.1, 1000);
         code.sanity_check().unwrap();
         visualize_code(&mut code, "example_code_capacity_color_code.json".to_string());
+    }
+
+    #[test]
+    fn example_code_correction_validity_code_capacity_repetition_code() {
+        // cargo test --release example_code_correction_validity_code_capacity_repetition_code -- --nocapture
+        let d_vec = [3, 5, 7, 9, 11];
+        let p_vec = [0.1, 0.01];
+        let repeat = 10000;
+        for d in d_vec {
+            for p in p_vec {
+                println!("d={d}, p={p}");
+                let mut code = CodeCapacityRepetitionCode::new(d, p, 1000);
+                code.sanity_check().unwrap();
+                let initializer = code.get_initializer();
+                let mut solver = SolverType::JointSingleHair.build(&initializer, &code, json!({ "cluster_node_limit": 50 }));
+                for _ in 0..repeat {
+                    let (syndrome, _) = code.generate_random_errors(thread_rng().gen::<u64>());
+                    solver.solve(&syndrome);
+                    let (subgraph, _weight_range) = solver.subgraph_range();
+                    code.validate_correction(&subgraph);
+                    solver.clear();
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn example_code_correction_validity_code_capacity_depolarize_planar_code() {
+        // cargo test --release example_code_correction_validity_code_capacity_depolarize_planar_code -- --nocapture
+        let d_vec = [3, 5, 7];
+        let p_vec = [0.03, 0.01];
+        let repeat = 10000;
+        for d in d_vec {
+            for p in p_vec {
+                println!("d={d}, p={p}");
+                let mut code = CodeCapacityDepolarizePlanarCode::new(d, p, 1000);
+                code.sanity_check().unwrap();
+                let initializer = code.get_initializer();
+                let mut solver = SolverType::JointSingleHair.build(&initializer, &code, json!({ "cluster_node_limit": 50 }));
+                for _ in 0..repeat {
+                    let (syndrome, _) = code.generate_random_errors(thread_rng().gen::<u64>());
+                    solver.solve(&syndrome);
+                    let (subgraph, _weight_range) = solver.subgraph_range();
+                    code.validate_correction(&subgraph);
+                    solver.clear();
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn example_code_correction_validity_code_capacity_color_code() {
+        // cargo test --release example_code_correction_validity_code_capacity_color_code -- --nocapture
+        let d_vec = [3, 5, 7, 9];
+        let p_vec = [0.1, 0.01];
+        let repeat = 10000;
+        for d in d_vec {
+            for p in p_vec {
+                println!("d={d}, p={p}");
+                let mut code = CodeCapacityColorCode::new(d, p, 1000);
+                code.sanity_check().unwrap();
+                let initializer = code.get_initializer();
+                let mut solver = SolverType::JointSingleHair.build(&initializer, &code, json!({ "cluster_node_limit": 50 }));
+                for _ in 0..repeat {
+                    let (syndrome, _) = code.generate_random_errors(thread_rng().gen::<u64>());
+                    solver.solve(&syndrome);
+                    let (subgraph, _weight_range) = solver.subgraph_range();
+                    code.validate_correction(&subgraph);
+                    solver.clear();
+                }
+            }
+        }
     }
 }
