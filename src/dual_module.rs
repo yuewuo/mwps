@@ -3,6 +3,8 @@
 //! Generics for dual modules
 //!
 
+use hashbrown::HashSet;
+
 use crate::decoding_hypergraph::*;
 use crate::derivative::Derivative;
 use crate::invalid_subgraph::*;
@@ -498,6 +500,27 @@ pub trait DualModuleImpl {
         drained_cluster_index: NodeIndex,
         absorbing_cluster_index: NodeIndex,
     );
+
+    fn adjust_weights_for_negative_edges(&mut self) {
+        unimplemented!()
+    }
+
+    /// update weights of dual_module
+    fn update_weights_bp(&mut self, _log_prob_ratios: &[f64], _bp_applicaiton_ratio: f64) {
+        unimplemented!()
+    }
+
+    fn get_negative_weight_sum(&self) -> Rational {
+        unimplemented!()
+    }
+
+    fn get_negative_edges(&self) -> HashSet<EdgeIndex> {
+        unimplemented!()
+    }
+
+    fn get_flip_vertices(&self) -> HashSet<VertexIndex> {
+        unimplemented!()
+    }
 }
 
 #[derive(PartialEq, Eq, Debug, Clone, PartialOrd, Ord)]

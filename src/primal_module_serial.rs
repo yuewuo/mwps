@@ -251,7 +251,7 @@ impl PrimalModuleImpl for PrimalModuleSerial {
         res
     }
 
-    fn subgraph(&mut self, _interface: &DualModuleInterfacePtr, _dual_module: &mut impl DualModuleImpl) -> Subgraph {
+    fn subgraph(&mut self, _interface: &DualModuleInterfacePtr, _dual_module: &mut impl DualModuleImpl) -> OutputSubgraph {
         let mut subgraph = vec![];
         for cluster_ptr in self.clusters.iter() {
             let cluster = cluster_ptr.read_recursive();
@@ -268,7 +268,18 @@ impl PrimalModuleImpl for PrimalModuleSerial {
                     .iter(),
             );
         }
-        subgraph
+
+        // let mut subgraph_set = subgraph.into_iter().collect::<hashbrown::HashSet<EdgeIndex>>();
+        // for to_flip in _dual_module.get_negative_edges().iter() {
+        //     if subgraph_set.contains(to_flip) {
+        //         subgraph_set.remove(to_flip);
+        //     } else {
+        //         subgraph_set.insert(*to_flip);
+        //     }
+        // }
+        // OutputSubgraph::new(subgraph_set.into_iter().collect(), Default::default())
+
+        OutputSubgraph::new(subgraph, _dual_module.get_negative_edges())
     }
 
     /// check if there are more plugins to be applied
@@ -1175,13 +1186,9 @@ pub mod tests {
                 .matches_subgraph_syndrome(&subgraph, &defect_vertices),
             "the result subgraph is invalid"
         );
+        assert_eq!(Rational::from(final_dual), weight_range.upper, "unmatched sum dual variables");
         assert_eq!(
-            Rational::from_usize(final_dual).unwrap(),
-            weight_range.upper,
-            "unmatched sum dual variables"
-        );
-        assert_eq!(
-            Rational::from_usize(final_dual).unwrap(),
+            Rational::from(final_dual),
             weight_range.lower,
             "unexpected final dual variable sum"
         );
@@ -1225,8 +1232,8 @@ pub mod tests {
         // cargo test primal_module_serial_basic_1 -- --nocapture
         let visualize_filename = "primal_module_serial_basic_1.json".to_string();
         let defect_vertices = vec![23, 24, 29, 30];
-        let code = CodeCapacityTailoredCode::new(7, 0., 0.01, 1);
-        primal_module_serial_basic_standard_syndrome(code, visualize_filename, defect_vertices, 1, vec![]);
+        let code = CodeCapacityTailoredCode::new(7, 0., 0.01);
+        primal_module_serial_basic_standard_syndrome(code, visualize_filename, defect_vertices, 1., vec![]);
     }
 
     #[test]
@@ -1234,8 +1241,8 @@ pub mod tests {
         // cargo test primal_module_serial_basic_2 -- --nocapture
         let visualize_filename = "primal_module_serial_basic_2.json".to_string();
         let defect_vertices = vec![16, 17, 23, 25, 29, 30];
-        let code = CodeCapacityTailoredCode::new(7, 0., 0.01, 1);
-        primal_module_serial_basic_standard_syndrome(code, visualize_filename, defect_vertices, 2, vec![]);
+        let code = CodeCapacityTailoredCode::new(7, 0., 0.01);
+        primal_module_serial_basic_standard_syndrome(code, visualize_filename, defect_vertices, 2., vec![]);
     }
 
     #[test]
@@ -1243,8 +1250,8 @@ pub mod tests {
         // cargo test primal_module_serial_basic_3 -- --nocapture
         let visualize_filename = "primal_module_serial_basic_3.json".to_string();
         let defect_vertices = vec![14, 15, 16, 17, 22, 25, 28, 31, 36, 37, 38, 39];
-        let code = CodeCapacityTailoredCode::new(7, 0., 0.01, 1);
-        primal_module_serial_basic_standard_syndrome(code, visualize_filename, defect_vertices, 5, vec![]);
+        let code = CodeCapacityTailoredCode::new(7, 0., 0.01);
+        primal_module_serial_basic_standard_syndrome(code, visualize_filename, defect_vertices, 5., vec![]);
     }
 
     #[test]
@@ -1252,12 +1259,12 @@ pub mod tests {
         // cargo test primal_module_serial_basic_3_improved -- --nocapture
         let visualize_filename = "primal_module_serial_basic_3_improved.json".to_string();
         let defect_vertices = vec![14, 15, 16, 17, 22, 25, 28, 31, 36, 37, 38, 39];
-        let code = CodeCapacityTailoredCode::new(7, 0., 0.01, 1);
+        let code = CodeCapacityTailoredCode::new(7, 0., 0.01);
         primal_module_serial_basic_standard_syndrome(
             code,
             visualize_filename,
             defect_vertices,
-            5,
+            5.,
             vec![
                 PluginUnionFind::entry(),
                 PluginSingleHair::entry_with_strategy(RepeatStrategy::Once),
@@ -1273,8 +1280,8 @@ pub mod tests {
         // cargo test primal_module_serial_basic_4 -- --nocapture
         let visualize_filename = "primal_module_serial_basic_4.json".to_string();
         let defect_vertices = vec![10, 11, 12, 15, 16, 17, 18];
-        let code = CodeCapacityTailoredCode::new(5, 0., 0.01, 1);
-        primal_module_serial_basic_standard_syndrome(code, visualize_filename, defect_vertices, 4, vec![]);
+        let code = CodeCapacityTailoredCode::new(5, 0., 0.01);
+        primal_module_serial_basic_standard_syndrome(code, visualize_filename, defect_vertices, 4., vec![]);
     }
 
     #[test]
@@ -1282,12 +1289,12 @@ pub mod tests {
         // cargo test primal_module_serial_basic_4_single_improved -- --nocapture
         let visualize_filename = "primal_module_serial_basic_4_single_improved.json".to_string();
         let defect_vertices = vec![10, 11, 12, 15, 16, 17, 18];
-        let code = CodeCapacityTailoredCode::new(5, 0., 0.01, 1);
+        let code = CodeCapacityTailoredCode::new(5, 0., 0.01);
         primal_module_serial_basic_standard_syndrome(
             code,
             visualize_filename,
             defect_vertices,
-            4,
+            4.,
             vec![
                 PluginUnionFind::entry(),
                 PluginSingleHair::entry_with_strategy(RepeatStrategy::Once),
@@ -1300,8 +1307,8 @@ pub mod tests {
         // cargo test primal_module_serial_basic_5 -- --nocapture
         let visualize_filename = "primal_module_serial_basic_5.json".to_string();
         let defect_vertices = vec![32, 33, 37, 47, 86, 87, 72, 82];
-        let code = CodeCapacityPlanarCode::new(11, 0.01, 1);
-        primal_module_serial_basic_standard_syndrome(code, visualize_filename, defect_vertices, 4, vec![]);
+        let code = CodeCapacityPlanarCode::new(11, 0.01);
+        primal_module_serial_basic_standard_syndrome(code, visualize_filename, defect_vertices, 4., vec![]);
     }
 
     #[test]
@@ -1309,12 +1316,12 @@ pub mod tests {
         // cargo test primal_module_serial_basic_6 -- --nocapture
         let visualize_filename = "primal_module_serial_basic_6.json".to_string();
         let defect_vertices = vec![12, 22, 23, 32, 17, 26, 27, 37, 62, 72, 73, 82, 67, 76, 77, 87];
-        let code = CodeCapacityPlanarCode::new(11, 0.01, 1);
+        let code = CodeCapacityPlanarCode::new(11, 0.01);
         primal_module_serial_basic_standard_syndrome(
             code,
             visualize_filename,
             defect_vertices,
-            12,
+            12.,
             vec![
                 PluginUnionFind::entry(),
                 PluginSingleHair::entry_with_strategy(RepeatStrategy::Once),

@@ -8,7 +8,6 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use crate::dual_module::*;
-use crate::num_traits::FromPrimitive;
 use crate::ordered_float::OrderedFloat;
 use crate::pointers::*;
 use crate::primal_module_serial::ClusterAffinity;
@@ -228,27 +227,26 @@ pub trait PrimalModuleImpl {
         }
     }
 
-    fn subgraph(&mut self, interface: &DualModuleInterfacePtr, dual_module: &mut impl DualModuleImpl) -> Subgraph;
+    fn subgraph(&mut self, interface: &DualModuleInterfacePtr, dual_module: &mut impl DualModuleImpl) -> OutputSubgraph;
 
     fn subgraph_range(
         &mut self,
         interface: &DualModuleInterfacePtr,
         dual_module: &mut impl DualModuleImpl,
-    ) -> (Subgraph, WeightRange) {
-        let subgraph = self.subgraph(interface, dual_module);
+    ) -> (OutputSubgraph, WeightRange) {
+        let output_subgraph = self.subgraph(interface, dual_module);
         let weight_range = WeightRange::new(
-            interface.sum_dual_variables(),
-            Rational::from_usize(
+            interface.sum_dual_variables() + dual_module.get_negative_weight_sum(),
+            Rational::from(
                 interface
                     .read_recursive()
                     .decoding_graph
                     .model_graph
                     .initializer
-                    .get_subgraph_total_weight(&subgraph),
-            )
-            .unwrap(),
+                    .get_subgraph_total_weight(&output_subgraph),
+            ) + dual_module.get_negative_weight_sum(), // this uses the initailizer, we would need to update this if were to keep this consistent
         );
-        (subgraph, weight_range)
+        (output_subgraph, weight_range)
     }
 
     /// performance profiler report

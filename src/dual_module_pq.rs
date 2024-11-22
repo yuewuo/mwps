@@ -22,7 +22,7 @@ use std::{
 
 use derivative::Derivative;
 use hashbrown::hash_map::Entry;
-use hashbrown::HashMap;
+use hashbrown::{HashMap, HashSet};
 use heapz::RankPairingHeap;
 use heapz::{DecreaseKey, Heap};
 use num_traits::{FromPrimitive, Signed};
@@ -170,7 +170,7 @@ pub struct Edge {
     /// total weight of this edge
     weight: Rational,
     #[derivative(Debug = "ignore")]
-    vertices: Vec<VertexWeak>,
+    vertices: Vec<VertexWeak>, // note: consider using/constructing ordered vertex, this will speed up `adjust_weights_for_negative_edges`
     /// the dual nodes that contributes to this edge
     dual_nodes: Vec<OrderedDualNodeWeak>,
 
@@ -254,8 +254,14 @@ where
     /// the current mode of the dual module
     mode: DualModuleMode,
 
+    // tuning mode statistics
     tuning_start_time: Option<Instant>,
     total_tuning_time: Option<f64>,
+
+    // negative weight handling
+    negative_weight_sum: Rational,
+    negative_edges: HashSet<EdgeIndex>,
+    flip_vertices: HashSet<VertexIndex>,
 }
 
 impl<Queue> DualModulePQGeneric<Queue>
@@ -388,6 +394,7 @@ where
     #[allow(clippy::unnecessary_cast)]
     fn new_empty(initializer: &SolverInitializer) -> Self {
         initializer.sanity_check().unwrap();
+
         // create vertices
         let vertices: Vec<VertexPtr> = (0..initializer.vertex_num)
             .map(|vertex_index| {
@@ -401,9 +408,9 @@ where
         // set edges
         let mut edges = Vec::<EdgePtr>::new();
         for hyperedge in initializer.weighted_edges.iter() {
-            let edge_ptr = EdgePtr::new_value(Edge {
+            let edge = Edge {
                 edge_index: edges.len() as EdgeIndex,
-                weight: Rational::from_usize(hyperedge.weight).unwrap(),
+                weight: Rational::from(hyperedge.weight),
                 dual_nodes: vec![],
                 vertices: hyperedge
                     .vertices
@@ -415,10 +422,14 @@ where
                 grow_rate: Rational::zero(),
                 #[cfg(feature = "incr_lp")]
                 cluster_weights: hashbrown::HashMap::new(),
-            });
+            };
+
+            let edge_ptr = EdgePtr::new_value(edge);
+
             for &vertex_index in hyperedge.vertices.iter() {
                 vertices[vertex_index as usize].write().edges.push(edge_ptr.downgrade());
             }
+
             edges.push(edge_ptr);
         }
         Self {
@@ -429,6 +440,9 @@ where
             mode: DualModuleMode::default(),
             tuning_start_time: None,
             total_tuning_time: None,
+            negative_weight_sum: Default::default(),
+            negative_edges: Default::default(),
+            flip_vertices: Default::default(),
         }
     }
 
@@ -443,6 +457,10 @@ where
         self.mode_mut().reset();
 
         self.tuning_start_time = None;
+
+        self.negative_edges.clear();
+        self.negative_weight_sum = Rational::zero();
+        self.flip_vertices.clear();
     }
 
     #[allow(clippy::unnecessary_cast)]
@@ -740,10 +758,9 @@ where
         println!("global time: {:?}", self.global_time.read_recursive());
         println!(
             "edges: {:?}",
-            self.edges
-                .iter()
-                .filter(|e| !e.read_recursive().grow_rate.is_zero())
-                .collect::<Vec<&EdgePtr>>()
+            self.edges // .iter()
+                       // .filter(|e| !e.read_recursive().grow_rate.is_zero())
+                       // .collect::<Vec<&EdgePtr>>()
         );
         if self.obstacle_queue.len() > 0 {
             println!("pq: {:?}", self.obstacle_queue.len());
@@ -844,6 +861,50 @@ where
             }
         }
     }
+
+    fn adjust_weights_for_negative_edges(&mut self) {
+        for edge in self.edges.iter() {
+            let mut edge = edge.write();
+            if edge.weight.is_negative() {
+                self.negative_edges.insert(edge.edge_index);
+                self.negative_weight_sum += edge.weight.clone();
+
+                for vertex in edge.vertices.iter() {
+                    let vertex = vertex.upgrade_force();
+                    if self.flip_vertices.contains(&vertex.read_recursive().vertex_index) {
+                        self.flip_vertices.remove(&vertex.read_recursive().vertex_index);
+                    } else {
+                        self.flip_vertices.insert(vertex.read_recursive().vertex_index);
+                    }
+                }
+
+                edge.weight = -edge.weight.clone();
+            }
+        }
+    }
+
+    fn update_weights_bp(&mut self, _log_prob_ratios: &[f64], bp_applicaiton_ratio: f64) {
+        for (edge, log_prob_ratio) in self.edges.iter().zip(_log_prob_ratios.iter()) {
+            let mut edge = edge.write();
+
+            let current_edge_weight = edge.weight.to_f64().unwrap();
+            let new_weight = current_edge_weight + bp_applicaiton_ratio * (*log_prob_ratio - current_edge_weight);
+
+            edge.weight = Rational::from_f64(new_weight).unwrap();
+        }
+    }
+
+    fn get_negative_weight_sum(&self) -> Rational {
+        self.negative_weight_sum.clone()
+    }
+
+    fn get_negative_edges(&self) -> HashSet<EdgeIndex> {
+        self.negative_edges.clone()
+    }
+
+    fn get_flip_vertices(&self) -> HashSet<VertexIndex> {
+        self.flip_vertices.clone()
+    }
 }
 
 impl<Queue> MWPSVisualizer for DualModulePQGeneric<Queue>
@@ -941,7 +1002,7 @@ mod tests {
         // cargo test dual_module_pq_basics_1 -- --nocapture
         let visualize_filename = "dual_module_pq_basics_1.json".to_string();
         let weight = 1000;
-        let code = CodeCapacityColorCode::new(7, 0.1, weight);
+        let code = CodeCapacityColorCode::new(7, 0.1);
         let mut visualizer = Visualizer::new(
             Some(visualize_data_folder() + visualize_filename.as_str()),
             code.get_positions(),
@@ -992,7 +1053,7 @@ mod tests {
         // cargo test dual_module_pq_basics_2 -- --nocapture
         let visualize_filename = "dual_module_pq_basics_2.json".to_string();
         let weight = 1000;
-        let code = CodeCapacityTailoredCode::new(7, 0., 0.1, weight);
+        let code = CodeCapacityTailoredCode::new(7, 0., 0.1);
         let mut visualizer = Visualizer::new(
             Some(visualize_data_folder() + visualize_filename.as_str()),
             code.get_positions(),
@@ -1038,7 +1099,7 @@ mod tests {
         let visualize_filename = "dual_module_pq_basics_3.json".to_string();
         let weight = 600; // do not change, the data is hard-coded
         let pxy = 0.0602828812732227;
-        let code = CodeCapacityTailoredCode::new(7, pxy, 0.1, weight); // do not change probabilities: the data is hard-coded
+        let code = CodeCapacityTailoredCode::new(7, pxy, 0.1); // do not change probabilities: the data is hard-coded
         let mut visualizer = Visualizer::new(
             Some(visualize_data_folder() + visualize_filename.as_str()),
             code.get_positions(),

@@ -21,11 +21,9 @@ def prepare_hyperion_solver() -> mwpf.SolverSerialJointSingleHair:
 
 def prepare_fusion_solver() -> fb.SolverSerial:
     vertex_num = 6
-    weighted_edges = [(0, 1, 100), (1, 2, 100), (2, 3, 100),
-                      (3, 4, 100), (4, 5, 100)]
+    weighted_edges = [(0, 1, 100), (1, 2, 100), (2, 3, 100), (3, 4, 100), (4, 5, 100)]
     virtual_vertices = [0, 5]
-    initializer = fb.SolverInitializer(
-        vertex_num, weighted_edges, virtual_vertices)
+    initializer = fb.SolverInitializer(vertex_num, weighted_edges, virtual_vertices)
     solver = fb.SolverSerial(initializer)
     return solver
 
