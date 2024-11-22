@@ -505,8 +505,9 @@ pub trait DualModuleImpl {
         unimplemented!()
     }
 
-    /// update weights of dual_module
-    fn update_weights_bp(&mut self, _log_prob_ratios: &[f64], _bp_applicaiton_ratio: f64) {
+    /// update weights of dual_module;
+    /// the weight of the dual module is set to be `old_weight + mix_ratio * (new_weight - old_weight)`
+    fn update_weights(&mut self, _new_weights: &[f64], _mix_ratio: f64) {
         unimplemented!()
     }
 

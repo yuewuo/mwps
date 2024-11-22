@@ -883,12 +883,12 @@ where
         }
     }
 
-    fn update_weights_bp(&mut self, _log_prob_ratios: &[f64], bp_applicaiton_ratio: f64) {
-        for (edge, log_prob_ratio) in self.edges.iter().zip(_log_prob_ratios.iter()) {
+    fn update_weights(&mut self, new_weights: &[f64], mix_ratio: f64) {
+        for (edge, new_weight) in self.edges.iter().zip(new_weights.iter()) {
             let mut edge = edge.write();
 
             let current_edge_weight = edge.weight.to_f64().unwrap();
-            let new_weight = current_edge_weight + bp_applicaiton_ratio * (*log_prob_ratio - current_edge_weight);
+            let new_weight = current_edge_weight + mix_ratio * (*new_weight - current_edge_weight);
 
             edge.weight = Rational::from_f64(new_weight).unwrap();
         }
