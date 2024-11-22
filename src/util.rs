@@ -760,10 +760,10 @@ pub(crate) fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
 
 #[cfg(test)]
 pub mod tests {
-    use num_bigint::BigInt;
-    use std::str::FromStr;
     use super::*;
     use hashbrown::HashSet;
+    use num_bigint::BigInt;
+    use std::str::FromStr;
 
     #[test]
     fn util_py_json_bigint() {
@@ -775,6 +775,7 @@ pub mod tests {
         println!("negative big_int: {:?}, json: {}", -big_int.clone(), json!(-big_int));
         let zero_int = BigInt::from(0);
         println!("zero_int: {:?}, json: {}", zero_int, json!(zero_int));
+    }
 
     #[test]
     fn test_iter() {
