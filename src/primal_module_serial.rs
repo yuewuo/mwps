@@ -1137,7 +1137,6 @@ pub mod tests {
     use super::super::dual_module_pq::*;
     use super::super::example_codes::*;
     use super::*;
-    use crate::num_traits::FromPrimitive;
     use crate::plugin_single_hair::PluginSingleHair;
     use crate::plugin_union_find::PluginUnionFind;
 

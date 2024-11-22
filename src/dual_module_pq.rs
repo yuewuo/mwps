@@ -1097,7 +1097,6 @@ mod tests {
     fn dual_module_pq_basics_3() {
         // cargo test dual_module_pq_basics_3 -- --nocapture
         let visualize_filename = "dual_module_pq_basics_3.json".to_string();
-        let weight = 600; // do not change, the data is hard-coded
         let pxy = 0.0602828812732227;
         let code = CodeCapacityTailoredCode::new(7, pxy, 0.1); // do not change probabilities: the data is hard-coded
         let mut visualizer = Visualizer::new(

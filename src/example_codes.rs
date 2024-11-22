@@ -308,10 +308,11 @@ pub trait ExampleCode {
     }
 
     /// check if the correction is valid, i.e., has the same syndrome with the input
-    fn validate_correction(&mut self, correction: &[EdgeIndex]) {
+    fn validate_correction(&mut self, correction: &OutputSubgraph) {
         // first check if the correction is valid, i.e., has the same defect
         let original_defect_vertices = self.get_defect_vertices();
-        self.set_physical_errors(correction);
+        let correction_edges: Vec<EdgeIndex> = correction.iter().cloned().collect();
+        self.set_physical_errors(&correction_edges);
         let new_defect_vertices = self.get_defect_vertices();
         assert_eq!(
             original_defect_vertices, new_defect_vertices,
@@ -1540,7 +1541,7 @@ mod tests {
         for d in d_vec {
             for p in p_vec {
                 println!("d={d}, p={p}");
-                let mut code = CodeCapacityRepetitionCode::new(d, p, 1000);
+                let mut code = CodeCapacityRepetitionCode::new(d, p);
                 code.sanity_check().unwrap();
                 let initializer = code.get_initializer();
                 let mut solver = SolverType::JointSingleHair.build(&initializer, &code, json!({ "cluster_node_limit": 50 }));
@@ -1564,7 +1565,7 @@ mod tests {
         for d in d_vec {
             for p in p_vec {
                 println!("d={d}, p={p}");
-                let mut code = CodeCapacityDepolarizePlanarCode::new(d, p, 1000);
+                let mut code = CodeCapacityDepolarizePlanarCode::new(d, p);
                 code.sanity_check().unwrap();
                 let initializer = code.get_initializer();
                 let mut solver = SolverType::JointSingleHair.build(&initializer, &code, json!({ "cluster_node_limit": 50 }));
@@ -1588,7 +1589,7 @@ mod tests {
         for d in d_vec {
             for p in p_vec {
                 println!("d={d}, p={p}");
-                let mut code = CodeCapacityColorCode::new(d, p, 1000);
+                let mut code = CodeCapacityColorCode::new(d, p);
                 code.sanity_check().unwrap();
                 let initializer = code.get_initializer();
                 let mut solver = SolverType::JointSingleHair.build(&initializer, &code, json!({ "cluster_node_limit": 50 }));
