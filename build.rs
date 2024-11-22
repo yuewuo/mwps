@@ -1,6 +1,13 @@
+use chrono::Local;
+
 fn main() {
     // fix highs build error on MacOS
     println!("cargo:rustc-link-search=all=/opt/homebrew/opt/libomp/lib");
+
+    // export timestamp of compile time
+    let now = Local::now();
+    let formatted_time = now.format("%Y_%m_%d_%H_%M_%S").to_string();
+    println!("cargo:rustc-env=MWPF_BUILD_RS_TIMESTAMP={formatted_time}");
 
     // when embedded visualizer is enabled, build frontend code first
     if cfg!(feature = "embed_visualizer") {
