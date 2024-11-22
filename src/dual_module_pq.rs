@@ -931,10 +931,10 @@ where
                 if abbrev { "v" } else { "vertices" }: edge.vertices.iter().map(|x| x.upgrade_force().read_recursive().vertex_index).collect::<Vec<_>>(),
                 if abbrev { "g" } else { "growth" }: current_growth.to_f64(),
                 "gn": numer_of(&current_growth),
-                "gd": current_growth.denom(),
+                "gd": denom_of(&current_growth),
                 if abbrev { "u" } else { "unexplored" }: unexplored.to_f64(),
                 "un": numer_of(&unexplored),
-                "ud": unexplored.denom(),
+                "ud": denom_of(&unexplored),
             }));
         }
         json!({

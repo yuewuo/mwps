@@ -625,7 +625,7 @@ impl ExampleCodeType {
 }
 
 impl SolverType {
-    fn build(
+    pub fn build(
         &self,
         initializer: &SolverInitializer,
         code: &dyn ExampleCode,

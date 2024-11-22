@@ -788,10 +788,10 @@ impl MWPSVisualizer for DualModuleInterfacePtr {
                 if abbrev { "h" } else { "hair" }: dual_node.invalid_subgraph.hair,
                 if abbrev { "d" } else { "dual_variable" }: dual_node.get_dual_variable().to_f64(),
                 if abbrev { "dn" } else { "dual_variable_numerator" }: numer_of(&dual_node.get_dual_variable()),
-                if abbrev { "dd" } else { "dual_variable_denominator" }: dual_node.get_dual_variable().denom().to_i64(),
+                if abbrev { "dd" } else { "dual_variable_denominator" }: denom_of(&dual_node.get_dual_variable()),
                 if abbrev { "r" } else { "grow_rate" }: dual_node.grow_rate.to_f64(),
                 if abbrev { "rn" } else { "grow_rate_numerator" }: numer_of(&dual_node.grow_rate),
-                if abbrev { "rd" } else { "grow_rate_denominator" }: dual_node.grow_rate.denom().to_i64(),
+                if abbrev { "rd" } else { "grow_rate_denominator" }: denom_of(&dual_node.grow_rate),
             }));
         }
         let sum_dual = self.sum_dual_variables();
@@ -799,7 +799,7 @@ impl MWPSVisualizer for DualModuleInterfacePtr {
             "interface": {
                 "sum_dual": sum_dual.to_f64(),
                 "sdn": numer_of(&sum_dual),
-                "sdd": sum_dual.denom().to_i64(),
+                "sdd": denom_of(&sum_dual),
             },
             "dual_nodes": dual_nodes,
         })

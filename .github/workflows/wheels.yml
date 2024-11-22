@@ -18,15 +18,15 @@ jobs: # Workflow credit to https://github.com/samuelcolvin/rtoml/blob/main/.gith
       matrix:
         os:
           - ubuntu
-          # - macos
-          # - windows
+          - macos
+          - windows
         python-version: # Yue 2022.10.9: I enabled abi3-py37 in pyo3, so everything built will be py37-abi3 which is compatible with py37+
           - '8' # use python 3.8 to build because macos universal2 requires at least python 3.8; however the result will be py37-abi3
         include:
           - os: ubuntu
             platform: linux
-          # - os: windows
-          #   ls: dir
+          - os: windows
+            ls: dir
         build-feature:
           - default
           - rational  # will execute pyproject-rational.py before build
@@ -66,6 +66,9 @@ jobs: # Workflow credit to https://github.com/samuelcolvin/rtoml/blob/main/.gith
       - name: Install Python dependencies
         run: python -m pip install -U setuptools wheel twine cibuildwheel
 
+      - name: run test
+        run: cargo test --release
+
       - name: apply patch to build different packages
         if: matrix.build-feature != 'default'
         run: python pyproject-${{ matrix.build-feature }}.py apply
@@ -76,8 +79,8 @@ jobs: # Workflow credit to https://github.com/samuelcolvin/rtoml/blob/main/.gith
           CIBW_BUILD: 'cp3${{ matrix.python-version }}-*'
           CIBW_SKIP: '*-win32 *_i686' # do not build for 32bit machines, rustc seems to complain about it
           CIBW_PLATFORM: ${{ matrix.platform || matrix.os }} # only build for specific platform
-          CIBW_ENVIRONMENT: 'PATH="$HOME/.cargo/bin:$PATH"'
-          CIBW_ENVIRONMENT_WINDOWS: 'PATH="$UserProfile\.cargo\bin;;$PATH"'
+          CIBW_ENVIRONMENT_MACOS: PATH="$HOME/.cargo/bin:$PATH" MACOSX_DEPLOYMENT_TARGET=10.12
+          CIBW_ENVIRONMENT_WINDOWS: PATH="$UserProfile\.cargo\bin;$PATH" SKIP_FRONTEND_BUILD=1
           CIBW_ENVIRONMENT_LINUX: PATH="$HOME/.cargo/bin:$PATH" LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/opt/rh/llvm-toolset-7.0/root/usr/lib64/ SKIP_FRONTEND_BUILD=1
           CIBW_MANYLINUX_X86_64_IMAGE: 'manylinux2014'
           CIBW_MUSLLINUX_X86_64_IMAGE: 'musllinux_1_2'
