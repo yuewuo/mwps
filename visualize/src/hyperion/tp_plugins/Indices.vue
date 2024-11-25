@@ -1,6 +1,6 @@
 <script setup lang="ts">
 interface Props {
-    title: string
+    title?: string
     indices: Array<number>
     titleWidth?: number
     width?: number

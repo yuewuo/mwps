@@ -1,4 +1,4 @@
-import { parse_rust_bigint } from './util'
+import { parse_rust_bigint, display_nominator } from './util'
 import { describe, expect, test } from 'vitest'
 
 describe('testing parsing bigint from Rust output', () => {
@@ -41,5 +41,39 @@ describe('testing parsing bigint from Rust output', () => {
     // npx vitest --testNamePattern 'Rust zero'
     test('Rust zero', () => {
         expect(parse_rust_bigint([0, []])).toBe(0n)
+    })
+})
+
+describe('testing display_nominator for both bigint and number', () => {
+    test('display bigint', () => {
+        expect(display_nominator(123456789012345678901234567890123n)).toBe('123456789012345678901234567890123')
+    })
+
+    test('display very small floating-point', () => {
+        expect(display_nominator(1e-50)).toBe('0.' + '0'.repeat(49) + '1')
+    })
+
+    test('display another small floating-point', () => {
+        expect(display_nominator(1.23456789e-100)).toBe('0.' + '0'.repeat(99) + '123456789')
+    })
+
+    test('display negative small floating-point', () => {
+        expect(display_nominator(-1.23456789e-100)).toBe('-0.' + '0'.repeat(99) + '123456789')
+    })
+
+    test('display negative small floating-point', () => {
+        expect(display_nominator(-1.23456789e-10)).toBe('-0.' + '0'.repeat(9) + '123456789')
+    })
+
+    test('display NaN', () => {
+        expect(display_nominator(NaN)).toBe('NaN')
+    })
+
+    test('display +inf', () => {
+        expect(display_nominator(1e10000)).toBe('Infinity')
+    })
+
+    test('display -inf', () => {
+        expect(display_nominator(-1e10000)).toBe('-Infinity')
     })
 })

@@ -102,3 +102,30 @@ export function parse_rust_bigint (data: any): bigint | number {
         throw new Error(`invalid data type: ${typeof data}`)
     }
 }
+
+export function display_nominator (dn: bigint | number): string {
+    if (typeof dn == 'bigint') {
+        return dn.toString()
+    } else {
+        if (dn == 0 || isNaN(dn) || !isFinite(dn)) {
+            return dn.toString()
+        }
+        const exponent = Math.floor(Math.log10(Math.abs(dn)))
+        let value = dn.toFixed(0)
+        if (exponent < 15) {
+            // add more decimal digits
+            if (exponent < -85) {
+                // need special care because toFixed only supports up to 100
+                const val = (dn * Math.pow(10, -exponent - 85)).toFixed(100)
+                if (dn > 0) {
+                    value = '0.' + '0'.repeat(-exponent - 85) + val.slice(2)
+                } else {
+                    value = '-0.' + '0'.repeat(-exponent - 85) + val.slice(3)
+                }
+            } else {
+                value = dn.toFixed(-exponent + 15)
+            }
+        }
+        return value.replace(/(\.0*|0+)$/, '')
+    }
+}

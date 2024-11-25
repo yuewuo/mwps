@@ -11,7 +11,7 @@
  */
 
 import { type Ref, computed, watchEffect, useTemplateRef, onMounted } from 'vue'
-import { compute_vector3, unit_up_vector, EdgeRingState, EdgeTubeState, EdgeStates, ring_resolution } from './hyperion'
+import { compute_vector3, unit_up_vector, EdgeRingState, EdgeTubeState, EdgeStates, ring_resolution, compute_edge_to_dual_indices } from './hyperion'
 import { type Config } from './config_pane'
 import { PhysicalMaterial, CylinderGeometry, RingGeometry } from 'troisjs'
 import MyInstancedMesh from '@/misc/MyInstancedMesh.vue'
@@ -316,15 +316,7 @@ const edge_offset = computed(() => {
 // calculate the dual variable indices for each edge
 const edge_to_dual_indices = computed(() => {
     const snapshot = config.value.snapshot
-    const dual_indices: Array<Array<number>> = Array.from({ length: snapshot.edges.length }, () => [])
-    if (snapshot.dual_nodes != null) {
-        for (let [node_index, node] of snapshot.dual_nodes.entries()) {
-            for (let edge_index of node.h) {
-                dual_indices[edge_index].push(node_index)
-            }
-        }
-    }
-    return dual_indices
+    return compute_edge_to_dual_indices(snapshot)
 })
 
 /**
