@@ -70,7 +70,7 @@ macro_rules! bind_trait_to_python {
                 self.clear()
             }
             #[pyo3(name = "solve", signature = (syndrome_pattern, visualizer=None))] // in Python, `solve` and `solve_visualizer` is the same because it can take optional parameter
-            fn py_solve(&mut self, syndrome_pattern: &SyndromePattern, visualizer: Option<&mut Visualizer>) {
+            fn py_solve(&mut self, syndrome_pattern: SyndromePattern, visualizer: Option<&mut Visualizer>) {
                 self.solve_visualizer(syndrome_pattern, visualizer)
             }
             #[pyo3(name = "subgraph_range", signature = (visualizer=None))] // in Python, `subgraph_range` and `subgraph_range_visualizer` is the same

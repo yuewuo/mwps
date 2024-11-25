@@ -397,7 +397,13 @@ where
     /// initialize the dual module, which is supposed to be reused for multiple decoding tasks with the same structure
     #[allow(clippy::unnecessary_cast)]
     fn new_empty(initializer: &SolverInitializer) -> Self {
+        #[cfg(not(feature = "loose_sanity_check"))]
         initializer.sanity_check().unwrap();
+
+        #[cfg(feature = "loose_sanity_check")]
+        if let Err(error_message) = initializer.sanity_check() {
+            eprintln!("[warning] {}", error_message);
+        }
 
         // create vertices
         let vertices: Vec<VertexPtr> = (0..initializer.vertex_num)

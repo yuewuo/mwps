@@ -273,6 +273,12 @@ impl OutputSubgraph {
     }
 }
 
+impl From<Subgraph> for OutputSubgraph {
+    fn from(value: Subgraph) -> Self {
+        Self::new(value, hashbrown::HashSet::new())
+    }
+}
+
 // consuming iterators
 // Implementing `IntoIterator` for `&OutputSubgraph` (for `iter`)
 impl<'a> IntoIterator for &'a OutputSubgraph {

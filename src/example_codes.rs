@@ -485,7 +485,7 @@ macro_rules! bind_trait_example_code {
             }
             #[pyo3(name = "validate_correction")]
             fn trait_validate_correction(&mut self, correction: Vec<EdgeIndex>) {
-                self.validate_correction(&correction)
+                self.validate_correction(&OutputSubgraph::from(correction))
             }
             #[pyo3(name = "get_erasures")]
             fn trait_get_erasures(&self) -> Vec<EdgeIndex> {
