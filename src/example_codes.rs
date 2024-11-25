@@ -1547,7 +1547,7 @@ mod tests {
                 let mut solver = SolverType::JointSingleHair.build(&initializer, &code, json!({ "cluster_node_limit": 50 }));
                 for _ in 0..repeat {
                     let (syndrome, _) = code.generate_random_errors(thread_rng().gen::<u64>());
-                    solver.solve(&syndrome);
+                    solver.solve(syndrome);
                     let (subgraph, _weight_range) = solver.subgraph_range();
                     code.validate_correction(&subgraph);
                     solver.clear();
@@ -1571,7 +1571,7 @@ mod tests {
                 let mut solver = SolverType::JointSingleHair.build(&initializer, &code, json!({ "cluster_node_limit": 50 }));
                 for _ in 0..repeat {
                     let (syndrome, _) = code.generate_random_errors(thread_rng().gen::<u64>());
-                    solver.solve(&syndrome);
+                    solver.solve(syndrome);
                     let (subgraph, _weight_range) = solver.subgraph_range();
                     code.validate_correction(&subgraph);
                     solver.clear();
@@ -1595,7 +1595,7 @@ mod tests {
                 let mut solver = SolverType::JointSingleHair.build(&initializer, &code, json!({ "cluster_node_limit": 50 }));
                 for _ in 0..repeat {
                     let (syndrome, _) = code.generate_random_errors(thread_rng().gen::<u64>());
-                    solver.solve(&syndrome);
+                    solver.solve(syndrome);
                     let (subgraph, _weight_range) = solver.subgraph_range();
                     code.validate_correction(&subgraph);
                     solver.clear();
