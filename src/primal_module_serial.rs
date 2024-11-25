@@ -1232,7 +1232,7 @@ pub mod tests {
         let visualize_filename = "primal_module_serial_basic_1.json".to_string();
         let defect_vertices = vec![23, 24, 29, 30];
         let code = CodeCapacityTailoredCode::new(7, 0., 0.01);
-        primal_module_serial_basic_standard_syndrome(code, visualize_filename, defect_vertices, 1., vec![]);
+        primal_module_serial_basic_standard_syndrome(code, visualize_filename, defect_vertices, 4.59511985013459, vec![]);
     }
 
     #[test]
@@ -1241,7 +1241,7 @@ pub mod tests {
         let visualize_filename = "primal_module_serial_basic_2.json".to_string();
         let defect_vertices = vec![16, 17, 23, 25, 29, 30];
         let code = CodeCapacityTailoredCode::new(7, 0., 0.01);
-        primal_module_serial_basic_standard_syndrome(code, visualize_filename, defect_vertices, 2., vec![]);
+        primal_module_serial_basic_standard_syndrome(code, visualize_filename, defect_vertices, 9.19023970026918, vec![]);
     }
 
     #[test]
@@ -1250,7 +1250,7 @@ pub mod tests {
         let visualize_filename = "primal_module_serial_basic_3.json".to_string();
         let defect_vertices = vec![14, 15, 16, 17, 22, 25, 28, 31, 36, 37, 38, 39];
         let code = CodeCapacityTailoredCode::new(7, 0., 0.01);
-        primal_module_serial_basic_standard_syndrome(code, visualize_filename, defect_vertices, 5., vec![]);
+        primal_module_serial_basic_standard_syndrome(code, visualize_filename, defect_vertices, 22.97559925067295, vec![]);
     }
 
     #[test]
@@ -1263,7 +1263,7 @@ pub mod tests {
             code,
             visualize_filename,
             defect_vertices,
-            5.,
+            22.97559925067295,
             vec![
                 PluginUnionFind::entry(),
                 PluginSingleHair::entry_with_strategy(RepeatStrategy::Once),
@@ -1293,7 +1293,7 @@ pub mod tests {
             code,
             visualize_filename,
             defect_vertices,
-            4.,
+            18.38047940053836,
             vec![
                 PluginUnionFind::entry(),
                 PluginSingleHair::entry_with_strategy(RepeatStrategy::Once),
@@ -1307,7 +1307,7 @@ pub mod tests {
         let visualize_filename = "primal_module_serial_basic_5.json".to_string();
         let defect_vertices = vec![32, 33, 37, 47, 86, 87, 72, 82];
         let code = CodeCapacityPlanarCode::new(11, 0.01);
-        primal_module_serial_basic_standard_syndrome(code, visualize_filename, defect_vertices, 4., vec![]);
+        primal_module_serial_basic_standard_syndrome(code, visualize_filename, defect_vertices, 18.38047940053836, vec![]);
     }
 
     #[test]
@@ -1320,7 +1320,7 @@ pub mod tests {
             code,
             visualize_filename,
             defect_vertices,
-            12.,
+            55.14143820161507,
             vec![
                 PluginUnionFind::entry(),
                 PluginSingleHair::entry_with_strategy(RepeatStrategy::Once),

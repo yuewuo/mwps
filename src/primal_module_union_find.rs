@@ -246,6 +246,11 @@ pub mod tests {
                 )
                 .unwrap();
         }
+
+        let v = visualizer.as_mut().unwrap();
+        v.save_html_along_json();
+        println!("open visualizer at {}", v.html_along_json_path());
+
         assert!(
             model_graph.initializer.matches_subgraph_syndrome(&subgraph, &defect_vertices),
             "the result subgraph is invalid"
@@ -302,7 +307,7 @@ pub mod tests {
         let visualize_filename = "primal_module_union_find_basic_1.json".to_string();
         let defect_vertices = vec![23, 24, 29, 30];
         let code = CodeCapacityTailoredCode::new(7, 0., 0.01);
-        primal_module_union_find_basic_standard_syndrome(code, visualize_filename, defect_vertices, 1.);
+        primal_module_union_find_basic_standard_syndrome(code, visualize_filename, defect_vertices, 4.59511985013459);
     }
 
     #[test]
@@ -311,7 +316,7 @@ pub mod tests {
         let visualize_filename = "primal_module_union_find_basic_2.json".to_string();
         let defect_vertices = vec![16, 17, 23, 25, 29, 30];
         let code = CodeCapacityTailoredCode::new(7, 0., 0.01);
-        primal_module_union_find_basic_standard_syndrome(code, visualize_filename, defect_vertices, 2.);
+        primal_module_union_find_basic_standard_syndrome(code, visualize_filename, defect_vertices, 9.19023970026918);
     }
 
     #[test]
@@ -320,7 +325,7 @@ pub mod tests {
         let visualize_filename = "primal_module_union_find_basic_3.json".to_string();
         let defect_vertices = vec![14, 15, 16, 17, 22, 25, 28, 31, 36, 37, 38, 39];
         let code = CodeCapacityTailoredCode::new(7, 0., 0.01);
-        primal_module_union_find_basic_standard_syndrome(code, visualize_filename, defect_vertices, 5.);
+        primal_module_union_find_basic_standard_syndrome(code, visualize_filename, defect_vertices, 22.975599250672953);
     }
 
     #[test]
@@ -329,7 +334,7 @@ pub mod tests {
         let visualize_filename = "primal_module_union_find_basic_4.json".to_string();
         let defect_vertices = vec![3, 12];
         let code = CodeCapacityColorCode::new(7, 0.01);
-        primal_module_union_find_basic_standard_syndrome(code, visualize_filename, defect_vertices, 2.);
+        primal_module_union_find_basic_standard_syndrome(code, visualize_filename, defect_vertices, 9.19023970026918);
     }
 
     #[test]
@@ -338,7 +343,7 @@ pub mod tests {
         let visualize_filename = "primal_module_union_find_basic_5.json".to_string();
         let defect_vertices = vec![3, 5, 10, 12];
         let code = CodeCapacityColorCode::new(7, 0.01);
-        primal_module_union_find_basic_standard_syndrome(code, visualize_filename, defect_vertices, 4.);
+        primal_module_union_find_basic_standard_syndrome(code, visualize_filename, defect_vertices, 12.25365293369224);
     }
 
     #[test]
@@ -347,6 +352,6 @@ pub mod tests {
         let visualize_filename = "primal_module_union_find_basic_6.json".to_string();
         let defect_vertices = vec![22];
         let code = CodeCapacityTailoredCode::new(5, 0., 0.05);
-        primal_module_union_find_basic_standard_syndrome(code, visualize_filename, defect_vertices, 4.);
+        primal_module_union_find_basic_standard_syndrome(code, visualize_filename, defect_vertices, 11.777755916665761);
     }
 }
