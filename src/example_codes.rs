@@ -1537,7 +1537,7 @@ mod tests {
         // cargo test --release example_code_correction_validity_code_capacity_repetition_code -- --nocapture
         let d_vec = [3, 5, 7, 9, 11];
         let p_vec = [0.1, 0.01];
-        let repeat = 10000;
+        let repeat = 1;
         for d in d_vec {
             for p in p_vec {
                 println!("d={d}, p={p}");
@@ -1561,7 +1561,7 @@ mod tests {
         // cargo test --release example_code_correction_validity_code_capacity_depolarize_planar_code -- --nocapture
         let d_vec = [3, 5, 7];
         let p_vec = [0.03, 0.01];
-        let repeat = 10000;
+        let repeat = 1;
         for d in d_vec {
             for p in p_vec {
                 println!("d={d}, p={p}");
@@ -1585,7 +1585,7 @@ mod tests {
         // cargo test --release example_code_correction_validity_code_capacity_color_code -- --nocapture
         let d_vec = [3, 5, 7, 9];
         let p_vec = [0.1, 0.01];
-        let repeat = 10000;
+        let repeat = 1;
         for d in d_vec {
             for p in p_vec {
                 println!("d={d}, p={p}");

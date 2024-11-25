@@ -109,7 +109,7 @@ pub mod tests {
             code,
             visualize_filename,
             defect_vertices,
-            4.,
+            18.38047940053836,
             vec![
                 PluginUnionFind::entry(),
                 PluginSingleHair::entry_with_strategy(RepeatStrategy::Once),
@@ -129,7 +129,7 @@ pub mod tests {
             code,
             visualize_filename,
             defect_vertices,
-            6.,
+            27.57071910080754,
             vec![
                 PluginUnionFind::entry(),
                 PluginSingleHair::entry_with_strategy(RepeatStrategy::Once),
@@ -149,7 +149,7 @@ pub mod tests {
             code,
             visualize_filename,
             defect_vertices,
-            4.,
+            8.788898309344878,
             vec![
                 PluginUnionFind::entry(),
                 PluginSingleHair::entry_with_strategy(RepeatStrategy::Once),
@@ -169,7 +169,7 @@ pub mod tests {
             code,
             visualize_filename,
             defect_vertices,
-            4.,
+            8.788898309344878,
             vec![
                 PluginUnionFind::entry(),
                 PluginSingleHair::entry_with_strategy(RepeatStrategy::Once),
@@ -189,7 +189,7 @@ pub mod tests {
             code,
             visualize_filename,
             defect_vertices,
-            3.,
+            6.591673732008658,
             vec![
                 PluginUnionFind::entry(),
                 PluginSingleHair::entry_with_strategy(RepeatStrategy::Once),
@@ -210,7 +210,7 @@ pub mod tests {
             code,
             visualize_filename,
             defect_vertices,
-            3.,
+            6.591673732008658,
             vec![
                 PluginUnionFind::entry(),
                 PluginSingleHair::entry_with_strategy(RepeatStrategy::Once),

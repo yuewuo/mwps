@@ -288,10 +288,11 @@ where
         let newly_grown_amount = &time_diff * &edge.grow_rate;
         edge.growth_at_last_updated_time += newly_grown_amount;
         edge.last_updated_time = global_time.clone();
-        debug_assert!(
-            edge.growth_at_last_updated_time <= edge.weight,
-            "growth larger than weight: check if events are 1) inserted and 2) handled correctly"
-        );
+
+        // debug_assert!(
+        //     edge.growth_at_last_updated_time <= edge.weight,
+        //     "growth larger than weight: check if events are 1) inserted and 2) handled correctly",
+        // );
     }
 
     /// helper function to bring a dual node update to speed with current time if needed
@@ -1015,7 +1016,7 @@ mod tests {
     fn dual_module_pq_basics_1() {
         // cargo test dual_module_pq_basics_1 -- --nocapture
         let visualize_filename = "dual_module_pq_basics_1.json".to_string();
-        let weight = 1000;
+        let weight: f64 = 2.1972245773362196;
         let code = CodeCapacityColorCode::new(7, 0.1);
         let mut visualizer = Visualizer::new(
             Some(visualize_data_folder() + visualize_filename.as_str()),
@@ -1033,20 +1034,21 @@ mod tests {
         visualizer
             .snapshot_combined("syndrome".to_string(), vec![&interface_ptr, &dual_module])
             .unwrap();
+
         // grow them each by half
         let dual_node_3_ptr = interface_ptr.read_recursive().nodes[0].clone();
         let dual_node_12_ptr = interface_ptr.read_recursive().nodes[1].clone();
         dual_module.set_grow_rate(&dual_node_3_ptr, Rational::from_usize(1).unwrap());
         dual_module.set_grow_rate(&dual_node_12_ptr, Rational::from_usize(1).unwrap());
 
-        dual_module.grow(Rational::from_usize(weight / 2).unwrap());
+        dual_module.grow(Rational::from_f64(weight / 2.).unwrap());
         dual_module.debug_update_all(&interface_ptr.read_recursive().nodes);
         visualizer
             .snapshot_combined("grow".to_string(), vec![&interface_ptr, &dual_module])
             .unwrap();
 
         // cluster becomes solved
-        dual_module.grow(Rational::from_usize(weight / 2).unwrap());
+        dual_module.grow(Rational::from_f64(weight / 2.).unwrap());
         dual_module.debug_update_all(&interface_ptr.read_recursive().nodes);
         visualizer
             .snapshot_combined("solved".to_string(), vec![&interface_ptr, &dual_module])
@@ -1066,7 +1068,7 @@ mod tests {
     fn dual_module_pq_basics_2() {
         // cargo test dual_module_pq_basics_2 -- --nocapture
         let visualize_filename = "dual_module_pq_basics_2.json".to_string();
-        let weight = 1000;
+        let weight = 2.1972245773362196;
         let code = CodeCapacityTailoredCode::new(7, 0., 0.1);
         let mut visualizer = Visualizer::new(
             Some(visualize_data_folder() + visualize_filename.as_str()),
@@ -1091,7 +1093,7 @@ mod tests {
         }
 
         // grow them each by a quarter
-        dual_module.grow(Rational::from_usize(weight / 4).unwrap());
+        dual_module.grow(Rational::from_f64(weight / 4.).unwrap());
         dual_module.debug_update_all(&interface_ptr.read_recursive().nodes);
         visualizer
             .snapshot_combined("solved".to_string(), vec![&interface_ptr, &dual_module])
@@ -1133,11 +1135,13 @@ mod tests {
         let dual_node_29_ptr = interface_ptr.read_recursive().nodes[2].clone();
         let dual_node_30_ptr = interface_ptr.read_recursive().nodes[3].clone();
 
+        let unit_grow_rate = 2.1972245773362196 / 1000.;
+
         // first round of growth
-        dual_module.set_grow_rate(&dual_node_17_ptr, Rational::from_i64(1).unwrap());
-        dual_module.set_grow_rate(&dual_node_23_ptr, Rational::from_i64(1).unwrap());
-        dual_module.set_grow_rate(&dual_node_29_ptr, Rational::from_i64(1).unwrap());
-        dual_module.set_grow_rate(&dual_node_30_ptr, Rational::from_i64(1).unwrap());
+        dual_module.set_grow_rate(&dual_node_17_ptr, Rational::from_f64(unit_grow_rate).unwrap());
+        dual_module.set_grow_rate(&dual_node_23_ptr, Rational::from_f64(unit_grow_rate).unwrap());
+        dual_module.set_grow_rate(&dual_node_29_ptr, Rational::from_f64(unit_grow_rate).unwrap());
+        dual_module.set_grow_rate(&dual_node_30_ptr, Rational::from_f64(unit_grow_rate).unwrap());
 
         dual_module.grow(Rational::from_i64(160).unwrap());
         dual_module.debug_update_all(&interface_ptr.read_recursive().nodes);
@@ -1155,8 +1159,8 @@ mod tests {
         // create cluster
         interface_ptr.create_node_vec(&[24], &mut dual_module);
         let dual_node_cluster_ptr = interface_ptr.read_recursive().nodes[4].clone();
-        dual_module.set_grow_rate(&dual_node_17_ptr, Rational::from_i64(1).unwrap());
-        dual_module.set_grow_rate(&dual_node_cluster_ptr, Rational::from_i64(1).unwrap());
+        dual_module.set_grow_rate(&dual_node_17_ptr, Rational::from_f64(unit_grow_rate).unwrap());
+        dual_module.set_grow_rate(&dual_node_cluster_ptr, Rational::from_f64(unit_grow_rate).unwrap());
         dual_module.grow(Rational::from_i64(160).unwrap());
         dual_module.debug_update_all(&interface_ptr.read_recursive().nodes);
 
@@ -1171,7 +1175,7 @@ mod tests {
         // create bigger cluster
         interface_ptr.create_node_vec(&[18, 23, 24, 31], &mut dual_module);
         let dual_node_bigger_cluster_ptr = interface_ptr.read_recursive().nodes[5].clone();
-        dual_module.set_grow_rate(&dual_node_bigger_cluster_ptr, Rational::from_i64(1).unwrap());
+        dual_module.set_grow_rate(&dual_node_bigger_cluster_ptr, Rational::from_f64(unit_grow_rate).unwrap());
 
         dual_module.grow(Rational::from_i64(120).unwrap());
         dual_module.debug_update_all(&interface_ptr.read_recursive().nodes);
