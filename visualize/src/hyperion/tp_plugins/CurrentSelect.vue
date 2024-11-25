@@ -5,6 +5,7 @@ import { type EdgeRingState, type EdgeTubeState, type VertexState, compute_edge_
 import Indices from './Indices.vue'
 import EdgeDualSum from '../equations/EdgeDualSum.vue'
 import { display_nominator } from '@/util'
+import DualNodes from './DualNodes.vue'
 
 interface Props {
     info: Info
@@ -81,6 +82,7 @@ const edge_contributing_nodes = computed(() => {
                     <mn>{{ edge!.w }}</mn>
                 </math>
             </div>
+            <div class="title" style="margin-top: 10px">Dual Variables associated with Edge {{ ei }}</div>
             <div style="margin-top: 0px">
                 <math display="inline-block" style="font-size: 120%; math-style: normal; position: relative; top: 3px">
                     <mrow>
@@ -138,6 +140,7 @@ const edge_contributing_nodes = computed(() => {
                     <mn>{{ edge!.u }}</mn>
                 </math>
             </div>
+            <DualNodes :info="info" :dual_indices="edge_contributing_nodes"></DualNodes>
         </div>
     </div>
 </template>

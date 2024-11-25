@@ -229,8 +229,8 @@ export class EdgeStates {
 export function compute_edge_to_dual_indices (snapshot: Snapshot): Array<Array<number>> {
     const dual_indices: Array<Array<number>> = Array.from({ length: snapshot.edges.length }, () => [])
     if (snapshot.dual_nodes != null) {
-        for (let [node_index, node] of snapshot.dual_nodes.entries()) {
-            for (let edge_index of node.h) {
+        for (const [node_index, node] of snapshot.dual_nodes.entries()) {
+            for (const edge_index of node.h) {
                 dual_indices[edge_index].push(node_index)
             }
         }

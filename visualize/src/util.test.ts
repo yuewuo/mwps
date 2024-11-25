@@ -70,10 +70,12 @@ describe('testing display_nominator for both bigint and number', () => {
     })
 
     test('display +inf', () => {
+        // eslint-disable-next-line
         expect(display_nominator(1e10000)).toBe('Infinity')
     })
 
     test('display -inf', () => {
+        // eslint-disable-next-line
         expect(display_nominator(-1e10000)).toBe('-Infinity')
     })
 })
