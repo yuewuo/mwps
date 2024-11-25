@@ -98,14 +98,24 @@ impl HTMLExport {
         let (vis_data_head, _, vis_data_tail) = Self::slice_content(template_html, data_flag);
         let override_config_flag = "HYPERION_VISUAL_OVERRIDE_CONFIG";
         let (override_head, _, override_tail) = Self::slice_content(vis_data_tail, override_config_flag);
+        let loader_flag = "HYPERION_VISUAL_MODULE_LOADER";
+        let (loader_head, _, loader_tail) = Self::slice_content(override_tail, loader_flag);
         // construct standalone html
+        let new_override_tail = format!(
+            "{}\n{}\n{}\n{}\n{}",
+            loader_head,
+            Self::begin(loader_flag),
+            Self::get_library_body().unwrap(),
+            Self::end(loader_flag),
+            loader_tail
+        );
         let new_vis_data_tail = format!(
             "{}\n{}\n{}\n{}\n{}",
             override_head,
             Self::begin(override_config_flag),
             override_str,
             Self::end(override_config_flag),
-            override_tail
+            new_override_tail
         );
         let new_html = format!(
             "{}\n{}\n'{}'\n{}\n{}",
