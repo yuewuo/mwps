@@ -56,7 +56,7 @@ pub trait SolverTrait {
     fn print_clusters(&self) {
         panic!();
     }
-    fn update_weights(&mut self, new_weights: &mut Vec<f64>, mix_ratio: f64);
+    fn update_weights(&mut self, new_weights: Vec<Rational>, mix_ratio: f64);
     fn get_model_graph(&self) -> Arc<ModelHyperGraph>;
 }
 
@@ -316,7 +316,7 @@ impl SolverTrait for SolverSerialPlugins {
     fn print_clusters(&self) {
         self.primal_module.print_clusters();
     }
-    fn update_weights(&mut self, new_weights: &mut Vec<f64>, mix_ratio: f64) {
+    fn update_weights(&mut self, new_weights: Vec<Rational>, mix_ratio: f64) {
         self.dual_module.update_weights(new_weights, mix_ratio);
     }
     fn get_model_graph(&self) -> Arc<ModelHyperGraph> {
@@ -354,7 +354,7 @@ macro_rules! bind_solver_trait {
             fn print_clusters(&self) {
                 self.0.print_clusters()
             }
-            fn update_weights(&mut self, new_weights: &mut Vec<f64>, mix_ratio: f64) {
+            fn update_weights(&mut self, new_weights: Vec<Rational>, mix_ratio: f64) {
                 self.0.update_weights(new_weights, mix_ratio)
             }
             fn get_model_graph(&self) -> Arc<ModelHyperGraph> {
@@ -514,7 +514,7 @@ impl SolverTrait for SolverErrorPatternLogger {
     fn get_model_graph(&self) -> Arc<ModelHyperGraph> {
         panic!("error pattern logger do not actually solve the problem")
     }
-    fn update_weights(&mut self, _new_weights: &mut Vec<f64>, _mix_ratio: f64) {
+    fn update_weights(&mut self, _new_weights: Vec<Rational>, _mix_ratio: f64) {
         panic!("error pattern logger do not actually solve the problem")
     }
 }

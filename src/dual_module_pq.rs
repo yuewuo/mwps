@@ -6,7 +6,6 @@
 //!
 
 use crate::num_traits::{ToPrimitive, Zero};
-use crate::ordered_float::OrderedFloat;
 use crate::pointers::*;
 use crate::primal_module::Affinity;
 use crate::primal_module_serial::PrimalClusterPtr;
@@ -25,7 +24,7 @@ use hashbrown::hash_map::Entry;
 use hashbrown::{HashMap, HashSet};
 use heapz::RankPairingHeap;
 use heapz::{DecreaseKey, Heap};
-use num_traits::{FromPrimitive, Signed};
+use num_traits::Signed;
 use parking_lot::{lock_api::RwLockWriteGuard, RawRwLock};
 use pheap::PairingHeap;
 use priority_queue::PriorityQueue;
@@ -421,7 +420,7 @@ where
         for hyperedge in initializer.weighted_edges.iter() {
             let edge = Edge {
                 edge_index: edges.len() as EdgeIndex,
-                weight: Rational::from(hyperedge.weight),
+                weight: hyperedge.weight.clone(),
                 dual_nodes: vec![],
                 vertices: hyperedge
                     .vertices
@@ -820,7 +819,7 @@ where
             return None;
         }
         start += weight.to_f64().unwrap();
-        Some(OrderedFloat::from(start))
+        Some(Rational::from(start))
     }
 
     fn get_edge_free_weight(
@@ -904,14 +903,15 @@ where
         }
     }
 
-    fn update_weights(&mut self, new_weights: &[f64], mix_ratio: f64) {
+    fn update_weights(&mut self, new_weights: Vec<Rational>, mix_ratio: f64) {
         for (edge, new_weight) in self.edges.iter().zip(new_weights.iter()) {
             let mut edge = edge.write();
 
             let current_edge_weight = edge.weight.to_f64().unwrap();
-            let new_weight = current_edge_weight + mix_ratio * (*new_weight - current_edge_weight);
+            let new_weight =
+                Rational::from(current_edge_weight + mix_ratio) * (new_weight - Rational::from(current_edge_weight));
 
-            edge.weight = Rational::from_f64(new_weight).unwrap();
+            edge.weight = new_weight;
         }
     }
 
@@ -970,6 +970,7 @@ mod tests {
     use super::*;
     use crate::decoding_hypergraph::*;
     use crate::example_codes::*;
+    use num_traits::FromPrimitive;
 
     #[test]
     fn dual_module_pq_learn_priority_queue_1() {

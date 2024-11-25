@@ -1,6 +1,7 @@
 use crate::example_codes::*;
 use crate::matrix::*;
 use crate::mwpf_solver::*;
+use crate::ordered_float::OrderedFloat;
 use crate::util::*;
 use crate::visualize::*;
 use bp::bp::{BpDecoder, BpSparse};
@@ -9,6 +10,7 @@ use clap::error::{ContextKind, ContextValue, ErrorKind};
 use clap::{Parser, Subcommand, ValueEnum};
 use more_asserts::assert_le;
 use num_traits::FromPrimitive;
+use num_traits::ToPrimitive;
 #[cfg(feature = "progress_bar")]
 use pbr::ProgressBar;
 use rand::rngs::SmallRng;
@@ -368,12 +370,19 @@ impl Cli {
                         }
                         let bp_decoder = bp_decoder_option.as_mut().unwrap();
                         let initial_log_ratios = initial_log_ratios_option.as_ref().unwrap();
+                        let initial_log_ratios_ordered_float =
+                            initial_log_ratios.iter().map(|x| x.clone().to_f64().unwrap()).collect();
 
-                        bp_decoder.set_log_domain_bp(initial_log_ratios);
+                        bp_decoder.set_log_domain_bp(&initial_log_ratios_ordered_float);
                         bp_decoder.decode(&syndrome_array);
-                        let mut llrs = bp_decoder.log_prob_ratios.clone();
+                        let llrs = bp_decoder
+                            .log_prob_ratios
+                            .clone()
+                            .into_iter()
+                            .map(OrderedFloat::from)
+                            .collect();
 
-                        solver.update_weights(&mut llrs, bp_application_ratio.unwrap_or(0.5));
+                        solver.update_weights(llrs, bp_application_ratio.unwrap_or(0.5));
                     }
 
                     if print_syndrome_pattern {
@@ -421,12 +430,19 @@ impl Cli {
                         }
                         let bp_decoder = bp_decoder_option.as_mut().unwrap();
                         let initial_log_ratios = initial_log_ratios_option.as_ref().unwrap();
+                        let initial_log_ratios_ordered_float =
+                            initial_log_ratios.iter().map(|x| x.clone().to_f64().unwrap()).collect();
 
-                        bp_decoder.set_log_domain_bp(initial_log_ratios);
+                        bp_decoder.set_log_domain_bp(&initial_log_ratios_ordered_float);
                         bp_decoder.decode(&syndrome_array);
-                        let mut llrs = bp_decoder.log_prob_ratios.clone();
+                        let llrs = bp_decoder
+                            .log_prob_ratios
+                            .clone()
+                            .into_iter()
+                            .map(OrderedFloat::from)
+                            .collect();
 
-                        solver.update_weights(&mut llrs, bp_application_ratio.unwrap_or(0.5));
+                        solver.update_weights(llrs, bp_application_ratio.unwrap_or(0.5));
                     }
 
                     if print_syndrome_pattern {

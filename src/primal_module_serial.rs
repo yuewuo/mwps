@@ -372,7 +372,7 @@ impl PrimalModuleImpl for PrimalModuleSerial {
         // find a local minimum (hopefully a global minimum)
         let interface = interface_ptr.read_recursive();
         let initializer = interface.decoding_graph.model_graph.initializer.as_ref();
-        let weight_of = |edge_index: EdgeIndex| initializer.weighted_edges[edge_index].weight;
+        let weight_of = |edge_index: EdgeIndex| initializer.weighted_edges[edge_index].weight.clone();
         cluster.subgraph = Some(cluster.matrix.get_solution_local_minimum(weight_of).expect("satisfiable"));
         true
     }
@@ -625,7 +625,7 @@ impl PrimalModuleImpl for PrimalModuleSerial {
         // find a local minimum (hopefully a global minimum)
         let interface = interface_ptr.read_recursive();
         let initializer = interface.decoding_graph.model_graph.initializer.as_ref();
-        let weight_of = |edge_index: EdgeIndex| initializer.weighted_edges[edge_index].weight;
+        let weight_of = |edge_index: EdgeIndex| initializer.weighted_edges[edge_index].weight.clone();
         cluster.subgraph = Some(cluster.matrix.get_solution_local_minimum(weight_of).expect("satisfiable"));
 
         (true, optimizer_result)
@@ -1185,12 +1185,8 @@ pub mod tests {
                 .matches_subgraph_syndrome(&subgraph, &defect_vertices),
             "the result subgraph is invalid"
         );
-        assert_eq!(Rational::from(final_dual), weight_range.upper, "unmatched sum dual variables");
-        assert_eq!(
-            Rational::from(final_dual),
-            weight_range.lower,
-            "unexpected final dual variable sum"
-        );
+        assert_eq!(final_dual, weight_range.upper, "unmatched sum dual variables");
+        assert_eq!(final_dual, weight_range.lower, "unexpected final dual variable sum");
         (interface_ptr, primal_module, dual_module)
     }
 
@@ -1232,7 +1228,13 @@ pub mod tests {
         let visualize_filename = "primal_module_serial_basic_1.json".to_string();
         let defect_vertices = vec![23, 24, 29, 30];
         let code = CodeCapacityTailoredCode::new(7, 0., 0.01);
-        primal_module_serial_basic_standard_syndrome(code, visualize_filename, defect_vertices, 4.59511985013459, vec![]);
+        primal_module_serial_basic_standard_syndrome(
+            code,
+            visualize_filename,
+            defect_vertices,
+            Rational::from(4.59511985013459),
+            vec![],
+        );
     }
 
     #[test]
@@ -1241,7 +1243,13 @@ pub mod tests {
         let visualize_filename = "primal_module_serial_basic_2.json".to_string();
         let defect_vertices = vec![16, 17, 23, 25, 29, 30];
         let code = CodeCapacityTailoredCode::new(7, 0., 0.01);
-        primal_module_serial_basic_standard_syndrome(code, visualize_filename, defect_vertices, 9.19023970026918, vec![]);
+        primal_module_serial_basic_standard_syndrome(
+            code,
+            visualize_filename,
+            defect_vertices,
+            Rational::from(9.19023970026918),
+            vec![],
+        );
     }
 
     #[test]
@@ -1250,7 +1258,13 @@ pub mod tests {
         let visualize_filename = "primal_module_serial_basic_3.json".to_string();
         let defect_vertices = vec![14, 15, 16, 17, 22, 25, 28, 31, 36, 37, 38, 39];
         let code = CodeCapacityTailoredCode::new(7, 0., 0.01);
-        primal_module_serial_basic_standard_syndrome(code, visualize_filename, defect_vertices, 22.97559925067295, vec![]);
+        primal_module_serial_basic_standard_syndrome(
+            code,
+            visualize_filename,
+            defect_vertices,
+            Rational::from(22.97559925067295),
+            vec![],
+        );
     }
 
     #[test]
@@ -1263,7 +1277,7 @@ pub mod tests {
             code,
             visualize_filename,
             defect_vertices,
-            22.97559925067295,
+            Rational::from(22.97559925067295),
             vec![
                 PluginUnionFind::entry(),
                 PluginSingleHair::entry_with_strategy(RepeatStrategy::Once),
@@ -1280,7 +1294,13 @@ pub mod tests {
         let visualize_filename = "primal_module_serial_basic_4.json".to_string();
         let defect_vertices = vec![10, 11, 12, 15, 16, 17, 18];
         let code = CodeCapacityTailoredCode::new(5, 0., 0.01);
-        primal_module_serial_basic_standard_syndrome(code, visualize_filename, defect_vertices, 4., vec![]);
+        primal_module_serial_basic_standard_syndrome(
+            code,
+            visualize_filename,
+            defect_vertices,
+            Rational::from(4.), // fixme: ???
+            vec![],
+        );
     }
 
     #[test]
@@ -1293,7 +1313,7 @@ pub mod tests {
             code,
             visualize_filename,
             defect_vertices,
-            18.38047940053836,
+            Rational::from(18.38047940053836),
             vec![
                 PluginUnionFind::entry(),
                 PluginSingleHair::entry_with_strategy(RepeatStrategy::Once),
@@ -1307,7 +1327,13 @@ pub mod tests {
         let visualize_filename = "primal_module_serial_basic_5.json".to_string();
         let defect_vertices = vec![32, 33, 37, 47, 86, 87, 72, 82];
         let code = CodeCapacityPlanarCode::new(11, 0.01);
-        primal_module_serial_basic_standard_syndrome(code, visualize_filename, defect_vertices, 18.38047940053836, vec![]);
+        primal_module_serial_basic_standard_syndrome(
+            code,
+            visualize_filename,
+            defect_vertices,
+            Rational::from(18.38047940053836),
+            vec![],
+        );
     }
 
     #[test]
@@ -1320,7 +1346,7 @@ pub mod tests {
             code,
             visualize_filename,
             defect_vertices,
-            55.14143820161507,
+            Rational::from(55.14143820161507),
             vec![
                 PluginUnionFind::entry(),
                 PluginSingleHair::entry_with_strategy(RepeatStrategy::Once),

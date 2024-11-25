@@ -66,7 +66,7 @@ impl CodeEdge {
             vertices,
             p: 0.,
             pe: 0.,
-            weight: 0.,
+            weight: Rational::from(0.),
             is_erasure: false,
         }
     }
@@ -124,7 +124,7 @@ pub trait ExampleCode {
 
         for edge in edges.iter_mut() {
             let weight = weight_of_p(edge.p);
-            edge.weight = weight;
+            edge.weight = Rational::from(weight);
         }
     }
 
@@ -133,7 +133,7 @@ pub trait ExampleCode {
         let (_vertices, edges) = self.immutable_vertices_edges();
         let mut weights = Vec::with_capacity(edges.len());
         for edge in edges.iter() {
-            weights.push(edge.weight);
+            weights.push(edge.weight.clone());
         }
         weights
     }
@@ -267,7 +267,7 @@ pub trait ExampleCode {
         let vertex_num = vertices.len() as VertexIndex;
         let mut weighted_edges = Vec::with_capacity(edges.len());
         for edge in edges.iter() {
-            weighted_edges.push(HyperEdge::new(edge.vertices.clone(), edge.weight));
+            weighted_edges.push(HyperEdge::new(edge.vertices.clone(), edge.weight.clone()));
         }
         SolverInitializer {
             vertex_num,
@@ -1227,7 +1227,7 @@ impl QECPlaygroundCode {
                 // assert!(weight >= 0., "weight must be non-negative");
                 // assert!(weight <= config.max_weight as f64, "weight must be smaller than max weight");
                 let vertex_indices: Vec<_> = defect_vertices.0.iter().map(|x| model_hypergraph.vertex_indices[x]).collect();
-                weighted_edges.push(HyperEdge::new(vertex_indices, weight));
+                weighted_edges.push(HyperEdge::new(vertex_indices, Rational::from(weight)));
             }
         }
         let vertex_num = model_hypergraph.vertex_positions.len();
@@ -1439,7 +1439,7 @@ impl ErrorPatternReader {
                 vertices: hyperedge.vertices.clone(),
                 p: 0.,  // doesn't matter
                 pe: 0., // doesn't matter
-                weight: hyperedge.weight,
+                weight: hyperedge.weight.clone(),
                 is_erasure: false, // doesn't matter
             });
         }

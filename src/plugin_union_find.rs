@@ -64,7 +64,7 @@ pub mod tests {
             code,
             visualize_filename,
             defect_vertices,
-            4.59511985013459,
+            Rational::from(4.59511985013459),
             vec![PluginUnionFind::entry()],
         );
     }

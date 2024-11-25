@@ -20,7 +20,7 @@ fn hyperedge_example() {
     code.vertices.clear();
     code.edges = vec![CodeEdge::new(vec![0, 1, 2, 3, 4, 5, 6])];
     for edge in code.edges.iter_mut() {
-        edge.weight = 1.;
+        edge.weight = Rational::from(1.);
     }
     code.fill_vertices(7);
     let radius = 2.;

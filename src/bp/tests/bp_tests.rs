@@ -43,7 +43,7 @@ mod tests {
         assert_eq!(0.625, decoder.ms_scaling_factor);
         assert!(matches!(decoder.method, BpMethod::ProductSum));
         assert!(matches!(decoder.schedule, BpSchedule::Parallel));
-        assert_eq!(decoder.omp_thread_count, 1);
+        assert_eq!(decoder.omp_thread_count, 16);
     }
 
     #[test]

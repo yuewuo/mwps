@@ -2,9 +2,11 @@ use crate::mwpf_solver::*;
 #[cfg(not(feature = "float_lp"))]
 use crate::num_rational;
 use crate::num_traits::ToPrimitive;
+use crate::ordered_float::OrderedFloat;
 use crate::rand_xoshiro;
 use crate::rand_xoshiro::rand_core::RngCore;
 use crate::visualize::*;
+use num_traits::Zero;
 #[cfg(feature = "python_binding")]
 use pyo3::prelude::*;
 #[cfg(feature = "python_binding")]
@@ -16,7 +18,7 @@ use std::fs::File;
 use std::io::prelude::*;
 use std::time::Instant;
 
-pub type Weight = f64; // only used as input, all internal weight representation will use `Rational`
+pub type Weight = Rational; // only used as input, all internal weight representation will use `Rational`
 
 cfg_if::cfg_if! {
     if #[cfg(feature="f64_weight")] {
@@ -139,9 +141,9 @@ impl SolverInitializer {
 
     #[allow(clippy::unnecessary_cast)]
     pub fn get_subgraph_total_weight(&self, subgraph: &OutputSubgraph) -> Weight {
-        let mut weight = 0.;
+        let mut weight = OrderedFloat::zero();
         for &edge_index in subgraph.iter() {
-            weight += self.weighted_edges[edge_index as usize].weight;
+            weight += self.weighted_edges[edge_index as usize].weight.clone();
         }
         weight
     }
