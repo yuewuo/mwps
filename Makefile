@@ -23,6 +23,9 @@ clean-env: clean fmt
 test: clean-env
 	cargo test
 	cargo test --release
+	cargo test --no-default-features --features rational_weight,embed_visualizer,qecp_integrate,progress_bar
+	cargo test -r --no-default-features --features rational_weight,embed_visualizer,qecp_integrate,progress_bar
+
 
 build: clean-env
 	cargo build
