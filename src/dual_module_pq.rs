@@ -262,6 +262,9 @@ where
     negative_weight_sum: Rational,
     negative_edges: HashSet<EdgeIndex>,
     flip_vertices: HashSet<VertexIndex>,
+
+    // counteract the weight updates
+    original_weights: Vec<Rational>,
 }
 
 impl<Queue> DualModulePQGeneric<Queue>
@@ -407,6 +410,7 @@ where
             .collect();
         // set edges
         let mut edges = Vec::<EdgePtr>::new();
+        let mut original_weights = Vec::<Rational>::with_capacity(initializer.weighted_edges.len());
         for hyperedge in initializer.weighted_edges.iter() {
             let edge = Edge {
                 edge_index: edges.len() as EdgeIndex,
@@ -423,6 +427,8 @@ where
                 #[cfg(feature = "incr_lp")]
                 cluster_weights: hashbrown::HashMap::new(),
             };
+
+            original_weights.push(edge.weight.clone());
 
             let edge_ptr = EdgePtr::new_value(edge);
 
@@ -443,6 +449,7 @@ where
             negative_weight_sum: Default::default(),
             negative_edges: Default::default(),
             flip_vertices: Default::default(),
+            original_weights,
         }
     }
 
@@ -450,7 +457,11 @@ where
     fn clear(&mut self) {
         // todo: try parallel clearing, if a core supports hyper-threading then this may benefit
         self.vertices.iter().for_each(|p| p.write().clear());
-        self.edges.iter().for_each(|p| p.write().clear());
+        self.edges.iter().zip(&self.original_weights).for_each(|(p, og_weight)| {
+            let mut p_write = p.write();
+            p_write.clear();
+            p_write.weight = og_weight.clone(); // note: not resetting weight was also performing quite well...
+        });
 
         self.obstacle_queue.clear();
         self.global_time.write().set_zero();
@@ -614,6 +625,9 @@ where
 
     /// for pq implementation, simply updating the global time is enough, could be part of the `report` function
     fn grow(&mut self, length: Rational) {
+        if length.is_negative() {
+            println!("{:?}", self.obstacle_queue);
+        }
         assert!(
             length.is_positive(),
             "growth should be positive; if desired, please set grow rate to negative for shrinking"
