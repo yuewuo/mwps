@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { Info } from '../info_pane'
-import { type EdgeRingState, type EdgeTubeState, type VertexState, compute_edge_to_dual_indices } from '../hyperion'
+import { type EdgeRingState, type EdgeTubeState, type VertexState, compute_edge_to_dual_indices, compute_vertex_to_dual_indices, compute_vertex_incident_edges } from '../hyperion'
 import Indices from './Indices.vue'
 import EdgeDualSum from '../equations/EdgeDualSum.vue'
 import { display_nominator } from '@/util'
@@ -20,6 +20,35 @@ const vi = computed(() => {
     const vertex_state = config.data.selected?.object?.userData?.vecData?.[instanceId]
     if (vertex_state?.type != 'vertex') return
     return (vertex_state as VertexState).vi
+})
+
+const vertex = computed(() => {
+    if (vi.value == undefined) return
+    return config.snapshot.vertices[vi.value]
+})
+
+const vertex_to_dual_indices = computed(() => {
+    const snapshot = config.snapshot
+    return compute_vertex_to_dual_indices(snapshot)
+})
+
+const vertex_incident_edges = computed(() => {
+    const snapshot = config.snapshot
+    return compute_vertex_incident_edges(snapshot)
+})
+
+const vertex_involving_nodes = computed(() => {
+    if (vi.value == undefined) return
+    let dual_indices = []
+    if (config.snapshot.dual_nodes != null) {
+        // check the non-zero contributing dual variables
+        for (let node_index of vertex_to_dual_indices.value[vi.value]) {
+            if (config.snapshot.dual_nodes[node_index].d != 0 || props.info.display_zero_dual_variables) {
+                dual_indices.push(node_index)
+            }
+        }
+    }
+    return dual_indices
 })
 
 const ei = computed(() => {
@@ -46,7 +75,7 @@ const edge_contributing_nodes = computed(() => {
     if (config.snapshot.dual_nodes != null) {
         // check the non-zero contributing dual variables
         for (let node_index of edge_to_dual_indices.value[ei.value]) {
-            if (config.snapshot.dual_nodes[node_index].d != 0) {
+            if (config.snapshot.dual_nodes[node_index].d != 0 || props.info.display_zero_dual_variables) {
                 dual_indices.push(node_index)
             }
         }
@@ -58,12 +87,27 @@ const edge_contributing_nodes = computed(() => {
 <template>
     <div class="div">
         <div v-if="vi != undefined">
-            <div class="title">{{ config.snapshot.vertices[vi]?.s ? 'Defect' : 'Normal' }} Vertex {{ vi }}</div>
+            <div class="title">{{ vertex!.s ? 'Defect' : 'Normal' }} Vertex {{ vi }}</div>
+            <div style="margin-top: 10px">
+                <math display="inline-block" style="font-size: 120%; math-style: normal; position: relative; top: 3px">
+                    <mrow>
+                        <mi>δ</mi>
+                        <mn>(</mn>
+                        <mi>v</mi>
+                        <mn>)</mn>
+                    </mrow>
+                    <mo>=</mo>
+                </math>
+                <Indices :titleWidth="0" :width="345" :indices="vertex_incident_edges[vi]"></Indices>
+            </div>
+            <div class="title" style="margin-top: 10px">Dual Variables involving Vertex {{ vi }}</div>
+            <div style="margin-top: 10px"></div>
+            <DualNodes :info="info" :dual_indices="vertex_involving_nodes"></DualNodes>
         </div>
         <div v-if="ei != undefined">
-            <div class="title">{{ config.snapshot.edges[ei].g >= config.snapshot.edges[ei].w ? 'Tight' : 'Loose' }} Edge {{ ei }}</div>
+            <div class="title">{{ edge!.g >= edge!.w ? 'Tight' : 'Loose' }} Edge {{ ei }}</div>
             <div style="margin-top: 10px">
-                <math display="inline" style="font-size: 150%; position: relative; top: 3px">
+                <math display="inline" style="font-size: 120%; position: relative; top: 3px">
                     <mi>V</mi>
                     <mn>(</mn>
                     <mi>e</mi>
@@ -82,7 +126,7 @@ const edge_contributing_nodes = computed(() => {
                     <mn>{{ edge!.w }}</mn>
                 </math>
             </div>
-            <div class="title" style="margin-top: 10px">Dual Variables associated with Edge {{ ei }}</div>
+            <div class="title" style="margin-top: 10px">Dual Variables contributing to Edge {{ ei }}</div>
             <div style="margin-top: 0px">
                 <math display="inline-block" style="font-size: 120%; math-style: normal; position: relative; top: 3px">
                     <mrow>

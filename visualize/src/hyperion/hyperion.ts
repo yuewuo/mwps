@@ -237,3 +237,25 @@ export function compute_edge_to_dual_indices (snapshot: Snapshot): Array<Array<n
     }
     return dual_indices
 }
+
+export function compute_vertex_to_dual_indices (snapshot: Snapshot): Array<Array<number>> {
+    const dual_indices: Array<Array<number>> = Array.from({ length: snapshot.vertices.length }, () => [])
+    if (snapshot.dual_nodes != null) {
+        for (const [node_index, node] of snapshot.dual_nodes.entries()) {
+            for (const vertex_index of node.v) {
+                dual_indices[vertex_index].push(node_index)
+            }
+        }
+    }
+    return dual_indices
+}
+
+export function compute_vertex_incident_edges (snapshot: Snapshot): Array<Array<number>> {
+    const incident_edges: Array<Array<number>> = Array.from({ length: snapshot.vertices.length }, () => [])
+    for (const [edge_index, edge] of snapshot.edges.entries()) {
+        for (const vertex_index of edge.v) {
+            incident_edges[vertex_index].push(edge_index)
+        }
+    }
+    return incident_edges
+}
