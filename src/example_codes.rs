@@ -10,9 +10,12 @@
 
 use crate::derivative::Derivative;
 use crate::model_hypergraph::*;
+use crate::num_traits::{FromPrimitive, ToPrimitive, Zero};
 use crate::rand_xoshiro::rand_core::SeedableRng;
 use crate::serde_json;
 use crate::util::*;
+#[cfg(feature = "python_binding")]
+use crate::util_py::*;
 use crate::visualize::*;
 #[cfg(feature = "python_binding")]
 use pyo3::prelude::*;
@@ -46,7 +49,7 @@ impl CodeVertex {
 /// Edge flips the measurement result of two vertices
 #[derive(Derivative, Clone)]
 #[derivative(Debug)]
-#[cfg_attr(feature = "python_binding", pyclass(get_all, set_all))]
+#[cfg_attr(feature = "python_binding", pyclass)]
 pub struct CodeEdge {
     /// the two vertices incident to this edge; in quantum LDPC codes this should be only a handful of vertices
     pub vertices: Vec<VertexIndex>,
@@ -66,7 +69,7 @@ impl CodeEdge {
             vertices,
             p: 0.,
             pe: 0.,
-            weight: 0,
+            weight: Rational::zero(),
             is_erasure: false,
         }
     }
@@ -82,12 +85,53 @@ impl CodeEdge {
     fn __repr__(&self) -> String {
         format!("{:?}", self)
     }
+    #[getter]
+    fn get_vertices(&self) -> Vec<VertexIndex> {
+        self.vertices.clone()
+    }
+    #[setter]
+    fn set_vertices(&mut self, vertices: Vec<VertexIndex>) {
+        self.vertices = vertices;
+    }
+    #[getter]
+    fn get_p(&self) -> f64 {
+        self.p.clone()
+    }
+    #[setter]
+    fn set_p(&mut self, p: f64) {
+        self.p = p;
+    }
+    #[getter]
+    fn get_pe(&self) -> f64 {
+        self.pe.clone()
+    }
+    #[setter]
+    fn set_pe(&mut self, pe: f64) {
+        self.pe = pe;
+    }
+    #[getter]
+    fn get_weight(&self) -> PyRational {
+        self.weight.clone().into()
+    }
+    #[setter]
+    fn set_weight(&mut self, weight: &Bound<PyAny>) {
+        self.weight = PyRational::from(weight).0;
+    }
+    #[getter]
+    fn get_is_erasure(&self) -> bool {
+        self.is_erasure.clone()
+    }
+    #[setter]
+    fn set_is_erasure(&mut self, is_erasure: bool) {
+        self.is_erasure = is_erasure;
+    }
 }
 
 /// default function for computing (pre-scaled) weight from probability
 #[cfg_attr(feature = "python_binding", pyfunction)]
 pub fn weight_of_p(p: f64) -> f64 {
-    assert!((0. ..0.5).contains(&p), "p must be a reasonable value between 0 and 50%");
+    // note: allowed negative weight handling
+    // assert!((0. ..0.5).contains(&p), "p must be a reasonable value between 0 and 50%");
     ((1. - p) / p).ln()
 }
 
@@ -101,24 +145,40 @@ pub trait ExampleCode {
         self.immutable_vertices_edges().0.len() as VertexNum
     }
 
+    /// get the number of edges
+    fn edge_num(&self) -> usize {
+        self.immutable_vertices_edges().1.len()
+    }
+
+    /// get edges for iteration
+    fn edges(&self) -> &Vec<CodeEdge> {
+        self.immutable_vertices_edges().1
+    }
+
+    /// get mutable edges for iteration
+    fn edges_mut(&mut self) -> &mut Vec<CodeEdge> {
+        self.vertices_edges().1
+    }
+
     /// generic method that automatically computes integer weights from probabilities,
     /// scales such that the maximum integer weight is 10000 and the minimum is 1
-    fn compute_weights(&mut self, max_weight: Weight) {
+    fn compute_weights(&mut self) {
         let (_vertices, edges) = self.vertices_edges();
-        let mut original_max_weight = 0.;
-        for edge in edges.iter() {
-            let weight = weight_of_p(edge.p);
-            if weight > original_max_weight {
-                original_max_weight = weight;
-            }
-        }
-        assert!(original_max_weight > 0., "max weight is not expected to be 0.");
-        // scale all weights but set the smallest to 1
+
         for edge in edges.iter_mut() {
             let weight = weight_of_p(edge.p);
-            let new_weight: Weight = ((max_weight as f64) * weight / original_max_weight).round() as Weight;
-            edge.weight = if new_weight == 0 { 1 } else { new_weight }; // weight is required to be even
+            edge.weight = Rational::from_f64(weight).unwrap();
         }
+    }
+
+    /// get weights of dual module
+    fn get_weights(&self) -> Vec<Weight> {
+        let (_vertices, edges) = self.immutable_vertices_edges();
+        let mut weights = Vec::with_capacity(edges.len());
+        for edge in edges.iter() {
+            weights.push(edge.weight.clone());
+        }
+        weights
     }
 
     /// remove duplicate edges by keeping one with largest probability
@@ -250,7 +310,7 @@ pub trait ExampleCode {
         let vertex_num = vertices.len() as VertexIndex;
         let mut weighted_edges = Vec::with_capacity(edges.len());
         for edge in edges.iter() {
-            weighted_edges.push(HyperEdge::new(edge.vertices.clone(), edge.weight));
+            weighted_edges.push(HyperEdge::new(edge.vertices.clone(), edge.weight.clone()));
         }
         SolverInitializer {
             vertex_num,
@@ -291,10 +351,11 @@ pub trait ExampleCode {
     }
 
     /// check if the correction is valid, i.e., has the same syndrome with the input
-    fn validate_correction(&mut self, correction: &[EdgeIndex]) {
+    fn validate_correction(&mut self, correction: &OutputSubgraph) {
         // first check if the correction is valid, i.e., has the same defect
         let original_defect_vertices = self.get_defect_vertices();
-        self.set_physical_errors(correction);
+        let correction_edges: Vec<EdgeIndex> = correction.iter().cloned().collect();
+        self.set_physical_errors(&correction_edges);
         let new_defect_vertices = self.get_defect_vertices();
         assert_eq!(
             original_defect_vertices, new_defect_vertices,
@@ -418,8 +479,8 @@ macro_rules! bind_trait_example_code {
                 self.vertex_num()
             }
             #[pyo3(name = "compute_weights")]
-            fn trait_compute_weights(&mut self, max_weight: Weight) {
-                self.compute_weights(max_weight)
+            fn trait_compute_weights(&mut self) {
+                self.compute_weights()
             }
             #[pyo3(name = "sanity_check")]
             fn trait_sanity_check(&self) -> Option<String> {
@@ -467,7 +528,7 @@ macro_rules! bind_trait_example_code {
             }
             #[pyo3(name = "validate_correction")]
             fn trait_validate_correction(&mut self, correction: Vec<EdgeIndex>) {
-                self.validate_correction(&correction)
+                self.validate_correction(&OutputSubgraph::from(correction))
             }
             #[pyo3(name = "get_erasures")]
             fn trait_get_erasures(&self) -> Vec<EdgeIndex> {
@@ -508,7 +569,9 @@ where
         let mut edges = Vec::<serde_json::Value>::new();
         for edge in self_edges.iter() {
             edges.push(json!({
-                if abbrev { "w" } else { "weight" }: edge.weight,
+                if abbrev { "w" } else { "weight" }: edge.weight.to_f64(),
+                "wn": numer_of(&edge.weight),
+                "wd": denom_of(&edge.weight),
                 if abbrev { "v" } else { "vertices" }: edge.vertices,
             }));
         }
@@ -527,6 +590,8 @@ pub struct CodeCapacityRepetitionCode {
     pub vertices: Vec<CodeVertex>,
     /// nearest-neighbor edges in the decoding graph
     pub edges: Vec<CodeEdge>,
+    /// unscaled weights for BP
+    pub unscaled_weights: Vec<f64>,
 }
 
 impl ExampleCode for CodeCapacityRepetitionCode {
@@ -542,10 +607,10 @@ impl ExampleCode for CodeCapacityRepetitionCode {
 bind_trait_example_code! {CodeCapacityRepetitionCode}
 
 impl CodeCapacityRepetitionCode {
-    pub fn new(d: VertexNum, p: f64, max_weight: Weight) -> Self {
+    pub fn new(d: VertexNum, p: f64) -> Self {
         let mut code = Self::create_code(d);
         code.set_probability(p);
-        code.compute_weights(max_weight);
+        code.compute_weights();
         code
     }
 
@@ -562,6 +627,7 @@ impl CodeCapacityRepetitionCode {
         let mut code = Self {
             vertices: Vec::new(),
             edges,
+            unscaled_weights: Vec::new(),
         };
         // create vertices
         code.fill_vertices(vertex_num);
@@ -580,9 +646,9 @@ impl CodeCapacityRepetitionCode {
 #[pymethods]
 impl CodeCapacityRepetitionCode {
     #[new]
-    #[pyo3(signature = (d, p, max_weight=1000))]
-    fn py_new(d: VertexNum, p: f64, max_weight: Weight) -> Self {
-        Self::new(d, p, max_weight)
+    #[pyo3(signature = (d, p))]
+    fn py_new(d: VertexNum, p: f64) -> Self {
+        Self::new(d, p)
     }
 
     #[staticmethod]
@@ -601,6 +667,8 @@ pub struct CodeCapacityPlanarCode {
     pub vertices: Vec<CodeVertex>,
     /// nearest-neighbor edges in the decoding graph
     pub edges: Vec<CodeEdge>,
+    /// unscaled weights for BP
+    pub unscaled_weights: Vec<f64>,
 }
 
 impl ExampleCode for CodeCapacityPlanarCode {
@@ -616,10 +684,10 @@ impl ExampleCode for CodeCapacityPlanarCode {
 bind_trait_example_code! {CodeCapacityPlanarCode}
 
 impl CodeCapacityPlanarCode {
-    pub fn new(d: VertexNum, p: f64, max_weight: Weight) -> Self {
+    pub fn new(d: VertexNum, p: f64) -> Self {
         let mut code = Self::create_code(d);
         code.set_probability(p);
-        code.compute_weights(max_weight);
+        code.compute_weights();
         code
     }
 
@@ -645,6 +713,7 @@ impl CodeCapacityPlanarCode {
         let mut code = Self {
             vertices: Vec::new(),
             edges,
+            unscaled_weights: Vec::new(),
         };
         // create vertices
         code.fill_vertices(vertex_num);
@@ -665,9 +734,9 @@ impl CodeCapacityPlanarCode {
 #[pymethods]
 impl CodeCapacityPlanarCode {
     #[new]
-    #[pyo3(signature = (d, p, max_weight=1000))]
-    fn py_new(d: VertexNum, p: f64, max_weight: Weight) -> Self {
-        Self::new(d, p, max_weight)
+    #[pyo3(signature = (d, p))]
+    fn py_new(d: VertexNum, p: f64) -> Self {
+        Self::new(d, p)
     }
 
     #[staticmethod]
@@ -687,6 +756,8 @@ pub struct CodeCapacityDepolarizePlanarCode {
     pub vertices: Vec<CodeVertex>,
     /// nearest-neighbor edges in the decoding graph
     pub edges: Vec<CodeEdge>,
+    /// unscaled weights for BP
+    pub unscaled_weights: Vec<f64>,
 }
 
 impl ExampleCode for CodeCapacityDepolarizePlanarCode {
@@ -702,17 +773,17 @@ impl ExampleCode for CodeCapacityDepolarizePlanarCode {
 bind_trait_example_code! {CodeCapacityDepolarizePlanarCode}
 
 impl CodeCapacityDepolarizePlanarCode {
-    pub fn new(d: VertexNum, p: f64, max_weight: Weight) -> Self {
+    pub fn new(d: VertexNum, p: f64) -> Self {
         let mut code = Self::create_code(d, true);
         code.set_probability(p);
-        code.compute_weights(max_weight);
+        code.compute_weights();
         code
     }
 
-    pub fn new_no_y(d: VertexNum, p: f64, max_weight: Weight) -> Self {
+    pub fn new_no_y(d: VertexNum, p: f64) -> Self {
         let mut code = Self::create_code(d, false);
         code.set_probability(p);
-        code.compute_weights(max_weight);
+        code.compute_weights();
         code
     }
 
@@ -784,6 +855,7 @@ impl CodeCapacityDepolarizePlanarCode {
         let mut code = Self {
             vertices: Vec::new(),
             edges,
+            unscaled_weights: Vec::new(),
         };
         // create vertices
         code.fill_vertices(vertex_num);
@@ -798,15 +870,15 @@ impl CodeCapacityDepolarizePlanarCode {
 #[pymethods]
 impl CodeCapacityDepolarizePlanarCode {
     #[new]
-    #[pyo3(signature = (d, p, max_weight=1000))]
-    fn py_new(d: VertexNum, p: f64, max_weight: Weight) -> Self {
-        Self::new(d, p, max_weight)
+    #[pyo3(signature = (d, p, ))]
+    fn py_new(d: VertexNum, p: f64) -> Self {
+        Self::new(d, p)
     }
 
     #[staticmethod]
-    #[pyo3(name = "new_no_y", signature = (d, p, max_weight=1000))]
-    fn py_new_no_y(d: VertexNum, p: f64, max_weight: Weight) -> Self {
-        Self::new_no_y(d, p, max_weight)
+    #[pyo3(name = "new_no_y", signature = (d, p))]
+    fn py_new_no_y(d: VertexNum, p: f64) -> Self {
+        Self::new_no_y(d, p)
     }
 
     #[staticmethod]
@@ -826,6 +898,8 @@ pub struct CodeCapacityTailoredCode {
     pub vertices: Vec<CodeVertex>,
     /// nearest-neighbor edges in the decoding graph
     pub edges: Vec<CodeEdge>,
+    /// unscaled weights for BP
+    pub unscaled_weights: Vec<f64>,
 }
 
 impl ExampleCode for CodeCapacityTailoredCode {
@@ -841,9 +915,9 @@ impl ExampleCode for CodeCapacityTailoredCode {
 bind_trait_example_code! {CodeCapacityTailoredCode}
 
 impl CodeCapacityTailoredCode {
-    pub fn new(d: VertexNum, pxy: f64, pz: f64, max_weight: Weight) -> Self {
+    pub fn new(d: VertexNum, pxy: f64, pz: f64) -> Self {
         let mut code = Self::create_code(d, pxy, pz);
-        code.compute_weights(max_weight);
+        code.compute_weights();
         code
     }
 
@@ -920,6 +994,7 @@ impl CodeCapacityTailoredCode {
         let mut code = Self {
             vertices: Vec::new(),
             edges,
+            unscaled_weights: Vec::new(),
         };
         // there might be duplicate edges; select a larger probability one
         code.remove_duplicate_edges();
@@ -936,9 +1011,9 @@ impl CodeCapacityTailoredCode {
 #[pymethods]
 impl CodeCapacityTailoredCode {
     #[new]
-    #[pyo3(signature = (d, pxy, pz, max_weight=1000))]
-    fn py_new(d: VertexNum, pxy: f64, pz: f64, max_weight: Weight) -> Self {
-        Self::new(d, pxy, pz, max_weight)
+    #[pyo3(signature = (d, pxy, pz,))]
+    fn py_new(d: VertexNum, pxy: f64, pz: f64) -> Self {
+        Self::new(d, pxy, pz)
     }
 
     #[staticmethod]
@@ -958,6 +1033,8 @@ pub struct CodeCapacityColorCode {
     pub vertices: Vec<CodeVertex>,
     /// nearest-neighbor edges in the decoding graph
     pub edges: Vec<CodeEdge>,
+    /// unscaled weights for BP
+    pub unscaled_weights: Vec<f64>,
 }
 
 impl ExampleCode for CodeCapacityColorCode {
@@ -973,10 +1050,10 @@ impl ExampleCode for CodeCapacityColorCode {
 bind_trait_example_code! {CodeCapacityColorCode}
 
 impl CodeCapacityColorCode {
-    pub fn new(d: VertexNum, p: f64, max_weight: Weight) -> Self {
+    pub fn new(d: VertexNum, p: f64) -> Self {
         let mut code = Self::create_code(d);
         code.set_probability(p);
-        code.compute_weights(max_weight);
+        code.compute_weights();
         code
     }
 
@@ -1031,6 +1108,7 @@ impl CodeCapacityColorCode {
         let mut code = Self {
             vertices: Vec::new(),
             edges,
+            unscaled_weights: Vec::new(),
         };
         // create vertices
         code.fill_vertices(vertex_num);
@@ -1045,9 +1123,9 @@ impl CodeCapacityColorCode {
 #[pymethods]
 impl CodeCapacityColorCode {
     #[new]
-    #[pyo3(signature = (d, p, max_weight=1000))]
-    fn py_new(d: VertexNum, p: f64, max_weight: Weight) -> Self {
-        Self::new(d, p, max_weight)
+    #[pyo3(signature = (d, p))]
+    fn py_new(d: VertexNum, p: f64) -> Self {
+        Self::new(d, p)
     }
 
     #[staticmethod]
@@ -1144,92 +1222,6 @@ impl ExampleCode for QECPlaygroundCode {
     }
 }
 
-#[cfg(all(feature = "python_binding", feature = "qecp_integrate"))]
-bind_trait_example_code! {QECPlaygroundCode}
-
-#[cfg(feature = "qecp_integrate")]
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct QECPlaygroundCodeConfig {
-    // default to d
-    pub di: Option<usize>,
-    pub dj: Option<usize>,
-    pub nm: Option<usize>,
-    #[serde(default = "qec_playground_default_configs::pe")]
-    pub pe: f64,
-    pub noise_model_modifier: Option<serde_json::Value>,
-    #[serde(default = "qec_playground_default_configs::code_type")]
-    pub code_type: qecp::code_builder::CodeType,
-    #[serde(default = "qec_playground_default_configs::bias_eta")]
-    pub bias_eta: f64,
-    pub noise_model: Option<qecp::noise_model_builder::NoiseModelBuilder>,
-    #[serde(default = "qec_playground_default_configs::noise_model_configuration")]
-    pub noise_model_configuration: serde_json::Value,
-    #[serde(default = "qec_playground_default_configs::parallel_init")]
-    pub parallel_init: usize,
-    #[serde(default = "qec_playground_default_configs::use_brief_edge")]
-    pub use_brief_edge: bool,
-    // specify the target qubit type
-    pub qubit_type: Option<qecp::types::QubitType>,
-    #[serde(default = "qec_playground_default_configs::max_weight")]
-    pub max_weight: usize,
-}
-
-#[cfg(feature = "qecp_integrate")]
-pub mod qec_playground_default_configs {
-    pub fn pe() -> f64 {
-        0.
-    }
-    pub fn bias_eta() -> f64 {
-        0.5
-    }
-    pub fn noise_model_configuration() -> serde_json::Value {
-        json!({})
-    }
-    pub fn code_type() -> qecp::code_builder::CodeType {
-        qecp::code_builder::CodeType::StandardPlanarCode
-    }
-    pub fn parallel_init() -> usize {
-        1
-    }
-    pub fn use_brief_edge() -> bool {
-        false
-    }
-    pub fn max_weight() -> usize {
-        1000000
-    }
-}
-
-#[cfg(feature = "qecp_integrate")]
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct HyperionDecoderConfig {
-    /// weight function, by default using [`WeightFunction::AutotuneImproved`]
-    #[serde(alias = "wf")] // abbreviation
-    #[serde(default = "hyperion_default_configs::weight_function")]
-    pub weight_function: qecp::model_graph::WeightFunction,
-    /// combined probability can improve accuracy, but will cause probabilities differ a lot even in the case of i.i.d. noise model
-    #[serde(alias = "ucp")] // abbreviation
-    #[serde(default = "hyperion_default_configs::use_combined_probability")]
-    pub use_combined_probability: bool,
-    #[serde(default = "hyperion_default_configs::default_hyperion_config")]
-    pub hyperion_config: serde_json::Value,
-}
-
-#[cfg(feature = "qecp_integrate")]
-pub mod hyperion_default_configs {
-    use super::*;
-    pub fn default_hyperion_config() -> serde_json::Value {
-        json!({})
-    }
-    pub fn weight_function() -> qecp::model_graph::WeightFunction {
-        qecp::model_graph::WeightFunction::AutotuneImproved
-    }
-    pub fn use_combined_probability() -> bool {
-        true
-    } // default use combined probability for better accuracy
-}
-
 #[cfg(feature = "qecp_integrate")]
 impl QECPlaygroundCode {
     #[allow(clippy::unnecessary_cast)]
@@ -1270,26 +1262,17 @@ impl QECPlaygroundCode {
         );
         let model_hypergraph = Arc::new(model_hypergraph);
         // implementing: model_hypergraph.generate_mwpf_hypergraph(config.max_weight);
-        let mut maximum_weight = 0.;
-        for (_, hyperedge_group) in model_hypergraph.weighted_edges.iter() {
-            if hyperedge_group.hyperedge.probability > 0. && hyperedge_group.hyperedge.weight > maximum_weight {
-                maximum_weight = hyperedge_group.hyperedge.weight;
-            }
-        }
+
         let mut weighted_edges = Vec::with_capacity(model_hypergraph.weighted_edges.len());
         for (defect_vertices, hyperedge_group) in model_hypergraph.weighted_edges.iter() {
             if hyperedge_group.hyperedge.probability > 0. {
                 // only add those possible edges; for erasures, handle later
-                let scaled_weight = hyperedge_group.hyperedge.weight * config.max_weight as f64 / maximum_weight;
-                let int_weight = scaled_weight.round();
-                assert!(int_weight.is_finite(), "weight must be normal");
-                assert!(int_weight >= 0., "weight must be non-negative");
-                assert!(
-                    int_weight <= config.max_weight as f64,
-                    "weight must be smaller than max weight"
-                );
+                let weight = hyperedge_group.hyperedge.weight;
+                assert!(weight.is_finite(), "weight must be normal");
+                // assert!(weight >= 0., "weight must be non-negative");
+                // assert!(weight <= config.max_weight as f64, "weight must be smaller than max weight");
                 let vertex_indices: Vec<_> = defect_vertices.0.iter().map(|x| model_hypergraph.vertex_indices[x]).collect();
-                weighted_edges.push(HyperEdge::new(vertex_indices, int_weight as usize));
+                weighted_edges.push(HyperEdge::new(vertex_indices, Rational::from_f64(weight).unwrap()));
             }
         }
         let vertex_num = model_hypergraph.vertex_positions.len();
@@ -1325,6 +1308,87 @@ impl QECPlaygroundCode {
         }
         code
     }
+}
+
+#[cfg(all(feature = "python_binding", feature = "qecp_integrate"))]
+bind_trait_example_code! {QECPlaygroundCode}
+
+#[cfg(feature = "qecp_integrate")]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct QECPlaygroundCodeConfig {
+    // default to d
+    pub di: Option<usize>,
+    pub dj: Option<usize>,
+    pub nm: Option<usize>,
+    #[serde(default = "qec_playground_default_configs::pe")]
+    pub pe: f64,
+    pub noise_model_modifier: Option<serde_json::Value>,
+    #[serde(default = "qec_playground_default_configs::code_type")]
+    pub code_type: qecp::code_builder::CodeType,
+    #[serde(default = "qec_playground_default_configs::bias_eta")]
+    pub bias_eta: f64,
+    pub noise_model: Option<qecp::noise_model_builder::NoiseModelBuilder>,
+    #[serde(default = "qec_playground_default_configs::noise_model_configuration")]
+    pub noise_model_configuration: serde_json::Value,
+    #[serde(default = "qec_playground_default_configs::parallel_init")]
+    pub parallel_init: usize,
+    #[serde(default = "qec_playground_default_configs::use_brief_edge")]
+    pub use_brief_edge: bool,
+    // specify the target qubit type
+    pub qubit_type: Option<qecp::types::QubitType>,
+}
+
+#[cfg(feature = "qecp_integrate")]
+pub mod qec_playground_default_configs {
+    pub fn pe() -> f64 {
+        0.
+    }
+    pub fn bias_eta() -> f64 {
+        0.5
+    }
+    pub fn noise_model_configuration() -> serde_json::Value {
+        json!({})
+    }
+    pub fn code_type() -> qecp::code_builder::CodeType {
+        qecp::code_builder::CodeType::StandardPlanarCode
+    }
+    pub fn parallel_init() -> usize {
+        1
+    }
+    pub fn use_brief_edge() -> bool {
+        false
+    }
+}
+
+#[cfg(feature = "qecp_integrate")]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HyperionDecoderConfig {
+    /// weight function, by default using [`WeightFunction::AutotuneImproved`]
+    #[serde(alias = "wf")] // abbreviation
+    #[serde(default = "hyperion_default_configs::weight_function")]
+    pub weight_function: qecp::model_graph::WeightFunction,
+    /// combined probability can improve accuracy, but will cause probabilities differ a lot even in the case of i.i.d. noise model
+    #[serde(alias = "ucp")] // abbreviation
+    #[serde(default = "hyperion_default_configs::use_combined_probability")]
+    pub use_combined_probability: bool,
+    #[serde(default = "hyperion_default_configs::default_hyperion_config")]
+    pub hyperion_config: serde_json::Value,
+}
+
+#[cfg(feature = "qecp_integrate")]
+pub mod hyperion_default_configs {
+    use super::*;
+    pub fn default_hyperion_config() -> serde_json::Value {
+        json!({})
+    }
+    pub fn weight_function() -> qecp::model_graph::WeightFunction {
+        qecp::model_graph::WeightFunction::AutotuneImproved
+    }
+    pub fn use_combined_probability() -> bool {
+        true
+    } // default use combined probability for better accuracy
 }
 
 /// read from file, including the error patterns;
@@ -1420,7 +1484,7 @@ impl ErrorPatternReader {
                 vertices: hyperedge.vertices.clone(),
                 p: 0.,  // doesn't matter
                 pe: 0., // doesn't matter
-                weight: hyperedge.weight,
+                weight: hyperedge.weight.clone(),
                 is_erasure: false, // doesn't matter
             });
         }
@@ -1470,7 +1534,7 @@ mod tests {
     #[test]
     fn example_code_capacity_repetition_code() {
         // cargo test example_code_capacity_repetition_code -- --nocapture
-        let mut code = CodeCapacityRepetitionCode::new(7, 0.2, 1000);
+        let mut code = CodeCapacityRepetitionCode::new(7, 0.2);
         code.sanity_check().unwrap();
         visualize_code(&mut code, "example_code_capacity_repetition_code.json".to_string());
     }
@@ -1478,7 +1542,7 @@ mod tests {
     #[test]
     fn example_code_capacity_planar_code() {
         // cargo test example_code_capacity_planar_code -- --nocapture
-        let mut code = CodeCapacityPlanarCode::new(7, 0.1, 1000);
+        let mut code = CodeCapacityPlanarCode::new(7, 0.1);
         code.sanity_check().unwrap();
         visualize_code(&mut code, "example_code_capacity_planar_code.json".to_string());
     }
@@ -1486,10 +1550,10 @@ mod tests {
     #[test]
     fn example_code_capacity_depolarize_planar_code() {
         // cargo test example_code_capacity_depolarize_planar_code -- --nocapture
-        let mut code = CodeCapacityDepolarizePlanarCode::new(5, 0.1, 1000);
+        let mut code = CodeCapacityDepolarizePlanarCode::new(5, 0.1);
         code.sanity_check().unwrap();
         visualize_code(&mut code, "example_code_capacity_depolarize_planar_code.json".to_string());
-        let mut code_no_y = CodeCapacityDepolarizePlanarCode::new_no_y(5, 0.1, 1000);
+        let mut code_no_y = CodeCapacityDepolarizePlanarCode::new_no_y(5, 0.1);
         code_no_y.sanity_check().unwrap();
         visualize_code(
             &mut code_no_y,
@@ -1500,7 +1564,7 @@ mod tests {
     #[test]
     fn example_code_capacity_tailored_code() {
         // cargo test example_code_capacity_tailored_code -- --nocapture
-        let mut code = CodeCapacityTailoredCode::new(5, 0.001, 0.1, 1000);
+        let mut code = CodeCapacityTailoredCode::new(5, 0.001, 0.1);
         code.sanity_check().unwrap();
         visualize_code(&mut code, "example_code_capacity_tailored_code.json".to_string());
     }
@@ -1508,7 +1572,7 @@ mod tests {
     #[test]
     fn example_code_capacity_color_code() {
         // cargo test example_code_capacity_color_code -- --nocapture
-        let mut code = CodeCapacityColorCode::new(7, 0.1, 1000);
+        let mut code = CodeCapacityColorCode::new(7, 0.1);
         code.sanity_check().unwrap();
         visualize_code(&mut code, "example_code_capacity_color_code.json".to_string());
     }
@@ -1522,13 +1586,13 @@ mod tests {
         for d in d_vec {
             for p in p_vec {
                 println!("d={d}, p={p}");
-                let mut code = CodeCapacityRepetitionCode::new(d, p, 1000);
+                let mut code = CodeCapacityRepetitionCode::new(d, p);
                 code.sanity_check().unwrap();
                 let initializer = code.get_initializer();
                 let mut solver = SolverType::JointSingleHair.build(&initializer, &code, json!({ "cluster_node_limit": 50 }));
                 for _ in 0..repeat {
                     let (syndrome, _) = code.generate_random_errors(thread_rng().gen::<u64>());
-                    solver.solve(&syndrome);
+                    solver.solve(syndrome);
                     let (subgraph, _weight_range) = solver.subgraph_range();
                     code.validate_correction(&subgraph);
                     solver.clear();
@@ -1546,13 +1610,13 @@ mod tests {
         for d in d_vec {
             for p in p_vec {
                 println!("d={d}, p={p}");
-                let mut code = CodeCapacityDepolarizePlanarCode::new(d, p, 1000);
+                let mut code = CodeCapacityDepolarizePlanarCode::new(d, p);
                 code.sanity_check().unwrap();
                 let initializer = code.get_initializer();
                 let mut solver = SolverType::JointSingleHair.build(&initializer, &code, json!({ "cluster_node_limit": 50 }));
                 for _ in 0..repeat {
                     let (syndrome, _) = code.generate_random_errors(thread_rng().gen::<u64>());
-                    solver.solve(&syndrome);
+                    solver.solve(syndrome);
                     let (subgraph, _weight_range) = solver.subgraph_range();
                     code.validate_correction(&subgraph);
                     solver.clear();
@@ -1570,13 +1634,13 @@ mod tests {
         for d in d_vec {
             for p in p_vec {
                 println!("d={d}, p={p}");
-                let mut code = CodeCapacityColorCode::new(d, p, 1000);
+                let mut code = CodeCapacityColorCode::new(d, p);
                 code.sanity_check().unwrap();
                 let initializer = code.get_initializer();
                 let mut solver = SolverType::JointSingleHair.build(&initializer, &code, json!({ "cluster_node_limit": 50 }));
                 for _ in 0..repeat {
                     let (syndrome, _) = code.generate_random_errors(thread_rng().gen::<u64>());
-                    solver.solve(&syndrome);
+                    solver.solve(syndrome);
                     let (subgraph, _weight_range) = solver.subgraph_range();
                     code.validate_correction(&subgraph);
                     solver.clear();

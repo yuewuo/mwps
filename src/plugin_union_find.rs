@@ -59,12 +59,12 @@ pub mod tests {
         // cargo test plugin_union_find_basic_1 -- --nocapture
         let visualize_filename = "plugin_union_find_basic_1.json".to_string();
         let defect_vertices = vec![10, 11, 16, 17];
-        let code = CodeCapacityTailoredCode::new(5, 0., 0.01, 1);
+        let code = CodeCapacityTailoredCode::new(5, 0., 0.01);
         primal_module_serial_basic_standard_syndrome(
             code,
             visualize_filename,
             defect_vertices,
-            1,
+            Rational::from(4.59511985013459),
             vec![PluginUnionFind::entry()],
         );
     }

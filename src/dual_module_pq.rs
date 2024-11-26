@@ -5,8 +5,7 @@
 //! Only debug tests are failing, which aligns with the dual_module_serial behavior
 //!
 
-use crate::num_traits::{ToPrimitive, Zero};
-use crate::ordered_float::OrderedFloat;
+use crate::num_traits::{FromPrimitive, ToPrimitive, Zero};
 use crate::pointers::*;
 use crate::primal_module::Affinity;
 use crate::primal_module_serial::PrimalClusterPtr;
@@ -22,10 +21,10 @@ use std::{
 
 use derivative::Derivative;
 use hashbrown::hash_map::Entry;
-use hashbrown::HashMap;
+use hashbrown::{HashMap, HashSet};
 use heapz::RankPairingHeap;
 use heapz::{DecreaseKey, Heap};
-use num_traits::{FromPrimitive, Signed};
+use num_traits::Signed;
 use parking_lot::{lock_api::RwLockWriteGuard, RawRwLock};
 use pheap::PairingHeap;
 use priority_queue::PriorityQueue;
@@ -170,7 +169,7 @@ pub struct Edge {
     /// total weight of this edge
     weight: Rational,
     #[derivative(Debug = "ignore")]
-    vertices: Vec<VertexWeak>,
+    vertices: Vec<VertexWeak>, // note: consider using/constructing ordered vertex, this will speed up `adjust_weights_for_negative_edges`
     /// the dual nodes that contributes to this edge
     dual_nodes: Vec<OrderedDualNodeWeak>,
 
@@ -254,8 +253,17 @@ where
     /// the current mode of the dual module
     mode: DualModuleMode,
 
+    // tuning mode statistics
     tuning_start_time: Option<Instant>,
     total_tuning_time: Option<f64>,
+
+    // negative weight handling
+    negative_weight_sum: Rational,
+    negative_edges: HashSet<EdgeIndex>,
+    flip_vertices: HashSet<VertexIndex>,
+
+    // counteract the weight updates
+    original_weights: Vec<Rational>,
 }
 
 impl<Queue> DualModulePQGeneric<Queue>
@@ -279,10 +287,11 @@ where
         let newly_grown_amount = &time_diff * &edge.grow_rate;
         edge.growth_at_last_updated_time += newly_grown_amount;
         edge.last_updated_time = global_time.clone();
-        debug_assert!(
-            edge.growth_at_last_updated_time <= edge.weight,
-            "growth larger than weight: check if events are 1) inserted and 2) handled correctly"
-        );
+
+        // debug_assert!(
+        //     edge.growth_at_last_updated_time <= edge.weight,
+        //     "growth larger than weight: check if events are 1) inserted and 2) handled correctly",
+        // );
     }
 
     /// helper function to bring a dual node update to speed with current time if needed
@@ -387,7 +396,14 @@ where
     /// initialize the dual module, which is supposed to be reused for multiple decoding tasks with the same structure
     #[allow(clippy::unnecessary_cast)]
     fn new_empty(initializer: &SolverInitializer) -> Self {
+        #[cfg(not(feature = "loose_sanity_check"))]
         initializer.sanity_check().unwrap();
+
+        #[cfg(feature = "loose_sanity_check")]
+        if let Err(error_message) = initializer.sanity_check() {
+            eprintln!("[warning] {}", error_message);
+        }
+
         // create vertices
         let vertices: Vec<VertexPtr> = (0..initializer.vertex_num)
             .map(|vertex_index| {
@@ -400,10 +416,11 @@ where
             .collect();
         // set edges
         let mut edges = Vec::<EdgePtr>::new();
+        let mut original_weights = Vec::<Rational>::with_capacity(initializer.weighted_edges.len());
         for hyperedge in initializer.weighted_edges.iter() {
-            let edge_ptr = EdgePtr::new_value(Edge {
+            let edge = Edge {
                 edge_index: edges.len() as EdgeIndex,
-                weight: Rational::from_usize(hyperedge.weight).unwrap(),
+                weight: hyperedge.weight.clone(),
                 dual_nodes: vec![],
                 vertices: hyperedge
                     .vertices
@@ -415,10 +432,16 @@ where
                 grow_rate: Rational::zero(),
                 #[cfg(feature = "incr_lp")]
                 cluster_weights: hashbrown::HashMap::new(),
-            });
+            };
+
+            original_weights.push(edge.weight.clone());
+
+            let edge_ptr = EdgePtr::new_value(edge);
+
             for &vertex_index in hyperedge.vertices.iter() {
                 vertices[vertex_index as usize].write().edges.push(edge_ptr.downgrade());
             }
+
             edges.push(edge_ptr);
         }
         Self {
@@ -429,6 +452,10 @@ where
             mode: DualModuleMode::default(),
             tuning_start_time: None,
             total_tuning_time: None,
+            negative_weight_sum: Default::default(),
+            negative_edges: Default::default(),
+            flip_vertices: Default::default(),
+            original_weights,
         }
     }
 
@@ -436,13 +463,21 @@ where
     fn clear(&mut self) {
         // todo: try parallel clearing, if a core supports hyper-threading then this may benefit
         self.vertices.iter().for_each(|p| p.write().clear());
-        self.edges.iter().for_each(|p| p.write().clear());
+        self.edges.iter().zip(&self.original_weights).for_each(|(p, og_weight)| {
+            let mut p_write = p.write();
+            p_write.clear();
+            p_write.weight = og_weight.clone(); // note: not resetting weight was also performing quite well...
+        });
 
         self.obstacle_queue.clear();
         self.global_time.write().set_zero();
         self.mode_mut().reset();
 
         self.tuning_start_time = None;
+
+        self.negative_edges.clear();
+        self.negative_weight_sum = Rational::zero();
+        self.flip_vertices.clear();
     }
 
     #[allow(clippy::unnecessary_cast)]
@@ -596,6 +631,9 @@ where
 
     /// for pq implementation, simply updating the global time is enough, could be part of the `report` function
     fn grow(&mut self, length: Rational) {
+        if length.is_negative() {
+            println!("{:?}", self.obstacle_queue);
+        }
         assert!(
             length.is_positive(),
             "growth should be positive; if desired, please set grow rate to negative for shrinking"
@@ -740,10 +778,9 @@ where
         println!("global time: {:?}", self.global_time.read_recursive());
         println!(
             "edges: {:?}",
-            self.edges
-                .iter()
-                .filter(|e| !e.read_recursive().grow_rate.is_zero())
-                .collect::<Vec<&EdgePtr>>()
+            self.edges // .iter()
+                       // .filter(|e| !e.read_recursive().grow_rate.is_zero())
+                       // .collect::<Vec<&EdgePtr>>()
         );
         if self.obstacle_queue.len() > 0 {
             println!("pq: {:?}", self.obstacle_queue.len());
@@ -782,7 +819,7 @@ where
             return None;
         }
         start += weight.to_f64().unwrap();
-        Some(OrderedFloat::from(start))
+        Some(Affinity::from(start))
     }
 
     fn get_edge_free_weight(
@@ -844,6 +881,52 @@ where
             }
         }
     }
+
+    fn adjust_weights_for_negative_edges(&mut self) {
+        for edge in self.edges.iter() {
+            let mut edge = edge.write();
+            if edge.weight.is_negative() {
+                self.negative_edges.insert(edge.edge_index);
+                self.negative_weight_sum += edge.weight.clone();
+
+                for vertex in edge.vertices.iter() {
+                    let vertex = vertex.upgrade_force();
+                    if self.flip_vertices.contains(&vertex.read_recursive().vertex_index) {
+                        self.flip_vertices.remove(&vertex.read_recursive().vertex_index);
+                    } else {
+                        self.flip_vertices.insert(vertex.read_recursive().vertex_index);
+                    }
+                }
+
+                edge.weight = -edge.weight.clone();
+            }
+        }
+    }
+
+    fn update_weights(&mut self, new_weights: Vec<Weight>, mix_ratio: f64) {
+        for (edge, new_weight) in self.edges.iter().zip(new_weights.iter()) {
+            let mut edge = edge.write();
+
+            let current_edge_weight = edge.weight.clone();
+            let new_weight = Weight::from(
+                current_edge_weight.clone() + Rational::from_f64(mix_ratio).unwrap() * (new_weight - current_edge_weight),
+            );
+
+            edge.weight = new_weight;
+        }
+    }
+
+    fn get_negative_weight_sum(&self) -> Rational {
+        self.negative_weight_sum.clone()
+    }
+
+    fn get_negative_edges(&self) -> HashSet<EdgeIndex> {
+        self.negative_edges.clone()
+    }
+
+    fn get_flip_vertices(&self) -> HashSet<VertexIndex> {
+        self.flip_vertices.clone()
+    }
 }
 
 impl<Queue> MWPSVisualizer for DualModulePQGeneric<Queue>
@@ -867,6 +950,8 @@ where
             assert!(!unexplored.is_negative());
             edges.push(json!({
                 if abbrev { "w" } else { "weight" }: edge.weight.to_f64(),
+                "wn": numer_of(&edge.weight),
+                "wd": denom_of(&edge.weight),
                 if abbrev { "v" } else { "vertices" }: edge.vertices.iter().map(|x| x.upgrade_force().read_recursive().vertex_index).collect::<Vec<_>>(),
                 if abbrev { "g" } else { "growth" }: current_growth.to_f64(),
                 "gn": numer_of(&current_growth),
@@ -888,6 +973,7 @@ mod tests {
     use super::*;
     use crate::decoding_hypergraph::*;
     use crate::example_codes::*;
+    use num_traits::FromPrimitive;
 
     #[test]
     fn dual_module_pq_learn_priority_queue_1() {
@@ -940,8 +1026,8 @@ mod tests {
     fn dual_module_pq_basics_1() {
         // cargo test dual_module_pq_basics_1 -- --nocapture
         let visualize_filename = "dual_module_pq_basics_1.json".to_string();
-        let weight = 1000;
-        let code = CodeCapacityColorCode::new(7, 0.1, weight);
+        let weight: f64 = 2.1972245773362196;
+        let code = CodeCapacityColorCode::new(7, 0.1);
         let mut visualizer = Visualizer::new(
             Some(visualize_data_folder() + visualize_filename.as_str()),
             code.get_positions(),
@@ -958,20 +1044,21 @@ mod tests {
         visualizer
             .snapshot_combined("syndrome".to_string(), vec![&interface_ptr, &dual_module])
             .unwrap();
+
         // grow them each by half
         let dual_node_3_ptr = interface_ptr.read_recursive().nodes[0].clone();
         let dual_node_12_ptr = interface_ptr.read_recursive().nodes[1].clone();
         dual_module.set_grow_rate(&dual_node_3_ptr, Rational::from_usize(1).unwrap());
         dual_module.set_grow_rate(&dual_node_12_ptr, Rational::from_usize(1).unwrap());
 
-        dual_module.grow(Rational::from_usize(weight / 2).unwrap());
+        dual_module.grow(Rational::from_f64(weight / 2.).unwrap());
         dual_module.debug_update_all(&interface_ptr.read_recursive().nodes);
         visualizer
             .snapshot_combined("grow".to_string(), vec![&interface_ptr, &dual_module])
             .unwrap();
 
         // cluster becomes solved
-        dual_module.grow(Rational::from_usize(weight / 2).unwrap());
+        dual_module.grow(Rational::from_f64(weight / 2.).unwrap());
         dual_module.debug_update_all(&interface_ptr.read_recursive().nodes);
         visualizer
             .snapshot_combined("solved".to_string(), vec![&interface_ptr, &dual_module])
@@ -991,8 +1078,8 @@ mod tests {
     fn dual_module_pq_basics_2() {
         // cargo test dual_module_pq_basics_2 -- --nocapture
         let visualize_filename = "dual_module_pq_basics_2.json".to_string();
-        let weight = 1000;
-        let code = CodeCapacityTailoredCode::new(7, 0., 0.1, weight);
+        let weight = 2.1972245773362196;
+        let code = CodeCapacityTailoredCode::new(7, 0., 0.1);
         let mut visualizer = Visualizer::new(
             Some(visualize_data_folder() + visualize_filename.as_str()),
             code.get_positions(),
@@ -1016,7 +1103,7 @@ mod tests {
         }
 
         // grow them each by a quarter
-        dual_module.grow(Rational::from_usize(weight / 4).unwrap());
+        dual_module.grow(Rational::from_f64(weight / 4.).unwrap());
         dual_module.debug_update_all(&interface_ptr.read_recursive().nodes);
         visualizer
             .snapshot_combined("solved".to_string(), vec![&interface_ptr, &dual_module])
@@ -1036,9 +1123,8 @@ mod tests {
     fn dual_module_pq_basics_3() {
         // cargo test dual_module_pq_basics_3 -- --nocapture
         let visualize_filename = "dual_module_pq_basics_3.json".to_string();
-        let weight = 600; // do not change, the data is hard-coded
         let pxy = 0.0602828812732227;
-        let code = CodeCapacityTailoredCode::new(7, pxy, 0.1, weight); // do not change probabilities: the data is hard-coded
+        let code = CodeCapacityTailoredCode::new(7, pxy, 0.1); // do not change probabilities: the data is hard-coded
         let mut visualizer = Visualizer::new(
             Some(visualize_data_folder() + visualize_filename.as_str()),
             code.get_positions(),
@@ -1059,11 +1145,13 @@ mod tests {
         let dual_node_29_ptr = interface_ptr.read_recursive().nodes[2].clone();
         let dual_node_30_ptr = interface_ptr.read_recursive().nodes[3].clone();
 
+        let unit_grow_rate = 2.1972245773362196 / 1000.;
+
         // first round of growth
-        dual_module.set_grow_rate(&dual_node_17_ptr, Rational::from_i64(1).unwrap());
-        dual_module.set_grow_rate(&dual_node_23_ptr, Rational::from_i64(1).unwrap());
-        dual_module.set_grow_rate(&dual_node_29_ptr, Rational::from_i64(1).unwrap());
-        dual_module.set_grow_rate(&dual_node_30_ptr, Rational::from_i64(1).unwrap());
+        dual_module.set_grow_rate(&dual_node_17_ptr, Rational::from_f64(unit_grow_rate).unwrap());
+        dual_module.set_grow_rate(&dual_node_23_ptr, Rational::from_f64(unit_grow_rate).unwrap());
+        dual_module.set_grow_rate(&dual_node_29_ptr, Rational::from_f64(unit_grow_rate).unwrap());
+        dual_module.set_grow_rate(&dual_node_30_ptr, Rational::from_f64(unit_grow_rate).unwrap());
 
         dual_module.grow(Rational::from_i64(160).unwrap());
         dual_module.debug_update_all(&interface_ptr.read_recursive().nodes);
@@ -1081,8 +1169,8 @@ mod tests {
         // create cluster
         interface_ptr.create_node_vec(&[24], &mut dual_module);
         let dual_node_cluster_ptr = interface_ptr.read_recursive().nodes[4].clone();
-        dual_module.set_grow_rate(&dual_node_17_ptr, Rational::from_i64(1).unwrap());
-        dual_module.set_grow_rate(&dual_node_cluster_ptr, Rational::from_i64(1).unwrap());
+        dual_module.set_grow_rate(&dual_node_17_ptr, Rational::from_f64(unit_grow_rate).unwrap());
+        dual_module.set_grow_rate(&dual_node_cluster_ptr, Rational::from_f64(unit_grow_rate).unwrap());
         dual_module.grow(Rational::from_i64(160).unwrap());
         dual_module.debug_update_all(&interface_ptr.read_recursive().nodes);
 
@@ -1097,7 +1185,7 @@ mod tests {
         // create bigger cluster
         interface_ptr.create_node_vec(&[18, 23, 24, 31], &mut dual_module);
         let dual_node_bigger_cluster_ptr = interface_ptr.read_recursive().nodes[5].clone();
-        dual_module.set_grow_rate(&dual_node_bigger_cluster_ptr, Rational::from_i64(1).unwrap());
+        dual_module.set_grow_rate(&dual_node_bigger_cluster_ptr, Rational::from_f64(unit_grow_rate).unwrap());
 
         dual_module.grow(Rational::from_i64(120).unwrap());
         dual_module.debug_update_all(&interface_ptr.read_recursive().nodes);

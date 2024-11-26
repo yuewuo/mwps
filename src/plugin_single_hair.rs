@@ -104,12 +104,12 @@ pub mod tests {
         // cargo test --features=colorful plugin_single_hair_basic_1 -- --nocapture
         let visualize_filename = "plugin_single_hair_basic_1.json".to_string();
         let defect_vertices = vec![10, 11, 12, 15, 16, 17, 18];
-        let code = CodeCapacityTailoredCode::new(5, 0., 0.01, 1);
+        let code = CodeCapacityTailoredCode::new(5, 0., 0.01);
         primal_module_serial_basic_standard_syndrome(
             code,
             visualize_filename,
             defect_vertices,
-            4,
+            Rational::from(18.38047940053836),
             vec![
                 PluginUnionFind::entry(),
                 PluginSingleHair::entry_with_strategy(RepeatStrategy::Once),
@@ -124,12 +124,12 @@ pub mod tests {
         // cargo test --features=colorful plugin_single_hair_debug_1 -- --nocapture
         let visualize_filename = "plugin_single_hair_debug_1.json".to_string();
         let defect_vertices = vec![8, 9, 11, 12, 16, 19, 20, 21];
-        let code = CodeCapacityTailoredCode::new(5, 0., 0.01, 1);
+        let code = CodeCapacityTailoredCode::new(5, 0., 0.01);
         primal_module_serial_basic_standard_syndrome(
             code,
             visualize_filename,
             defect_vertices,
-            6,
+            Rational::from(27.57071910080754),
             vec![
                 PluginUnionFind::entry(),
                 PluginSingleHair::entry_with_strategy(RepeatStrategy::Once),
@@ -144,12 +144,12 @@ pub mod tests {
         // cargo test --features=colorful plugin_single_hair_debug_2 -- --nocapture
         let visualize_filename = "plugin_single_hair_debug_2.json".to_string();
         let defect_vertices = vec![2, 3, 12, 13, 17, 19, 20];
-        let code = CodeCapacityTailoredCode::new(5, 0., 0.1, 1);
+        let code = CodeCapacityTailoredCode::new(5, 0., 0.1);
         primal_module_serial_basic_standard_syndrome(
             code,
             visualize_filename,
             defect_vertices,
-            4,
+            Rational::from(8.788898309344878),
             vec![
                 PluginUnionFind::entry(),
                 PluginSingleHair::entry_with_strategy(RepeatStrategy::Once),
@@ -164,12 +164,12 @@ pub mod tests {
         // cargo test --features=colorful plugin_single_hair_debug_3 -- --nocapture
         let visualize_filename = "plugin_single_hair_debug_3.json".to_string();
         let defect_vertices = vec![3, 8, 10, 11, 12, 13, 16, 17, 20, 21, 22, 23];
-        let code = CodeCapacityTailoredCode::new(5, 0., 0.1, 1);
+        let code = CodeCapacityTailoredCode::new(5, 0., 0.1);
         primal_module_serial_basic_standard_syndrome(
             code,
             visualize_filename,
             defect_vertices,
-            4,
+            Rational::from(8.788898309344878),
             vec![
                 PluginUnionFind::entry(),
                 PluginSingleHair::entry_with_strategy(RepeatStrategy::Once),
@@ -184,12 +184,12 @@ pub mod tests {
         // cargo test --features=colorful plugin_single_hair_debug_4 -- --nocapture
         let visualize_filename = "plugin_single_hair_debug_4.json".to_string();
         let defect_vertices = vec![5, 7, 11, 14, 15];
-        let code = CodeCapacityTailoredCode::new(5, 0., 0.1, 1);
+        let code = CodeCapacityTailoredCode::new(5, 0., 0.1);
         primal_module_serial_basic_standard_syndrome(
             code,
             visualize_filename,
             defect_vertices,
-            3,
+            Rational::from(6.591673732008658),
             vec![
                 PluginUnionFind::entry(),
                 PluginSingleHair::entry_with_strategy(RepeatStrategy::Once),
@@ -205,12 +205,12 @@ pub mod tests {
         // cargo test --features=colorful plugin_single_hair_debug_5 -- --nocapture
         let visualize_filename = "plugin_single_hair_debug_5.json".to_string();
         let defect_vertices = vec![10, 11, 14, 17, 20];
-        let code = CodeCapacityTailoredCode::new(5, 0., 0.1, 1);
+        let code = CodeCapacityTailoredCode::new(5, 0., 0.1);
         primal_module_serial_basic_standard_syndrome(
             code,
             visualize_filename,
             defect_vertices,
-            3,
+            Rational::from(6.591673732008658),
             vec![
                 PluginUnionFind::entry(),
                 PluginSingleHair::entry_with_strategy(RepeatStrategy::Once),
@@ -226,12 +226,12 @@ pub mod tests {
         // cargo test --features=colorful plugin_joint_single_hair_debug_1 -- --nocapture
         let visualize_filename = "plugin_joint_single_hair_debug_1.json".to_string();
         let defect_vertices = vec![3, 4];
-        let code = CodeCapacityColorCode::new(5, 0., 1);
+        let code = CodeCapacityColorCode::new(5, 1e-10);
         primal_module_serial_basic_standard_syndrome(
             code,
             visualize_filename,
             defect_vertices,
-            1,
+            Rational::from(23.025850929840455),
             vec![
                 PluginUnionFind::entry(),
                 PluginSingleHair::entry_with_strategy(RepeatStrategy::Multiple {
@@ -248,12 +248,12 @@ pub mod tests {
         // cargo test --features=colorful plugin_joint_single_hair_debug_2 -- --nocapture
         let visualize_filename = "plugin_joint_single_hair_debug_2.json".to_string();
         let defect_vertices = vec![4, 5, 7, 8];
-        let code = CodeCapacityColorCode::new(5, 0., 1);
+        let code = CodeCapacityColorCode::new(5, 1e-10);
         primal_module_serial_basic_standard_syndrome(
             code,
             visualize_filename,
             defect_vertices,
-            2,
+            Rational::from(46.05170185968091),
             vec![
                 PluginUnionFind::entry(),
                 PluginSingleHair::entry_with_strategy(RepeatStrategy::Multiple {

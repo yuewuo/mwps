@@ -3,12 +3,13 @@
 //! Generics for dual modules
 //!
 
+use hashbrown::HashSet;
+
 use crate::decoding_hypergraph::*;
 use crate::derivative::Derivative;
 use crate::invalid_subgraph::*;
 use crate::model_hypergraph::*;
 use crate::num_traits::{FromPrimitive, One, Signed, ToPrimitive, Zero};
-use crate::ordered_float::OrderedFloat;
 use crate::pointers::*;
 use crate::primal_module::Affinity;
 use crate::primal_module_serial::PrimalClusterPtr;
@@ -361,7 +362,7 @@ pub trait DualModuleImpl {
     ///     and hyperedges will receive a lower affinity
     fn calculate_cluster_affinity(&mut self, _cluster: PrimalClusterPtr) -> Option<Affinity> {
         eprintln!("not implemented, skipping");
-        Some(OrderedFloat::from(100.0))
+        Some(Affinity::from(100.0))
     }
 
     /// In the tuning phase, given the optimizer result and the dual node deltas, return the Obstacles that are caused by the current dual node deltas
@@ -498,6 +499,28 @@ pub trait DualModuleImpl {
         drained_cluster_index: NodeIndex,
         absorbing_cluster_index: NodeIndex,
     );
+
+    fn adjust_weights_for_negative_edges(&mut self) {
+        unimplemented!()
+    }
+
+    /// update weights of dual_module;
+    /// the weight of the dual module is set to be `old_weight + mix_ratio * (new_weight - old_weight)`
+    fn update_weights(&mut self, _new_weights: Vec<Rational>, _mix_ratio: f64) {
+        unimplemented!()
+    }
+
+    fn get_negative_weight_sum(&self) -> Rational {
+        unimplemented!()
+    }
+
+    fn get_negative_edges(&self) -> HashSet<EdgeIndex> {
+        unimplemented!()
+    }
+
+    fn get_flip_vertices(&self) -> HashSet<VertexIndex> {
+        unimplemented!()
+    }
 }
 
 #[derive(PartialEq, Eq, Debug, Clone, PartialOrd, Ord)]

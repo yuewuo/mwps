@@ -1,5 +1,4 @@
 import { parity_matrix } from './parity_matrix/parity_matrix'
-import { hypergraph } from './hypergraph/hypergraph'
 import { type VisualizerData, ConfigProps } from '@/hyperion/hyperion'
 import Hyperion from '@/hyperion/Hyperion.vue'
 import { createApp, type App } from 'vue'
@@ -23,8 +22,6 @@ function default_config (): ConfigProps {
 
 export const hyperion_visual = {
     parity_matrix,
-    hypergraph,
-
     bigInt,
     bind_to_div,
     default_config,

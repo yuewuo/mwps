@@ -296,7 +296,7 @@ impl RelaxerOptimizer {
             for (var_index, invalid_subgraph) in invalid_subgraphs.iter().enumerate() {
                 let overall_growth = cols[2 * var_index] - cols[2 * var_index + 1];
                 if !overall_growth.is_zero() {
-                    direction.insert(invalid_subgraph.clone(), OrderedFloat::from(overall_growth));
+                    direction.insert(invalid_subgraph.clone(), Rational::from(overall_growth));
                 }
             }
         } else {
@@ -402,7 +402,7 @@ impl RelaxerOptimizer {
                     let solution = solved.get_solution();
 
                     // calculate the objective function
-                    let new_dual_variable_sum = OrderedFloat::from(solution.columns().iter().sum::<f64>());
+                    let new_dual_variable_sum = Rational::from(solution.columns().iter().sum::<f64>());
 
                     let delta: OrderedFloat =
                         new_dual_variable_sum - dual_nodes.values().map(|(_, grow_rate)| grow_rate).sum::<OrderedFloat>();
@@ -415,7 +415,7 @@ impl RelaxerOptimizer {
 
                     for (node_index, (invalid_subgraph, dv)) in dual_nodes.iter() {
                         let overall_growth =
-                            OrderedFloat::from(*solution.index(incr_lp_solution_ptr.dv_col_map[node_index])) - dv;
+                            Rational::from(*solution.index(incr_lp_solution_ptr.dv_col_map[node_index])) - dv;
                         if !overall_growth.is_zero() {
                             direction.insert(invalid_subgraph.clone(), overall_growth);
                         }
@@ -477,7 +477,7 @@ impl RelaxerOptimizer {
                     let solution = solved.get_solution();
 
                     // calculate the objective function
-                    let new_dual_variable_sum = OrderedFloat::from(solution.columns().iter().sum::<f64>());
+                    let new_dual_variable_sum = Rational::from(solution.columns().iter().sum::<f64>());
 
                     let delta: OrderedFloat =
                         new_dual_variable_sum - dual_nodes.values().map(|(_, grow_rate)| grow_rate).sum::<OrderedFloat>();
@@ -488,7 +488,7 @@ impl RelaxerOptimizer {
                     }
 
                     for (node_index, (invalid_subgraph, dv)) in dual_nodes.iter() {
-                        let overall_growth = OrderedFloat::from(*solution.index(dv_col_map[node_index])) - dv;
+                        let overall_growth = Rational::from(*solution.index(dv_col_map[node_index])) - dv;
                         if !overall_growth.is_zero() {
                             direction.insert(invalid_subgraph.clone(), overall_growth);
                         }

@@ -12,7 +12,7 @@ use mwpf::primal_module::*;
 use mwpf::primal_module_serial::*;
 use mwpf::util::*;
 use mwpf::visualize::*;
-use num_traits::cast::FromPrimitive;
+use num_traits::cast::{FromPrimitive, Zero};
 use pbr::ProgressBar;
 use std::sync::Arc;
 use sugar::*;
@@ -20,7 +20,7 @@ use sugar::*;
 fn debug_demo() {
     for is_example in [true, false] {
         let visualize_filename = format!("aps2024_debug_demo{}.json", if is_example { "_ex" } else { "" });
-        let mut code = CodeCapacityTailoredCode::new(3, 0., 0.01, 1);
+        let mut code = CodeCapacityTailoredCode::new(3, 0., 0.01);
         let initializer = code.get_initializer();
         let model_graph = Arc::new(ModelHyperGraph::new(Arc::new(initializer.clone())));
         let mut dual_module = DualModulePQ::new_empty(&initializer);
@@ -90,7 +90,7 @@ fn debug_demo() {
 fn simple_demo() {
     for is_example in [true, false] {
         let visualize_filename = format!("aps2024_simple_demo{}.json", if is_example { "_ex" } else { "" });
-        let mut code = CodeCapacityTailoredCode::new(3, 0., 0.01, 1);
+        let mut code = CodeCapacityTailoredCode::new(3, 0., 0.01);
         let initializer = code.get_initializer();
         let model_graph = Arc::new(ModelHyperGraph::new(Arc::new(initializer.clone())));
         let mut dual_module = DualModulePQ::new_empty(&initializer);
@@ -152,7 +152,7 @@ fn simple_demo() {
 fn challenge_demo() {
     for is_example in [true, false] {
         let visualize_filename = format!("aps2024_challenge_demo{}.json", if is_example { "_ex" } else { "" });
-        let mut code = CodeCapacityTailoredCode::new(5, 0., 0.01, 1);
+        let mut code = CodeCapacityTailoredCode::new(5, 0., 0.01);
         let initializer = code.get_initializer();
         let model_graph = Arc::new(ModelHyperGraph::new(Arc::new(initializer.clone())));
         let mut dual_module = DualModulePQ::new_empty(&initializer);
@@ -206,7 +206,7 @@ fn challenge_demo() {
             let set_grow_rate =
                 |dual_module: &mut DualModulePQ, s_ptr: &mut Vec<DualNodePtr>, speeds: Vec<(usize, Rational)>| {
                     for ptr in s_ptr.iter() {
-                        dual_module.set_grow_rate(ptr, Rational::from_usize(0).unwrap());
+                        dual_module.set_grow_rate(ptr, Rational::zero());
                     }
                     for (index, speed) in speeds.into_iter() {
                         while index >= s_ptr.len() {
@@ -217,7 +217,7 @@ fn challenge_demo() {
                                 Arc::new(InvalidSubgraph::new_complete(vertices, edges, &decoding_graph))
                             };
                             let (_, ptr) = interface_ptr.find_or_create_node(&s, dual_module);
-                            dual_module.set_grow_rate(&ptr, Rational::from_usize(0).unwrap());
+                            dual_module.set_grow_rate(&ptr, Rational::zero());
                             s_ptr.push(ptr);
                         }
                         dual_module.set_grow_rate(&s_ptr[index], speed);
@@ -295,7 +295,7 @@ fn surface_code_example() {
     for p in [0.04, 0.02, 0.01] {
         let mut pb = ProgressBar::on(std::io::stderr(), count);
         let visualize_filename = format!("aps2024_surface_code_example_p{p}.json");
-        let mut code = CodeCapacityTailoredCode::new(9, p / 3., p / 3., 1);
+        let mut code = CodeCapacityTailoredCode::new(9, p / 3., p / 3.);
         let initializer = code.get_initializer();
         let model_graph = Arc::new(ModelHyperGraph::new(Arc::new(initializer.clone())));
         let mut dual_module = DualModulePQ::new_empty(&initializer);
@@ -341,7 +341,7 @@ fn triangle_color_code_example() {
     for p in [0.04, 0.02, 0.01] {
         let mut pb = ProgressBar::on(std::io::stderr(), count);
         let visualize_filename = format!("aps2024_triangle_color_code_example_p{p}.json");
-        let mut code = CodeCapacityColorCode::new(9, p, 1);
+        let mut code = CodeCapacityColorCode::new(9, p);
         let initializer = code.get_initializer();
         let model_graph = Arc::new(ModelHyperGraph::new(Arc::new(initializer.clone())));
         let mut dual_module = DualModulePQ::new_empty(&initializer);
@@ -388,7 +388,7 @@ fn small_color_code_example() {
     let p = 0.06;
     let mut pb = ProgressBar::on(std::io::stderr(), count);
     let visualize_filename = "aps2024_small_color_code_example.json".to_string();
-    let mut code = CodeCapacityColorCode::new(7, p, 1);
+    let mut code = CodeCapacityColorCode::new(7, p);
     let initializer = code.get_initializer();
     let model_graph = Arc::new(ModelHyperGraph::new(Arc::new(initializer.clone())));
     let mut dual_module = DualModulePQ::new_empty(&initializer);
@@ -443,7 +443,7 @@ fn circuit_level_example() {
             p,
             serde_json::json!({
                 "noise_model": "StimNoiseModel",
-                "max_weight": 100,
+                // "max_weight": 100,
             }),
         );
         let initializer = code.get_initializer();
@@ -491,13 +491,13 @@ fn circuit_level_example() {
 fn code_figure() {
     let mut codes = vec![];
     // 0. d=5 infinite Z bias
-    let code = CodeCapacityTailoredCode::new(5, 0., 0.1, 1000);
+    let code = CodeCapacityTailoredCode::new(5, 0., 0.1);
     codes.push(code);
     // 1. d=5 depolarizing
-    let code = CodeCapacityTailoredCode::new(5, 0.1, 0.1, 1000);
+    let code = CodeCapacityTailoredCode::new(5, 0.1, 0.1);
     codes.push(code);
     // 2. d=5 depolarizing with syndrome
-    let mut code = CodeCapacityTailoredCode::new(5, 0.1, 0.1, 1000);
+    let mut code = CodeCapacityTailoredCode::new(5, 0.1, 0.1);
     code.set_physical_errors(&[12, 48]);
     codes.push(code);
     // 3. d=5 depolarizing with syndrome and subgraph

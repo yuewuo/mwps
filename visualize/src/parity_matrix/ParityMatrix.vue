@@ -1,17 +1,12 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { NButton, NIcon, NTooltip } from 'naive-ui'
+// import { NButton, NIcon, NTooltip } from 'naive-ui'
 import { ParityMatrixData } from './parser'
-import { Icon } from '@vicons/utils'
-import {
-    CodeWorking as CodeIcon,
-    SaveSharp as SaveIcon,
-    Open as OpenIcon
-} from '@vicons/ionicons5'
-import { is_compressed_js_available, generate_inline_html } from './page_builder'
+// import { Icon } from '@vicons/utils'
+// import { CodeWorking as CodeIcon, SaveSharp as SaveIcon, Open as OpenIcon } from '@vicons/ionicons5'
 
 const props = defineProps({
-    'object': {
+    object: {
         type: Object,
         required: true,
     },
@@ -34,68 +29,51 @@ function is_rhs(ri: number, ci: number): boolean {
     return is_data_block(ri, ci) && !is_data_block(ri, ci + 1)
 }
 
-function download_html() {
-    if (!is_compressed_js_available) return
-    const html = generate_inline_html(props.object)
-    const a = document.createElement("a")
-    a.href = window.URL.createObjectURL(new Blob([html], { type: "text/html" }))
-    a.download = "parity_matrix.html"
-    a.click()
+function is_line_head(ri: number, ci: number): boolean {
+    const [rows] = data.value.table.dimension
+    return ri != 0 && ci == 0 && !(data.value.is_echelon_form && ri == rows - 1)
 }
 
-function open_in_new_tab() {
-    if (!is_compressed_js_available) return
-    const html = generate_inline_html(props.object)
-    const new_tab = window.open("", '_blank')
-    new_tab?.document.write(html)
-    new_tab?.document.close()
+function is_echelon_info_row(ri: number, _ci: number): boolean {
+    const [rows] = data.value.table.dimension
+    return data.value.is_echelon_form && ri == rows - 1
 }
 
+function is_echelon_info_col(_ri: number, ci: number): boolean {
+    const [, columns] = data.value.table.dimension
+    return data.value.is_echelon_form && ci == columns - 1
+}
+
+function block_content(ri: number, ci: number): string {
+    const element = data.value.table.rows[ri].elements[ci]
+    if (is_rhs(ri, ci)) {
+        // the default output includes extra space to have a width of three, so to distinguish with others
+        // we don't really need it here because the HTML can have different colors
+        return element.trim()
+    }
+    return element
+}
 </script>
 
 <template>
     <div class="box">
-        <div class="toolbox">
-            <n-tooltip placement="bottom" trigger="hover">
-                <template #trigger>
-                    <n-button strong secondary circle @click="open_in_new_tab" class="button">
-                        <template #icon>
-                            <n-icon :color="is_compressed_js_available ? 'blue' : 'lightgrey'"><open-icon /></n-icon>
-                        </template>
-                    </n-button>
-                </template>
-                <span v-if="!is_compressed_js_available">Open in new Tab (unavailable in debug mode)</span>
-                <span v-if="is_compressed_js_available">Open in new Tab</span>
-            </n-tooltip>
-            <n-tooltip placement="bottom" trigger="hover">
-                <template #trigger>
-                    <n-button strong secondary circle @click="download_html" class="button">
-                        <template #icon>
-                            <n-icon :color="is_compressed_js_available ? 'orange' : 'lightgrey'"><save-icon /></n-icon>
-                        </template>
-                    </n-button>
-                </template>
-                <span v-if="!is_compressed_js_available">Download (unavailable in debug mode)</span>
-                <span v-if="is_compressed_js_available">Download</span>
-            </n-tooltip>
-            <n-tooltip placement="bottom" trigger="hover">
-                <template #trigger>
-                    <n-button strong secondary circle class="button">
-                        <template #icon>
-                            <Icon color="green"><code-icon /></Icon>
-                        </template>
-                    </n-button>
-                </template>
-                <span>View Object</span>
-            </n-tooltip>
-        </div>
+        <div class="toolbox"></div>
         <table>
-            <tr v-for="(  row, ri  ) in   data.table.rows  " :key="ri">
-                <th v-for="(  element, ci  ) of   row.elements  " :key="ci" :class="{
-                    'title': ri == 0, 'square': is_data_block(ri, ci),
-                    'line-head': ri != 0 && ci == 0, 'rhs': is_rhs(ri, ci),
-                }
-                    ">{{ element }}</th>
+            <tr v-for="(row, ri) in data.table.rows" :key="ri">
+                <th
+                    v-for="(element, ci) of row.elements"
+                    :key="ci"
+                    :class="{
+                        title: ri == 0 && !is_echelon_info_col(ri, ci),
+                        square: is_data_block(ri, ci),
+                        'line-head': is_line_head(ri, ci),
+                        rhs: is_rhs(ri, ci),
+                        'echelon-info-row': is_echelon_info_row(ri, ci),
+                        'echelon-info-col': is_echelon_info_col(ri, ci),
+                    }"
+                >
+                    {{ block_content(ri, ci) }}
+                </th>
             </tr>
         </table>
     </div>
@@ -112,6 +90,8 @@ function open_in_new_tab() {
 
 th {
     border: 1px solid grey;
+    min-width: 22px;
+    text-align: center !important;
 }
 
 table,
@@ -156,5 +136,15 @@ tr {
 
 .button {
     margin: 3px;
+}
+
+.echelon-info-row {
+    color: lightgrey;
+    font-size: 80%;
+}
+
+.echelon-info-col {
+    color: lightgrey;
+    font-size: 80%;
 }
 </style>

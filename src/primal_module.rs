@@ -8,7 +8,6 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use crate::dual_module::*;
-use crate::num_traits::FromPrimitive;
 use crate::ordered_float::OrderedFloat;
 use crate::pointers::*;
 use crate::primal_module_serial::ClusterAffinity;
@@ -70,7 +69,8 @@ pub trait PrimalModuleImpl {
         syndrome_pattern: Arc<SyndromePattern>,
         dual_module: &mut impl DualModuleImpl,
     ) {
-        self.solve_step_load_syndrome(interface, syndrome_pattern, dual_module);
+        interface.load(syndrome_pattern, dual_module);
+        self.load(interface, dual_module);
         self.solve_step_callback_interface_loaded(interface, dual_module, |_, _, _, _| {})
     }
 
@@ -116,7 +116,8 @@ pub trait PrimalModuleImpl {
     {
         if let Some(visualizer) = visualizer {
             let callback = Self::visualizer_callback(visualizer);
-            self.solve_step_load_syndrome(interface, syndrome_pattern, dual_module);
+            interface.load(syndrome_pattern, dual_module);
+            self.load(interface, dual_module);
             self.solve_step_callback_interface_loaded(interface, dual_module, callback);
             visualizer
                 .snapshot_combined("solved".to_string(), vec![interface, dual_module, self])
@@ -124,16 +125,6 @@ pub trait PrimalModuleImpl {
         } else {
             self.solve(interface, syndrome_pattern, dual_module);
         }
-    }
-
-    fn solve_step_load_syndrome<D: DualModuleImpl>(
-        &mut self,
-        interface: &DualModuleInterfacePtr,
-        syndrome_pattern: Arc<SyndromePattern>,
-        dual_module: &mut D,
-    ) {
-        interface.load(syndrome_pattern, dual_module);
-        self.load(interface, dual_module);
     }
 
     fn solve_step_callback_interface_loaded<D: DualModuleImpl, F>(
@@ -228,27 +219,26 @@ pub trait PrimalModuleImpl {
         }
     }
 
-    fn subgraph(&mut self, interface: &DualModuleInterfacePtr, dual_module: &mut impl DualModuleImpl) -> Subgraph;
+    fn subgraph(&mut self, interface: &DualModuleInterfacePtr, dual_module: &mut impl DualModuleImpl) -> OutputSubgraph;
 
     fn subgraph_range(
         &mut self,
         interface: &DualModuleInterfacePtr,
         dual_module: &mut impl DualModuleImpl,
-    ) -> (Subgraph, WeightRange) {
-        let subgraph = self.subgraph(interface, dual_module);
+    ) -> (OutputSubgraph, WeightRange) {
+        let output_subgraph = self.subgraph(interface, dual_module);
         let weight_range = WeightRange::new(
-            interface.sum_dual_variables(),
-            Rational::from_usize(
+            interface.sum_dual_variables() + dual_module.get_negative_weight_sum(),
+            Rational::from(
                 interface
                     .read_recursive()
                     .decoding_graph
                     .model_graph
                     .initializer
-                    .get_subgraph_total_weight(&subgraph),
-            )
-            .unwrap(),
+                    .get_subgraph_total_weight(&output_subgraph),
+            ),
         );
-        (subgraph, weight_range)
+        (output_subgraph, weight_range)
     }
 
     /// performance profiler report

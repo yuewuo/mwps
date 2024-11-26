@@ -5,7 +5,6 @@
 //!
 
 use crate::dual_module::*;
-// use crate::dual_module_serial::*;
 use crate::dual_module_pq::*;
 use crate::example_codes::*;
 use crate::model_hypergraph::*;
@@ -16,6 +15,8 @@ use crate::primal_module::*;
 use crate::primal_module_serial::*;
 use crate::util::*;
 use crate::visualize::*;
+use core::panic;
+use hashbrown::HashSet;
 use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::io::prelude::*;
@@ -32,16 +33,19 @@ cfg_if::cfg_if! {
 }
 
 pub trait SolverTrait {
+    fn debug_print(&self) {
+        unimplemented!();
+    }
     fn clear(&mut self);
-    fn solve_visualizer(&mut self, syndrome_pattern: &SyndromePattern, visualizer: Option<&mut Visualizer>);
-    fn solve(&mut self, syndrome_pattern: &SyndromePattern) {
+    fn solve_visualizer(&mut self, syndrome_pattern: SyndromePattern, visualizer: Option<&mut Visualizer>);
+    fn solve(&mut self, syndrome_pattern: SyndromePattern) {
         self.solve_visualizer(syndrome_pattern, None)
     }
-    fn subgraph_range_visualizer(&mut self, visualizer: Option<&mut Visualizer>) -> (Subgraph, WeightRange);
-    fn subgraph_range(&mut self) -> (Subgraph, WeightRange) {
+    fn subgraph_range_visualizer(&mut self, visualizer: Option<&mut Visualizer>) -> (OutputSubgraph, WeightRange);
+    fn subgraph_range(&mut self) -> (OutputSubgraph, WeightRange) {
         self.subgraph_range_visualizer(None)
     }
-    fn subgraph(&mut self) -> Subgraph {
+    fn subgraph(&mut self) -> OutputSubgraph {
         self.subgraph_range().0
     }
     fn sum_dual_variables(&self) -> Rational;
@@ -52,6 +56,8 @@ pub trait SolverTrait {
     fn print_clusters(&self) {
         panic!();
     }
+    fn update_weights(&mut self, new_weights: Vec<Rational>, mix_ratio: f64);
+    fn get_model_graph(&self) -> Arc<ModelHyperGraph>;
 }
 
 #[cfg(feature = "python_binding")]
@@ -64,24 +70,32 @@ macro_rules! bind_trait_to_python {
                 self.clear()
             }
             #[pyo3(name = "solve", signature = (syndrome_pattern, visualizer=None))] // in Python, `solve` and `solve_visualizer` is the same because it can take optional parameter
-            fn py_solve(&mut self, syndrome_pattern: &SyndromePattern, visualizer: Option<&mut Visualizer>) {
+            fn py_solve(&mut self, syndrome_pattern: SyndromePattern, visualizer: Option<&mut Visualizer>) {
                 self.solve_visualizer(syndrome_pattern, visualizer)
             }
             #[pyo3(name = "subgraph_range", signature = (visualizer=None))] // in Python, `subgraph_range` and `subgraph_range_visualizer` is the same
-            fn py_subgraph_range(&mut self, visualizer: Option<&mut Visualizer>) -> (Subgraph, WeightRange) {
-                self.subgraph_range_visualizer(visualizer)
+            fn py_subgraph_range(&mut self, visualizer: Option<&mut Visualizer>) -> (PySubgraph, PyWeightRange) {
+                let (subgraph, range) = self.subgraph_range_visualizer(visualizer);
+                let mut complete_subgraph = subgraph.into_iter().collect::<Vec<EdgeIndex>>();
+                complete_subgraph.sort();
+                (complete_subgraph.into(), range.into())
             }
             #[pyo3(name = "subgraph", signature = (visualizer=None))]
             fn py_subgraph(&mut self, visualizer: Option<&mut Visualizer>) -> Subgraph {
-                self.subgraph_range_visualizer(visualizer).0
+                self.subgraph_range_visualizer(visualizer).0.into_iter().collect()
             }
             #[pyo3(name = "sum_dual_variables")]
             fn py_sum_dual_variables(&self) -> PyRational {
                 self.sum_dual_variables().clone().into()
             }
-            #[pyo3(name = "load_syndrome", signature = (syndrome_pattern, visualizer=None))]
-            pub fn py_load_syndrome(&mut self, syndrome_pattern: &SyndromePattern, visualizer: Option<&mut Visualizer>) {
-                self.0.load_syndrome(syndrome_pattern, visualizer)
+            #[pyo3(name = "load_syndrome", signature = (syndrome_pattern, visualizer=None, skip_initial_duals=false))]
+            pub fn py_load_syndrome(
+                &mut self,
+                syndrome_pattern: &SyndromePattern,
+                visualizer: Option<&mut Visualizer>,
+                skip_initial_duals: bool,
+            ) {
+                self.0.load_syndrome(syndrome_pattern, visualizer, skip_initial_duals)
             }
             #[pyo3(name = "get_node", signature = (node_index))]
             pub fn py_get_node(&mut self, node_index: NodeIndex) -> Option<PyDualNodePtr> {
@@ -103,6 +117,34 @@ macro_rules! bind_trait_to_python {
                 edges: Option<&Bound<PyAny>>,
             ) -> PyResult<PyDualNodePtr> {
                 let invalid_subgraph = Arc::new(self.py_construct_invalid_subgraph(vertices, edges)?);
+                let interface_ptr = self.0.interface_ptr.clone();
+                Ok(match self.0.dual_module.mode() {
+                    DualModuleMode::Search => interface_ptr.create_node(invalid_subgraph, &mut self.0.dual_module),
+                    DualModuleMode::Tune => interface_ptr.create_node_tune(invalid_subgraph, &mut self.0.dual_module),
+                }
+                .into())
+            }
+            /// create a node without providing any information about the invalid cluster itself, hence no safety checks
+            #[pyo3(name = "create_node_hair_unchecked", signature = (hair, vertices=None, edges=None))]
+            pub fn py_create_node_hair_unchecked(
+                &mut self,
+                hair: &Bound<PyAny>,
+                vertices: Option<&Bound<PyAny>>,
+                edges: Option<&Bound<PyAny>>,
+            ) -> PyResult<PyDualNodePtr> {
+                let hair = py_into_btree_set(hair)?;
+                assert!(!hair.is_empty(), "hair must not be empty");
+                let vertices = if let Some(vertices) = vertices {
+                    py_into_btree_set(vertices)?
+                } else {
+                    BTreeSet::new()
+                };
+                let edges = if let Some(edges) = edges {
+                    py_into_btree_set(edges)?
+                } else {
+                    BTreeSet::new()
+                };
+                let invalid_subgraph = Arc::new(InvalidSubgraph::new_raw(vertices, edges, hair));
                 let interface_ptr = self.0.interface_ptr.clone();
                 Ok(match self.0.dual_module.mode() {
                     DualModuleMode::Search => interface_ptr.create_node(invalid_subgraph, &mut self.0.dual_module),
@@ -143,6 +185,15 @@ macro_rules! bind_trait_to_python {
             #[pyo3(name = "set_grow_rate")]
             fn py_set_grow_rate(&mut self, dual_node_ptr: PyDualNodePtr, grow_rate: PyRational) {
                 self.0.dual_module.set_grow_rate(&dual_node_ptr.0, grow_rate.into())
+            }
+            #[pyo3(name = "stop_all")]
+            fn py_stop_all(&mut self) {
+                let mut node_index = 0;
+                use crate::num_traits::Zero;
+                while let Some(node_ptr) = self.0.interface_ptr.get_node(node_index) {
+                    self.0.dual_module.set_grow_rate(&node_ptr, Rational::zero());
+                    node_index += 1;
+                }
             }
         }
         impl $struct_name {
@@ -204,7 +255,7 @@ impl MWPSVisualizer for SolverSerialPlugins {
 impl SolverSerialPlugins {
     pub fn new(initializer: &SolverInitializer, plugins: Arc<Vec<PluginEntry>>, config: serde_json::Value) -> Self {
         let model_graph = Arc::new(ModelHyperGraph::new(Arc::new(initializer.clone())));
-        let mut primal_module = PrimalModuleSerial::new_empty(initializer);
+        let mut primal_module = PrimalModuleSerial::new_empty(initializer); // question: why does this need initializer?
         let config: SolverSerialPluginsConfig = serde_json::from_value(config).unwrap();
         primal_module.plugins = plugins;
         primal_module.config = config.primal.clone();
@@ -220,12 +271,22 @@ impl SolverSerialPlugins {
 
 impl SolverSerialPlugins {
     // APIs for step-by-step solving in Python
-    pub fn load_syndrome(&mut self, syndrome_pattern: &SyndromePattern, visualizer: Option<&mut Visualizer>) {
-        self.primal_module.solve_step_load_syndrome(
-            &self.interface_ptr,
-            Arc::new(syndrome_pattern.clone()),
-            &mut self.dual_module,
-        );
+    pub fn load_syndrome(
+        &mut self,
+        syndrome_pattern: &SyndromePattern,
+        visualizer: Option<&mut Visualizer>,
+        skip_initial_duals: bool,
+    ) {
+        if !skip_initial_duals {
+            self.interface_ptr
+                .load(Arc::new(syndrome_pattern.clone()), &mut self.dual_module);
+            self.primal_module.load(&self.interface_ptr, &mut self.dual_module);
+        } else {
+            self.interface_ptr
+                .write()
+                .decoding_graph
+                .set_syndrome(Arc::new(syndrome_pattern.clone()));
+        }
         if let Some(visualizer) = visualizer {
             visualizer
                 .snapshot_combined(
@@ -243,8 +304,24 @@ impl SolverTrait for SolverSerialPlugins {
         self.dual_module.clear();
         self.interface_ptr.clear();
     }
-    fn solve_visualizer(&mut self, syndrome_pattern: &SyndromePattern, visualizer: Option<&mut Visualizer>) {
+    fn solve_visualizer(&mut self, mut syndrome_pattern: SyndromePattern, visualizer: Option<&mut Visualizer>) {
+        self.dual_module.adjust_weights_for_negative_edges();
+
+        let moved_out_vec = std::mem::take(&mut syndrome_pattern.defect_vertices);
+        let mut moved_out_set = moved_out_vec.into_iter().collect::<HashSet<VertexIndex>>();
+
+        for to_flip in self.dual_module.get_flip_vertices().iter() {
+            if moved_out_set.contains(to_flip) {
+                moved_out_set.remove(to_flip);
+            } else {
+                moved_out_set.insert(*to_flip);
+            }
+        }
+
+        syndrome_pattern.defect_vertices = moved_out_set.into_iter().collect();
+
         let syndrome_pattern = Arc::new(syndrome_pattern.clone());
+
         if !syndrome_pattern.erasures.is_empty() {
             unimplemented!();
         }
@@ -263,7 +340,7 @@ impl SolverTrait for SolverSerialPlugins {
             "the subgraph does not generate the syndrome"
         );
     }
-    fn subgraph_range_visualizer(&mut self, visualizer: Option<&mut Visualizer>) -> (Subgraph, WeightRange) {
+    fn subgraph_range_visualizer(&mut self, visualizer: Option<&mut Visualizer>) -> (OutputSubgraph, WeightRange) {
         let (subgraph, weight_range) = self.primal_module.subgraph_range(&self.interface_ptr, &mut self.dual_module);
         if let Some(visualizer) = visualizer {
             visualizer
@@ -293,6 +370,15 @@ impl SolverTrait for SolverSerialPlugins {
     fn print_clusters(&self) {
         self.primal_module.print_clusters();
     }
+    fn update_weights(&mut self, new_weights: Vec<Rational>, mix_ratio: f64) {
+        self.dual_module.update_weights(new_weights, mix_ratio);
+    }
+    fn get_model_graph(&self) -> Arc<ModelHyperGraph> {
+        self.model_graph.clone()
+    }
+    fn debug_print(&self) {
+        self.dual_module.debug_print();
+    }
 }
 
 macro_rules! bind_solver_trait {
@@ -301,10 +387,10 @@ macro_rules! bind_solver_trait {
             fn clear(&mut self) {
                 self.0.clear()
             }
-            fn solve_visualizer(&mut self, syndrome_pattern: &SyndromePattern, visualizer: Option<&mut Visualizer>) {
+            fn solve_visualizer(&mut self, syndrome_pattern: SyndromePattern, visualizer: Option<&mut Visualizer>) {
                 self.0.solve_visualizer(syndrome_pattern, visualizer)
             }
-            fn subgraph_range_visualizer(&mut self, visualizer: Option<&mut Visualizer>) -> (Subgraph, WeightRange) {
+            fn subgraph_range_visualizer(&mut self, visualizer: Option<&mut Visualizer>) -> (OutputSubgraph, WeightRange) {
                 self.0.subgraph_range_visualizer(visualizer)
             }
             fn sum_dual_variables(&self) -> Rational {
@@ -321,6 +407,15 @@ macro_rules! bind_solver_trait {
             }
             fn print_clusters(&self) {
                 self.0.print_clusters()
+            }
+            fn update_weights(&mut self, new_weights: Vec<Rational>, mix_ratio: f64) {
+                self.0.update_weights(new_weights, mix_ratio)
+            }
+            fn get_model_graph(&self) -> Arc<ModelHyperGraph> {
+                self.0.model_graph.clone()
+            }
+            fn debug_print(&self) {
+                self.0.debug_print()
             }
         }
     };
@@ -447,7 +542,7 @@ impl SolverErrorPatternLogger {
 
 impl SolverTrait for SolverErrorPatternLogger {
     fn clear(&mut self) {}
-    fn solve_visualizer(&mut self, syndrome_pattern: &SyndromePattern, _visualizer: Option<&mut Visualizer>) {
+    fn solve_visualizer(&mut self, syndrome_pattern: SyndromePattern, _visualizer: Option<&mut Visualizer>) {
         self.file
             .write_all(
                 serde_json::to_string(&serde_json::json!(syndrome_pattern))
@@ -457,7 +552,7 @@ impl SolverTrait for SolverErrorPatternLogger {
             .unwrap();
         self.file.write_all(b"\n").unwrap();
     }
-    fn subgraph_range_visualizer(&mut self, _visualizer: Option<&mut Visualizer>) -> (Subgraph, WeightRange) {
+    fn subgraph_range_visualizer(&mut self, _visualizer: Option<&mut Visualizer>) -> (OutputSubgraph, WeightRange) {
         panic!("error pattern logger do not actually solve the problem, please use Verifier::None by `--verifier none`")
     }
     fn sum_dual_variables(&self) -> Rational {
@@ -470,6 +565,12 @@ impl SolverTrait for SolverErrorPatternLogger {
         None
     }
     fn clear_tuning_time(&mut self) {}
+    fn get_model_graph(&self) -> Arc<ModelHyperGraph> {
+        panic!("error pattern logger do not actually solve the problem")
+    }
+    fn update_weights(&mut self, _new_weights: Vec<Rational>, _mix_ratio: f64) {
+        panic!("error pattern logger do not actually solve the problem")
+    }
 }
 
 #[cfg(feature = "python_binding")]

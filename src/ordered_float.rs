@@ -1,8 +1,10 @@
 use num_traits::Zero;
+use serde::{Deserialize, Serialize};
 
 const EPSILON: f64 = 1e-4; // note: it would be interesting to play around with this.
+const COMP_EPSILON: f64 = 1e-10; // note: it would be interesting to play around with this.
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OrderedFloat(f64);
 
 impl OrderedFloat {
@@ -25,6 +27,10 @@ impl OrderedFloat {
     pub fn new_raw(numer: i32, denom: i32) -> Self {
         Self::new(numer as f64 / denom as f64)
     }
+
+    pub fn is_number(&self) -> bool {
+        self.0.is_finite()
+    }
 }
 
 // Implement num_traits
@@ -46,7 +52,7 @@ impl num_traits::One for OrderedFloat {
 }
 impl num_traits::Signed for OrderedFloat {
     fn is_negative(&self) -> bool {
-        !self.is_zero() && self.0 < 0.0
+        !self.is_zero() && self.0.is_sign_negative()
     }
     fn is_positive(&self) -> bool {
         !self.is_zero() && self.0 > 0.0
@@ -224,7 +230,7 @@ impl PartialEq<OrderedFloat> for f64 {
 impl PartialOrd for OrderedFloat {
     #[allow(clippy::non_canonical_partial_ord_impl)]
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        if (self.0 - other.0).abs() < EPSILON {
+        if (self.0 - other.0).abs() < COMP_EPSILON {
             Some(std::cmp::Ordering::Equal)
         } else {
             self.0.partial_cmp(&other.0)
@@ -235,7 +241,11 @@ impl PartialOrd for OrderedFloat {
 // Implement Ord
 impl Ord for OrderedFloat {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.partial_cmp(other).unwrap()
+        if (self.0 - other.0).abs() < COMP_EPSILON {
+            std::cmp::Ordering::Equal
+        } else {
+            self.partial_cmp(other).unwrap()
+        }
     }
 }
 
@@ -288,7 +298,7 @@ impl PartialEq<OrderedFloat> for &OrderedFloat {
 
 impl PartialOrd<&OrderedFloat> for OrderedFloat {
     fn partial_cmp(&self, other: &&Self) -> Option<std::cmp::Ordering> {
-        if (self.0 - other.0).abs() < EPSILON {
+        if (self.0 - other.0).abs() < COMP_EPSILON {
             Some(std::cmp::Ordering::Equal)
         } else {
             self.0.partial_cmp(&other.0)
@@ -298,7 +308,7 @@ impl PartialOrd<&OrderedFloat> for OrderedFloat {
 
 impl PartialOrd<OrderedFloat> for &OrderedFloat {
     fn partial_cmp(&self, other: &OrderedFloat) -> Option<std::cmp::Ordering> {
-        if (self.0 - other.0).abs() < EPSILON {
+        if (self.0 - other.0).abs() < COMP_EPSILON {
             Some(std::cmp::Ordering::Equal)
         } else {
             self.0.partial_cmp(&other.0)

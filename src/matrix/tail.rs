@@ -23,6 +23,17 @@ impl<M: MatrixView> Tail<M> {
     pub fn get_base(&self) -> &M {
         &self.base
     }
+    pub fn from_base(base: M) -> Self {
+        let mut value = Self {
+            base,
+            tail_edges: BTreeSet::new(),
+            is_var_indices_outdated: true,
+            var_indices: vec![],
+            tail_var_indices: vec![],
+        };
+        value.var_indices_lazy_update();
+        value
+    }
 }
 
 impl<M: MatrixView> MatrixTail for Tail<M> {

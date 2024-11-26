@@ -1,6 +1,6 @@
 [package]
 name = "mwpf"
-version = "0.1.5"
+version = "0.1.0"
 authors = ["Yue Wu <wuyue16pku@gmail.com>"]
 edition = "2021"
 license = "MIT"
@@ -53,6 +53,7 @@ incr_lp = [
 ] # solve lp problems incrementally, compatible with highs, by modifying the internal data of the probelm
 embed_visualizer = [
 ] # use nodejs to build frontend and embed in Python instead of outputing individual JSON files
+loose_sanity_check = [] # do not panic when check fails
 
 [dependencies]
 pyo3 = { version = "0.22.6", features = [
@@ -72,7 +73,7 @@ pbr = { version = "1.0.4", optional = true }
 rand_xoshiro = "0.6.0"
 derivative = "2.2.0"
 parking_lot = { version = "0.12.1", features = ["hardware-lock-elision"] }
-num-rational = "0.4.1"
+num-rational = { version = "0.4.1", features = ["serde"] }
 num-traits = "0.2.15"
 num-bigint = { version = "0.4.5", features = ["serde"] }
 more-asserts = "0.3.1"
@@ -97,6 +98,7 @@ pheap = { path = "src/pheap" }
 tempfile = "3.14.0"
 flate2 = "1.0.34"
 base64 = "0.22.1"
+bp = { path = "src/bp" }
 
 [dev-dependencies]
 test-case = "3.1.0"
