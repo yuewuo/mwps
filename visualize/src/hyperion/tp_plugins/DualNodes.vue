@@ -35,8 +35,6 @@ const dual_nodes: ComputedRef<IndexedDualNode[]> = computed(() => {
         return dual_nodes
     }
 })
-
-console.log(dual_nodes.value)
 </script>
 
 <template>
@@ -49,9 +47,9 @@ console.log(dual_nodes.value)
                 <span style="display: inline-block; font-size: 10px; position: relative; top: -5px; width: 16px">{{ ni }}</span>
                 <i style="font-size: 16px; position: relative; top: -11px">&nbsp;=&nbsp;</i>
                 <div class="rational">
-                    <div class="nominator rational-number">{{ display_nominator(dual_node.dn) }}</div>
+                    <div class="nominator limited-width">{{ display_nominator(dual_node.dn) }}</div>
                     <div class="rational-divider"></div>
-                    <div class="denominator rational-number">{{ dual_node.dd }}</div>
+                    <div class="denominator limited-width">{{ dual_node.dd }}</div>
                 </div>
             </div>
             <div class="right">
@@ -103,7 +101,7 @@ console.log(dual_nodes.value)
     height: 14px;
     padding-top: 2px;
 }
-.rational-number {
+.limited-width {
     text-align: center;
     overflow-y: scroll;
     scrollbar-width: none;

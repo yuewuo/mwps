@@ -108,7 +108,7 @@ export function display_nominator (dn: bigint | number): string {
         return dn.toString()
     } else {
         if (dn == 0 || isNaN(dn) || !isFinite(dn)) {
-            return dn.toString()
+            return `${dn}`
         }
         const exponent = Math.floor(Math.log10(Math.abs(dn)))
         let value = dn.toFixed(0)

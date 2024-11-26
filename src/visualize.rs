@@ -154,9 +154,6 @@ pub fn snapshot_fix_missing_fields(value: &mut serde_json::Value, abbrev: bool) 
         // recover
         assert!(edge.contains_key(key_weight), "missing unrecoverable field");
         assert!(edge.contains_key(key_vertices), "missing unrecoverable field");
-        if !edge.contains_key(key_growth) {
-            edge.insert(key_growth.to_string(), json!(0)); // by default no growth
-        }
     }
 }
 

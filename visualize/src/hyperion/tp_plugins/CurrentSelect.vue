@@ -105,7 +105,7 @@ const edge_contributing_nodes = computed(() => {
             <DualNodes :info="info" :dual_indices="vertex_involving_nodes"></DualNodes>
         </div>
         <div v-if="ei != undefined">
-            <div class="title">{{ edge!.g >= edge!.w ? 'Tight' : 'Loose' }} Edge {{ ei }}</div>
+            <div class="title">{{ edge!.g == null ? '' : edge!.g >= edge!.w ? 'Tight' : 'Loose' }} Edge {{ ei }}</div>
             <div style="margin-top: 10px">
                 <math display="inline" style="font-size: 120%; position: relative; top: 3px">
                     <mi>V</mi>
@@ -155,13 +155,13 @@ const edge_contributing_nodes = computed(() => {
                     <mo>=</mo>
                 </math>
                 <div class="rational">
-                    <div class="nominator rational-number">{{ display_nominator(edge!.gn) }}</div>
+                    <div class="nominator limited-width">{{ display_nominator(edge!.gn) }}</div>
                     <div class="rational-divider"></div>
-                    <div class="denominator rational-number">{{ edge!.gd }}</div>
+                    <div class="denominator limited-width">{{ edge!.gd }}</div>
                 </div>
                 <math display="inline-block" style="font-size: 150%; math-style: compact; position: relative; top: -12px">
                     <mo>=</mo>
-                    <mn>{{ edge!.g }}</mn>
+                    <mn class="limited-width" style="width: 170px">{{ edge!.g }}</mn>
                 </math>
             </div>
             <div style="margin-top: 0px">
@@ -175,13 +175,13 @@ const edge_contributing_nodes = computed(() => {
                     <mo>=</mo>
                 </math>
                 <div class="rational">
-                    <div class="nominator rational-number">{{ display_nominator(edge!.un) }}</div>
+                    <div class="nominator limited-width">{{ display_nominator(edge!.un) }}</div>
                     <div class="rational-divider"></div>
-                    <div class="denominator rational-number">{{ edge!.ud }}</div>
+                    <div class="denominator limited-width">{{ edge!.ud }}</div>
                 </div>
                 <math display="inline-block" style="font-size: 150%; math-style: compact; position: relative; top: -12px">
                     <mo>=</mo>
-                    <mn>{{ edge!.u }}</mn>
+                    <mn class="limited-width" style="width: 140px">{{ edge!.u }}</mn>
                 </math>
             </div>
             <DualNodes :info="info" :dual_indices="edge_contributing_nodes"></DualNodes>
@@ -214,7 +214,7 @@ const edge_contributing_nodes = computed(() => {
     height: 14px;
     padding-top: 2px;
 }
-.rational-number {
+.limited-width {
     text-align: center;
     overflow-y: scroll;
     scrollbar-width: none;
