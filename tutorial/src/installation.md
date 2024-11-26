@@ -41,7 +41,7 @@ cargo run --release -- --help
 If you want to develop the Python module, you need a few more tools
 
 ```bash
-sudo apt install python3 python3-pip
+sudo apt install python3 python3-pip cmake clang
 pip3 install maturin
 maturin develop  # build the Python package and install in your virtualenv or conda
 python3 tutorial/demo.py  # run a demo using the installed library

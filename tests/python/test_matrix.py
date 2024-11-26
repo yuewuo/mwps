@@ -1,4 +1,4 @@
-import mwpf, pytest
+from common import *
 
 
 def test_echelon_matrix_simple():
