@@ -8,6 +8,7 @@
 //!
 
 use super::interface::*;
+use crate::util::*;
 use prettytable::format::TableFormat;
 use prettytable::*;
 
@@ -15,6 +16,7 @@ use prettytable::*;
 pub struct VizTable {
     pub title: Row,
     pub rows: Vec<Row>,
+    pub edges: Vec<EdgeIndex>,
 }
 
 impl VizTable {
@@ -52,9 +54,11 @@ impl<M: MatrixView> From<&mut M> for VizTable {
         // create title
         let mut title = Row::empty();
         title.add_cell(Cell::new(""));
+        let mut edges = vec![];
         for column in 0..matrix.columns() {
             let var_index = matrix.column_to_var_index(column);
             let edge_index = matrix.var_to_edge_index(var_index);
+            edges.push(edge_index);
             let edge_index_str = Self::force_single_column(edge_index.to_string().as_str());
             title.add_cell(Cell::new(edge_index_str.as_str()).style_spec("brFm"));
         }
@@ -71,7 +75,7 @@ impl<M: MatrixView> From<&mut M> for VizTable {
             table_row.add_cell(Cell::new(if matrix.get_rhs(row) { " 1 " } else { "   " }));
             rows.push(table_row);
         }
-        VizTable { title, rows }
+        VizTable { title, rows, edges }
     }
 }
 
@@ -122,6 +126,16 @@ pub trait VizTrait {
 impl VizTrait for VizTable {
     fn viz_table(&mut self) -> VizTable {
         self.clone()
+    }
+}
+
+impl VizTable {
+    pub fn snapshot(&self) -> serde_json::Value {
+        json!({
+            "version": env!("CARGO_PKG_VERSION"),
+            "table": serde_json::Value::from(self.clone()),
+            "edges": self.edges,
+        })
     }
 }
 

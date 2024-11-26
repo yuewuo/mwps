@@ -1,4 +1,6 @@
 use crate::dual_module::*;
+use crate::html_export::*;
+use crate::matrix::*;
 use crate::num_traits::{Signed, ToPrimitive};
 use crate::util::*;
 use crate::visualize::*;
@@ -266,6 +268,316 @@ impl PySubgraph {
     }
 }
 
+macro_rules! bind_trait_matrix_basic {
+    ($struct_name:ident) => {
+        #[pymethods]
+        impl $struct_name {
+            fn __repr__(&mut self) -> String {
+                self.0.printstd_str()
+            }
+            fn __str__(&mut self) -> String {
+                self.__repr__()
+            }
+            // MatrixBasic trait functions
+            fn add_variable(&mut self, edge_index: EdgeIndex) -> Option<VarIndex> {
+                self.0.add_variable(edge_index)
+            }
+            fn add_constraint(
+                &mut self,
+                vertex_index: VertexIndex,
+                incident_edges: &Bound<PyAny>,
+                parity: bool,
+            ) -> PyResult<Option<Vec<VarIndex>>> {
+                let incident_edges: Vec<EdgeIndex> = py_into_btree_set::<EdgeIndex>(incident_edges)?.into_iter().collect();
+                Ok(self.0.add_constraint(vertex_index, &incident_edges, parity))
+            }
+            fn get_lhs(&self, row: RowIndex, var_index: VarIndex) -> bool {
+                self.0.get_lhs(row, var_index)
+            }
+            fn get_rhs(&self, row: RowIndex) -> bool {
+                self.0.get_rhs(row)
+            }
+            fn var_to_edge_index(&self, var_index: VarIndex) -> EdgeIndex {
+                self.0.var_to_edge_index(var_index)
+            }
+            fn edge_to_var_index(&self, edge_index: EdgeIndex) -> Option<VarIndex> {
+                self.0.edge_to_var_index(edge_index)
+            }
+            fn exists_edge(&self, edge_index: EdgeIndex) -> bool {
+                self.0.exists_edge(edge_index)
+            }
+            fn get_vertices(&self) -> BTreeSet<VertexIndex> {
+                self.0.get_vertices()
+            }
+            // MatrixView trait functions
+            #[getter]
+            fn get_columns(&mut self) -> usize {
+                self.0.columns()
+            }
+            fn column_to_var_index(&self, column: ColumnIndex) -> VarIndex {
+                self.0.column_to_var_index(column)
+            }
+            fn column_to_edge_index(&self, column: ColumnIndex) -> EdgeIndex {
+                self.0.column_to_edge_index(column)
+            }
+            fn get_view_edges(&mut self) -> Vec<EdgeIndex> {
+                self.0.get_view_edges()
+            }
+            fn var_to_column_index(&mut self, var_index: VarIndex) -> Option<ColumnIndex> {
+                self.0.var_to_column_index(var_index)
+            }
+            fn edge_to_column_index(&mut self, edge_index: EdgeIndex) -> Option<ColumnIndex> {
+                self.0.edge_to_column_index(edge_index)
+            }
+            #[getter]
+            fn get_rows(&mut self) -> usize {
+                self.0.rows()
+            }
+            fn snapshot(&mut self) -> PyObject {
+                json_to_pyobject(self.snapshot_json())
+            }
+            fn show(&mut self) {
+                HTMLExport::display_jupyter_matrix_html(self.snapshot_json(), self.__repr__());
+            }
+        }
+    };
+}
+
+macro_rules! bind_trait_matrix_tight {
+    ($struct_name:ident) => {
+        #[pymethods]
+        impl $struct_name {
+            // MatrixTight trait functions
+            fn update_edge_tightness(&mut self, edge_index: EdgeIndex, is_tight: bool) {
+                self.0.update_edge_tightness(edge_index, is_tight)
+            }
+            fn is_tight(&self, edge_index: usize) -> bool {
+                self.0.is_tight(edge_index)
+            }
+            fn add_variable_with_tightness(&mut self, edge_index: EdgeIndex, is_tight: bool) {
+                self.0.add_variable_with_tightness(edge_index, is_tight)
+            }
+            fn add_tight_variable(&mut self, edge_index: EdgeIndex) {
+                self.0.add_tight_variable(edge_index)
+            }
+        }
+    };
+}
+
+macro_rules! bind_trait_matrix_tail {
+    ($struct_name:ident) => {
+        #[pymethods]
+        impl $struct_name {
+            // MatrixTail trait functions
+            fn get_tail_edges(&self) -> BTreeSet<EdgeIndex> {
+                self.0.get_tail_edges().clone()
+            }
+            fn set_tail_edges(&mut self, edges: &Bound<PyAny>) -> PyResult<()> {
+                let tail_edges = py_into_btree_set(edges)?;
+                self.0.set_tail_edges(tail_edges.into_iter());
+                Ok(())
+            }
+        }
+    };
+}
+
+macro_rules! bind_trait_matrix_echelon {
+    ($struct_name:ident) => {
+        #[pymethods]
+        impl $struct_name {
+            // MatrixEchelon trait functions
+            fn get_echelon_info(&mut self) -> EchelonInfo {
+                self.0.get_echelon_info().clone()
+            }
+            fn get_solution(&mut self) -> Option<PySubgraph> {
+                self.0.get_solution().map(|x| x.into())
+            }
+            fn get_solution_local_minimum(&mut self, weight_of: &Bound<PyAny>) -> Option<Subgraph> {
+                self.0
+                    .get_solution_local_minimum(|x| weight_of.call1((x,)).unwrap().extract::<usize>().unwrap())
+            }
+        }
+    };
+}
+
+type EchelonMatrix = Echelon<Tail<Tight<BasicMatrix>>>;
+
+#[derive(Clone)]
+#[pyclass(name = "EchelonMatrix")]
+pub struct PyEchelonMatrix(pub EchelonMatrix);
+bind_trait_simple_wrapper!(EchelonMatrix, PyEchelonMatrix);
+bind_trait_matrix_basic!(PyEchelonMatrix);
+bind_trait_matrix_tight!(PyEchelonMatrix);
+bind_trait_matrix_tail!(PyEchelonMatrix);
+bind_trait_matrix_echelon!(PyEchelonMatrix);
+
+impl PyEchelonMatrix {
+    fn snapshot_json(&mut self) -> serde_json::Value {
+        let mut matrix_json = self.0.viz_table().snapshot();
+        let hair_start_index = self
+            .get_tail_edges()
+            .into_iter()
+            .map(|edge_index| self.edge_to_var_index(edge_index))
+            .min();
+        let matrix_json_obj = matrix_json.as_object_mut().unwrap();
+        matrix_json_obj.insert("hair_start_index".to_string(), hair_start_index.into());
+        matrix_json_obj.insert("is_echelon_form".to_string(), true.into());
+        matrix_json
+    }
+}
+
+#[pymethods]
+impl PyEchelonMatrix {
+    #[new]
+    #[pyo3(signature = (matrix=None))]
+    fn new(matrix: Option<&Bound<PyAny>>) -> PyResult<Self> {
+        if let Some(matrix) = matrix {
+            if let Ok(matrix) = matrix.extract::<PyTailMatrix>() {
+                return Ok(Self(EchelonMatrix::from_base(matrix.0.clone())));
+            }
+            if let Ok(matrix) = matrix.extract::<PyTightMatrix>() {
+                return Ok(Self(EchelonMatrix::from_base(TailMatrix::from_base(matrix.0.clone()))));
+            }
+            if let Ok(matrix) = matrix.extract::<PyBasicMatrix>() {
+                return Ok(Self(EchelonMatrix::from_base(TailMatrix::from_base(TightMatrix::from_base(
+                    matrix.0.clone(),
+                )))));
+            }
+            panic!("unknown input type: {}", matrix.get_type().name()?);
+        } else {
+            Ok(Self(EchelonMatrix::new()))
+        }
+    }
+    fn get_base(&self) -> PyTailMatrix {
+        self.0.get_base().clone().into()
+    }
+}
+
+type TailMatrix = Tail<Tight<BasicMatrix>>;
+
+/// TailMatrix is a matrix that allows reordering part of the columns to the end.
+#[derive(Clone)]
+#[pyclass(name = "TailMatrix")]
+pub struct PyTailMatrix(pub TailMatrix);
+bind_trait_simple_wrapper!(TailMatrix, PyTailMatrix);
+bind_trait_matrix_basic!(PyTailMatrix);
+bind_trait_matrix_tight!(PyTailMatrix);
+bind_trait_matrix_tail!(PyTailMatrix);
+
+impl PyTailMatrix {
+    fn snapshot_json(&mut self) -> serde_json::Value {
+        self.0.viz_table().snapshot()
+    }
+}
+
+#[pymethods]
+impl PyTailMatrix {
+    #[new]
+    #[pyo3(signature = (matrix=None))]
+    fn new(matrix: Option<&Bound<PyAny>>) -> PyResult<Self> {
+        if let Some(matrix) = matrix {
+            if let Ok(matrix) = matrix.extract::<PyTightMatrix>() {
+                return Ok(Self(TailMatrix::from_base(matrix.0.clone())));
+            }
+            if let Ok(matrix) = matrix.extract::<PyBasicMatrix>() {
+                return Ok(Self(TailMatrix::from_base(TightMatrix::from_base(matrix.0.clone()))));
+            }
+            if let Ok(matrix) = matrix.extract::<PyEchelonMatrix>() {
+                return Ok(matrix.get_base());
+            }
+            panic!("unknown input type: {}", matrix.get_type().name()?);
+        } else {
+            Ok(Self(TailMatrix::new()))
+        }
+    }
+    // MatrixBasic trait functions
+    fn xor_row(&mut self, target: RowIndex, source: RowIndex) {
+        self.0.xor_row(target, source)
+    }
+    fn swap_row(&mut self, a: RowIndex, b: RowIndex) {
+        self.0.swap_row(a, b)
+    }
+    fn get_base(&self) -> PyTightMatrix {
+        self.0.get_base().clone().into()
+    }
+}
+
+type TightMatrix = Tight<BasicMatrix>;
+
+/// TightMatrix is a matrix that hides some of the edges that are not tight while still keeping track of them when doing row operations.
+#[derive(Clone)]
+#[pyclass(name = "TightMatrix")]
+pub struct PyTightMatrix(pub TightMatrix);
+bind_trait_simple_wrapper!(TightMatrix, PyTightMatrix);
+bind_trait_matrix_basic!(PyTightMatrix);
+bind_trait_matrix_tight!(PyTightMatrix);
+
+impl PyTightMatrix {
+    fn snapshot_json(&mut self) -> serde_json::Value {
+        self.0.viz_table().snapshot()
+    }
+}
+
+#[pymethods]
+impl PyTightMatrix {
+    #[new]
+    #[pyo3(signature = (matrix=None))]
+    fn new(matrix: Option<&Bound<PyAny>>) -> PyResult<Self> {
+        if let Some(matrix) = matrix {
+            if let Ok(matrix) = matrix.extract::<PyBasicMatrix>() {
+                return Ok(Self(TightMatrix::from_base(matrix.0.clone())));
+            }
+            if let Ok(matrix) = matrix.extract::<PyTailMatrix>() {
+                return Ok(matrix.get_base());
+            }
+            if let Ok(matrix) = matrix.extract::<PyEchelonMatrix>() {
+                return Ok(matrix.get_base().get_base());
+            }
+            panic!("unknown input type: {}", matrix.get_type().name()?);
+        } else {
+            Ok(Self(TightMatrix::new()))
+        }
+    }
+    // MatrixBasic trait functions
+    fn xor_row(&mut self, target: RowIndex, source: RowIndex) {
+        self.0.xor_row(target, source)
+    }
+    fn swap_row(&mut self, a: RowIndex, b: RowIndex) {
+        self.0.swap_row(a, b)
+    }
+    fn get_base(&self) -> PyBasicMatrix {
+        self.0.get_base().clone().into()
+    }
+}
+
+/// BasicMatrix is a matrix that provides the basic functionality
+#[derive(Clone)]
+#[pyclass(name = "BasicMatrix")]
+pub struct PyBasicMatrix(pub BasicMatrix);
+bind_trait_simple_wrapper!(BasicMatrix, PyBasicMatrix);
+bind_trait_matrix_basic!(PyBasicMatrix);
+
+impl PyBasicMatrix {
+    fn snapshot_json(&mut self) -> serde_json::Value {
+        self.0.viz_table().snapshot()
+    }
+}
+
+#[pymethods]
+impl PyBasicMatrix {
+    #[new]
+    fn new() -> Self {
+        Self(BasicMatrix::new())
+    }
+    // MatrixBasic trait functions
+    fn xor_row(&mut self, target: RowIndex, source: RowIndex) {
+        self.0.xor_row(target, source)
+    }
+    fn swap_row(&mut self, a: RowIndex, b: RowIndex) {
+        self.0.swap_row(a, b)
+    }
+}
+
 #[pyfunction]
 pub(crate) fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyRational>()?;
@@ -274,5 +586,12 @@ pub(crate) fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyDualReport>()?;
     m.add_class::<DualModuleMode>()?;
     m.add_class::<PySubgraph>()?;
+    m.add_class::<PyEchelonMatrix>()?;
+    m.add_class::<PyTailMatrix>()?;
+    m.add_class::<PyTightMatrix>()?;
+    m.add_class::<PyBasicMatrix>()?;
+    m.add_class::<EchelonInfo>()?;
+    m.add_class::<ColumnInfo>()?;
+    m.add_class::<RowInfo>()?;
     Ok(())
 }

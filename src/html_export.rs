@@ -234,6 +234,77 @@ impl HTMLExport {
         })
         .unwrap();
     }
+
+    #[cfg(feature = "python_binding")]
+    pub fn display_jupyter_matrix_html(matrix_data: serde_json::Value, alternate_text: String) {
+        let template_html =
+            Self::get_template_html().expect("template html not available, please rebuild with `embed_visualizer` feature");
+        // if the hyperion_visual library is not loaded yet, load it
+        if !Self::library_injected() {
+            Self::force_inject_library();
+        }
+        // create a div block
+        let div_id: String = {
+            const CHARSET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+            let mut rng = rand::thread_rng();
+            let one_char = || CHARSET[rng.gen_range(0..CHARSET.len())] as char;
+            std::iter::repeat_with(one_char).take(16).collect()
+        };
+        let div_block =
+            format!(r#"<div id="{div_id}" style="font-family: monospace; white-space: pre;">{alternate_text}</div>"#);
+        Python::with_gil(|py| -> PyResult<()> {
+            let display = PyModule::import_bound(py, "IPython.display")?;
+            display.call_method1("display", (display.call_method1("HTML", (div_block,))?,))?;
+            Ok(())
+        })
+        .unwrap();
+        // compress visualizer data; user can then use the webGUI to export uncompressed JSON or HTML
+        let matrix_json = serde_json::to_string(&matrix_data).expect("data must be serializable");
+        // load the visualizer to the div block
+        let bootstrap_flag = "HYPERION_VISUAL_BOOTSTRAP_CODE";
+        let (_, bootstrap_code, _) = Self::slice_content(template_html, bootstrap_flag);
+        // generate the javascript code
+        let js_code = format!(
+            r###"<script>{bootstrap_code}
+            async function main() {{
+                const matrix_data = {matrix_json};
+                console.log(matrix_data);
+                // get the current height and width of the div block
+                const div = document.getElementById("{div_id}");
+                // bind the visualizer to the div block
+                let app_currently_exist = false;
+                async function create_app() {{
+                    if (app_currently_exist) return;
+                    app_currently_exist = true;
+                    const script_dom = document.getElementById('{div_id}');
+                    const app = await {WINDOW_HYPERION_VISUAL}.parity_matrix.bind_to_div("#{div_id}", matrix_data);
+                    // observe the div block for removal
+                    new MutationObserver(function(mutations) {{
+                        if(!document.body.contains(script_dom)) {{
+                            app.unmount()
+                            this.disconnect()
+                            app_currently_exist = false
+                        }}
+                    }}).observe(script_dom.parentElement.parentElement.parentElement.parentElement.parentElement, {{ childList: true, subtree: true }});
+                }}
+                create_app()
+                new MutationObserver(function(mutations) {{
+                    const script_dom = document.getElementById('{div_id}');
+                    if(script_dom != undefined && script_dom.getAttribute('data-engine') == null) {{
+                        create_app()
+                    }}
+                }}).observe(document, {{ childList: true, subtree: true }});
+            }}
+            on_hyperion_library_ready(main)</script>
+        "###
+        );
+        Python::with_gil(|py| -> PyResult<()> {
+            let display = PyModule::import_bound(py, "IPython.display")?;
+            display.call_method1("display", (display.call_method1("HTML", (js_code,))?,))?;
+            Ok(())
+        })
+        .unwrap();
+    }
 }
 
 impl HTMLExport {

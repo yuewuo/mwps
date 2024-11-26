@@ -4,17 +4,15 @@ export class ParityMatrixData {
     public version: string
     public edges: number[]
     public table: PrintTable
-    public is_echelon_form: string // TODO: fix
-    public start_index: number
+    public is_echelon_form: boolean // TODO: fix
+    public hair_start_index?: number
 
-    constructor (object: object) {
+    constructor (data: object) {
         let table: PrintTable | null = null
         let version: string | null = null
         let edges: number[] | null = null
-        let is_echelon_form: string | null = null
-        let start_index: number | null = null
-        // @ts-expect-error parsing the object data, do not know the exact structure
-        for (const [key, value] of object.entries(object)) {
+        let is_echelon_form: boolean = false
+        for (const [key, value] of Object.entries(data)) {
             switch (key) {
                 case 'table':
                     table = new PrintTable(value)
@@ -26,11 +24,10 @@ export class ParityMatrixData {
                     edges = value as number[]
                     break
                 case 'is_echelon_form':
-                    is_echelon_form = value as string
+                    is_echelon_form = value as boolean
                     break
-                case 'start_index':
-                case 'hs':
-                    start_index = value as number
+                case 'hair_start_index':
+                    this.hair_start_index = value as number
                     break
             }
         }
@@ -40,10 +37,7 @@ export class ParityMatrixData {
         this.version = version
         assert(edges != null)
         this.edges = edges
-        assert(is_echelon_form != null)
         this.is_echelon_form = is_echelon_form
-        assert(start_index != null)
-        this.start_index = start_index
     }
 }
 

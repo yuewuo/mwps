@@ -21,6 +21,15 @@ impl<M: MatrixView> Echelon<M> {
     pub fn get_base(&self) -> &M {
         &self.base
     }
+    pub fn from_base(base: M) -> Self {
+        let mut value = Self {
+            base,
+            is_info_outdated: true,
+            info: Default::default(),
+        };
+        value.echelon_info_lazy_update();
+        value
+    }
 }
 
 impl<M: MatrixTail + MatrixView> MatrixTail for Echelon<M> {
