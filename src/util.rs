@@ -124,6 +124,10 @@ impl SolverInitializer {
     fn __repr__(&self) -> String {
         format!("{:?}", self)
     }
+    #[pyo3(name = "snapshot", signature = (abbrev=true))]
+    fn trait_snapshot(&mut self, abbrev: bool) -> PyObject {
+        json_to_pyobject(self.snapshot(abbrev))
+    }
 }
 
 impl SolverInitializer {
@@ -193,7 +197,9 @@ impl MWPSVisualizer for SolverInitializer {
         }
         for HyperEdge { vertices, weight } in self.weighted_edges.iter() {
             edges.push(json!({
-                if abbrev { "w" } else { "weight" }: weight,
+                if abbrev { "w" } else { "weight" }: weight.to_f64(),
+                "wn": numer_of(weight),
+                "wd": denom_of(weight),
                 if abbrev { "v" } else { "vertices" }: vertices,
             }));
         }
@@ -231,6 +237,23 @@ impl SyndromePattern {
     }
 }
 
+impl MWPSVisualizer for SyndromePattern {
+    fn snapshot(&self, abbrev: bool) -> serde_json::Value {
+        let vertex_num = self.defect_vertices.iter().cloned().max().unwrap_or_default() + 1;
+        let mut vertices = vec![json!(null); vertex_num];
+        for &vertex_index in self.defect_vertices.iter() {
+            vertices[vertex_index] = json!({
+                if abbrev { "s" } else { "is_defect" }: 1,
+            })
+        }
+        assert!(self.erasures.is_empty(), "erasures are not supported in the snapshot");
+        json!({
+            "hint_no_vertices_check": true,
+            "vertices": vertices,
+        })
+    }
+}
+
 #[cfg(feature = "python_binding")]
 #[pymethods]
 impl SyndromePattern {
@@ -252,6 +275,10 @@ impl SyndromePattern {
     }
     fn __repr__(&self) -> String {
         format!("{:?}", self)
+    }
+    #[pyo3(name="snapshot", signature = (abbrev=true))]
+    fn py_snapshot(&mut self, abbrev: bool) -> PyObject {
+        json_to_pyobject(self.snapshot(abbrev))
     }
 }
 

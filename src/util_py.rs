@@ -278,12 +278,38 @@ bind_trait_simple_wrapper!(Subgraph, PySubgraph);
 
 #[pymethods]
 impl PySubgraph {
+    fn __iter__(slf: PyRef<Self>) -> PyResult<Py<PySubgraphIter>> {
+        let iter = PySubgraphIter {
+            inner: slf.0.clone().into_iter(),
+        };
+        Py::new(slf.py(), iter)
+    }
+}
+
+#[pyclass]
+struct PySubgraphIter {
+    inner: std::vec::IntoIter<EdgeIndex>,
+}
+
+#[pymethods]
+impl PySubgraphIter {
+    fn __iter__(slf: PyRef<Self>) -> PyRef<Self> {
+        slf
+    }
+
+    fn __next__(mut slf: PyRefMut<Self>) -> Option<usize> {
+        slf.inner.next()
+    }
+}
+
+#[pymethods]
+impl PySubgraph {
     #[new]
     fn new(subgraph: Subgraph) -> Self {
         Self(subgraph)
     }
     fn __repr__(&self) -> String {
-        format!("{:?}", self.0)
+        format!("Subgraph({:?})", self.0)
     }
     fn __str__(&self) -> String {
         self.__repr__()
@@ -291,6 +317,17 @@ impl PySubgraph {
     #[pyo3(signature = (abbrev=true))]
     fn snapshot(&mut self, abbrev: bool) -> PyObject {
         json_to_pyobject(self.0.snapshot(abbrev))
+    }
+    fn set(&self) -> BTreeSet<EdgeIndex> {
+        self.0.iter().cloned().collect()
+    }
+    fn list(&self) -> Vec<EdgeIndex> {
+        self.0.clone()
+    }
+    fn __eq__(&self, other: &Bound<PyAny>) -> PyResult<bool> {
+        let other_set = py_into_btree_set::<EdgeIndex>(other)?;
+        let my_set = self.set();
+        Ok(other_set == my_set)
     }
 }
 

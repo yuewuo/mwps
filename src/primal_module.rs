@@ -236,7 +236,7 @@ pub trait PrimalModuleImpl {
                     .model_graph
                     .initializer
                     .get_subgraph_total_weight(&output_subgraph),
-            ) + dual_module.get_negative_weight_sum(), // this uses the initailizer, we would need to update this if were to keep this consistent
+            ),
         );
         (output_subgraph, weight_range)
     }

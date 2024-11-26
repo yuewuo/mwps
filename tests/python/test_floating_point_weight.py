@@ -54,6 +54,11 @@ def test_fp_2():
     syndrome = mwpf.SyndromePattern([0, 1, 2])
     solver.solve(syndrome, visualizer)
     subgraph, bound = solver.subgraph_range(visualizer)
+    print("subgraph edges:", [edge_index for edge_index in subgraph])
+    assert subgraph == [0, 2]
+    visualizer.snapshot("original problem", initializer, syndrome, subgraph)
     print(subgraph, bound)
-    with open(os.path.join(os.path.dirname(__file__), f"test_fp_1.html"), "w") as f:
+    assert math.isclose(bound.lower.float(), 0.2)
+    assert math.isclose(bound.upper.float(), 0.2)
+    with open(os.path.join(os.path.dirname(__file__), f"test_fp_2.html"), "w") as f:
         f.write(visualizer.generate_html())

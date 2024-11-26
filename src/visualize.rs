@@ -205,6 +205,8 @@ pub fn snapshot_copy_remaining_fields(obj: &mut ObjectMap, obj_2: &mut ObjectMap
 pub fn snapshot_combine_values(value: &mut serde_json::Value, mut value_2: serde_json::Value, abbrev: bool) {
     let value = value.as_object_mut().expect("snapshot must be an object");
     let value_2 = value_2.as_object_mut().expect("snapshot must be an object");
+    let hint_no_vertices_check =
+        value.contains_key("hint_no_vertices_check") || value_2.contains_key("hint_no_vertices_check");
     match (value.contains_key("vertices"), value_2.contains_key("vertices")) {
         (_, false) => {} // do nothing
         (false, true) => {
@@ -222,9 +224,23 @@ pub fn snapshot_combine_values(value: &mut serde_json::Value, mut value_2: serde
                 .unwrap()
                 .as_array_mut()
                 .expect("vertices must be an array");
-            assert!(vertices.len() == vertices_2.len(), "vertices must be compatible");
-            for (vertex_idx, vertex) in vertices.iter_mut().enumerate() {
-                let vertex_2 = &mut vertices_2[vertex_idx];
+            if !hint_no_vertices_check {
+                assert!(vertices.len() == vertices_2.len(), "vertices must be compatible");
+            }
+            let vertex_length = std::cmp::max(vertices.len(), vertices_2.len());
+            for vertex_index in 0..vertex_length {
+                let vertex = if vertex_index < vertices.len() {
+                    vertices.get_mut(vertex_index).unwrap()
+                } else {
+                    vertices.push(json!(null));
+                    vertices.last_mut().unwrap()
+                };
+                let vertex_2 = if vertex_index < vertices_2.len() {
+                    vertices_2.get_mut(vertex_index).unwrap()
+                } else {
+                    vertices_2.push(json!(null));
+                    vertices_2.last_mut().unwrap()
+                };
                 if vertex_2.is_null() {
                     continue;
                 }
