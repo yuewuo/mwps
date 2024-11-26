@@ -5,7 +5,7 @@
 //! Only debug tests are failing, which aligns with the dual_module_serial behavior
 //!
 
-use crate::num_traits::{ToPrimitive, Zero};
+use crate::num_traits::{FromPrimitive, ToPrimitive, Zero};
 use crate::pointers::*;
 use crate::primal_module::Affinity;
 use crate::primal_module_serial::PrimalClusterPtr;
@@ -819,7 +819,7 @@ where
             return None;
         }
         start += weight.to_f64().unwrap();
-        Some(Rational::from(start))
+        Some(Affinity::from(start))
     }
 
     fn get_edge_free_weight(
@@ -903,13 +903,14 @@ where
         }
     }
 
-    fn update_weights(&mut self, new_weights: Vec<Rational>, mix_ratio: f64) {
+    fn update_weights(&mut self, new_weights: Vec<Weight>, mix_ratio: f64) {
         for (edge, new_weight) in self.edges.iter().zip(new_weights.iter()) {
             let mut edge = edge.write();
 
-            let current_edge_weight = edge.weight.to_f64().unwrap();
-            let new_weight =
-                Rational::from(current_edge_weight + mix_ratio) * (new_weight - Rational::from(current_edge_weight));
+            let current_edge_weight = edge.weight.clone();
+            let new_weight = Weight::from(
+                current_edge_weight.clone() + Rational::from_f64(mix_ratio).unwrap() * (new_weight - current_edge_weight),
+            );
 
             edge.weight = new_weight;
         }
@@ -949,6 +950,8 @@ where
             assert!(!unexplored.is_negative());
             edges.push(json!({
                 if abbrev { "w" } else { "weight" }: edge.weight.to_f64(),
+                "wn": numer_of(&edge.weight),
+                "wd": denom_of(&edge.weight),
                 if abbrev { "v" } else { "vertices" }: edge.vertices.iter().map(|x| x.upgrade_force().read_recursive().vertex_index).collect::<Vec<_>>(),
                 if abbrev { "g" } else { "growth" }: current_growth.to_f64(),
                 "gn": numer_of(&current_growth),

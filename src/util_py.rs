@@ -4,9 +4,10 @@ use crate::matrix::*;
 use crate::num_traits::{Signed, ToPrimitive};
 use crate::util::*;
 use crate::visualize::*;
+use num_traits::FromPrimitive;
 use pyo3::basic::CompareOp;
 use pyo3::prelude::*;
-use pyo3::types::{PyDict, PyList, PySet};
+use pyo3::types::{PyDict, PyFloat, PyInt, PyList, PySet};
 use std::collections::BTreeSet;
 use std::hash::DefaultHasher;
 use std::hash::{Hash, Hasher};
@@ -32,6 +33,28 @@ macro_rules! bind_trait_simple_wrapper {
 #[pyclass(name = "Rational")]
 pub struct PyRational(pub Rational);
 bind_trait_simple_wrapper!(Rational, PyRational);
+
+impl From<&Bound<'_, PyAny>> for PyRational {
+    fn from(value: &Bound<PyAny>) -> Self {
+        if value.is_instance_of::<PyRational>() {
+            value.extract::<PyRational>().unwrap()
+        } else if value.is_instance_of::<PyFloat>() {
+            Self(Rational::from_f64(value.extract().unwrap()).unwrap())
+        } else if value.is_instance_of::<PyInt>() {
+            cfg_if::cfg_if! {
+                if #[cfg(feature="f64_weight")] {
+                    Self(Rational::from(value.extract::<f64>().unwrap()))
+                } else if #[cfg(feature="rational_weight")] {
+                    // python int is unbounded, thus first cast to BigInt to avoid accuracy loss
+                    let bigint = value.extract::<num_bigint::BigInt>().unwrap();
+                    Self(Rational::from(bigint))
+                }
+            }
+        } else {
+            panic!("unsupported type: {}", value.get_type().name().unwrap())
+        }
+    }
+}
 
 #[pymethods]
 impl PyRational {
@@ -397,7 +420,7 @@ macro_rules! bind_trait_matrix_echelon {
             }
             fn get_solution_local_minimum(&mut self, weight_of: &Bound<PyAny>) -> Option<Subgraph> {
                 self.0
-                    .get_solution_local_minimum(|x| weight_of.call1((x,)).unwrap().extract::<usize>().unwrap())
+                    .get_solution_local_minimum(|x| PyRational::from(&weight_of.call1((x,)).unwrap()).0)
             }
         }
     };

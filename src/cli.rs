@@ -1,7 +1,6 @@
 use crate::example_codes::*;
 use crate::matrix::*;
 use crate::mwpf_solver::*;
-use crate::ordered_float::OrderedFloat;
 use crate::util::*;
 use crate::visualize::*;
 use bp::bp::{BpDecoder, BpSparse};
@@ -379,7 +378,7 @@ impl Cli {
                             .log_prob_ratios
                             .clone()
                             .into_iter()
-                            .map(OrderedFloat::from)
+                            .map(|v| Weight::from_f64(v).unwrap())
                             .collect();
 
                         solver.update_weights(llrs, bp_application_ratio.unwrap_or(0.5));
@@ -439,7 +438,7 @@ impl Cli {
                             .log_prob_ratios
                             .clone()
                             .into_iter()
-                            .map(OrderedFloat::from)
+                            .map(|v| Weight::from_f64(v).unwrap())
                             .collect();
 
                         solver.update_weights(llrs, bp_application_ratio.unwrap_or(0.5));

@@ -19,9 +19,9 @@
 //! use the `var_index` to avoid duplicated translation (at least one translation is necessary).
 //!
 
-use crate::{ordered_float::OrderedFloat, util::*};
+use crate::util::*;
 use derivative::Derivative;
-use num_traits::Zero;
+use num_traits::{One, Zero};
 use std::collections::BTreeSet;
 
 pub type VarIndex = usize;
@@ -176,7 +176,7 @@ pub trait MatrixEchelon: MatrixView {
                 independent_columns.push(column);
             }
         }
-        let mut total_weight = Rational::from(0.);
+        let mut total_weight = Rational::zero();
         for &edge_index in solution.iter() {
             total_weight += weight_of(edge_index);
         }
@@ -189,8 +189,12 @@ pub trait MatrixEchelon: MatrixView {
                 pending_flip_edge_indices.clear();
                 let var_index = self.column_to_var_index(column);
                 let edge_index = self.var_to_edge_index(var_index);
-                let mut primal_delta =
-                    (weight_of(edge_index)) * Rational::from(if solution.contains(&edge_index) { -1. } else { 1. });
+                let mut primal_delta = (weight_of(edge_index))
+                    * if solution.contains(&edge_index) {
+                        -Rational::one()
+                    } else {
+                        Rational::one()
+                    };
                 pending_flip_edge_indices.push(edge_index);
                 for row in 0..info.rows.len() {
                     if self.get_lhs(row, var_index) {
@@ -199,11 +203,16 @@ pub trait MatrixEchelon: MatrixView {
                         debug_assert!(flip_column < column);
                         let flip_edge_index = self.column_to_edge_index(flip_column);
                         primal_delta += (weight_of(flip_edge_index))
-                            * Rational::from(if solution.contains(&flip_edge_index) { -1. } else { 1. });
+                            * if solution.contains(&flip_edge_index) {
+                                -Rational::one()
+                            } else {
+                                Rational::one()
+                            };
                         pending_flip_edge_indices.push(flip_edge_index);
                     }
                 }
-                if primal_delta < OrderedFloat::zero() {
+                // warning: has to be this form (instead of .is_negative) to use the tolerance of OrderedFloat
+                if primal_delta < Rational::zero() {
                     total_weight = total_weight + primal_delta;
                     for &edge_index in pending_flip_edge_indices.iter() {
                         if solution.contains(&edge_index) {
