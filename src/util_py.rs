@@ -28,6 +28,7 @@ macro_rules! bind_trait_simple_wrapper {
 }
 
 #[derive(Clone)]
+#[repr(transparent)]
 #[pyclass(name = "Rational")]
 pub struct PyRational(pub Rational);
 bind_trait_simple_wrapper!(Rational, PyRational);
@@ -111,6 +112,7 @@ impl std::fmt::Debug for PyRational {
 }
 
 #[derive(Clone)]
+#[repr(transparent)]
 #[pyclass(name = "DualNodePtr")]
 pub struct PyDualNodePtr(pub DualNodePtr);
 bind_trait_simple_wrapper!(DualNodePtr, PyDualNodePtr);
@@ -245,7 +247,8 @@ pub fn py_into_btree_set<'py, T: Ord + Clone + FromPyObject<'py>>(value: &Bound<
     Ok(result)
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
+#[repr(transparent)]
 #[pyclass(name = "Subgraph")]
 pub struct PySubgraph(pub Subgraph);
 bind_trait_simple_wrapper!(Subgraph, PySubgraph);
@@ -578,6 +581,43 @@ impl PyBasicMatrix {
     }
 }
 
+#[derive(Clone, Debug)]
+#[pyclass(name = "WeightRange")]
+pub struct PyWeightRange(pub WeightRange);
+bind_trait_simple_wrapper!(WeightRange, PyWeightRange);
+
+#[pymethods]
+impl PyWeightRange {
+    #[new]
+    #[pyo3(signature=(lower, upper))]
+    fn py_new(lower: PyRational, upper: PyRational) -> Self {
+        WeightRange::new(lower.0, upper.0).into()
+    }
+    #[getter]
+    fn get_lower(&self) -> PyRational {
+        self.0.lower.clone().into()
+    }
+    #[setter]
+    fn set_lower(&mut self, value: PyRational) {
+        self.0.lower = value.into();
+    }
+    #[getter]
+    fn get_upper(&self) -> PyRational {
+        self.0.upper.clone().into()
+    }
+    #[setter]
+    fn set_upper(&mut self, value: PyRational) {
+        self.0.upper = value.into();
+    }
+    fn __repr__(&self) -> String {
+        format!("{:?}", self.0)
+    }
+    #[pyo3(signature = (abbrev=true))]
+    fn snapshot(&mut self, abbrev: bool) -> PyObject {
+        json_to_pyobject(self.0.snapshot(abbrev))
+    }
+}
+
 #[pyfunction]
 pub(crate) fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyRational>()?;
@@ -593,5 +633,6 @@ pub(crate) fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<EchelonInfo>()?;
     m.add_class::<ColumnInfo>()?;
     m.add_class::<RowInfo>()?;
+    m.add_class::<PyWeightRange>()?;
     Ok(())
 }

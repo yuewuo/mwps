@@ -160,7 +160,11 @@ impl PrimalModuleImpl for PrimalModuleUnionFind {
         false
     }
 
-    fn subgraph(&mut self, interface_ptr: &DualModuleInterfacePtr, _dual_module: &mut impl DualModuleImpl) -> Subgraph {
+    fn subgraph(
+        &mut self,
+        interface_ptr: &DualModuleInterfacePtr,
+        _dual_module: &mut impl DualModuleImpl,
+    ) -> OutputSubgraph {
         let mut valid_clusters = BTreeSet::new();
         let mut subgraph = vec![];
         for i in 0..self.union_find.size() {
@@ -175,7 +179,19 @@ impl PrimalModuleImpl for PrimalModuleUnionFind {
                 subgraph.extend(cluster_subgraph.iter());
             }
         }
-        subgraph
+
+        // let mut subgraph_set = subgraph.into_iter().collect::<hashbrown::HashSet<EdgeIndex>>();
+        // for to_flip in _dual_module.get_negative_edges().iter() {
+        //     if subgraph_set.contains(to_flip) {
+        //         subgraph_set.remove(to_flip);
+        //     } else {
+        //         subgraph_set.insert(*to_flip);
+        //     }
+        // }
+        // OutputSubgraph::new(subgraph_set.into_iter().collect(), Default::default())
+
+        // note: note implmented to handle negative weights yet
+        OutputSubgraph::new(subgraph, _dual_module.get_negative_edges())
     }
 }
 
@@ -195,7 +211,7 @@ pub mod tests {
     use crate::dual_module_pq::*;
     use crate::example_codes::*;
     use crate::more_asserts::*;
-    use crate::num_traits::{FromPrimitive, ToPrimitive};
+    use crate::num_traits::ToPrimitive;
     use std::sync::Arc;
 
     pub fn primal_module_union_find_basic_standard_syndrome_optional_viz(
@@ -230,20 +246,17 @@ pub mod tests {
                 )
                 .unwrap();
         }
+
+        let v = visualizer.as_mut().unwrap();
+        v.save_html_along_json();
+        println!("open visualizer at {}", v.html_along_json_path());
+
         assert!(
             model_graph.initializer.matches_subgraph_syndrome(&subgraph, &defect_vertices),
             "the result subgraph is invalid"
         );
-        assert_le!(
-            Rational::from_usize(final_dual).unwrap(),
-            weight_range.upper,
-            "unmatched sum dual variables"
-        );
-        assert_ge!(
-            Rational::from_usize(final_dual).unwrap(),
-            weight_range.lower,
-            "unexpected final dual variable sum"
-        );
+        assert_le!(final_dual, weight_range.upper, "unmatched sum dual variables");
+        assert_ge!(final_dual, weight_range.lower, "unexpected final dual variable sum");
         println!(
             "weight range: [{}, {}]",
             weight_range.lower.to_i64().unwrap(),
@@ -289,8 +302,13 @@ pub mod tests {
         // cargo test primal_module_union_find_basic_1 -- --nocapture
         let visualize_filename = "primal_module_union_find_basic_1.json".to_string();
         let defect_vertices = vec![23, 24, 29, 30];
-        let code = CodeCapacityTailoredCode::new(7, 0., 0.01, 1);
-        primal_module_union_find_basic_standard_syndrome(code, visualize_filename, defect_vertices, 1);
+        let code = CodeCapacityTailoredCode::new(7, 0., 0.01);
+        primal_module_union_find_basic_standard_syndrome(
+            code,
+            visualize_filename,
+            defect_vertices,
+            Rational::from(4.59511985013459),
+        );
     }
 
     #[test]
@@ -298,8 +316,13 @@ pub mod tests {
         // cargo test primal_module_union_find_basic_2 -- --nocapture
         let visualize_filename = "primal_module_union_find_basic_2.json".to_string();
         let defect_vertices = vec![16, 17, 23, 25, 29, 30];
-        let code = CodeCapacityTailoredCode::new(7, 0., 0.01, 1);
-        primal_module_union_find_basic_standard_syndrome(code, visualize_filename, defect_vertices, 2);
+        let code = CodeCapacityTailoredCode::new(7, 0., 0.01);
+        primal_module_union_find_basic_standard_syndrome(
+            code,
+            visualize_filename,
+            defect_vertices,
+            Rational::from(9.19023970026918),
+        );
     }
 
     #[test]
@@ -307,8 +330,13 @@ pub mod tests {
         // cargo test primal_module_union_find_basic_3 -- --nocapture
         let visualize_filename = "primal_module_union_find_basic_3.json".to_string();
         let defect_vertices = vec![14, 15, 16, 17, 22, 25, 28, 31, 36, 37, 38, 39];
-        let code = CodeCapacityTailoredCode::new(7, 0., 0.01, 1);
-        primal_module_union_find_basic_standard_syndrome(code, visualize_filename, defect_vertices, 5);
+        let code = CodeCapacityTailoredCode::new(7, 0., 0.01);
+        primal_module_union_find_basic_standard_syndrome(
+            code,
+            visualize_filename,
+            defect_vertices,
+            Rational::from(22.975599250672953),
+        );
     }
 
     #[test]
@@ -316,8 +344,13 @@ pub mod tests {
         // cargo test primal_module_union_find_basic_4 -- --nocapture
         let visualize_filename = "primal_module_union_find_basic_4.json".to_string();
         let defect_vertices = vec![3, 12];
-        let code = CodeCapacityColorCode::new(7, 0.01, 1);
-        primal_module_union_find_basic_standard_syndrome(code, visualize_filename, defect_vertices, 2);
+        let code = CodeCapacityColorCode::new(7, 0.01);
+        primal_module_union_find_basic_standard_syndrome(
+            code,
+            visualize_filename,
+            defect_vertices,
+            Rational::from(9.19023970026918),
+        );
     }
 
     #[test]
@@ -325,8 +358,13 @@ pub mod tests {
         // cargo test primal_module_union_find_basic_5 -- --nocapture
         let visualize_filename = "primal_module_union_find_basic_5.json".to_string();
         let defect_vertices = vec![3, 5, 10, 12];
-        let code = CodeCapacityColorCode::new(7, 0.01, 1);
-        primal_module_union_find_basic_standard_syndrome(code, visualize_filename, defect_vertices, 4);
+        let code = CodeCapacityColorCode::new(7, 0.01);
+        primal_module_union_find_basic_standard_syndrome(
+            code,
+            visualize_filename,
+            defect_vertices,
+            Rational::from(12.25365293369224),
+        );
     }
 
     #[test]
@@ -334,7 +372,12 @@ pub mod tests {
         // cargo test primal_module_union_find_basic_6 -- --nocapture
         let visualize_filename = "primal_module_union_find_basic_6.json".to_string();
         let defect_vertices = vec![22];
-        let code = CodeCapacityTailoredCode::new(5, 0., 0.05, 1);
-        primal_module_union_find_basic_standard_syndrome(code, visualize_filename, defect_vertices, 4);
+        let code = CodeCapacityTailoredCode::new(5, 0., 0.05);
+        primal_module_union_find_basic_standard_syndrome(
+            code,
+            visualize_filename,
+            defect_vertices,
+            Rational::from(11.777755916665761),
+        );
     }
 }
