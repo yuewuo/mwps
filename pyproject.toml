@@ -3,7 +3,7 @@ requires = ["maturin>=0.12,<0.13"]
 build-backend = "maturin"
 
 [project]
-name = "mwpf"
+name = "mwpf_rational"
 requires-python = ">=3.8"
 classifiers = [
     "Programming Language :: Rust",
@@ -32,10 +32,10 @@ classifiers = [
 no-default-features = true
 features = [
     "python_binding",
-    "f64_weight",
+    "rational_weight",
     "embed_visualizer",
     "qecp_integrate",
     "loose_sanity_check",
 ]
 bindings = "pyo3"
-cargo-extra-args = "--no-default-features --features python_binding,f64_weight,embed_visualizer,qecp_integrate,loose_sanity_check"
+cargo-extra-args = "--no-default-features --features python_binding,rational_weight,embed_visualizer,qecp_integrate,loose_sanity_check"

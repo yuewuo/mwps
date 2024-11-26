@@ -69,12 +69,6 @@ jobs: # Workflow credit to https://github.com/samuelcolvin/rtoml/blob/main/.gith
       - name: run Rust test
         run: cargo test --release
 
-      - name: build Python development package
-        run: maturin develop --release
-
-      - name: run Python test
-        run: pytest tests/python
-
       - name: apply patch to build different packages
         if: matrix.build-feature != 'default'
         run: python pyproject-${{ matrix.build-feature }}.py apply
@@ -114,6 +108,17 @@ jobs: # Workflow credit to https://github.com/samuelcolvin/rtoml/blob/main/.gith
 
       - name: twine check
         run: twine check wheelhouse/*
+      
+      - name: install wheel for testing (Ubuntu)
+        if: matrix.os == 'ubuntu'
+        run: python -m pip install -U wheelhouse/*.manylinux2014_x86_64.whl
+
+      - name: install wheel for testing (non Ubuntu)
+        if: matrix.os != 'ubuntu'
+        run: python -m pip install -U wheelhouse/*.whl
+
+      - name: run Python test
+        run: pytest tests/python
 
       - uses: actions/upload-artifact@v3
         with:

@@ -1,6 +1,4 @@
-import mwpf
-import os
-from test_floating_point_weight import circle_positions
+from common import *
 
 
 def test_corner_1():

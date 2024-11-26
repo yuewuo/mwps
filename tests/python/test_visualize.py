@@ -1,4 +1,4 @@
-import mwpf
+from common import *
 import subprocess
 import os
 import sys

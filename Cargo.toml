@@ -1,5 +1,5 @@
 [package]
-name = "mwpf"
+name = "mwpf_rational"
 version = "0.1.0"
 authors = ["Yue Wu <wuyue16pku@gmail.com>"]
 edition = "2021"
@@ -11,7 +11,7 @@ repository = "https://github.com/yuewuo/mwpf"
 keywords = ["QEC", "quantum-computing", "error-correction", "visualization"]
 categories = ["science"]
 exclude = ["tutorial/*", "benchmark/*", "visualize/data/persist/*", ".github/*"]
-default-run = "mwpf"
+default-run = "mwpf_rational"
 
 [package.metadata.maturin]
 python-source = "src/python"
@@ -21,12 +21,12 @@ python-source = "src/python"
 maintenance = { status = "actively-developed" }
 
 [lib]
-name = "mwpf"
+name = "mwpf_rational"
 path = "src/lib.rs"
 crate-type = ["lib", "cdylib"]
 
 [[bin]]
-name = "mwpf"
+name = "mwpf_rational"
 path = "src/main.rs"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html

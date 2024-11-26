@@ -1,18 +1,4 @@
-import mwpf
-import math, os
-
-
-def circle_positions(n: int):
-    positions = []
-    for i in range(n):
-        positions.append(
-            mwpf.VisualizePosition(
-                0.5 + 0.5 * math.cos(2 * math.pi * i / n),
-                0.5 + 0.5 * math.sin(2 * math.pi * i / n),
-                0,
-            )
-        )
-    return positions
+from common import *
 
 
 def test_fp_1():
