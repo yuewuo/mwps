@@ -12,7 +12,7 @@ use mwpf::primal_module::*;
 use mwpf::primal_module_serial::*;
 use mwpf::util::*;
 use mwpf::visualize::*;
-use num_traits::cast::FromPrimitive;
+use num_traits::cast::{FromPrimitive, Zero};
 use pbr::ProgressBar;
 use std::sync::Arc;
 use sugar::*;
@@ -206,7 +206,7 @@ fn challenge_demo() {
             let set_grow_rate =
                 |dual_module: &mut DualModulePQ, s_ptr: &mut Vec<DualNodePtr>, speeds: Vec<(usize, Rational)>| {
                     for ptr in s_ptr.iter() {
-                        dual_module.set_grow_rate(ptr, Rational::from_usize(0).unwrap());
+                        dual_module.set_grow_rate(ptr, Rational::zero());
                     }
                     for (index, speed) in speeds.into_iter() {
                         while index >= s_ptr.len() {
@@ -217,7 +217,7 @@ fn challenge_demo() {
                                 Arc::new(InvalidSubgraph::new_complete(vertices, edges, &decoding_graph))
                             };
                             let (_, ptr) = interface_ptr.find_or_create_node(&s, dual_module);
-                            dual_module.set_grow_rate(&ptr, Rational::from_usize(0).unwrap());
+                            dual_module.set_grow_rate(&ptr, Rational::zero());
                             s_ptr.push(ptr);
                         }
                         dual_module.set_grow_rate(&s_ptr[index], speed);

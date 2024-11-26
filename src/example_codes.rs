@@ -10,9 +10,12 @@
 
 use crate::derivative::Derivative;
 use crate::model_hypergraph::*;
+use crate::num_traits::{FromPrimitive, ToPrimitive, Zero};
 use crate::rand_xoshiro::rand_core::SeedableRng;
 use crate::serde_json;
 use crate::util::*;
+#[cfg(feature = "python_binding")]
+use crate::util_py::*;
 use crate::visualize::*;
 #[cfg(feature = "python_binding")]
 use pyo3::prelude::*;
@@ -46,7 +49,7 @@ impl CodeVertex {
 /// Edge flips the measurement result of two vertices
 #[derive(Derivative, Clone)]
 #[derivative(Debug)]
-#[cfg_attr(feature = "python_binding", pyclass(get_all, set_all))]
+#[cfg_attr(feature = "python_binding", pyclass)]
 pub struct CodeEdge {
     /// the two vertices incident to this edge; in quantum LDPC codes this should be only a handful of vertices
     pub vertices: Vec<VertexIndex>,
@@ -66,7 +69,7 @@ impl CodeEdge {
             vertices,
             p: 0.,
             pe: 0.,
-            weight: Rational::from(0.),
+            weight: Rational::zero(),
             is_erasure: false,
         }
     }
@@ -81,6 +84,46 @@ impl CodeEdge {
     }
     fn __repr__(&self) -> String {
         format!("{:?}", self)
+    }
+    #[getter]
+    fn get_vertices(&self) -> Vec<VertexIndex> {
+        self.vertices.clone()
+    }
+    #[setter]
+    fn set_vertices(&mut self, vertices: Vec<VertexIndex>) {
+        self.vertices = vertices;
+    }
+    #[getter]
+    fn get_p(&self) -> f64 {
+        self.p.clone()
+    }
+    #[setter]
+    fn set_p(&mut self, p: f64) {
+        self.p = p;
+    }
+    #[getter]
+    fn get_pe(&self) -> f64 {
+        self.pe.clone()
+    }
+    #[setter]
+    fn set_pe(&mut self, pe: f64) {
+        self.pe = pe;
+    }
+    #[getter]
+    fn get_weight(&self) -> PyRational {
+        self.weight.clone().into()
+    }
+    #[setter]
+    fn set_weight(&mut self, weight: &Bound<PyAny>) {
+        self.weight = PyRational::from(weight).0;
+    }
+    #[getter]
+    fn get_is_erasure(&self) -> bool {
+        self.is_erasure.clone()
+    }
+    #[setter]
+    fn set_is_erasure(&mut self, is_erasure: bool) {
+        self.is_erasure = is_erasure;
     }
 }
 
@@ -124,7 +167,7 @@ pub trait ExampleCode {
 
         for edge in edges.iter_mut() {
             let weight = weight_of_p(edge.p);
-            edge.weight = Rational::from(weight);
+            edge.weight = Rational::from_f64(weight).unwrap();
         }
     }
 
@@ -526,7 +569,9 @@ where
         let mut edges = Vec::<serde_json::Value>::new();
         for edge in self_edges.iter() {
             edges.push(json!({
-                if abbrev { "w" } else { "weight" }: edge.weight,
+                if abbrev { "w" } else { "weight" }: edge.weight.to_f64(),
+                "wn": numer_of(&edge.weight),
+                "wd": denom_of(&edge.weight),
                 if abbrev { "v" } else { "vertices" }: edge.vertices,
             }));
         }
@@ -1227,7 +1272,7 @@ impl QECPlaygroundCode {
                 // assert!(weight >= 0., "weight must be non-negative");
                 // assert!(weight <= config.max_weight as f64, "weight must be smaller than max weight");
                 let vertex_indices: Vec<_> = defect_vertices.0.iter().map(|x| model_hypergraph.vertex_indices[x]).collect();
-                weighted_edges.push(HyperEdge::new(vertex_indices, Rational::from(weight)));
+                weighted_edges.push(HyperEdge::new(vertex_indices, Rational::from_f64(weight).unwrap()));
             }
         }
         let vertex_num = model_hypergraph.vertex_positions.len();

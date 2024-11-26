@@ -362,7 +362,7 @@ pub trait DualModuleImpl {
     ///     and hyperedges will receive a lower affinity
     fn calculate_cluster_affinity(&mut self, _cluster: PrimalClusterPtr) -> Option<Affinity> {
         eprintln!("not implemented, skipping");
-        Some(Rational::from(100.0))
+        Some(Affinity::from(100.0))
     }
 
     /// In the tuning phase, given the optimizer result and the dual node deltas, return the Obstacles that are caused by the current dual node deltas

@@ -73,7 +73,7 @@ pbr = { version = "1.0.4", optional = true }
 rand_xoshiro = "0.6.0"
 derivative = "2.2.0"
 parking_lot = { version = "0.12.1", features = ["hardware-lock-elision"] }
-num-rational = "0.4.1"
+num-rational = { version = "0.4.1", features = ["serde"] }
 num-traits = "0.2.15"
 num-bigint = { version = "0.4.5", features = ["serde"] }
 more-asserts = "0.3.1"

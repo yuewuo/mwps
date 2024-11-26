@@ -2,9 +2,10 @@ use crate::mwpf_solver::*;
 #[cfg(not(feature = "float_lp"))]
 use crate::num_rational;
 use crate::num_traits::ToPrimitive;
-use crate::ordered_float::OrderedFloat;
 use crate::rand_xoshiro;
 use crate::rand_xoshiro::rand_core::RngCore;
+#[cfg(feature = "python_binding")]
+use crate::util_py::*;
 use crate::visualize::*;
 use num_traits::Zero;
 #[cfg(feature = "python_binding")]
@@ -17,8 +18,6 @@ use std::collections::BTreeSet;
 use std::fs::File;
 use std::io::prelude::*;
 use std::time::Instant;
-
-pub type Weight = Rational; // only used as input, all internal weight representation will use `Rational`
 
 cfg_if::cfg_if! {
     if #[cfg(feature="f64_weight")] {
@@ -41,6 +40,7 @@ cfg_if::cfg_if! {
     }
 }
 
+pub type Weight = Rational;
 pub type EdgeIndex = usize;
 pub type VertexIndex = usize;
 pub type KnownSafeRefCell<T> = std::cell::RefCell<T>;
@@ -52,7 +52,7 @@ pub type VertexNum = VertexIndex;
 pub type NodeNum = VertexIndex;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "python_binding", pyclass(get_all, set_all))]
+#[cfg_attr(feature = "python_binding", pyclass)]
 pub struct HyperEdge {
     /// the vertices incident to the hyperedge
     pub vertices: Vec<VertexIndex>,
@@ -70,12 +70,29 @@ impl HyperEdge {
 #[pymethods]
 impl HyperEdge {
     #[new]
-    fn py_new(vertices: &Bound<PyAny>, weight: Weight) -> PyResult<Self> {
+    fn py_new(vertices: &Bound<PyAny>, weight: &Bound<PyAny>) -> PyResult<Self> {
+        use crate::util_py::py_into_btree_set;
         let vertices: Vec<VertexIndex> = py_into_btree_set::<VertexIndex>(vertices)?.into_iter().collect();
-        Ok(Self::new(vertices, weight))
+        Ok(Self::new(vertices, PyRational::from(weight).0))
     }
     fn __repr__(&self) -> String {
         format!("{:?}", self)
+    }
+    #[getter]
+    fn get_vertices(&self) -> Vec<VertexIndex> {
+        self.vertices.clone()
+    }
+    #[setter]
+    fn set_vertices(&mut self, vertices: Vec<VertexIndex>) {
+        self.vertices = vertices;
+    }
+    #[getter]
+    fn get_weight(&self) -> PyRational {
+        self.weight.clone().into()
+    }
+    #[setter]
+    fn set_weight(&mut self, weight: &Bound<PyAny>) {
+        self.weight = PyRational::from(weight).0;
     }
 }
 
@@ -142,7 +159,7 @@ impl SolverInitializer {
 
     #[allow(clippy::unnecessary_cast)]
     pub fn get_subgraph_total_weight(&self, subgraph: &OutputSubgraph) -> Weight {
-        let mut weight = OrderedFloat::zero();
+        let mut weight = Weight::zero();
         for &edge_index in subgraph.iter() {
             weight += self.weighted_edges[edge_index as usize].weight.clone();
         }
@@ -220,6 +237,7 @@ impl SyndromePattern {
     #[new]
     #[pyo3(signature = (defect_vertices=None, erasures=None))]
     fn py_new(defect_vertices: Option<&Bound<PyAny>>, erasures: Option<&Bound<PyAny>>) -> PyResult<Self> {
+        use crate::util_py::py_into_btree_set;
         let defect_vertices: Vec<VertexIndex> = if let Some(defect_vertices) = defect_vertices {
             py_into_btree_set(defect_vertices)?.into_iter().collect()
         } else {
