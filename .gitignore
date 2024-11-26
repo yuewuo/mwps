@@ -30,9 +30,9 @@ mwpf.egg-info/
 /dist/
 
 # local files
-*.DS_Store
-.vscode
-.idea
+**/*.DS_Store
+**/.vscode
+**/.idea
 
 # rust bug reports
 rustc-ice*
@@ -51,3 +51,4 @@ rustc-ice*
 
 src/python/**/*.so
 vite.config.ts.timestamp-*.mjs
+tmp_*

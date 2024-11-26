@@ -223,6 +223,7 @@ pub trait MatrixEchelon: MatrixView {
 
 #[derive(Clone, Debug, Derivative)]
 #[derivative(Default(new = "true"))]
+#[cfg_attr(feature = "python_binding", pyclass(get_all, set_all))]
 pub struct EchelonInfo {
     /// whether it's a satisfiable matrix, only valid when `is_echelon_form` is true
     pub satisfiable: bool,
@@ -234,10 +235,33 @@ pub struct EchelonInfo {
     pub rows: Vec<RowInfo>,
 }
 
+#[cfg(feature = "python_binding")]
+#[pymethods]
+impl EchelonInfo {
+    fn __repr__(&self) -> String {
+        format!("{:?}", self)
+    }
+    fn __str__(&self) -> String {
+        self.__repr__()
+    }
+}
+
 #[derive(Clone, Copy, Derivative, PartialEq, Eq)]
 #[derivative(Default(new = "true"))]
+#[cfg_attr(feature = "python_binding", pyclass(get_all, set_all))]
 pub struct ColumnInfo {
     pub row: RowIndex,
+}
+
+#[cfg(feature = "python_binding")]
+#[pymethods]
+impl ColumnInfo {
+    fn __repr__(&self) -> String {
+        format!("{:?}", self)
+    }
+    fn __str__(&self) -> String {
+        self.__repr__()
+    }
 }
 
 impl ColumnInfo {
@@ -268,8 +292,20 @@ impl std::fmt::Debug for ColumnInfo {
 
 #[derive(Clone, Copy, Derivative, PartialEq, Eq)]
 #[derivative(Default(new = "true"))]
+#[cfg_attr(feature = "python_binding", pyclass(get_all, set_all))]
 pub struct RowInfo {
     pub column: ColumnIndex,
+}
+
+#[cfg(feature = "python_binding")]
+#[pymethods]
+impl RowInfo {
+    fn __repr__(&self) -> String {
+        format!("{:?}", self)
+    }
+    fn __str__(&self) -> String {
+        self.__repr__()
+    }
 }
 
 impl RowInfo {

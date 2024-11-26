@@ -387,7 +387,12 @@ function calculate_edge_branch_segmented(edge_index: number): EdgeBranchSegments
                 vertices.push(v_eid)
             }
         }
-        console.assert(vertices.length > 0, 'contributing dual variable must overlap with at least one end vertex')
+        if (vertices.length == 0) {
+            // this doesn't make sense, but we should not crash the program
+            for (let [v_eid, _v] of edge.v.entries()) {
+                vertices.push(v_eid)
+            }
+        }
         let center_grow = 0 // the amount of growth that must happen at the center because some edge branch is already tight
         let branch_growth = node.d / vertices.length
         // first, grow from end vertices, each with `branch_growth`

@@ -86,9 +86,14 @@ macro_rules! bind_trait_to_python {
             fn py_sum_dual_variables(&self) -> PyRational {
                 self.sum_dual_variables().clone().into()
             }
-            #[pyo3(name = "load_syndrome", signature = (syndrome_pattern, visualizer=None))]
-            pub fn py_load_syndrome(&mut self, syndrome_pattern: &SyndromePattern, visualizer: Option<&mut Visualizer>) {
-                self.0.load_syndrome(syndrome_pattern, visualizer)
+            #[pyo3(name = "load_syndrome", signature = (syndrome_pattern, visualizer=None, skip_initial_duals=false))]
+            pub fn py_load_syndrome(
+                &mut self,
+                syndrome_pattern: &SyndromePattern,
+                visualizer: Option<&mut Visualizer>,
+                skip_initial_duals: bool,
+            ) {
+                self.0.load_syndrome(syndrome_pattern, visualizer, skip_initial_duals)
             }
             #[pyo3(name = "get_node", signature = (node_index))]
             pub fn py_get_node(&mut self, node_index: NodeIndex) -> Option<PyDualNodePtr> {
@@ -110,6 +115,34 @@ macro_rules! bind_trait_to_python {
                 edges: Option<&Bound<PyAny>>,
             ) -> PyResult<PyDualNodePtr> {
                 let invalid_subgraph = Arc::new(self.py_construct_invalid_subgraph(vertices, edges)?);
+                let interface_ptr = self.0.interface_ptr.clone();
+                Ok(match self.0.dual_module.mode() {
+                    DualModuleMode::Search => interface_ptr.create_node(invalid_subgraph, &mut self.0.dual_module),
+                    DualModuleMode::Tune => interface_ptr.create_node_tune(invalid_subgraph, &mut self.0.dual_module),
+                }
+                .into())
+            }
+            /// create a node without providing any information about the invalid cluster itself, hence no safety checks
+            #[pyo3(name = "create_node_hair_unchecked", signature = (hair, vertices=None, edges=None))]
+            pub fn py_create_node_hair_unchecked(
+                &mut self,
+                hair: &Bound<PyAny>,
+                vertices: Option<&Bound<PyAny>>,
+                edges: Option<&Bound<PyAny>>,
+            ) -> PyResult<PyDualNodePtr> {
+                let hair = py_into_btree_set(hair)?;
+                assert!(!hair.is_empty(), "hair must not be empty");
+                let vertices = if let Some(vertices) = vertices {
+                    py_into_btree_set(vertices)?
+                } else {
+                    BTreeSet::new()
+                };
+                let edges = if let Some(edges) = edges {
+                    py_into_btree_set(edges)?
+                } else {
+                    BTreeSet::new()
+                };
+                let invalid_subgraph = Arc::new(InvalidSubgraph::new_raw(vertices, edges, hair));
                 let interface_ptr = self.0.interface_ptr.clone();
                 Ok(match self.0.dual_module.mode() {
                     DualModuleMode::Search => interface_ptr.create_node(invalid_subgraph, &mut self.0.dual_module),
@@ -150,6 +183,15 @@ macro_rules! bind_trait_to_python {
             #[pyo3(name = "set_grow_rate")]
             fn py_set_grow_rate(&mut self, dual_node_ptr: PyDualNodePtr, grow_rate: PyRational) {
                 self.0.dual_module.set_grow_rate(&dual_node_ptr.0, grow_rate.into())
+            }
+            #[pyo3(name = "stop_all")]
+            fn py_stop_all(&mut self) {
+                let mut node_index = 0;
+                use crate::num_traits::Zero;
+                while let Some(node_ptr) = self.0.interface_ptr.get_node(node_index) {
+                    self.0.dual_module.set_grow_rate(&node_ptr, Rational::zero());
+                    node_index += 1;
+                }
             }
         }
         impl $struct_name {
@@ -227,12 +269,22 @@ impl SolverSerialPlugins {
 
 impl SolverSerialPlugins {
     // APIs for step-by-step solving in Python
-    pub fn load_syndrome(&mut self, syndrome_pattern: &SyndromePattern, visualizer: Option<&mut Visualizer>) {
-        self.primal_module.solve_step_load_syndrome(
-            &self.interface_ptr,
-            Arc::new(syndrome_pattern.clone()),
-            &mut self.dual_module,
-        );
+    pub fn load_syndrome(
+        &mut self,
+        syndrome_pattern: &SyndromePattern,
+        visualizer: Option<&mut Visualizer>,
+        skip_initial_duals: bool,
+    ) {
+        if !skip_initial_duals {
+            self.interface_ptr
+                .load(Arc::new(syndrome_pattern.clone()), &mut self.dual_module);
+            self.primal_module.load(&self.interface_ptr, &mut self.dual_module);
+        } else {
+            self.interface_ptr
+                .write()
+                .decoding_graph
+                .set_syndrome(Arc::new(syndrome_pattern.clone()));
+        }
         if let Some(visualizer) = visualizer {
             visualizer
                 .snapshot_combined(
