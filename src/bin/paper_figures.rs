@@ -7,7 +7,7 @@ use mwpf::invalid_subgraph::*;
 use mwpf::model_hypergraph::*;
 use mwpf::util::*;
 use mwpf::visualize::*;
-use num_traits::cast::FromPrimitive;
+use num_traits::FromPrimitive;
 use std::collections::BTreeSet;
 use std::sync::Arc;
 use sugar::*;

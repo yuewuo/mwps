@@ -12,7 +12,7 @@ use mwpf::primal_module::*;
 use mwpf::primal_module_serial::*;
 use mwpf::util::*;
 use mwpf::visualize::*;
-use num_traits::cast::{FromPrimitive, Zero};
+use num_traits::{FromPrimitive, Zero};
 use pbr::ProgressBar;
 use std::sync::Arc;
 use sugar::*;
