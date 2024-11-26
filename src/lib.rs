@@ -65,7 +65,7 @@ pub fn run_cli(parameters: Vec<String>) {
 
 #[cfg(feature = "python_binding")]
 #[pymodule]
-fn mwpf_rational(m: &Bound<'_, PyModule>) -> PyResult<()> {
+fn mwpf(m: &Bound<'_, PyModule>) -> PyResult<()> {
     util::register(m)?;
     visualize::register(m)?;
     example_codes::register(m)?;
