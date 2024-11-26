@@ -52,7 +52,7 @@ export interface Edge {
     // vertices
     v: number[]
     // grown (g = gn/gd)
-    g: number
+    g?: number
     gn: bigint | number
     gd: bigint | number
     // un-grown (u = un/ud = w_e - g)

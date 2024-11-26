@@ -73,7 +73,7 @@ const edge_states = computed(() => {
             const segments_end = edge_branch_segmented_data.contributor_end[j]
             // calculate the segments of this edge branch
             let accumulated_ratio = 0
-            const branch_weight = edge.w / edge.v.length
+            const branch_weight = Math.abs(edge.w) / edge.v.length
             interface Segment {
                 ni: number | null
                 accumulated_ratio: number
@@ -376,7 +376,7 @@ function calculate_edge_branch_segmented(edge_index: number): EdgeBranchSegments
         return { grown_end, grown_center, contributor_end, contributor_center }
     }
     // iterate over all dual variables and put them on the edge branches
-    let branch_weight = edge.w / edge.v.length
+    let branch_weight = Math.abs(edge.w) / edge.v.length
     for (let ni of dual_indices) {
         const node = snapshot.dual_nodes[ni]
         // calculate the contributing vertices of this dual variable: $e \cap V_S$
