@@ -129,3 +129,17 @@ export function display_nominator (dn: bigint | number): string {
         return value.replace(/(\.0*|0+)$/, '')
     }
 }
+
+export function tweakpane_find_value (obj: any, name: string): any {
+    for (const key in obj) {
+        if (obj['key'] === name) {
+            return obj['value']
+        } else if (typeof obj[key] === 'object') {
+            const result = tweakpane_find_value(obj[key], name)
+            if (result !== undefined) {
+                return result
+            }
+        }
+    }
+    return
+}

@@ -2,7 +2,7 @@ import { computed } from 'vue'
 import { Pane, FolderApi } from 'tweakpane'
 import * as EssentialsPlugin from '@tweakpane/plugin-essentials'
 import { type ButtonGridApi } from '@tweakpane/plugin-essentials'
-import { assert, bigInt } from '@/util'
+import { assert, bigInt, tweakpane_find_value } from '@/util'
 import * as HTMLExport from './html_export'
 import { Vector3, OrthographicCamera, WebGLRenderer, Vector2 } from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
@@ -36,6 +36,7 @@ export class Config {
     camera: CameraConfig = new CameraConfig()
     vertex: VertexConfig = new VertexConfig()
     edge: EdgeConfig = new EdgeConfig()
+    note_folder?: FolderApi
     // @ts-expect-error we will not use pane before it's initialized, ignore for simplicity
     pane: Pane
 
@@ -55,7 +56,12 @@ export class Config {
     import_visualizer_parameters () {
         const parameters = this.parameters
         this.pane.importState(JSON.parse(this.parameters))
+        // bug fix: tweakpane does not import textarea data correctly
+        this.user_note = tweakpane_find_value(JSON.parse(this.parameters), 'user_note')
         this.parameters = parameters
+        if (this.user_note != '') {
+            this.note_folder!.expanded = true
+        }
         this.pane.refresh()
     }
 
@@ -77,10 +83,10 @@ export class Config {
         // add everything else
         this.camera.add_to(pane.addFolder({ title: 'Camera', expanded: false }))
         this.snapshot_config.add_to(pane.addFolder({ title: 'Snapshot', expanded: true }), snapshot_names)
-        const note_folder = pane.addFolder({ title: 'Note', expanded: false })
-        const user_note = note_folder.addBinding(this, 'user_note', {
+        this.note_folder = pane.addFolder({ title: 'Note', expanded: false })
+        const user_note = this.note_folder.addBinding(this, 'user_note', {
             view: 'textarea',
-            rows: 5,
+            rows: 10,
             placeholder: 'Type here...',
             label: undefined,
         })

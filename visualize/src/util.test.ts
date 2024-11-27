@@ -1,4 +1,4 @@
-import { parse_rust_bigint, display_nominator } from './util'
+import { parse_rust_bigint, display_nominator, tweakpane_find_value } from './util'
 import { describe, expect, test } from 'vitest'
 
 describe('testing parsing bigint from Rust output', () => {
@@ -77,5 +77,115 @@ describe('testing display_nominator for both bigint and number', () => {
     test('display -inf', () => {
         // eslint-disable-next-line
         expect(display_nominator(-1e10000)).toBe('-Infinity')
+    })
+})
+
+describe('tweakpane find value', () => {
+    // npx vitest --testNamePattern 'tweakpane find value'
+    test('tweakpane find value', () => {
+        const data = {
+            disabled: false,
+            hidden: false,
+            children: [
+                {
+                    disabled: false,
+                    hidden: false,
+                    children: [
+                        {
+                            disabled: false,
+                            hidden: false,
+                        },
+                        {
+                            disabled: false,
+                            hidden: false,
+                            label: 'zoom',
+                            max: 1000,
+                            min: 0.001,
+                            binding: {
+                                key: 'zoom',
+                                value: 0.1998,
+                            },
+                        },
+                        {
+                            disabled: false,
+                            hidden: false,
+                            label: 'position',
+                            binding: {
+                                key: 'position',
+                                value: {
+                                    x: 0,
+                                    y: 1000,
+                                    z: 0,
+                                },
+                            },
+                        },
+                    ],
+                    expanded: false,
+                    title: 'Camera',
+                },
+                {
+                    disabled: false,
+                    hidden: false,
+                    children: [
+                        {
+                            disabled: false,
+                            hidden: false,
+                            label: 'index',
+                            max: 2,
+                            min: 0,
+                            binding: {
+                                key: 'index',
+                                value: 2,
+                            },
+                        },
+                        {
+                            disabled: false,
+                            hidden: false,
+                            label: 'name',
+                            options: [
+                                {
+                                    text: '[0] syndrome',
+                                    value: 0,
+                                },
+                                {
+                                    text: '[1] grow 1',
+                                    value: 1,
+                                },
+                                {
+                                    text: '[2] shrink 1 + grow 1',
+                                    value: 2,
+                                },
+                            ],
+                            binding: {
+                                key: 'name',
+                                value: 2,
+                            },
+                        },
+                    ],
+                    expanded: true,
+                    title: 'Snapshot',
+                },
+                {
+                    disabled: false,
+                    hidden: false,
+                    children: [
+                        {
+                            disabled: false,
+                            hidden: false,
+                            label: null,
+                            binding: {
+                                key: 'user_note',
+                                value: '1234',
+                            },
+                        },
+                    ],
+                    expanded: true,
+                    title: 'Note',
+                },
+            ],
+            expanded: true,
+            title: 'MWPF Visualizer (3/3)',
+        }
+        expect(tweakpane_find_value(data, 'user_note')).toBe('1234')
     })
 })
