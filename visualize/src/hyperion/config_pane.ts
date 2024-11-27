@@ -11,9 +11,7 @@ import { Prism } from 'prism-esm'
 import { loader as JsonLoader } from 'prism-esm/components/prism-json.js'
 import prismCSS from 'prism-esm/themes/prism.min.css?raw'
 import * as TextareaPlugin from '@pangenerator/tweakpane-textarea-plugin'
-import * as jQuery from 'jquery'
-
-const jq = jQuery.noConflict()
+import { default as Sizzle } from 'sizzle'
 
 interface KeyShortcutDescription {
     key: string
@@ -86,14 +84,10 @@ export class Config {
             placeholder: 'Type here...',
             label: undefined,
         })
-        jq(user_note.element)
-            .find('textarea')
-            .on('focusin', () => {
-                this.user_is_typing = true
-            })
-            .on('focusout', () => {
-                this.user_is_typing = false
-            })
+        Sizzle('textarea', user_note.element).forEach((element: Element) => {
+            element.addEventListener('focusin', () => (this.user_is_typing = true))
+            element.addEventListener('focusout', () => (this.user_is_typing = false))
+        })
         this.basic.add_to(pane.addFolder({ title: 'Basic', expanded: false }))
         this.vertex.add_to(pane.addFolder({ title: 'Vertex', expanded: false }))
         this.edge.add_to(pane.addFolder({ title: 'Edge', expanded: false }))
@@ -136,14 +130,10 @@ export class Config {
             }
         })
         const parameters = pane.addBinding(this, 'parameters')
-        jq(parameters.element)
-            .find('input')
-            .on('focusin', () => {
-                this.user_is_typing = true
-            })
-            .on('focusout', () => {
-                this.user_is_typing = false
-            })
+        Sizzle('input', parameters.element).forEach((element: Element) => {
+            element.addEventListener('focusin', () => (this.user_is_typing = true))
+            element.addEventListener('focusout', () => (this.user_is_typing = false))
+        })
         // add figure export
         pane.addBinding(this, 'png_scale', { min: 0.2, max: 4 })
         const png_buttons: ButtonGridApi = pane.addBlade({
@@ -198,14 +188,10 @@ export class Config {
             label: 'use alternative visualizer data (paste here)',
             placeholder: 'Type here...',
         })
-        jq(html_use_visualizer_data.element)
-            .find('textarea')
-            .on('focusin', () => {
-                this.user_is_typing = true
-            })
-            .on('focusout', () => {
-                this.user_is_typing = false
-            })
+        Sizzle('textarea', html_use_visualizer_data.element).forEach((element: Element) => {
+            element.addEventListener('focusin', () => (this.user_is_typing = true))
+            element.addEventListener('focusout', () => (this.user_is_typing = false))
+        })
         if (HTMLExport.available) {
             html_buttons.on('click', (event: any) => {
                 if (event.index[0] == 0) {
