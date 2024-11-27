@@ -11,6 +11,9 @@ import { Prism } from 'prism-esm'
 import { loader as JsonLoader } from 'prism-esm/components/prism-json.js'
 import prismCSS from 'prism-esm/themes/prism.min.css?raw'
 import * as TextareaPlugin from '@pangenerator/tweakpane-textarea-plugin'
+import * as jQuery from 'jquery'
+
+const jq = jQuery.noConflict()
 
 interface KeyShortcutDescription {
     key: string
@@ -26,10 +29,12 @@ export const key_shortcuts: Array<KeyShortcutDescription> = [
 
 /* configuration helper class given the runtime data */
 export class Config {
+    user_is_typing: boolean = false
     data: RuntimeData
     config_prop: ConfigProps
     basic: BasicConfig
     snapshot_config: SnapshotConfig = new SnapshotConfig()
+    user_note: string = ''
     camera: CameraConfig = new CameraConfig()
     vertex: VertexConfig = new VertexConfig()
     edge: EdgeConfig = new EdgeConfig()
@@ -72,8 +77,23 @@ export class Config {
             snapshot_names.push(name as string)
         }
         // add everything else
-        this.snapshot_config.add_to(pane.addFolder({ title: 'Snapshot', expanded: true }), snapshot_names)
         this.camera.add_to(pane.addFolder({ title: 'Camera', expanded: false }))
+        this.snapshot_config.add_to(pane.addFolder({ title: 'Snapshot', expanded: true }), snapshot_names)
+        const note_folder = pane.addFolder({ title: 'Note', expanded: false })
+        const user_note = note_folder.addBinding(this, 'user_note', {
+            view: 'textarea',
+            rows: 5,
+            placeholder: 'Type here...',
+            label: undefined,
+        })
+        jq(user_note.element)
+            .find('textarea')
+            .on('focusin', () => {
+                this.user_is_typing = true
+            })
+            .on('focusout', () => {
+                this.user_is_typing = false
+            })
         this.basic.add_to(pane.addFolder({ title: 'Basic', expanded: false }))
         this.vertex.add_to(pane.addFolder({ title: 'Vertex', expanded: false }))
         this.edge.add_to(pane.addFolder({ title: 'Edge', expanded: false }))
@@ -115,7 +135,15 @@ export class Config {
                 this.import_visualizer_parameters()
             }
         })
-        pane.addBinding(this, 'parameters')
+        const parameters = pane.addBinding(this, 'parameters')
+        jq(parameters.element)
+            .find('input')
+            .on('focusin', () => {
+                this.user_is_typing = true
+            })
+            .on('focusout', () => {
+                this.user_is_typing = false
+            })
         // add figure export
         pane.addBinding(this, 'png_scale', { min: 0.2, max: 4 })
         const png_buttons: ButtonGridApi = pane.addBlade({
@@ -164,12 +192,20 @@ export class Config {
         html_export_folder.addBinding(this, 'html_compress_data', { label: 'compress data' })
         html_export_folder.addBinding(this, 'html_show_info', { label: 'show info' })
         html_export_folder.addBinding(this, 'html_show_config', { label: 'show config' })
-        html_export_folder.addBinding(this, 'html_use_visualizer_data', {
+        const html_use_visualizer_data = html_export_folder.addBinding(this, 'html_use_visualizer_data', {
             view: 'textarea',
             rows: 3,
             label: 'use alternative visualizer data (paste here)',
             placeholder: 'Type here...',
         })
+        jq(html_use_visualizer_data.element)
+            .find('textarea')
+            .on('focusin', () => {
+                this.user_is_typing = true
+            })
+            .on('focusout', () => {
+                this.user_is_typing = false
+            })
         if (HTMLExport.available) {
             html_buttons.on('click', (event: any) => {
                 if (event.index[0] == 0) {

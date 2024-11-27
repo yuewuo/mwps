@@ -144,7 +144,7 @@ onBeforeUnmount(() => {
 })
 
 function onKeyDown(event: KeyboardEvent) {
-    if (!event.metaKey) {
+    if (!event.metaKey && !config.value.user_is_typing) {
         if (event.key == 't' || event.key == 'T') {
             config.value.camera.set_position('Top')
         } else if (event.key == 'l' || event.key == 'L') {
