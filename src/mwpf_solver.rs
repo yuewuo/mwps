@@ -324,6 +324,7 @@ impl SolverSerialPlugins {
                 for &edge_index in self.model_graph.get_vertex_neighbors(vertex_index).iter() {
                     if self.dual_module.is_edge_tight(edge_index) {
                         cluster.add_edge(edge_index);
+                        cluster.parity_matrix.add_tight_variable(edge_index);
                         for &next_vertex_index in self.model_graph.get_edge_neighbors(edge_index).iter() {
                             if !cluster.vertices.contains(&next_vertex_index) {
                                 next_vertices.insert(next_vertex_index);

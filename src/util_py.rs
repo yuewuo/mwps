@@ -647,8 +647,22 @@ impl PyBasicMatrix {
 #[pymethods]
 impl PyBasicMatrix {
     #[new]
-    fn new() -> Self {
-        Self(BasicMatrix::new())
+    #[pyo3(signature = (matrix=None))]
+    fn new(matrix: Option<&Bound<PyAny>>) -> PyResult<Self> {
+        if let Some(matrix) = matrix {
+            if let Ok(matrix) = matrix.extract::<PyTightMatrix>() {
+                return Ok(matrix.get_base());
+            }
+            if let Ok(matrix) = matrix.extract::<PyTailMatrix>() {
+                return Ok(matrix.get_base().get_base());
+            }
+            if let Ok(matrix) = matrix.extract::<PyEchelonMatrix>() {
+                return Ok(matrix.get_base().get_base().get_base());
+            }
+            panic!("unknown input type: {}", matrix.get_type().name()?);
+        } else {
+            Ok(Self(BasicMatrix::new()))
+        }
     }
     // MatrixBasic trait functions
     fn xor_row(&mut self, target: RowIndex, source: RowIndex) {
