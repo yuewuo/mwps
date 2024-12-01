@@ -4,9 +4,11 @@
 //! Note that you can call different primal and dual modules, even interchangeably, by following the examples in this file
 //!
 
+use crate::cluster::*;
 use crate::dual_module::*;
 use crate::dual_module_pq::*;
 use crate::example_codes::*;
+use crate::matrix::*;
 use crate::model_hypergraph::*;
 use crate::plugin::*;
 use crate::plugin_single_hair::*;
@@ -18,6 +20,7 @@ use crate::visualize::*;
 use core::panic;
 use hashbrown::HashSet;
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeSet;
 use std::fs::File;
 use std::io::prelude::*;
 use std::io::BufWriter;
@@ -28,7 +31,6 @@ cfg_if::cfg_if! {
         use crate::invalid_subgraph::*;
         use crate::util_py::*;
         use pyo3::prelude::*;
-        use std::collections::BTreeSet;
     }
 }
 
@@ -195,6 +197,10 @@ macro_rules! bind_trait_to_python {
                     node_index += 1;
                 }
             }
+            #[pyo3(name = "get_cluster")]
+            fn py_get_cluster(&self, vertex_index: VertexIndex) -> PyCluster {
+                self.get_cluster(vertex_index).into()
+            }
         }
         impl $struct_name {
             pub fn py_construct_invalid_subgraph(
@@ -216,6 +222,16 @@ macro_rules! bind_trait_to_python {
                 } else {
                     InvalidSubgraph::new(edges, &interface.decoding_graph)
                 })
+            }
+        }
+    };
+}
+
+macro_rules! inherit_solver_plugin_methods {
+    ($struct_name:ident) => {
+        impl $struct_name {
+            pub fn get_cluster(&self, vertex_index: VertexIndex) -> Cluster {
+                self.0.get_cluster(vertex_index)
             }
         }
     };
@@ -267,10 +283,8 @@ impl SolverSerialPlugins {
             model_graph,
         }
     }
-}
 
-impl SolverSerialPlugins {
-    // APIs for step-by-step solving in Python
+    /// APIs for step-by-step solving in Python
     pub fn load_syndrome(
         &mut self,
         syndrome_pattern: &SyndromePattern,
@@ -295,6 +309,47 @@ impl SolverSerialPlugins {
                 )
                 .unwrap();
         }
+    }
+
+    /// get the cluster information of a vertex
+    pub fn get_cluster(&self, vertex_index: VertexIndex) -> Cluster {
+        let mut cluster = Cluster::new();
+        // visit the graph via tight edges
+        let mut current_vertices = BTreeSet::new();
+        current_vertices.insert(vertex_index);
+        while !current_vertices.is_empty() {
+            let mut next_vertices = BTreeSet::new();
+            for &vertex_index in current_vertices.iter() {
+                cluster.add_vertex(vertex_index);
+                for &edge_index in self.model_graph.get_vertex_neighbors(vertex_index).iter() {
+                    if self.dual_module.is_edge_tight(edge_index) {
+                        cluster.add_edge(edge_index);
+                        for &next_vertex_index in self.model_graph.get_edge_neighbors(edge_index).iter() {
+                            if !cluster.vertices.contains(&next_vertex_index) {
+                                next_vertices.insert(next_vertex_index);
+                            }
+                        }
+                    } else {
+                        cluster.add_hair(edge_index);
+                    }
+                }
+            }
+            current_vertices = next_vertices;
+        }
+        // add dual variables
+        for &edge_index in cluster.edges.iter() {
+            for node_ptr in self.dual_module.get_edge_nodes(edge_index).iter() {
+                cluster.nodes.insert(node_ptr.clone().into());
+            }
+        }
+        // construct the parity matrix
+        let interface = self.interface_ptr.read();
+        for &vertex_index in cluster.vertices.iter() {
+            let incident_edges = self.model_graph.get_vertex_neighbors(vertex_index);
+            let parity = interface.decoding_graph.is_vertex_defect(vertex_index);
+            cluster.parity_matrix.add_constraint(vertex_index, incident_edges, parity);
+        }
+        cluster
     }
 }
 
@@ -445,6 +500,7 @@ bind_solver_trait!(SolverSerialUnionFind);
 
 #[cfg(feature = "python_binding")]
 bind_trait_to_python!(SolverSerialUnionFind);
+inherit_solver_plugin_methods!(SolverSerialUnionFind);
 
 #[cfg_attr(feature = "python_binding", pyclass)]
 pub struct SolverSerialSingleHair(SolverSerialPlugins);
@@ -477,6 +533,7 @@ bind_solver_trait!(SolverSerialSingleHair);
 
 #[cfg(feature = "python_binding")]
 bind_trait_to_python!(SolverSerialSingleHair);
+inherit_solver_plugin_methods!(SolverSerialSingleHair);
 
 #[cfg_attr(feature = "python_binding", pyclass)]
 pub struct SolverSerialJointSingleHair(SolverSerialPlugins);
@@ -512,6 +569,7 @@ bind_solver_trait!(SolverSerialJointSingleHair);
 
 #[cfg(feature = "python_binding")]
 bind_trait_to_python!(SolverSerialJointSingleHair);
+inherit_solver_plugin_methods!(SolverSerialJointSingleHair);
 
 #[cfg_attr(feature = "python_binding", pyclass)]
 pub struct SolverErrorPatternLogger {

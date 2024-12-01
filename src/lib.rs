@@ -25,6 +25,7 @@ extern crate urlencoding;
 extern crate wasm_bindgen;
 
 pub mod cli;
+pub mod cluster;
 pub mod decoding_hypergraph;
 pub mod dual_module;
 pub mod dual_module_pq;

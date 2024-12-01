@@ -5,7 +5,7 @@ use crate::util::*;
 use derivative::Derivative;
 use std::collections::{BTreeMap, BTreeSet};
 
-#[derive(Clone, Derivative)]
+#[derive(Clone, Derivative, PartialEq, Eq)]
 #[derivative(Default(new = "true"))]
 pub struct BasicMatrix {
     /// the vertices already maintained by this parity check

@@ -197,6 +197,12 @@ impl OrderedDualNodePtr {
         Self { index, ptr }
     }
 }
+impl From<DualNodePtr> for OrderedDualNodePtr {
+    fn from(ptr: DualNodePtr) -> Self {
+        let index = ptr.read_recursive().index;
+        Self { index, ptr }
+    }
+}
 impl PartialOrd for OrderedDualNodePtr {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.index.cmp(&other.index))

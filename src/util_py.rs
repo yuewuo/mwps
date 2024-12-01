@@ -1,3 +1,4 @@
+use crate::cluster::*;
 use crate::dual_module::*;
 use crate::html_export::*;
 use crate::matrix::*;
@@ -134,7 +135,7 @@ impl std::fmt::Debug for PyRational {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq)]
 #[repr(transparent)]
 #[pyclass(name = "DualNodePtr")]
 pub struct PyDualNodePtr(pub DualNodePtr);
@@ -153,6 +154,17 @@ impl PyDualNodePtr {
     }
     fn __hash__(&self) -> u64 {
         self.index() as u64
+    }
+}
+
+impl PartialOrd for PyDualNodePtr {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.index().cmp(&other.index()))
+    }
+}
+impl Ord for PyDualNodePtr {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.index().cmp(&other.index())
     }
 }
 
@@ -684,6 +696,77 @@ impl PyWeightRange {
     }
 }
 
+#[derive(Clone)]
+#[repr(transparent)]
+#[pyclass(name = "Cluster")]
+pub struct PyCluster(pub Cluster);
+bind_trait_simple_wrapper!(Cluster, PyCluster);
+
+impl std::fmt::Debug for PyCluster {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{}", self.__str__())
+    }
+}
+
+#[pymethods]
+impl PyCluster {
+    fn __repr__(&self) -> String {
+        format!("{:?}", self.0)
+    }
+    fn __str__(&self) -> String {
+        self.__repr__()
+    }
+}
+
+#[pymethods]
+impl PyCluster {
+    #[getter]
+    fn get_vertices(&self) -> BTreeSet<VertexIndex> {
+        self.0.vertices.clone()
+    }
+    #[setter]
+    fn set_vertices(&mut self, vertices: &Bound<PyAny>) -> PyResult<()> {
+        self.0.vertices = py_into_btree_set(vertices)?;
+        Ok(())
+    }
+    #[getter]
+    fn get_edges(&self) -> BTreeSet<EdgeIndex> {
+        self.0.edges.clone()
+    }
+    #[setter]
+    fn set_edges(&mut self, edges: &Bound<PyAny>) -> PyResult<()> {
+        self.0.edges = py_into_btree_set(edges)?;
+        Ok(())
+    }
+    #[getter]
+    fn get_hair(&self) -> BTreeSet<EdgeIndex> {
+        self.0.hair.clone()
+    }
+    #[setter]
+    fn set_hair(&mut self, hair: &Bound<PyAny>) -> PyResult<()> {
+        self.0.hair = py_into_btree_set(hair)?;
+        Ok(())
+    }
+    #[getter]
+    fn get_nodes(&self) -> BTreeSet<PyDualNodePtr> {
+        self.0.nodes.iter().map(|x| x.ptr.clone().into()).collect()
+    }
+    #[setter]
+    fn set_nodes(&mut self, nodes: &Bound<PyAny>) -> PyResult<()> {
+        let nodes: BTreeSet<PyDualNodePtr> = py_into_btree_set(nodes)?;
+        self.0.nodes = nodes.into_iter().map(|x| x.0.into()).collect();
+        Ok(())
+    }
+    #[getter]
+    fn get_parity_matrix(&self) -> PyTightMatrix {
+        self.0.parity_matrix.clone().into()
+    }
+    #[setter]
+    fn set_parity_matrix(&mut self, parity_matrix: PyTightMatrix) {
+        self.0.parity_matrix = parity_matrix.0.clone();
+    }
+}
+
 #[pyfunction]
 pub(crate) fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyRational>()?;
@@ -700,5 +783,6 @@ pub(crate) fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<ColumnInfo>()?;
     m.add_class::<RowInfo>()?;
     m.add_class::<PyWeightRange>()?;
+    m.add_class::<PyCluster>()?;
     Ok(())
 }
