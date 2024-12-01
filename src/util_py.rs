@@ -86,7 +86,8 @@ impl PyRational {
     fn float(&self) -> f64 {
         self.0.to_f64().unwrap()
     }
-    fn __richcmp__(&self, other: &Self, op: CompareOp) -> bool {
+    fn __richcmp__(&self, other: &Bound<PyAny>, op: CompareOp) -> bool {
+        let other = PyRational::from(other);
         op.matches(self.0.cmp(&other.0))
     }
     fn __abs__(&self) -> Self {
