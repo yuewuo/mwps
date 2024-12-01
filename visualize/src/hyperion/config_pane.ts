@@ -108,7 +108,11 @@ export class Config {
             this.import_visualizer_parameters()
         }
         // by default showing the most recent snapshot; user can move back if they want
-        this.snapshot_index = Math.max(this.data.visualizer.snapshots.length - 1, 0)
+        if (this.config_prop.snapshot_index != undefined) {
+            this.snapshot_index = this.config_prop.snapshot_index
+        } else {
+            this.snapshot_index = Math.max(this.data.visualizer.snapshots.length - 1, 0)
+        }
     }
 
     parameters: string = '' // export or import parameters of the tweak pane

@@ -1,7 +1,7 @@
 use crate::mwpf_solver::*;
 #[cfg(not(feature = "float_lp"))]
 use crate::num_rational;
-use crate::num_traits::{FromPrimitive, One, ToPrimitive};
+use crate::num_traits::{FromPrimitive, ToPrimitive};
 use crate::rand_xoshiro;
 use crate::rand_xoshiro::rand_core::RngCore;
 #[cfg(feature = "python_binding")]
@@ -138,12 +138,14 @@ impl SolverInitializer {
     #[pyo3(name = "normalize_weights", signature = (avr_weight=None))]
     fn py_normalize_weights<'a>(mut slf: PyRefMut<'a, Self>, avr_weight: Option<&Bound<PyAny>>) -> PyRefMut<'a, Self> {
         let value: &mut Self = &mut *slf;
+        use crate::num_traits::One;
         value.normalize_weights(avr_weight.map(|x| PyRational::from(x).0).unwrap_or_else(|| Rational::one()));
         slf
     }
     #[pyo3(name = "uniform_weights", signature = (weight=None))]
     fn py_uniform_weights<'a>(mut slf: PyRefMut<'a, Self>, weight: Option<&Bound<PyAny>>) -> PyRefMut<'a, Self> {
         let value: &mut Self = &mut *slf;
+        use crate::num_traits::One;
         value.uniform_weights(weight.map(|x| PyRational::from(x).0).unwrap_or_else(|| Rational::one()));
         slf
     }
@@ -1022,6 +1024,7 @@ pub mod tests {
     fn test_initializer_normalize_weight() {
         // cargo test test_initializer_normalize_weight -- --nocapture
         use crate::example_codes::CodeCapacityRepetitionCode;
+        use crate::num_traits::One;
         let code = CodeCapacityRepetitionCode::new(7, 0.2);
         let mut initializer = code.get_initializer();
         initializer.normalize_weights(Rational::one());

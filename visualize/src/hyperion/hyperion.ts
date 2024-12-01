@@ -158,6 +158,7 @@ export class ConfigProps {
     segments: number = 32
     visualizer_config: any = undefined
     initial_aspect_ratio?: number = undefined
+    snapshot_index?: number = undefined
 }
 
 /*
