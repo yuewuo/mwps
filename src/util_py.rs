@@ -302,6 +302,12 @@ impl PySubgraphIter {
     }
 }
 
+impl From<PySubgraph> for OutputSubgraph {
+    fn from(value: PySubgraph) -> OutputSubgraph {
+        value.0.into()
+    }
+}
+
 #[pymethods]
 impl PySubgraph {
     #[new]

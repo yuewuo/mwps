@@ -42,3 +42,11 @@ def test_compare_hyperion_fusion() -> None:
     fusion.solve(fb.SyndromePattern(syndrome))
     fusion_subgraph = fusion.subgraph()
     print(fusion_subgraph)
+
+
+def test_initializer_uniform_weight():
+    code = mwpf.CodeCapacityColorCode(d=5, p=0.01)
+    initializer = code.get_initializer()
+    initializer.uniform_weights(weight=1)
+    for edge in initializer.weighted_edges:
+        assert edge.weight.float() == 1
