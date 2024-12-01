@@ -44,6 +44,22 @@ chmod +x /usr/local/bin/start-jupyter.sh
 sudo docker exec -d mwpf-jupyter-server /bin/bash -c /usr/local/bin/start-jupyter.sh
 ```
 
+## deploy latest package on the server
+
+Enter the docker machine (`sudo docker exec -it mwpf-jupyter-server bash`) and
+create a file `/usr/local/bin/compile-mwpf.sh` with the following content:
+
+```sh
+#!/bin/bash
+source /root/.bashrc
+
+cd /home/mwpf-jupyter/mwpf
+git pull
+maturin develop --release
+```
+
+Then we can run `sudo docker exec -it mwpf-jupyter-server compile-mwpf.sh` on the outer world.
+
 # To save Github build resources
 
 The most expensive build action is for macOS:

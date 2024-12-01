@@ -479,9 +479,13 @@ impl Visualizer {
 #[pymethods]
 impl Visualizer {
     #[new]
-    #[pyo3(signature = (filepath="".to_string(), positions=vec![], center=true))]
-    fn py_new(filepath: Option<String>, positions: Vec<VisualizePosition>, center: bool) -> std::io::Result<Self> {
-        Self::new(filepath, positions, center)
+    #[pyo3(signature = (*, filepath="".to_string(), positions=None, center=true))]
+    fn py_new(filepath: Option<String>, positions: Option<Vec<VisualizePosition>>, center: bool) -> std::io::Result<Self> {
+        Self::new(
+            filepath,
+            positions.expect("vertex positions must be provided, e.g. `positions=[...]`"),
+            center,
+        )
     }
     fn __repr__(&self) -> String {
         format!("{:?}", self)
