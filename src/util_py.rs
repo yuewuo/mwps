@@ -500,11 +500,13 @@ impl PyEchelonMatrix {
             .get_tail_edges()
             .into_iter()
             .map(|edge_index| self.edge_to_column_index(edge_index))
+            .filter(|x| x.is_some())
+            .map(|x| x.unwrap())
             .min();
         let matrix_json_obj = matrix_json.as_object_mut().unwrap();
         matrix_json_obj.insert("tail_start_index".to_string(), tail_start_index.into());
         let echelon_info = self.get_echelon_info();
-        if let Some(Some(tail_start_index)) = tail_start_index {
+        if let Some(tail_start_index) = tail_start_index {
             let ColumnInfo { row } = echelon_info.columns[tail_start_index];
             matrix_json_obj.insert("corner_row_index".to_string(), row.into());
         }
@@ -558,6 +560,8 @@ impl PyTailMatrix {
             .get_tail_edges()
             .into_iter()
             .map(|edge_index| self.edge_to_column_index(edge_index))
+            .filter(|x| x.is_some())
+            .map(|x| x.unwrap())
             .min();
         let matrix_json_obj = matrix_json.as_object_mut().unwrap();
         matrix_json_obj.insert("tail_start_index".to_string(), tail_start_index.into());
