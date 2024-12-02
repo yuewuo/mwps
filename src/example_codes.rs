@@ -1648,4 +1648,32 @@ mod tests {
             }
         }
     }
+
+    #[test]
+    fn example_code_optimality_code_capacity_tailored_code() {
+        // cargo test --release example_code_optimality_code_capacity_tailored_code -- --nocapture
+        let d_vec = [3, 5, 7];
+        let p_vec = [0.1, 0.01];
+        let repeat = 10000;
+        for d in d_vec {
+            for p in p_vec {
+                println!("d={d}, p={p}");
+                let mut code = CodeCapacityTailoredCode::new(d, 0., p);
+                code.sanity_check().unwrap();
+                let initializer = code.get_initializer();
+                let mut solver = SolverType::JointSingleHair.build(&initializer, &code, json!({})); // "cluster_node_limit": 50
+                for _ in 0..repeat {
+                    let (syndrome, _) = code.generate_random_errors(thread_rng().gen::<u64>());
+                    solver.solve(syndrome.clone());
+                    let (subgraph, weight_range) = solver.subgraph_range();
+                    code.validate_correction(&subgraph);
+                    if weight_range.lower != weight_range.upper {
+                        println!("weight range: {:?}, syndrome = {:?}", weight_range, syndrome);
+                    }
+                    assert_eq!(weight_range.lower, weight_range.upper, "must be optimal");
+                    solver.clear();
+                }
+            }
+        }
+    }
 }
