@@ -754,4 +754,26 @@ pub mod tests {
             GrowingStrategy::MultipleClusters,
         );
     }
+
+    #[test]
+    fn primal_module_serial_basic_7() {
+        // cargo test primal_module_serial_basic_7 -- --nocapture
+        let visualize_filename = "primal_module_serial_basic_7.json".to_string();
+        let defect_vertices = vec![1, 2, 4, 5];
+        let code = CodeCapacityTailoredCode::new(3, 0., 0.1, 1);
+        primal_module_serial_basic_standard_syndrome(
+            code,
+            visualize_filename,
+            defect_vertices,
+            3,
+            vec![
+                PluginUnionFind::entry(),
+                PluginSingleHair::entry_with_strategy(RepeatStrategy::Once),
+                PluginSingleHair::entry_with_strategy(RepeatStrategy::Multiple {
+                    max_repetition: usize::MAX,
+                }),
+            ],
+            GrowingStrategy::MultipleClusters,
+        );
+    }
 }
