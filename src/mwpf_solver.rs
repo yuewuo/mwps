@@ -300,6 +300,10 @@ impl SolverSerialPlugins {
                 .write()
                 .decoding_graph
                 .set_syndrome(Arc::new(syndrome_pattern.clone()));
+            // also manually set the defect flag in the dual module
+            for &vertex_index in syndrome_pattern.defect_vertices.iter() {
+                self.dual_module.vertices[vertex_index].write().is_defect = true;
+            }
         }
         if let Some(visualizer) = visualizer {
             visualizer
