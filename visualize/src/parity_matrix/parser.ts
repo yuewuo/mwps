@@ -4,8 +4,9 @@ export class ParityMatrixData {
     public version: string
     public edges: number[]
     public table: PrintTable
-    public is_echelon_form: boolean // TODO: fix
-    public hair_start_index?: number
+    public is_echelon_form: boolean
+    public tail_start_index?: number
+    public corner_row_index?: number
 
     constructor (data: object) {
         let table: PrintTable | null = null
@@ -26,8 +27,11 @@ export class ParityMatrixData {
                 case 'is_echelon_form':
                     is_echelon_form = value as boolean
                     break
-                case 'hair_start_index':
-                    this.hair_start_index = value as number
+                case 'tail_start_index':
+                    this.tail_start_index = value as number
+                    break
+                case 'corner_row_index':
+                    this.corner_row_index = value as number
                     break
             }
         }

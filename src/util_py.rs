@@ -496,13 +496,18 @@ bind_trait_matrix_echelon!(PyEchelonMatrix);
 impl PyEchelonMatrix {
     fn snapshot_json(&mut self) -> serde_json::Value {
         let mut matrix_json = self.0.viz_table().snapshot();
-        let hair_start_index = self
+        let tail_start_index = self
             .get_tail_edges()
             .into_iter()
-            .map(|edge_index| self.edge_to_var_index(edge_index))
+            .map(|edge_index| self.edge_to_column_index(edge_index))
             .min();
         let matrix_json_obj = matrix_json.as_object_mut().unwrap();
-        matrix_json_obj.insert("hair_start_index".to_string(), hair_start_index.into());
+        matrix_json_obj.insert("tail_start_index".to_string(), tail_start_index.into());
+        let echelon_info = self.get_echelon_info();
+        if let Some(Some(tail_start_index)) = tail_start_index {
+            let ColumnInfo { row } = echelon_info.columns[tail_start_index];
+            matrix_json_obj.insert("corner_row_index".to_string(), row.into());
+        }
         matrix_json_obj.insert("is_echelon_form".to_string(), true.into());
         matrix_json
     }
@@ -548,7 +553,15 @@ bind_trait_matrix_tail!(PyTailMatrix);
 
 impl PyTailMatrix {
     fn snapshot_json(&mut self) -> serde_json::Value {
-        self.0.viz_table().snapshot()
+        let mut matrix_json = self.0.viz_table().snapshot();
+        let tail_start_index = self
+            .get_tail_edges()
+            .into_iter()
+            .map(|edge_index| self.edge_to_column_index(edge_index))
+            .min();
+        let matrix_json_obj = matrix_json.as_object_mut().unwrap();
+        matrix_json_obj.insert("tail_start_index".to_string(), tail_start_index.into());
+        matrix_json
     }
 }
 
