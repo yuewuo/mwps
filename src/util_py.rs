@@ -421,6 +421,9 @@ macro_rules! bind_trait_matrix_basic {
             fn show(&mut self) {
                 HTMLExport::display_jupyter_matrix_html(self.snapshot_json(), self.__repr__());
             }
+            fn clone(&self) -> Self {
+                self.0.clone().into()
+            }
         }
     };
 }
