@@ -805,15 +805,17 @@ where
         let mut start = 0.0;
         let cluster = cluster.read_recursive();
         start -= cluster.edges.len() as f64 + cluster.nodes.len() as f64;
+        let global_time = self.global_time.read_recursive().clone();
 
         let mut weight = Rational::zero();
         for &edge_index in cluster.edges.iter() {
             let edge_ptr = self.edges[edge_index].read_recursive();
-            weight += &edge_ptr.weight - &edge_ptr.growth_at_last_updated_time;
+            weight += &edge_ptr.growth_at_last_updated_time + &global_time * &edge_ptr.grow_rate;
         }
         for node in cluster.nodes.iter() {
             let dual_node = node.read_recursive().dual_node_ptr.clone();
-            weight -= &dual_node.read_recursive().dual_variable_at_last_updated_time;
+            let dual_read = dual_node.read_recursive();
+            weight -= &dual_read.dual_variable_at_last_updated_time + &global_time * &dual_read.grow_rate;
         }
         if weight.is_zero() {
             return None;
