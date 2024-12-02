@@ -810,12 +810,14 @@ where
         let mut weight = Rational::zero();
         for &edge_index in cluster.edges.iter() {
             let edge_ptr = self.edges[edge_index].read_recursive();
-            weight += &edge_ptr.growth_at_last_updated_time + &global_time * &edge_ptr.grow_rate;
+            weight +=
+                &edge_ptr.growth_at_last_updated_time + (&global_time - &edge_ptr.last_updated_time) * &edge_ptr.grow_rate;
         }
         for node in cluster.nodes.iter() {
             let dual_node = node.read_recursive().dual_node_ptr.clone();
-            let dual_read = dual_node.read_recursive();
-            weight -= &dual_read.dual_variable_at_last_updated_time + &global_time * &dual_read.grow_rate;
+            let dual_node_read_ptr = dual_node.read_recursive();
+            weight -= &dual_node_read_ptr.dual_variable_at_last_updated_time
+                + (&global_time - &dual_node_read_ptr.last_updated_time) * &dual_node_read_ptr.grow_rate;
         }
         if weight.is_zero() {
             return None;
