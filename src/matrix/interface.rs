@@ -131,6 +131,11 @@ pub trait MatrixTail {
     }
 }
 
+pub trait MatrixEchelonTail {
+    fn get_tail_start_index(&mut self) -> Option<ColumnIndex>;
+    fn get_corner_row_index(&mut self, tail_start_index: ColumnIndex) -> RowIndex;
+}
+
 pub trait MatrixEchelon: MatrixView {
     fn get_echelon_info(&mut self) -> &EchelonInfo;
     fn get_echelon_info_immutable(&self) -> &EchelonInfo;

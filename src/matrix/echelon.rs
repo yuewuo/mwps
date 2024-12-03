@@ -224,6 +224,22 @@ impl<M: MatrixView> MatrixEchelon for Echelon<M> {
     }
 }
 
+impl<M: MatrixView + MatrixTail> MatrixEchelonTail for Echelon<M> {
+    fn get_tail_start_index(&mut self) -> Option<ColumnIndex> {
+        self.get_tail_edges()
+            .clone()
+            .into_iter()
+            .flat_map(|edge_index| self.edge_to_column_index(edge_index))
+            .min()
+    }
+    /// pass `tail_start_index` by calling `get_tail_start_index`
+    fn get_corner_row_index(&mut self, tail_start_index: ColumnIndex) -> RowIndex {
+        let echelon_info = self.get_echelon_info();
+        let ColumnInfo { row } = echelon_info.columns[tail_start_index];
+        row
+    }
+}
+
 impl<M: MatrixView> MatrixView for Echelon<M> {
     fn columns(&mut self) -> usize {
         self.echelon_info_lazy_update();

@@ -491,6 +491,12 @@ macro_rules! bind_trait_matrix_echelon {
             fn satisfiable(&mut self) -> bool {
                 self.0.get_echelon_info().satisfiable
             }
+            fn get_tail_start_index(&mut self) -> Option<ColumnIndex> {
+                self.0.get_tail_start_index()
+            }
+            fn get_corner_row_index(&mut self, tail_start_index: ColumnIndex) -> RowIndex {
+                self.0.get_corner_row_index(tail_start_index)
+            }
         }
     };
 }
@@ -509,18 +515,11 @@ bind_trait_matrix_echelon!(PyEchelonMatrix);
 impl PyEchelonMatrix {
     fn snapshot_json(&mut self) -> serde_json::Value {
         let mut matrix_json = self.0.viz_table().snapshot();
-        let tail_start_index = self
-            .get_tail_edges()
-            .into_iter()
-            .map(|edge_index| self.edge_to_column_index(edge_index))
-            .filter(|x| x.is_some())
-            .map(|x| x.unwrap())
-            .min();
+        let tail_start_index = self.0.get_tail_start_index();
         let matrix_json_obj = matrix_json.as_object_mut().unwrap();
         matrix_json_obj.insert("tail_start_index".to_string(), tail_start_index.into());
-        let echelon_info = self.get_echelon_info();
         if let Some(tail_start_index) = tail_start_index {
-            let ColumnInfo { row } = echelon_info.columns[tail_start_index];
+            let row = self.0.get_corner_row_index(tail_start_index);
             matrix_json_obj.insert("corner_row_index".to_string(), row.into());
         }
         matrix_json_obj.insert("is_echelon_form".to_string(), true.into());
