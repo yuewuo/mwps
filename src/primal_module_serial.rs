@@ -101,7 +101,7 @@ pub struct PrimalModuleSerialConfig {
 
 pub mod primal_serial_default_configs {
     pub fn timeout() -> f64 {
-        (10 * 60) as f64
+        f64::MAX
     }
     pub fn cluster_node_limit() -> usize {
         usize::MAX
@@ -370,9 +370,7 @@ impl PrimalModuleImpl for PrimalModuleSerial {
         // subgraph with minimum weight from all plugins as the starting point to do local minimum
 
         // find a local minimum (hopefully a global minimum)
-        let interface = interface_ptr.read_recursive();
-        let initializer = interface.decoding_graph.model_graph.initializer.as_ref();
-        let weight_of = |edge_index: EdgeIndex| initializer.weighted_edges[edge_index].weight.clone();
+        let weight_of = |edge_index: EdgeIndex| dual_module.get_edge_weight(edge_index);
         cluster.subgraph = Some(cluster.matrix.get_solution_local_minimum(weight_of).expect("satisfiable"));
         true
     }
@@ -623,9 +621,7 @@ impl PrimalModuleImpl for PrimalModuleSerial {
         }
 
         // find a local minimum (hopefully a global minimum)
-        let interface = interface_ptr.read_recursive();
-        let initializer = interface.decoding_graph.model_graph.initializer.as_ref();
-        let weight_of = |edge_index: EdgeIndex| initializer.weighted_edges[edge_index].weight.clone();
+        let weight_of = |edge_index: EdgeIndex| dual_module.get_edge_weight(edge_index);
         cluster.subgraph = Some(cluster.matrix.get_solution_local_minimum(weight_of).expect("satisfiable"));
 
         (true, optimizer_result)
@@ -1350,6 +1346,27 @@ pub mod tests {
             vec![
                 PluginUnionFind::entry(),
                 PluginSingleHair::entry_with_strategy(RepeatStrategy::Once),
+            ],
+        );
+    }
+
+    #[test]
+    fn primal_module_serial_basic_7() {
+        // cargo test primal_module_serial_basic_7 -- --nocapture
+        let visualize_filename = "primal_module_serial_basic_7.json".to_string();
+        let defect_vertices = vec![1, 2, 4, 5];
+        let code = CodeCapacityTailoredCode::new(3, 0., 0.1);
+        primal_module_serial_basic_standard_syndrome(
+            code,
+            visualize_filename,
+            defect_vertices,
+            Rational::from(6.591673732008658),
+            vec![
+                PluginUnionFind::entry(),
+                PluginSingleHair::entry_with_strategy(RepeatStrategy::Once),
+                PluginSingleHair::entry_with_strategy(RepeatStrategy::Multiple {
+                    max_repetition: usize::MAX,
+                }),
             ],
         );
     }

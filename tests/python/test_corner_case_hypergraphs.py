@@ -21,8 +21,7 @@ def test_corner_1():
     print(subgraph, bound)
     assert bound.lower == bound.upper
     assert bound.lower.float() == 0.3
-    with open(os.path.join(os.path.dirname(__file__), f"test_corner_1.html"), "w") as f:
-        f.write(visualizer.generate_html())
+    visualizer.save_html(os.path.join(os.path.dirname(__file__), f"test_corner_1.html"))
 
 
 def test_corner_2():
@@ -40,8 +39,7 @@ def test_corner_2():
     print(subgraph, bound)
     assert bound.lower == bound.upper
     assert bound.lower.float() == 0.0
-    with open(os.path.join(os.path.dirname(__file__), f"test_corner_2.html"), "w") as f:
-        f.write(visualizer.generate_html())
+    visualizer.save_html(os.path.join(os.path.dirname(__file__), f"test_corner_2.html"))
 
 
 def test_corner_3():

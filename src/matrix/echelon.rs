@@ -50,6 +50,9 @@ impl<M: MatrixTight> MatrixTight for Echelon<M> {
     fn is_tight(&self, edge_index: usize) -> bool {
         self.base.is_tight(edge_index)
     }
+    fn get_tight_edges(&self) -> &BTreeSet<EdgeIndex> {
+        self.base.get_tight_edges()
+    }
 }
 
 impl<M: MatrixView> MatrixBasic for Echelon<M> {
@@ -88,6 +91,9 @@ impl<M: MatrixView> MatrixBasic for Echelon<M> {
     }
     fn get_vertices(&self) -> BTreeSet<VertexIndex> {
         self.get_base().get_vertices()
+    }
+    fn get_edges(&self) -> BTreeSet<EdgeIndex> {
+        self.get_base().get_edges()
     }
 }
 
@@ -215,6 +221,22 @@ impl<M: MatrixView> MatrixEchelon for Echelon<M> {
     fn get_echelon_info_immutable(&self) -> &EchelonInfo {
         debug_assert!(!self.is_info_outdated, "call `get_echelon_info` first");
         &self.info
+    }
+}
+
+impl<M: MatrixView + MatrixTail> MatrixEchelonTail for Echelon<M> {
+    fn get_tail_start_index(&mut self) -> Option<ColumnIndex> {
+        self.get_tail_edges()
+            .clone()
+            .into_iter()
+            .flat_map(|edge_index| self.edge_to_column_index(edge_index))
+            .min()
+    }
+    /// pass `tail_start_index` by calling `get_tail_start_index`
+    fn get_corner_row_index(&mut self, tail_start_index: ColumnIndex) -> RowIndex {
+        let echelon_info = self.get_echelon_info();
+        let ColumnInfo { row } = echelon_info.columns[tail_start_index];
+        row
     }
 }
 

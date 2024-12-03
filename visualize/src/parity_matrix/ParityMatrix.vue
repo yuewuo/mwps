@@ -53,6 +53,29 @@ function block_content(ri: number, ci: number): string {
     }
     return element
 }
+
+function is_corner_block(ri: number, ci: number): boolean {
+    if (!is_data_block(ri, ci) || is_rhs(ri, ci)) {
+        return false
+    }
+    const tail_start_index = data.value.tail_start_index
+    const corner_row_index = data.value.corner_row_index
+    if (tail_start_index != null && corner_row_index != null && ri > corner_row_index && ci > tail_start_index) {
+        return true
+    }
+    return false
+}
+
+function is_tail_columns(ri: number, ci: number): boolean {
+    if (!is_data_block(ri, ci) || is_rhs(ri, ci) || is_corner_block(ri, ci)) {
+        return false
+    }
+    const tail_start_index = data.value.tail_start_index
+    if (tail_start_index != null && ci > tail_start_index) {
+        return true
+    }
+    return false
+}
 </script>
 
 <template>
@@ -70,6 +93,8 @@ function block_content(ri: number, ci: number): string {
                         rhs: is_rhs(ri, ci),
                         'echelon-info-row': is_echelon_info_row(ri, ci),
                         'echelon-info-col': is_echelon_info_col(ri, ci),
+                        'tail-columns': is_tail_columns(ri, ci),
+                        'corner-block': is_corner_block(ri, ci),
                     }"
                 >
                     {{ block_content(ri, ci) }}
@@ -146,5 +171,13 @@ tr {
 .echelon-info-col {
     color: lightgrey;
     font-size: 80%;
+}
+
+.tail-columns {
+    background-color: lightcyan;
+}
+
+.corner-block {
+    background-color: lightgreen;
 }
 </style>

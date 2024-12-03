@@ -85,6 +85,10 @@ impl MatrixBasic for CompleteMatrix {
     fn get_vertices(&self) -> BTreeSet<VertexIndex> {
         self.vertices.clone()
     }
+
+    fn get_edges(&self) -> BTreeSet<EdgeIndex> {
+        self.edges.keys().cloned().collect()
+    }
 }
 
 impl MatrixView for CompleteMatrix {

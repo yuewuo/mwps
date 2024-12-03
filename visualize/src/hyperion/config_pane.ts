@@ -2,7 +2,7 @@ import { computed } from 'vue'
 import { Pane, FolderApi } from 'tweakpane'
 import * as EssentialsPlugin from '@tweakpane/plugin-essentials'
 import { type ButtonGridApi } from '@tweakpane/plugin-essentials'
-import { assert, bigInt } from '@/util'
+import { assert, bigInt, tweakpane_find_value } from '@/util'
 import * as HTMLExport from './html_export'
 import { Vector3, OrthographicCamera, WebGLRenderer, Vector2 } from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
@@ -11,6 +11,7 @@ import { Prism } from 'prism-esm'
 import { loader as JsonLoader } from 'prism-esm/components/prism-json.js'
 import prismCSS from 'prism-esm/themes/prism.min.css?raw'
 import * as TextareaPlugin from '@pangenerator/tweakpane-textarea-plugin'
+import { default as Sizzle } from 'sizzle'
 
 interface KeyShortcutDescription {
     key: string
@@ -26,13 +27,16 @@ export const key_shortcuts: Array<KeyShortcutDescription> = [
 
 /* configuration helper class given the runtime data */
 export class Config {
+    user_is_typing: boolean = false
     data: RuntimeData
     config_prop: ConfigProps
     basic: BasicConfig
     snapshot_config: SnapshotConfig = new SnapshotConfig()
+    user_note: string = ''
     camera: CameraConfig = new CameraConfig()
     vertex: VertexConfig = new VertexConfig()
     edge: EdgeConfig = new EdgeConfig()
+    note_folder?: FolderApi
     // @ts-expect-error we will not use pane before it's initialized, ignore for simplicity
     pane: Pane
 
@@ -52,7 +56,12 @@ export class Config {
     import_visualizer_parameters () {
         const parameters = this.parameters
         this.pane.importState(JSON.parse(this.parameters))
+        // bug fix: tweakpane does not import textarea data correctly
+        this.user_note = tweakpane_find_value(JSON.parse(this.parameters), 'user_note')
         this.parameters = parameters
+        if (this.user_note != '') {
+            this.note_folder!.expanded = true
+        }
         this.pane.refresh()
     }
 
@@ -72,8 +81,19 @@ export class Config {
             snapshot_names.push(name as string)
         }
         // add everything else
-        this.snapshot_config.add_to(pane.addFolder({ title: 'Snapshot', expanded: true }), snapshot_names)
         this.camera.add_to(pane.addFolder({ title: 'Camera', expanded: false }))
+        this.snapshot_config.add_to(pane.addFolder({ title: 'Snapshot', expanded: true }), snapshot_names)
+        this.note_folder = pane.addFolder({ title: 'Note', expanded: false })
+        const user_note = this.note_folder.addBinding(this, 'user_note', {
+            view: 'textarea',
+            rows: 10,
+            placeholder: 'Type here...',
+            label: undefined,
+        })
+        Sizzle('textarea', user_note.element).forEach((element: Element) => {
+            element.addEventListener('focusin', () => (this.user_is_typing = true))
+            element.addEventListener('focusout', () => (this.user_is_typing = false))
+        })
         this.basic.add_to(pane.addFolder({ title: 'Basic', expanded: false }))
         this.vertex.add_to(pane.addFolder({ title: 'Vertex', expanded: false }))
         this.edge.add_to(pane.addFolder({ title: 'Edge', expanded: false }))
@@ -88,7 +108,11 @@ export class Config {
             this.import_visualizer_parameters()
         }
         // by default showing the most recent snapshot; user can move back if they want
-        this.snapshot_index = Math.max(this.data.visualizer.snapshots.length - 1, 0)
+        if (this.config_prop.snapshot_index != undefined) {
+            this.snapshot_index = this.config_prop.snapshot_index
+        } else {
+            this.snapshot_index = Math.max(this.data.visualizer.snapshots.length - 1, 0)
+        }
     }
 
     parameters: string = '' // export or import parameters of the tweak pane
@@ -115,7 +139,11 @@ export class Config {
                 this.import_visualizer_parameters()
             }
         })
-        pane.addBinding(this, 'parameters')
+        const parameters = pane.addBinding(this, 'parameters')
+        Sizzle('input', parameters.element).forEach((element: Element) => {
+            element.addEventListener('focusin', () => (this.user_is_typing = true))
+            element.addEventListener('focusout', () => (this.user_is_typing = false))
+        })
         // add figure export
         pane.addBinding(this, 'png_scale', { min: 0.2, max: 4 })
         const png_buttons: ButtonGridApi = pane.addBlade({
@@ -164,11 +192,15 @@ export class Config {
         html_export_folder.addBinding(this, 'html_compress_data', { label: 'compress data' })
         html_export_folder.addBinding(this, 'html_show_info', { label: 'show info' })
         html_export_folder.addBinding(this, 'html_show_config', { label: 'show config' })
-        html_export_folder.addBinding(this, 'html_use_visualizer_data', {
+        const html_use_visualizer_data = html_export_folder.addBinding(this, 'html_use_visualizer_data', {
             view: 'textarea',
             rows: 3,
             label: 'use alternative visualizer data (paste here)',
             placeholder: 'Type here...',
+        })
+        Sizzle('textarea', html_use_visualizer_data.element).forEach((element: Element) => {
+            element.addEventListener('focusin', () => (this.user_is_typing = true))
+            element.addEventListener('focusout', () => (this.user_is_typing = false))
         })
         if (HTMLExport.available) {
             html_buttons.on('click', (event: any) => {

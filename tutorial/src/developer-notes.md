@@ -43,3 +43,32 @@ chmod +x /usr/local/bin/start-jupyter.sh
 #     we'll still need a mechanism to automatically boot it
 sudo docker exec -d mwpf-jupyter-server /bin/bash -c /usr/local/bin/start-jupyter.sh
 ```
+
+## deploy latest package on the server
+
+Enter the docker machine (`sudo docker exec -it mwpf-jupyter-server bash`) and
+create a file `/usr/local/bin/compile-mwpf.sh` with the following content:
+
+```sh
+#!/bin/bash
+source /root/.bashrc
+
+cd /home/mwpf-jupyter/mwpf
+git pull
+maturin develop --release
+```
+
+Then we can run `sudo docker exec -it mwpf-jupyter-server compile-mwpf.sh` on the outer world.
+
+# To save Github build resources
+
+The most expensive build action is for macOS:
+Your 2,420.00 included minutes used consists of 342.00 Ubuntu 2-core minutes, 328.00 Windows 2-core minutes, and 1,750.00 macOS 3-core minutes.
+
+Since I'm using Mac for development already, I can run the following command to build it locally.
+
+```sh
+rustup target add x86_64-apple-darwin  # only once
+
+CIBW_BUILD=cp38-* MACOSX_DEPLOYMENT_TARGET=10.12 CIBW_ARCHS_MACOS=universal2 python -m cibuildwheel --output-dir target
+```

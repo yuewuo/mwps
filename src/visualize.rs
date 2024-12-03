@@ -150,7 +150,7 @@ pub fn snapshot_fix_missing_fields(value: &mut serde_json::Value, abbrev: bool) 
         let edge = edge.as_object_mut().expect("each edge must be an object");
         let key_weight = if abbrev { "w" } else { "weight" };
         let key_vertices = if abbrev { "v" } else { "vertices" };
-        let key_growth = if abbrev { "g" } else { "growth" };
+        let _key_growth = if abbrev { "g" } else { "growth" };
         // recover
         assert!(edge.contains_key(key_weight), "missing unrecoverable field");
         assert!(edge.contains_key(key_vertices), "missing unrecoverable field");
@@ -479,9 +479,13 @@ impl Visualizer {
 #[pymethods]
 impl Visualizer {
     #[new]
-    #[pyo3(signature = (filepath="".to_string(), positions=vec![], center=true))]
-    fn py_new(filepath: Option<String>, positions: Vec<VisualizePosition>, center: bool) -> std::io::Result<Self> {
-        Self::new(filepath, positions, center)
+    #[pyo3(signature = (*, filepath="".to_string(), positions=None, center=true))]
+    fn py_new(filepath: Option<String>, positions: Option<Vec<VisualizePosition>>, center: bool) -> std::io::Result<Self> {
+        Self::new(
+            filepath,
+            positions.expect("vertex positions must be provided, e.g. `positions=[...]`"),
+            center,
+        )
     }
     fn __repr__(&self) -> String {
         format!("{:?}", self)
@@ -505,13 +509,19 @@ impl Visualizer {
         self.snapshot_value(name, value)
     }
 
-    #[pyo3(name = "show", signature = (override_config = None))]
-    pub fn show_py(&mut self, override_config: Option<PyObject>) {
-        let override_config = if let Some(override_config) = override_config {
+    #[pyo3(name = "show", signature = (override_config = None, *, snapshot_index=None))]
+    pub fn show_py(&mut self, override_config: Option<PyObject>, snapshot_index: Option<usize>) {
+        let mut override_config = if let Some(override_config) = override_config {
             pyobject_to_json(override_config)
         } else {
             json!({})
         };
+        if let Some(snapshot_index) = snapshot_index {
+            override_config
+                .as_object_mut()
+                .unwrap()
+                .insert("snapshot_index".to_string(), json!(snapshot_index));
+        }
         HTMLExport::display_jupyter_html(self.get_visualizer_data(), override_config);
     }
 

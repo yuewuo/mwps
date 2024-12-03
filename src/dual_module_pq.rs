@@ -805,15 +805,19 @@ where
         let mut start = 0.0;
         let cluster = cluster.read_recursive();
         start -= cluster.edges.len() as f64 + cluster.nodes.len() as f64;
+        let global_time = self.global_time.read_recursive().clone();
 
         let mut weight = Rational::zero();
         for &edge_index in cluster.edges.iter() {
             let edge_ptr = self.edges[edge_index].read_recursive();
-            weight += &edge_ptr.weight - &edge_ptr.growth_at_last_updated_time;
+            weight +=
+                &edge_ptr.growth_at_last_updated_time + (&global_time - &edge_ptr.last_updated_time) * &edge_ptr.grow_rate;
         }
         for node in cluster.nodes.iter() {
             let dual_node = node.read_recursive().dual_node_ptr.clone();
-            weight -= &dual_node.read_recursive().dual_variable_at_last_updated_time;
+            let dual_node_read_ptr = dual_node.read_recursive();
+            weight -= &dual_node_read_ptr.dual_variable_at_last_updated_time
+                + (&global_time - &dual_node_read_ptr.last_updated_time) * &dual_node_read_ptr.grow_rate;
         }
         if weight.is_zero() {
             return None;
@@ -827,7 +831,7 @@ where
         edge_index: EdgeIndex,
         participating_dual_variables: &hashbrown::HashSet<usize>,
     ) -> Rational {
-        let edge = self.edges[edge_index as usize].read_recursive();
+        let edge = self.edges[edge_index].read_recursive();
         let mut free_weight = edge.weight.clone();
         for dual_node in edge.dual_nodes.iter() {
             if participating_dual_variables.contains(&dual_node.index) {
@@ -838,6 +842,11 @@ where
         }
 
         free_weight
+    }
+
+    fn get_edge_weight(&self, edge_index: EdgeIndex) -> Rational {
+        let edge = self.edges[edge_index].read_recursive();
+        edge.weight.clone()
     }
 
     #[cfg(feature = "incr_lp")]

@@ -13,7 +13,7 @@ pub const BIT_UNIT_LENGTH: usize = std::mem::size_of::<BitArrayUnit>() * 8;
 pub type DualVariableTag = usize;
 
 /// optimize for small clusters where there are no more than 63 edges
-#[derive(Clone, Debug, Derivative)]
+#[derive(Clone, Debug, Derivative, PartialEq, Eq)]
 #[derivative(Default(new = "true"))]
 #[cfg_attr(feature = "python_binding", pyclass(get_all, set_all))]
 pub struct ParityRow {

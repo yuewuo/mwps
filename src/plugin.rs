@@ -19,7 +19,7 @@ use std::sync::Arc;
 pub type EchelonMatrix = Echelon<Tail<Tight<BasicMatrix>>>;
 
 /// common trait that must be implemented for each plugin
-pub trait PluginImpl {
+pub trait PluginImpl: std::fmt::Debug {
     /// given the tight edges and parity constraints, find relaxers
     fn find_relaxers(
         &self,

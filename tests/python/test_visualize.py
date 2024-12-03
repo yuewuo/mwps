@@ -56,7 +56,6 @@ if bound.lower == bound.upper:
 else:
     print("[potential failure] may be suboptimal... 😅")
 
-with open(
-    os.path.join(os.path.dirname(__file__), f"python_test_visualize.html"), "w"
-) as f:
-    f.write(visualizer.generate_html())
+visualizer.save_html(
+    os.path.join(os.path.dirname(__file__), f"python_test_visualize.html")
+)

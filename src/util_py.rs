@@ -1,3 +1,4 @@
+use crate::cluster::*;
 use crate::dual_module::*;
 use crate::html_export::*;
 use crate::matrix::*;
@@ -85,7 +86,8 @@ impl PyRational {
     fn float(&self) -> f64 {
         self.0.to_f64().unwrap()
     }
-    fn __richcmp__(&self, other: &Self, op: CompareOp) -> bool {
+    fn __richcmp__(&self, other: &Bound<PyAny>, op: CompareOp) -> bool {
+        let other = PyRational::from(other);
         op.matches(self.0.cmp(&other.0))
     }
     fn __abs__(&self) -> Self {
@@ -134,7 +136,7 @@ impl std::fmt::Debug for PyRational {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq)]
 #[repr(transparent)]
 #[pyclass(name = "DualNodePtr")]
 pub struct PyDualNodePtr(pub DualNodePtr);
@@ -153,6 +155,17 @@ impl PyDualNodePtr {
     }
     fn __hash__(&self) -> u64 {
         self.index() as u64
+    }
+}
+
+impl PartialOrd for PyDualNodePtr {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.index().cmp(&other.index()))
+    }
+}
+impl Ord for PyDualNodePtr {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.index().cmp(&other.index())
     }
 }
 
@@ -302,6 +315,12 @@ impl PySubgraphIter {
     }
 }
 
+impl From<PySubgraph> for OutputSubgraph {
+    fn from(value: PySubgraph) -> OutputSubgraph {
+        value.0.into()
+    }
+}
+
 #[pymethods]
 impl PySubgraph {
     #[new]
@@ -372,6 +391,9 @@ macro_rules! bind_trait_matrix_basic {
             fn get_vertices(&self) -> BTreeSet<VertexIndex> {
                 self.0.get_vertices()
             }
+            fn get_edges(&self) -> BTreeSet<EdgeIndex> {
+                self.0.get_edges()
+            }
             // MatrixView trait functions
             #[getter]
             fn get_columns(&mut self) -> usize {
@@ -402,6 +424,9 @@ macro_rules! bind_trait_matrix_basic {
             fn show(&mut self) {
                 HTMLExport::display_jupyter_matrix_html(self.snapshot_json(), self.__repr__());
             }
+            fn clone(&self) -> Self {
+                self.0.clone().into()
+            }
         }
     };
 }
@@ -416,6 +441,9 @@ macro_rules! bind_trait_matrix_tight {
             }
             fn is_tight(&self, edge_index: usize) -> bool {
                 self.0.is_tight(edge_index)
+            }
+            fn get_tight_edges(&mut self) -> BTreeSet<EdgeIndex> {
+                self.0.get_tight_edges().clone()
             }
             fn add_variable_with_tightness(&mut self, edge_index: EdgeIndex, is_tight: bool) {
                 self.0.add_variable_with_tightness(edge_index, is_tight)
@@ -459,6 +487,16 @@ macro_rules! bind_trait_matrix_echelon {
                 self.0
                     .get_solution_local_minimum(|x| PyRational::from(&weight_of.call1((x,)).unwrap()).0)
             }
+            #[getter]
+            fn satisfiable(&mut self) -> bool {
+                self.0.get_echelon_info().satisfiable
+            }
+            fn get_tail_start_index(&mut self) -> Option<ColumnIndex> {
+                self.0.get_tail_start_index()
+            }
+            fn get_corner_row_index(&mut self, tail_start_index: ColumnIndex) -> RowIndex {
+                self.0.get_corner_row_index(tail_start_index)
+            }
         }
     };
 }
@@ -477,13 +515,13 @@ bind_trait_matrix_echelon!(PyEchelonMatrix);
 impl PyEchelonMatrix {
     fn snapshot_json(&mut self) -> serde_json::Value {
         let mut matrix_json = self.0.viz_table().snapshot();
-        let hair_start_index = self
-            .get_tail_edges()
-            .into_iter()
-            .map(|edge_index| self.edge_to_var_index(edge_index))
-            .min();
+        let tail_start_index = self.0.get_tail_start_index();
         let matrix_json_obj = matrix_json.as_object_mut().unwrap();
-        matrix_json_obj.insert("hair_start_index".to_string(), hair_start_index.into());
+        matrix_json_obj.insert("tail_start_index".to_string(), tail_start_index.into());
+        if let Some(tail_start_index) = tail_start_index {
+            let row = self.0.get_corner_row_index(tail_start_index);
+            matrix_json_obj.insert("corner_row_index".to_string(), row.into());
+        }
         matrix_json_obj.insert("is_echelon_form".to_string(), true.into());
         matrix_json
     }
@@ -529,7 +567,17 @@ bind_trait_matrix_tail!(PyTailMatrix);
 
 impl PyTailMatrix {
     fn snapshot_json(&mut self) -> serde_json::Value {
-        self.0.viz_table().snapshot()
+        let mut matrix_json = self.0.viz_table().snapshot();
+        let tail_start_index = self
+            .get_tail_edges()
+            .into_iter()
+            .map(|edge_index| self.edge_to_column_index(edge_index))
+            .filter(|x| x.is_some())
+            .map(|x| x.unwrap())
+            .min();
+        let matrix_json_obj = matrix_json.as_object_mut().unwrap();
+        matrix_json_obj.insert("tail_start_index".to_string(), tail_start_index.into());
+        matrix_json
     }
 }
 
@@ -562,6 +610,12 @@ impl PyTailMatrix {
     }
     fn get_base(&self) -> PyTightMatrix {
         self.0.get_base().clone().into()
+    }
+    // helper functions
+    #[getter]
+    fn satisfiable(&mut self) -> bool {
+        let mut echelon = EchelonMatrix::from_base(self.0.clone());
+        echelon.get_echelon_info().satisfiable
     }
 }
 
@@ -611,6 +665,12 @@ impl PyTightMatrix {
     fn get_base(&self) -> PyBasicMatrix {
         self.0.get_base().clone().into()
     }
+    // helper functions
+    #[getter]
+    fn satisfiable(&mut self) -> bool {
+        let mut echelon = EchelonMatrix::from_base(TailMatrix::from_base(self.0.clone()));
+        echelon.get_echelon_info().satisfiable
+    }
 }
 
 /// BasicMatrix is a matrix that provides the basic functionality
@@ -629,8 +689,22 @@ impl PyBasicMatrix {
 #[pymethods]
 impl PyBasicMatrix {
     #[new]
-    fn new() -> Self {
-        Self(BasicMatrix::new())
+    #[pyo3(signature = (matrix=None))]
+    fn new(matrix: Option<&Bound<PyAny>>) -> PyResult<Self> {
+        if let Some(matrix) = matrix {
+            if let Ok(matrix) = matrix.extract::<PyTightMatrix>() {
+                return Ok(matrix.get_base());
+            }
+            if let Ok(matrix) = matrix.extract::<PyTailMatrix>() {
+                return Ok(matrix.get_base().get_base());
+            }
+            if let Ok(matrix) = matrix.extract::<PyEchelonMatrix>() {
+                return Ok(matrix.get_base().get_base().get_base());
+            }
+            panic!("unknown input type: {}", matrix.get_type().name()?);
+        } else {
+            Ok(Self(BasicMatrix::new()))
+        }
     }
     // MatrixBasic trait functions
     fn xor_row(&mut self, target: RowIndex, source: RowIndex) {
@@ -638,6 +712,12 @@ impl PyBasicMatrix {
     }
     fn swap_row(&mut self, a: RowIndex, b: RowIndex) {
         self.0.swap_row(a, b)
+    }
+    // helper functions
+    #[getter]
+    fn satisfiable(&mut self) -> bool {
+        let mut echelon = EchelonMatrix::from_base(TailMatrix::from_base(TightMatrix::from_base(self.0.clone())));
+        echelon.get_echelon_info().satisfiable
     }
 }
 
@@ -678,6 +758,77 @@ impl PyWeightRange {
     }
 }
 
+#[derive(Clone)]
+#[repr(transparent)]
+#[pyclass(name = "Cluster")]
+pub struct PyCluster(pub Cluster);
+bind_trait_simple_wrapper!(Cluster, PyCluster);
+
+impl std::fmt::Debug for PyCluster {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{}", self.__str__())
+    }
+}
+
+#[pymethods]
+impl PyCluster {
+    fn __repr__(&self) -> String {
+        format!("{:?}", self.0)
+    }
+    fn __str__(&self) -> String {
+        self.__repr__()
+    }
+}
+
+#[pymethods]
+impl PyCluster {
+    #[getter]
+    fn get_vertices(&self) -> BTreeSet<VertexIndex> {
+        self.0.vertices.clone()
+    }
+    #[setter]
+    fn set_vertices(&mut self, vertices: &Bound<PyAny>) -> PyResult<()> {
+        self.0.vertices = py_into_btree_set(vertices)?;
+        Ok(())
+    }
+    #[getter]
+    fn get_edges(&self) -> BTreeSet<EdgeIndex> {
+        self.0.edges.clone()
+    }
+    #[setter]
+    fn set_edges(&mut self, edges: &Bound<PyAny>) -> PyResult<()> {
+        self.0.edges = py_into_btree_set(edges)?;
+        Ok(())
+    }
+    #[getter]
+    fn get_hair(&self) -> BTreeSet<EdgeIndex> {
+        self.0.hair.clone()
+    }
+    #[setter]
+    fn set_hair(&mut self, hair: &Bound<PyAny>) -> PyResult<()> {
+        self.0.hair = py_into_btree_set(hair)?;
+        Ok(())
+    }
+    #[getter]
+    fn get_nodes(&self) -> BTreeSet<PyDualNodePtr> {
+        self.0.nodes.iter().map(|x| x.ptr.clone().into()).collect()
+    }
+    #[setter]
+    fn set_nodes(&mut self, nodes: &Bound<PyAny>) -> PyResult<()> {
+        let nodes: BTreeSet<PyDualNodePtr> = py_into_btree_set(nodes)?;
+        self.0.nodes = nodes.into_iter().map(|x| x.0.into()).collect();
+        Ok(())
+    }
+    #[getter]
+    fn get_parity_matrix(&self) -> PyTightMatrix {
+        self.0.parity_matrix.clone().into()
+    }
+    #[setter]
+    fn set_parity_matrix(&mut self, parity_matrix: PyTightMatrix) {
+        self.0.parity_matrix = parity_matrix.0.clone();
+    }
+}
+
 #[pyfunction]
 pub(crate) fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyRational>()?;
@@ -694,5 +845,6 @@ pub(crate) fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<ColumnInfo>()?;
     m.add_class::<RowInfo>()?;
     m.add_class::<PyWeightRange>()?;
+    m.add_class::<PyCluster>()?;
     Ok(())
 }

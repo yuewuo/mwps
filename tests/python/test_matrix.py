@@ -273,3 +273,55 @@ def test_basic_matrix_1():
     )
     assert matrix.get_vertices() == {0, 1, 2}
     assert matrix.get_view_edges() == [1, 4, 12, 345]
+
+
+def test_matrix_from_cluster():
+    code = mwpf.CodeCapacityColorCode(d=5, p=0.005)
+    visualizer = mwpf.Visualizer(positions=code.get_positions())
+    solver = mwpf.Solver(code.get_initializer().uniform_weights())
+    solver.solve(mwpf.SyndromePattern([2, 3, 7]), visualizer)
+    visualizer.save_html(
+        os.path.join(os.path.dirname(__file__), f"test_matrix_from_cluster.html")
+    )
+    # extract the parity matrix of the cluster
+    vertex_index = 2  # choose an arbitrary vertex in the cluster (use the vis tool)
+    cluster = solver.get_cluster(vertex_index)
+    print(cluster)
+    # check the cluster
+    assert cluster.vertices == {2, 3, 7}
+    assert cluster.edges == {10}
+    assert cluster.hair == {9, 5, 6, 2, 3, 7, 11, 16, 15, 13, 12, 14}
+    assert cluster.nodes == {solver.get_node(0), solver.get_node(1), solver.get_node(2)}
+    print()
+    print(cluster.parity_matrix)
+    assert (
+        str(cluster.parity_matrix)
+        == """\
+┌─┬─┬───┐
+┊ ┊1┊ = ┊
+┊ ┊0┊   ┊
+╞═╪═╪═══╡
+┊0┊1┊ 1 ┊
+├─┼─┼───┤
+┊1┊1┊ 1 ┊
+├─┼─┼───┤
+┊2┊1┊ 1 ┊
+└─┴─┴───┘
+"""
+    )
+    print(mwpf.BasicMatrix(cluster.parity_matrix))
+    assert (
+        str(mwpf.BasicMatrix(cluster.parity_matrix))
+        == """\
+┌─┬─┬─┬─┬─┬─┬─┬─┬─┬─┬─┬─┬─┬─┬───┐
+┊ ┊1┊5┊6┊9┊1┊1┊2┊3┊7┊1┊1┊1┊1┊ = ┊
+┊ ┊0┊ ┊ ┊ ┊2┊3┊ ┊ ┊ ┊1┊4┊5┊6┊   ┊
+╞═╪═╪═╪═╪═╪═╪═╪═╪═╪═╪═╪═╪═╪═╪═══╡
+┊0┊1┊1┊1┊1┊1┊1┊ ┊ ┊ ┊ ┊ ┊ ┊ ┊ 1 ┊
+├─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼───┤
+┊1┊1┊ ┊1┊ ┊ ┊ ┊1┊1┊1┊1┊ ┊ ┊ ┊ 1 ┊
+├─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼───┤
+┊2┊1┊ ┊ ┊ ┊ ┊1┊ ┊ ┊ ┊1┊1┊1┊1┊ 1 ┊
+└─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴───┘
+"""
+    )

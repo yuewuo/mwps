@@ -1,7 +1,7 @@
 use crate::mwpf_solver::*;
 #[cfg(not(feature = "float_lp"))]
 use crate::num_rational;
-use crate::num_traits::ToPrimitive;
+use crate::num_traits::{FromPrimitive, ToPrimitive};
 use crate::rand_xoshiro;
 use crate::rand_xoshiro::rand_core::RngCore;
 #[cfg(feature = "python_binding")]
@@ -13,7 +13,6 @@ use pyo3::prelude::*;
 #[cfg(feature = "python_binding")]
 use pyo3::types::{PyDict, PyFloat, PyList};
 use serde::{Deserialize, Serialize};
-
 use std::collections::BTreeSet;
 use std::fs::File;
 use std::io::prelude::*;
@@ -125,8 +124,30 @@ impl SolverInitializer {
         format!("{:?}", self)
     }
     #[pyo3(name = "snapshot", signature = (abbrev=true))]
-    fn trait_snapshot(&mut self, abbrev: bool) -> PyObject {
+    fn py_snapshot(&mut self, abbrev: bool) -> PyObject {
         json_to_pyobject(self.snapshot(abbrev))
+    }
+    #[pyo3(name = "get_subgraph_syndrome")]
+    fn py_get_subgraph_syndrome(&self, subgraph: PySubgraph) -> BTreeSet<VertexIndex> {
+        self.get_subgraph_syndrome(&subgraph.into())
+    }
+    #[pyo3(name = "matches_subgraph_syndrome")]
+    fn py_matches_subgraph_syndrome(&self, subgraph: PySubgraph, defect_vertices: Vec<VertexIndex>) -> bool {
+        self.matches_subgraph_syndrome(&subgraph.into(), &defect_vertices)
+    }
+    #[pyo3(name = "normalize_weights", signature = (avr_weight=None))]
+    fn py_normalize_weights<'a>(mut slf: PyRefMut<'a, Self>, avr_weight: Option<&Bound<PyAny>>) -> PyRefMut<'a, Self> {
+        let value: &mut Self = &mut *slf;
+        use crate::num_traits::One;
+        value.normalize_weights(avr_weight.map(|x| PyRational::from(x).0).unwrap_or_else(|| Rational::one()));
+        slf
+    }
+    #[pyo3(name = "uniform_weights", signature = (weight=None))]
+    fn py_uniform_weights<'a>(mut slf: PyRefMut<'a, Self>, weight: Option<&Bound<PyAny>>) -> PyRefMut<'a, Self> {
+        let value: &mut Self = &mut *slf;
+        use crate::num_traits::One;
+        value.uniform_weights(weight.map(|x| PyRational::from(x).0).unwrap_or_else(|| Rational::one()));
+        slf
     }
 }
 
@@ -185,6 +206,20 @@ impl SolverInitializer {
             }
         }
         defect_vertices
+    }
+
+    pub fn normalize_weights(&mut self, average_weight: Rational) {
+        let total_weight = self.weighted_edges.iter().map(|edge| &edge.weight).sum::<Rational>();
+        let scale = average_weight / (total_weight / Rational::from_usize(self.weighted_edges.len()).unwrap());
+        for edge in self.weighted_edges.iter_mut() {
+            edge.weight = edge.weight.clone() * scale.clone();
+        }
+    }
+
+    pub fn uniform_weights(&mut self, weight: Rational) {
+        for edge in self.weighted_edges.iter_mut() {
+            edge.weight = weight.clone();
+        }
     }
 }
 
@@ -824,6 +859,8 @@ pub(crate) fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
 
 #[cfg(test)]
 pub mod tests {
+    use crate::example_codes::ExampleCode;
+
     use super::*;
     use hashbrown::HashSet;
     use num_bigint::BigInt;
@@ -981,5 +1018,19 @@ pub mod tests {
 
         assert_eq!(output_subgraph.subgraph, vec![1, 3, 4, 5]);
         assert!(output_subgraph.flip_edge_indices.is_empty());
+    }
+
+    #[test]
+    fn test_initializer_normalize_weight() {
+        // cargo test test_initializer_normalize_weight -- --nocapture
+        use crate::example_codes::CodeCapacityRepetitionCode;
+        use crate::num_traits::One;
+        let code = CodeCapacityRepetitionCode::new(7, 0.2);
+        let mut initializer = code.get_initializer();
+        initializer.normalize_weights(Rational::one());
+        println!("initializer: {:?}", initializer);
+        for HyperEdge { weight, .. } in initializer.weighted_edges.iter() {
+            assert_eq!(weight, &Rational::one());
+        }
     }
 }

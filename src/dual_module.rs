@@ -197,6 +197,12 @@ impl OrderedDualNodePtr {
         Self { index, ptr }
     }
 }
+impl From<DualNodePtr> for OrderedDualNodePtr {
+    fn from(ptr: DualNodePtr) -> Self {
+        let index = ptr.read_recursive().index;
+        Self { index, ptr }
+    }
+}
 impl PartialOrd for OrderedDualNodePtr {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.index.cmp(&other.index))
@@ -485,6 +491,8 @@ pub trait DualModuleImpl {
         edge_index: EdgeIndex,
         participating_dual_variables: &hashbrown::HashSet<usize>,
     ) -> Rational;
+
+    fn get_edge_weight(&self, edge_index: EdgeIndex) -> Rational;
 
     #[cfg(feature = "incr_lp")]
     fn update_edge_cluster_weights(&self, edge_index: EdgeIndex, cluster_index: NodeIndex, grow_rate: Rational);
