@@ -101,7 +101,7 @@ pub struct PrimalModuleSerialConfig {
 
 pub mod primal_serial_default_configs {
     pub fn timeout() -> f64 {
-        (10 * 60) as f64
+        f64::MAX
     }
     pub fn cluster_node_limit() -> usize {
         usize::MAX
