@@ -210,7 +210,7 @@ macro_rules! bind_trait_to_python {
             /// a shortcut for creating a visualizer to display the current state of the solver
             #[pyo3(name = "show")]
             fn py_show(&self, positions: Vec<VisualizePosition>) {
-                let mut visualizer = Visualizer::new(None, positions, true).unwrap();
+                let mut visualizer = Visualizer::new(Some(String::new()), positions, true).unwrap();
                 visualizer.snapshot("show".to_string(), &self.0).unwrap();
                 visualizer.show_py(None, None);
             }
