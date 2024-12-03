@@ -112,13 +112,19 @@ macro_rules! bind_trait_to_python {
                 let invalid_subgraph = Arc::new(self.py_construct_invalid_subgraph(vertices, edges)?);
                 Ok(self.0.interface_ptr.find_node(&invalid_subgraph).map(|x| x.into()))
             }
-            #[pyo3(name = "create_node", signature = (vertices=None, edges=None))]
+            #[pyo3(name = "create_node", signature = (vertices=None, edges=None, find_existing_node=true))]
             pub fn py_create_node(
                 &mut self,
                 vertices: Option<&Bound<PyAny>>,
                 edges: Option<&Bound<PyAny>>,
+                find_existing_node: bool,
             ) -> PyResult<PyDualNodePtr> {
                 let invalid_subgraph = Arc::new(self.py_construct_invalid_subgraph(vertices, edges)?);
+                if find_existing_node {
+                    if let Some(node) = self.py_find_node(vertices, edges)? {
+                        return Ok(node);
+                    }
+                }
                 let interface_ptr = self.0.interface_ptr.clone();
                 Ok(match self.0.dual_module.mode() {
                     DualModuleMode::Search => interface_ptr.create_node(invalid_subgraph, &mut self.0.dual_module),
