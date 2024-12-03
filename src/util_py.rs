@@ -481,6 +481,10 @@ macro_rules! bind_trait_matrix_echelon {
                 self.0
                     .get_solution_local_minimum(|x| PyRational::from(&weight_of.call1((x,)).unwrap()).0)
             }
+            #[getter]
+            fn satisfiable(&mut self) -> bool {
+                self.0.get_echelon_info().satisfiable
+            }
         }
     };
 }
@@ -602,6 +606,12 @@ impl PyTailMatrix {
     fn get_base(&self) -> PyTightMatrix {
         self.0.get_base().clone().into()
     }
+    // helper functions
+    #[getter]
+    fn satisfiable(&mut self) -> bool {
+        let mut echelon = EchelonMatrix::from_base(self.0.clone());
+        echelon.get_echelon_info().satisfiable
+    }
 }
 
 type TightMatrix = Tight<BasicMatrix>;
@@ -650,6 +660,12 @@ impl PyTightMatrix {
     fn get_base(&self) -> PyBasicMatrix {
         self.0.get_base().clone().into()
     }
+    // helper functions
+    #[getter]
+    fn satisfiable(&mut self) -> bool {
+        let mut echelon = EchelonMatrix::from_base(TailMatrix::from_base(self.0.clone()));
+        echelon.get_echelon_info().satisfiable
+    }
 }
 
 /// BasicMatrix is a matrix that provides the basic functionality
@@ -691,6 +707,12 @@ impl PyBasicMatrix {
     }
     fn swap_row(&mut self, a: RowIndex, b: RowIndex) {
         self.0.swap_row(a, b)
+    }
+    // helper functions
+    #[getter]
+    fn satisfiable(&mut self) -> bool {
+        let mut echelon = EchelonMatrix::from_base(TailMatrix::from_base(TightMatrix::from_base(self.0.clone())));
+        echelon.get_echelon_info().satisfiable
     }
 }
 
