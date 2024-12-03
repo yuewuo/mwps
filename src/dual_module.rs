@@ -492,6 +492,8 @@ pub trait DualModuleImpl {
         participating_dual_variables: &hashbrown::HashSet<usize>,
     ) -> Rational;
 
+    fn get_edge_weight(&self, edge_index: EdgeIndex) -> Rational;
+
     #[cfg(feature = "incr_lp")]
     fn update_edge_cluster_weights(&self, edge_index: EdgeIndex, cluster_index: NodeIndex, grow_rate: Rational);
 

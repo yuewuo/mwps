@@ -370,9 +370,7 @@ impl PrimalModuleImpl for PrimalModuleSerial {
         // subgraph with minimum weight from all plugins as the starting point to do local minimum
 
         // find a local minimum (hopefully a global minimum)
-        let interface = interface_ptr.read_recursive();
-        let initializer = interface.decoding_graph.model_graph.initializer.as_ref();
-        let weight_of = |edge_index: EdgeIndex| initializer.weighted_edges[edge_index].weight.clone();
+        let weight_of = |edge_index: EdgeIndex| dual_module.get_edge_weight(edge_index);
         cluster.subgraph = Some(cluster.matrix.get_solution_local_minimum(weight_of).expect("satisfiable"));
         true
     }
@@ -623,9 +621,7 @@ impl PrimalModuleImpl for PrimalModuleSerial {
         }
 
         // find a local minimum (hopefully a global minimum)
-        let interface = interface_ptr.read_recursive();
-        let initializer = interface.decoding_graph.model_graph.initializer.as_ref();
-        let weight_of = |edge_index: EdgeIndex| initializer.weighted_edges[edge_index].weight.clone();
+        let weight_of = |edge_index: EdgeIndex| dual_module.get_edge_weight(edge_index);
         cluster.subgraph = Some(cluster.matrix.get_solution_local_minimum(weight_of).expect("satisfiable"));
 
         (true, optimizer_result)

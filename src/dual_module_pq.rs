@@ -831,7 +831,7 @@ where
         edge_index: EdgeIndex,
         participating_dual_variables: &hashbrown::HashSet<usize>,
     ) -> Rational {
-        let edge = self.edges[edge_index as usize].read_recursive();
+        let edge = self.edges[edge_index].read_recursive();
         let mut free_weight = edge.weight.clone();
         for dual_node in edge.dual_nodes.iter() {
             if participating_dual_variables.contains(&dual_node.index) {
@@ -842,6 +842,11 @@ where
         }
 
         free_weight
+    }
+
+    fn get_edge_weight(&self, edge_index: EdgeIndex) -> Rational {
+        let edge = self.edges[edge_index].read_recursive();
+        edge.weight.clone()
     }
 
     #[cfg(feature = "incr_lp")]
