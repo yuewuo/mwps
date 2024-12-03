@@ -1,4 +1,4 @@
-import mwpf
+from common import *
 
 
 def test_flatten_config():
