@@ -121,7 +121,7 @@ jobs: # Workflow credit to https://github.com/samuelcolvin/rtoml/blob/main/.gith
       
       - name: install wheel for testing (Windows)
         if: matrix.os == 'windows'
-        run: FOR %i in (wheelhouse\*.whl) DO python -m pip install -U %i
+        run: Get-ChildItem -Path wheelhouse -Filter *.whl |ForEach-Object { python -m pip install -U $_.FullName }
 
       - name: run Python test
         run: pytest tests/python
