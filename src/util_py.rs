@@ -391,6 +391,9 @@ macro_rules! bind_trait_matrix_basic {
             fn get_vertices(&self) -> BTreeSet<VertexIndex> {
                 self.0.get_vertices()
             }
+            fn get_edges(&self) -> BTreeSet<EdgeIndex> {
+                self.0.get_edges()
+            }
             // MatrixView trait functions
             #[getter]
             fn get_columns(&mut self) -> usize {
@@ -438,6 +441,9 @@ macro_rules! bind_trait_matrix_tight {
             }
             fn is_tight(&self, edge_index: usize) -> bool {
                 self.0.is_tight(edge_index)
+            }
+            fn get_tight_edges(&mut self) -> BTreeSet<EdgeIndex> {
+                self.0.get_tight_edges().clone()
             }
             fn add_variable_with_tightness(&mut self, edge_index: EdgeIndex, is_tight: bool) {
                 self.0.add_variable_with_tightness(edge_index, is_tight)

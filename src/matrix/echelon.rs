@@ -50,6 +50,9 @@ impl<M: MatrixTight> MatrixTight for Echelon<M> {
     fn is_tight(&self, edge_index: usize) -> bool {
         self.base.is_tight(edge_index)
     }
+    fn get_tight_edges(&self) -> &BTreeSet<EdgeIndex> {
+        self.base.get_tight_edges()
+    }
 }
 
 impl<M: MatrixView> MatrixBasic for Echelon<M> {
@@ -88,6 +91,9 @@ impl<M: MatrixView> MatrixBasic for Echelon<M> {
     }
     fn get_vertices(&self) -> BTreeSet<VertexIndex> {
         self.get_base().get_vertices()
+    }
+    fn get_edges(&self) -> BTreeSet<EdgeIndex> {
+        self.get_base().get_edges()
     }
 }
 

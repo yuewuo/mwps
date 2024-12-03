@@ -57,6 +57,7 @@ pub trait MatrixBasic {
         self.edge_to_var_index(edge_index).is_some()
     }
 
+    fn get_edges(&self) -> BTreeSet<EdgeIndex>;
     fn get_vertices(&self) -> BTreeSet<VertexIndex>;
 }
 
@@ -96,6 +97,7 @@ pub trait MatrixView: MatrixBasic {
 pub trait MatrixTight: MatrixView {
     fn update_edge_tightness(&mut self, edge_index: EdgeIndex, is_tight: bool);
     fn is_tight(&self, edge_index: usize) -> bool;
+    fn get_tight_edges(&self) -> &BTreeSet<EdgeIndex>;
 
     fn add_variable_with_tightness(&mut self, edge_index: EdgeIndex, is_tight: bool) {
         self.add_variable(edge_index);

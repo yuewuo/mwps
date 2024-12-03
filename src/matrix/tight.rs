@@ -48,6 +48,10 @@ impl<M: MatrixView> MatrixTight for Tight<M> {
         debug_assert!(self.exists_edge(edge_index));
         self.tight_edges.contains(&edge_index)
     }
+
+    fn get_tight_edges(&self) -> &BTreeSet<EdgeIndex> {
+        &self.tight_edges
+    }
 }
 
 impl<M: MatrixView> MatrixBasic for Tight<M> {
@@ -84,6 +88,9 @@ impl<M: MatrixView> MatrixBasic for Tight<M> {
     }
     fn get_vertices(&self) -> BTreeSet<VertexIndex> {
         self.get_base().get_vertices()
+    }
+    fn get_edges(&self) -> BTreeSet<EdgeIndex> {
+        self.get_base().get_edges()
     }
 }
 
