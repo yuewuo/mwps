@@ -113,7 +113,7 @@ impl From<VizTable> for serde_json::Value {
 pub trait VizTrait {
     fn viz_table(&mut self) -> VizTable;
     fn printstd_str(&mut self) -> String {
-        Table::from(self.viz_table()).to_string()
+        Table::from(self.viz_table()).to_string().replace("\r", "")
     }
     fn printstd(&mut self) {
         #[cfg(feature = "colorful")]
