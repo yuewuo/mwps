@@ -207,6 +207,13 @@ macro_rules! bind_trait_to_python {
             fn py_get_cluster(&self, vertex_index: VertexIndex) -> PyCluster {
                 self.get_cluster(vertex_index).into()
             }
+            /// a shortcut for creating a visualizer to display the current state of the solver
+            #[pyo3(name = "show")]
+            fn py_show(&self, positions: Vec<VisualizePosition>) {
+                let mut visualizer = Visualizer::new(None, positions, true).unwrap();
+                visualizer.snapshot("show".to_string(), &self.0).unwrap();
+                visualizer.show_py(None, None);
+            }
         }
         impl $struct_name {
             pub fn py_construct_invalid_subgraph(
