@@ -253,16 +253,10 @@ macro_rules! inherit_solver_plugin_methods {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SolverSerialPluginsConfig {
-    #[serde(flatten, default = "hyperion_default_configs::primal")]
-    primal: PrimalModuleSerialConfig,
-}
-
-pub mod hyperion_default_configs {
-    use crate::primal_module_serial::*;
-
-    pub fn primal() -> PrimalModuleSerialConfig {
-        serde_json::from_value(json!({})).unwrap()
-    }
+    #[serde(flatten)]
+    flatten_primal: PrimalModuleSerialConfig,
+    /// legacy config
+    primal: Option<PrimalModuleSerialConfig>,
 }
 
 pub struct SolverSerialPlugins {
@@ -287,7 +281,7 @@ impl SolverSerialPlugins {
         let mut primal_module = PrimalModuleSerial::new_empty(initializer); // question: why does this need initializer?
         let config: SolverSerialPluginsConfig = serde_json::from_value(config).unwrap();
         primal_module.plugins = plugins;
-        primal_module.config = config.primal.clone();
+        primal_module.config = config.primal.as_ref().unwrap_or(&config.flatten_primal).clone();
 
         Self {
             dual_module: DualModulePQ::new_empty(initializer),
