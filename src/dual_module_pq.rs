@@ -191,6 +191,7 @@ impl Edge {
         self.growth_at_last_updated_time = Rational::zero();
         self.last_updated_time = Rational::zero();
         self.dual_nodes.clear();
+        self.grow_rate = Rational::zero();
         #[cfg(feature = "incr_lp")]
         self.cluster_weights.clear();
     }

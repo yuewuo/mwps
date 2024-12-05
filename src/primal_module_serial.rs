@@ -167,6 +167,7 @@ impl PrimalModuleImpl for PrimalModuleSerial {
         *self.plugin_count.write() = 1;
         self.plugin_pending_clusters.clear();
         self.time_resolve = 0.;
+        self.sorted_clusters_aff = None;
         #[cfg(feature = "incr_lp")]
         self.uninit_cluster_weight();
     }
