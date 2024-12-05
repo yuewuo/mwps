@@ -329,7 +329,7 @@ impl RelaxerOptimizer {
 
                 let mut edge_contributor: BTreeMap<EdgeIndex, (Rational, BTreeSet<NodeIndex>)> = edge_free_weights
                     .iter()
-                    .map(|(&edge_index, &edge_free_weight)| (edge_index, (edge_free_weight, BTreeSet::new())))
+                    .map(|(&edge_index, edge_free_weight)| (edge_index, (edge_free_weight.clone(), BTreeSet::new())))
                     .collect();
 
                 for (dual_node_index, (invalid_subgraph, _)) in dual_nodes.iter() {
@@ -353,7 +353,7 @@ impl RelaxerOptimizer {
                 let mut update_edges_contributors = BTreeSet::new();
 
                 // get difference between edges
-                for (&edge_index, &free_weight) in edge_free_weights.iter() {
+                for (&edge_index, free_weight) in edge_free_weights.iter() {
                     match incr_lp_solution_ptr.edge_constraints.get(&edge_index) {
                         Some((_free_weight, _edge_contributors)) => {
                             if _free_weight != free_weight {
@@ -441,7 +441,7 @@ impl RelaxerOptimizer {
 
                 let mut edge_contributor: BTreeMap<EdgeIndex, (Rational, BTreeSet<NodeIndex>)> = edge_free_weights
                     .iter()
-                    .map(|(&edge_index, &edge_free_weight)| (edge_index, (edge_free_weight, BTreeSet::new())))
+                    .map(|(&edge_index, edge_free_weight)| (edge_index, (edge_free_weight.clone(), BTreeSet::new())))
                     .collect();
 
                 for (dual_node_index, (invalid_subgraph, _)) in dual_nodes.iter() {
@@ -459,7 +459,7 @@ impl RelaxerOptimizer {
                     }
                 }
 
-                for (&edge_index, &free_weight) in edge_free_weights.iter() {
+                for (&edge_index, free_weight) in edge_free_weights.iter() {
                     let mut row_entries = vec![];
                     for var_index in edge_contributor[&edge_index].1.iter() {
                         row_entries.push((dv_col_map[var_index], 1.0));
