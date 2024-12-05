@@ -24,3 +24,12 @@ it among all the canvases that are currently in the viewport.
 ## 0.1.4 -> 0.1.5
 
 fix critical bug when renaming `MaxUpdateLength` to `Obstacle`... which results in much higher logical error rates
+
+## 0.1.5 -> 0.2.0
+
+- changed interface to support floating-point input natively (or rational number when using mwpf_rational).
+- integrated visualization tool for Jupyter notebook
+
+## 0.2.0 -> 0.2.1
+
+fixed potential bug of unsafe clear (not clearing `edge.grow_rate` before)
