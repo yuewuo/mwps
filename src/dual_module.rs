@@ -424,7 +424,7 @@ pub trait DualModuleImpl {
                         for edge_index in node_ptr_write.invalid_subgraph.hair.iter() {
                             self.grow_edge(*edge_index, &actual_grow_rate);
                             #[cfg(feature = "incr_lp")]
-                            self.update_edge_cluster_weights(*edge_index, _cluster_index, actual_grow_rate); // note: comment out if not using cluster-based
+                            self.update_edge_cluster_weights(*edge_index, _cluster_index, actual_grow_rate.clone()); // note: comment out if not using cluster-based
                             if actual_grow_rate.is_positive() && self.is_edge_tight_tune(*edge_index) {
                                 obstacles.insert(Obstacle::Conflict { edge_index: *edge_index });
                             }

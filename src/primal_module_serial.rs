@@ -485,7 +485,7 @@ impl PrimalModuleImpl for PrimalModuleSerial {
                             dual_node.index,
                             (
                                 dual_node.invalid_subgraph.clone(),
-                                dual_node.dual_variable_at_last_updated_time,
+                                dual_node.dual_variable_at_last_updated_time.clone(),
                             ),
                         );
                         participating_dual_variable_indices.insert(dual_node.index);
@@ -514,7 +514,7 @@ impl PrimalModuleImpl for PrimalModuleSerial {
                                         dual_node_ptr.read_recursive().index,
                                         (
                                             dual_node_ptr.read_recursive().invalid_subgraph.clone(),
-                                            dual_node_ptr.read_recursive().dual_variable_at_last_updated_time,
+                                            dual_node_ptr.read_recursive().dual_variable_at_last_updated_time.clone(),
                                         ),
                                     );
                                 }
@@ -662,7 +662,7 @@ impl PrimalModuleImpl for PrimalModuleSerial {
                     dual_module.update_edge_cluster_weights(
                         *edge_index,
                         cluster.cluster_index,
-                        dual_node_read.dual_variable_at_last_updated_time,
+                        dual_node_read.dual_variable_at_last_updated_time.clone(),
                     );
                 }
             }
