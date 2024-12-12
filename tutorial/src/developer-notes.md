@@ -24,6 +24,7 @@ source ~/miniconda3/bin/activate
 pip3 install MWPF MWPF-rational --upgrade --force-reinstall
 pip3 install jupyter jupyter-collaboration==2.1.5  # v3 has bug...
 #     configure Jupyter lab to have consistent password every boot
+conda install jupyter
 jupyter lab --generate-config
 vim ~/.jupyter/jupyter_lab_config.py  # modify it the following lines
 # c.ServerApp.ip = '0.0.0.0'  # Allow access from any IP

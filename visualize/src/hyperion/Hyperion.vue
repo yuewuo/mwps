@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref, computed, provide, watchEffect, onBeforeUnmount, useTemplateRef, onUnmounted } from 'vue'
+import { onMounted, ref, computed, provide, watchEffect, onBeforeUnmount, useTemplateRef, onUnmounted, defineExpose, getCurrentInstance } from 'vue'
 import { OrthographicCamera, Scene, AmbientLight } from 'troisjs'
 // import { Renderer } from 'troisjs' // use individual renderer for each instance
 import Renderer from '@/misc/SharedRenderer.vue' // optimization: share a single WebGL renderer across all the instances
@@ -46,6 +46,13 @@ const height = computed(() => width.value / config.value.basic.aspect_ratio)
 const orthographic_camera = useTemplateRef('orthographic_camera_ref')
 const raycaster = new Raycaster()
 const stats = useTemplateRef('stats_ref')
+
+defineExpose({
+    config,
+    info,
+    width,
+    raycaster,
+})
 
 onUnmounted(() => {
     console.log('Hyperion.vue unmounted')
@@ -125,6 +132,7 @@ onMounted(() => {
         }
     })
     container_resize_observer.observe(container.value as any)
+    ;(globalThis as any).hyperion_exposed = getCurrentInstance()!.exposed
 })
 
 watchEffect(() => {
