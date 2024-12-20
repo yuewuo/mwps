@@ -111,3 +111,12 @@ pub fn get_version() -> String {
     // env!("CARGO_PKG_VERSION").to_string()
     format!("subgraph: {subgraph:?}, weight_range: {weight_range:?}")
 }
+
+#[cfg(feature = "wasm_binding")]
+#[wasm_bindgen]
+pub fn solver_visualize(initializer: JsValue) {
+    use gloo_utils::format::JsValueSerdeExt;
+    use util::*;
+    let initializer: SolverInitializer = initializer.into_serde().unwrap();
+    println!("initializer: {initializer:?}");
+}
