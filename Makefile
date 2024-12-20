@@ -47,7 +47,7 @@ python: clean-env
 	# pytest tests/python
 
 wasm: clean-env
-	wasm-pack build --no-default-features --features wasm_binding,rational_weight,embed_visualizer
+	wasm-pack build --target web --no-default-features --features wasm_binding,rational_weight,embed_visualizer
 
 # test code coverage: see https://lib.rs/crates/cargo-llvm-cov
 coverage:

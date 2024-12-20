@@ -77,39 +77,54 @@ fn mwpf(m: &Bound<'_, PyModule>) -> PyResult<()> {
     Ok(())
 }
 
+use util::SyndromePattern;
 #[cfg(feature = "wasm_binding")]
 use wasm_bindgen::prelude::*;
 
 #[cfg_attr(feature = "wasm_binding", wasm_bindgen)]
 pub fn get_version() -> String {
+    use cli::*;
     use decoding_hypergraph::*;
     use dual_module::*;
     use dual_module_pq::*;
     use example_codes::*;
+    use mwpf_solver::*;
     use primal_module::*;
     use primal_module_serial::*;
     // TODO: I'm just testing basic functionality
-    let defect_vertices = vec![23, 24, 29, 30];
+    let defect_vertices = vec![];
+    let syndrome = SyndromePattern::new_vertices(defect_vertices.clone());
     let code = CodeCapacityTailoredCode::new(7, 0., 0.01);
+    let initializer = code.get_initializer();
+    let mut solver = SolverType::JointSingleHair.build(&initializer, &code, json!({}));
+    // solver.solve(syndrome.clone());
+    // "cluster_node_limit": 50
     // create dual module
-    let model_graph = code.get_model_graph();
-    let mut dual_module = DualModulePQ::new_empty(&model_graph.initializer);
-    // create primal module
-    let mut primal_module = PrimalModuleSerial::new_empty(&model_graph.initializer);
-    primal_module.plugins = std::sync::Arc::new(vec![]);
-    // try to work on a simple syndrome
-    let decoding_graph = DecodingHyperGraph::new_defects(model_graph, defect_vertices.clone());
-    let interface_ptr = DualModuleInterfacePtr::new(decoding_graph.model_graph.clone());
-    primal_module.solve_visualizer(
-        &interface_ptr,
-        decoding_graph.syndrome_pattern.clone(),
-        &mut dual_module,
-        None,
-    );
-    let (subgraph, weight_range) = primal_module.subgraph_range(&interface_ptr, &mut dual_module);
-    println!("subgraph: {subgraph:?}");
-    // env!("CARGO_PKG_VERSION").to_string()
-    format!("subgraph: {subgraph:?}, weight_range: {weight_range:?}")
+    // let model_graph = code.get_model_graph();
+    // let mut dual_module = DualModulePQ::new_empty(&model_graph.initializer);
+    // // create primal module
+    // let mut primal_module = PrimalModuleSerial::new_empty(&model_graph.initializer);
+    // primal_module.plugins = std::sync::Arc::new(vec![]);
+    // // // try to work on a simple syndrome
+    // let decoding_graph = DecodingHyperGraph::new_defects(model_graph, defect_vertices.clone());
+    // let interface_ptr = DualModuleInterfacePtr::new(decoding_graph.model_graph.clone());
+    // primal_module.solve_visualizer(
+    //     &interface_ptr,
+    //     decoding_graph.syndrome_pattern.clone(),
+    //     &mut dual_module,
+    //     None,
+    // );
+    // let (subgraph, weight_range) = primal_module.subgraph_range(&interface_ptr, &mut dual_module);
+    // println!("subgraph: {subgraph:?}");
+    // // env!("CARGO_PKG_VERSION").to_string()
+    // format!("subgraph: {subgraph:?}, weight_range: {weight_range:?}")
+    format!("hellow")
+}
+
+#[cfg(feature = "wasm_binding")]
+#[wasm_bindgen]
+pub fn hello_world() -> String {
+    format!("Hello, wasm-bindgen!")
 }
 
 #[cfg(feature = "wasm_binding")]
