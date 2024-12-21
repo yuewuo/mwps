@@ -7,6 +7,7 @@ import { type VisualizerData, RuntimeData, ConfigProps, renderer_params } from '
 import { Config } from './config_pane'
 import { Info } from './info_pane'
 import Vertices from './Vertices.vue'
+import ClusterPlanes from './ClusterPlanes.vue'
 import Edges from './Edges.vue'
 import { WebGLRenderer, OrthographicCamera as ThreeOrthographicCamera, Raycaster, Vector2 } from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
@@ -259,6 +260,7 @@ function onMouseChange(event: MouseEvent, is_click: boolean = true) {
                 <AmbientLight color="#FFFFFF" :intensity="config.basic.light_intensity"></AmbientLight>
                 <Vertices></Vertices>
                 <Edges></Edges>
+                <ClusterPlanes v-if="config.basic.show_cluster_plane"></ClusterPlanes>
             </Scene>
         </Renderer>
     </div>
