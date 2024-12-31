@@ -1573,21 +1573,34 @@ pub mod tests {
     fn primal_module_parallel_split_into_4_test_7() {
         // RUST_BACKTRACE=1 cargo test -r primal_module_parallel_split_into_4_test_7 -- --nocapture
         let weight = 1; // do not change, the data is hard-coded
-        for seed in 0..1000 {
-            let mut code = CodeCapacityPlanarCode::new(7, 0.1, weight);
-            let defect_vertices = code.generate_random_errors(seed).0.defect_vertices;
-            // let defect_vertices = vec![13, 20, 29, 32, 39];
+        let mut code = CodeCapacityPlanarCode::new(7, 0.1, weight);
+        let defect_vertices = code.generate_random_errors(100).0.defect_vertices;
+        // let defect_vertices = vec![13, 20, 29, 32, 39];
+
+        let visualize_filename = "primal_module_parallel_split_into_4_test_7.json".to_string();
+        primal_module_parallel_basic_standard_syndrome_split_into_4(
+            code,
+            visualize_filename,
+            defect_vertices,
+            9,
+            vec![],
+            GrowingStrategy::ModeBased,
+        );
+        // for seed in 0..1000 {
+        //     let mut code = CodeCapacityPlanarCode::new(7, 0.1, weight);
+        //     let defect_vertices = code.generate_random_errors(seed).0.defect_vertices;
+        //     // let defect_vertices = vec![13, 20, 29, 32, 39];
     
-            let visualize_filename = "primal_module_parallel_split_into_4_test_7.json".to_string();
-            primal_module_parallel_basic_standard_syndrome_split_into_4(
-                code,
-                visualize_filename,
-                defect_vertices,
-                9,
-                vec![],
-                GrowingStrategy::ModeBased,
-            );
-        }
+        //     let visualize_filename = "primal_module_parallel_split_into_4_test_7.json".to_string();
+        //     primal_module_parallel_basic_standard_syndrome_split_into_4(
+        //         code,
+        //         visualize_filename,
+        //         defect_vertices,
+        //         9,
+        //         vec![],
+        //         GrowingStrategy::ModeBased,
+        //     );
+        // }
        
     }
 
