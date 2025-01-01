@@ -55,7 +55,7 @@ fn debug_demo() {
                 .snapshot_combined("begin".to_string(), vec![&interface_ptr, &dual_module])
                 .unwrap();
             let decoding_graph = interface_ptr.read_recursive().decoding_graph.clone();
-            let s0 = Arc::new(InvalidSubgraph::new_complete(btreeset! {3}, btreeset! {}, &decoding_graph));
+            let s0 = Arc::new(InvalidSubgraph::new_complete_from_indices(btreeset! {3}, btreeset! {}, &mut dual_module));
             let (_, s0_ptr) = interface_ptr.find_or_create_node(&s0, &mut dual_module);
             dual_module.set_grow_rate(&s0_ptr, Rational::from_usize(1).unwrap());
             for _ in 0..3 {
@@ -65,7 +65,7 @@ fn debug_demo() {
                     .unwrap();
             }
             // create another node
-            let s1 = Arc::new(InvalidSubgraph::new_complete(btreeset! {6}, btreeset! {}, &decoding_graph));
+            let s1 = Arc::new(InvalidSubgraph::new_complete_from_indices(btreeset! {6}, btreeset! {}, &mut dual_module));
             let (_, s1_ptr) = interface_ptr.find_or_create_node(&s1, &mut dual_module);
             dual_module.set_grow_rate(&s0_ptr, -Rational::from_usize(1).unwrap());
             dual_module.set_grow_rate(&s1_ptr, Rational::from_usize(1).unwrap());
@@ -125,7 +125,7 @@ fn simple_demo() {
                 .snapshot_combined("begin".to_string(), vec![&interface_ptr, &dual_module])
                 .unwrap();
             let decoding_graph = interface_ptr.read_recursive().decoding_graph.clone();
-            let s0 = Arc::new(InvalidSubgraph::new_complete(btreeset! {3}, btreeset! {}, &decoding_graph));
+            let s0 = Arc::new(InvalidSubgraph::new_complete_from_indices(btreeset! {3}, btreeset! {}, &mut dual_module));
             let (_, s0_ptr) = interface_ptr.find_or_create_node(&s0, &mut dual_module);
             dual_module.set_grow_rate(&s0_ptr, Rational::from_usize(1).unwrap());
             visualizer
@@ -212,9 +212,9 @@ fn challenge_demo() {
                         while index >= s_ptr.len() {
                             let (vertices, edges) = invalid_subgraphs[s_ptr.len()].clone();
                             let s = if vertices.is_empty() {
-                                Arc::new(InvalidSubgraph::new(edges, &decoding_graph))
+                                Arc::new(InvalidSubgraph::new_from_indices(edges, dual_module))
                             } else {
-                                Arc::new(InvalidSubgraph::new_complete(vertices, edges, &decoding_graph))
+                                Arc::new(InvalidSubgraph::new_complete_from_indices(vertices, edges, dual_module))
                             };
                             let (_, ptr) = interface_ptr.find_or_create_node(&s, dual_module);
                             dual_module.set_grow_rate(&ptr, Rational::zero());

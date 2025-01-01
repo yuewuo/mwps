@@ -1,0 +1,34 @@
+
+running 1 test
+open visualizer at /Users/yangliu/Documents/Documents_MacBook_Air/Summer_2024/mwpf/visualize/data/invalid_subgraph_good.html
+┌──┬───┬─┐
+┊ E┊ = ┊▼┊
+╞══╪═══╪═╡
+┊ ▶┊◀  ┊▲┊
+└──┴───┴─┘
+
+┌──┬─┬───┬─┐
+┊ E┊1┊ = ┊▼┊
+┊  ┊3┊   ┊ ┊
+╞══╪═╪═══╪═╡
+┊ ▶┊*┊◀  ┊▲┊
+└──┴─┴───┴─┘
+
+┌──┬─┬───┬──┐
+┊ E┊1┊ = ┊▼ ┊
+┊  ┊3┊   ┊  ┊
+╞══╪═╪═══╪══╡
+┊ 0┊1┊   ┊13┊
+├──┼─┼───┼──┤
+┊ ▶┊0┊◀  ┊▲ ┊
+└──┴─┴───┴──┘
+
+test invalid_subgraph::tests::invalid_subgraph_good ... FAILED
+
+failures:
+
+failures:
+    invalid_subgraph::tests::invalid_subgraph_good
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 64 filtered out; finished in 0.02s
+

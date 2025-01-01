@@ -16,6 +16,7 @@ use std::sync::Arc;
 use derivative::Derivative;
 
 use num_traits::{Signed, Zero};
+use crate::dual_module_pq::{EdgePtr};
 
 #[cfg(feature = "slp")]
 use num_traits::One;
@@ -159,8 +160,8 @@ impl RelaxerOptimizer {
             constraint.rhs = dual_variable.clone();
             constraints.push(constraint);
             invalid_subgraphs.push(invalid_subgraph);
-            for &edge_index in invalid_subgraph.hair.iter() {
-                edge_contributor.get_mut(&edge_index).unwrap().push(var_index);
+            for edge_ptr in invalid_subgraph.hair.iter() {
+                edge_contributor.get_mut(edge_ptr).unwrap().push(var_index);
             }
         }
         for (&edge_index, slack) in edge_slacks.iter() {
@@ -221,7 +222,7 @@ impl RelaxerOptimizer {
     pub fn optimize(
         &mut self,
         relaxer: Relaxer,
-        edge_slacks: BTreeMap<EdgeIndex, Rational>,
+        edge_slacks: BTreeMap<EdgePtr, Rational>,
         mut dual_variables: BTreeMap<Arc<InvalidSubgraph>, Rational>,
     ) -> (Relaxer, bool) {
         use highs::{HighsModelStatus, RowProblem, Sense};
@@ -242,8 +243,8 @@ impl RelaxerOptimizer {
         let mut x_vars = vec![];
         let mut y_vars = vec![];
         let mut invalid_subgraphs = Vec::with_capacity(dual_variables.len());
-        let mut edge_contributor: BTreeMap<EdgeIndex, Vec<usize>> =
-            edge_slacks.keys().map(|&edge_index| (edge_index, vec![])).collect();
+        let mut edge_contributor: BTreeMap<EdgePtr, Vec<usize>> =
+            edge_slacks.keys().map(|edge_ptr| (edge_ptr.clone(), vec![])).collect();
 
         for (var_index, (invalid_subgraph, dual_variable)) in dual_variables.iter().enumerate() {
             // constraint of the dual variable >= 0
@@ -259,14 +260,14 @@ impl RelaxerOptimizer {
             );
             invalid_subgraphs.push(invalid_subgraph.clone());
 
-            for &edge_index in invalid_subgraph.hair.iter() {
-                edge_contributor.get_mut(&edge_index).unwrap().push(var_index);
+            for edge_ptr in invalid_subgraph.hair.iter() {
+                edge_contributor.get_mut(edge_ptr).unwrap().push(var_index);
             }
         }
 
-        for (&edge_index, ref slack) in edge_slacks.iter() {
+        for (edge_ptr, ref slack) in edge_slacks.iter() {
             let mut row_entries = vec![];
-            for &var_index in edge_contributor[&edge_index].iter() {
+            for &var_index in edge_contributor[edge_ptr].iter() {
                 row_entries.push((x_vars[var_index], 1.0));
                 row_entries.push((y_vars[var_index], -1.0));
             }
@@ -450,9 +451,9 @@ impl RelaxerOptimizer {
 
                     dv_col_map.insert(dual_node_index.clone(), col);
 
-                    for &edge_index in invalid_subgraph.hair.iter() {
+                    for edge_ptr in invalid_subgraph.hair.iter() {
                         edge_contributor
-                            .get_mut(&edge_index)
+                            .get_mut(edge_ptr)
                             .unwrap()
                             .1
                             .insert(dual_node_index.clone());

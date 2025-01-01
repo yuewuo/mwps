@@ -18,6 +18,8 @@ use crate::util::*;
 use crate::visualize::*;
 use std::collections::BTreeSet;
 
+use crate::dual_module_pq::EdgePtr;
+
 #[derive(Derivative)]
 #[derivative(Debug)]
 pub struct PrimalModuleUnionFind {
@@ -28,10 +30,10 @@ pub struct PrimalModuleUnionFind {
 type UnionFind = UnionFindGeneric<PrimalModuleUnionFindNode>;
 
 /// define your own union-find node data structure like this
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Clone)]
 pub struct PrimalModuleUnionFindNode {
     /// all the internal edges
-    pub internal_edges: BTreeSet<EdgeIndex>,
+    pub internal_edges: BTreeSet<EdgePtr>,
     /// the corresponding node index with these internal edges
     pub node_index: NodeIndex,
 }
@@ -111,9 +113,9 @@ impl PrimalModuleImpl for PrimalModuleUnionFind {
         let mut active_clusters = BTreeSet::<NodeIndex>::new();
         while let Some(obstacle) = dual_report.pop() {
             match obstacle {
-                Obstacle::Conflict { edge_index } => {
+                Obstacle::Conflict { edge_ptr } => {
                     // union all the dual nodes in the edge index and create new dual node by adding this edge to `internal_edges`
-                    let dual_nodes = dual_module.get_edge_nodes(edge_index);
+                    let dual_nodes = dual_module.get_edge_nodes(edge_ptr.clone());
                     debug_assert!(
                         !dual_nodes.is_empty(),
                         "should not conflict if no dual nodes are contributing"
@@ -128,7 +130,7 @@ impl PrimalModuleImpl for PrimalModuleUnionFind {
                     self.union_find
                         .get_mut(cluster_index as usize)
                         .internal_edges
-                        .insert(edge_index);
+                        .insert(edge_ptr.clone());
                     active_clusters.insert(self.union_find.find(cluster_index as usize) as NodeIndex);
                 }
                 _ => {
@@ -138,8 +140,6 @@ impl PrimalModuleImpl for PrimalModuleUnionFind {
         }
         for &cluster_index in active_clusters.iter() {
             if interface_ptr
-                .read_recursive()
-                .decoding_graph
                 .is_valid_cluster_auto_vertices(&self.union_find.get(cluster_index as usize).internal_edges)
             {
                 // do nothing
@@ -151,8 +151,7 @@ impl PrimalModuleImpl for PrimalModuleUnionFind {
                 });
                 self.union_find.union(cluster_index as usize, new_cluster_node_index as usize);
                 let invalid_subgraph = InvalidSubgraph::new_ptr(
-                    self.union_find.get(cluster_index as usize).internal_edges.clone(),
-                    &interface_ptr.read_recursive().decoding_graph,
+                    &self.union_find.get(cluster_index as usize).internal_edges.clone(),
                 );
                 interface_ptr.create_node(invalid_subgraph, dual_module);
             }
@@ -172,11 +171,9 @@ impl PrimalModuleImpl for PrimalModuleUnionFind {
             if !valid_clusters.contains(&root_index) {
                 valid_clusters.insert(root_index);
                 let cluster_subgraph = interface_ptr
-                    .read_recursive()
-                    .decoding_graph
                     .find_valid_subgraph_auto_vertices(&self.union_find.get(root_index).internal_edges)
                     .expect("must be valid cluster");
-                subgraph.extend(cluster_subgraph.iter());
+                subgraph.extend(cluster_subgraph);
             }
         }
 
@@ -191,7 +188,7 @@ impl PrimalModuleImpl for PrimalModuleUnionFind {
         // OutputSubgraph::new(subgraph_set.into_iter().collect(), Default::default())
 
         // note: note implmented to handle negative weights yet
-        OutputSubgraph::new(subgraph, _dual_module.get_negative_edges())
+        OutputSubgraph::new_internal(subgraph, _dual_module.get_negative_edges())
     }
 }
 

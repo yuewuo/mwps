@@ -89,8 +89,8 @@ impl PluginEntry {
                 repeat = false;
             }
             for relaxer in relaxers.into_iter() {
-                for edge_index in relaxer.get_untighten_edges().keys() {
-                    matrix.update_edge_tightness(*edge_index, false);
+                for edge_ptr in relaxer.get_untighten_edges().keys() {
+                    matrix.update_edge_tightness(edge_ptr.downgrade(), false);
                 }
                 let relaxer = Arc::new(relaxer);
                 let sum_speed = relaxer.get_sum_speed();

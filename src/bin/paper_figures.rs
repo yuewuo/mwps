@@ -48,7 +48,7 @@ fn hyperedge_example() {
         (btreeset! {1}, 0.5),
     ];
     for (vertices, dual_variable) in dual_variables.into_iter() {
-        let s1 = Arc::new(InvalidSubgraph::new_complete(vertices, btreeset! {}, &decoding_graph));
+        let s1 = Arc::new(InvalidSubgraph::new_complete_from_indices(vertices, btreeset! {}, &mut dual_module));
         let (_, s1_ptr) = interface_ptr.find_or_create_node(&s1, &mut dual_module);
         dual_module.set_grow_rate(&s1_ptr, Rational::from_f64(dual_variable).unwrap());
     }

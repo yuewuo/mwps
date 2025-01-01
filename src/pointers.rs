@@ -84,6 +84,17 @@ impl<T: Send + Sync> RwLockPtr<T> for ArcRwLock<T> {
     }
 }
 
+impl<T: Send + Sync> WeakRwLock<T> {
+    #[inline(always)]
+    pub fn ptr(&self) -> &Weak<RwLock<T>> {
+        &self.ptr
+    }
+    #[inline(always)]
+    pub fn ptr_mut(&mut self) -> &mut Weak<RwLock<T>> {
+        &mut self.ptr
+    }
+}
+
 impl<T: Send + Sync> PartialEq for ArcRwLock<T> {
     fn eq(&self, other: &Self) -> bool {
         self.ptr_eq(other)
@@ -91,6 +102,34 @@ impl<T: Send + Sync> PartialEq for ArcRwLock<T> {
 }
 
 impl<T: Send + Sync> Eq for ArcRwLock<T> {}
+
+impl<T: Send + Sync> Ord for ArcRwLock<T> {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        let ptr1 = Arc::as_ptr(self.ptr());
+        let ptr2 = Arc::as_ptr(other.ptr());
+        ptr1.cmp(&ptr2)
+    }
+}
+
+impl<T: Send + Sync> Ord for WeakRwLock<T> {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        let ptr1 = Weak::as_ptr(self.ptr());
+        let ptr2 = Weak::as_ptr(other.ptr());
+        ptr1.cmp(&ptr2)
+    }
+}
+
+impl<T: Send + Sync> PartialOrd for ArcRwLock<T> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl<T: Send + Sync> PartialOrd for WeakRwLock<T> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
 
 impl<T> Clone for WeakRwLock<T> {
     fn clone(&self) -> Self {
@@ -112,6 +151,199 @@ impl<T> std::ops::Deref for ArcRwLock<T> {
         &self.ptr
     }
 }
+
+impl<T: Send + Sync> std::hash::Hash for ArcRwLock<T> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        let address = Arc::as_ptr(&self.ptr);
+        address.hash(state);
+    }
+}
+
+impl<T: Send + Sync> std::hash::Hash for WeakRwLock<T> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        let address = Weak::as_ptr(&self.ptr);
+        address.hash(state);
+    }
+}
+
+/*
+    unsafe APIs, used when maximizing speed performance
+*/
+
+cfg_if::cfg_if! {
+    if #[cfg(feature="unsafe_pointer")] {
+        pub trait UnsafePtr<ObjType> {
+            fn new_ptr(ptr: Arc<ObjType>) -> Self;
+
+            fn new_value(obj: ObjType) -> Self;
+
+            fn ptr(&self) -> &Arc<ObjType>;
+
+            fn ptr_mut(&mut self) -> &mut Arc<ObjType>;
+
+            #[inline(always)]
+            fn read_recursive(&self) -> &ObjType {
+                self.ptr()
+            }
+
+            #[inline(always)]
+            fn write(&self) -> &mut ObjType {
+                unsafe {
+                    // https://stackoverflow.com/questions/54237610/is-there-a-way-to-make-an-immutable-reference-mutable
+                    let ptr = self.ptr();
+                    let const_ptr = ptr as *const Arc<ObjType>;
+                    let mut_ptr = const_ptr as *mut Arc<ObjType>;
+                    Arc::get_mut_unchecked(&mut *mut_ptr)
+                }
+            }
+
+            #[inline(always)]
+            fn try_write(&self) -> Option<&mut ObjType> {
+                Some(self.write())
+            }
+
+            fn ptr_eq(&self, other: &Self) -> bool {
+                Arc::ptr_eq(self.ptr(), other.ptr())
+            }
+        }
+
+        pub struct ArcUnsafe<T> {
+            ptr: Arc<T>,
+        }
+
+        pub struct WeakUnsafe<T> {
+            ptr: Weak<T>,
+        }
+
+        impl<T> ArcUnsafe<T> {
+            pub fn downgrade(&self) -> WeakUnsafe<T> {
+                WeakUnsafe::<T> {
+                    ptr: Arc::downgrade(&self.ptr)
+                }
+            }
+        }
+
+        impl<T> WeakUnsafe<T> {
+            pub fn upgrade_force(&self) -> ArcUnsafe<T> {
+                ArcUnsafe::<T> {
+                    ptr: self.ptr.upgrade().unwrap()
+                }
+            }
+            pub fn upgrade(&self) -> Option<ArcUnsafe<T>> {
+                self.ptr.upgrade().map(|x| ArcUnsafe::<T> { ptr: x })
+            }
+        }
+
+        impl<T> Clone for ArcUnsafe<T> {
+            fn clone(&self) -> Self {
+                Self::new_ptr(Arc::clone(self.ptr()))
+            }
+        }
+
+        impl<T> UnsafePtr<T> for ArcUnsafe<T> {
+            fn new_ptr(ptr: Arc<T>) -> Self { Self { ptr }  }
+            fn new_value(obj: T) -> Self { Self::new_ptr(Arc::new(obj)) }
+            #[inline(always)] fn ptr(&self) -> &Arc<T> { &self.ptr }
+            #[inline(always)] fn ptr_mut(&mut self) -> &mut Arc<T> { &mut self.ptr }
+        }
+
+        impl<T> WeakUnsafe<T> {
+            #[inline(always)] pub fn ptr(&self) -> &Weak<T> { &self.ptr }
+            #[inline(always)] pub fn ptr_mut(&mut self) -> &mut Weak<T> { &mut self.ptr }
+        }
+
+        impl<T> PartialEq for ArcUnsafe<T> {
+            fn eq(&self, other: &Self) -> bool { self.ptr_eq(other) }
+        }
+
+        impl<T> Eq for ArcUnsafe<T> { }
+
+        impl<T> Clone for WeakUnsafe<T> {
+            fn clone(&self) -> Self {
+                Self { ptr: self.ptr.clone() }
+            }
+        }
+
+        impl<T> PartialEq for WeakUnsafe<T> {
+            fn eq(&self, other: &Self) -> bool { self.ptr.ptr_eq(&other.ptr) }
+        }
+
+        impl<T> Eq for WeakUnsafe<T> { }
+
+        impl<T> std::ops::Deref for ArcUnsafe<T> {
+            type Target = T;
+            fn deref(&self) -> &Self::Target {
+                &self.ptr
+            }
+        }
+
+        impl<T> weak_table::traits::WeakElement for WeakUnsafe<T> {
+            type Strong = ArcUnsafe<T>;
+            fn new(view: &Self::Strong) -> Self {
+                view.downgrade()
+            }
+            fn view(&self) -> Option<Self::Strong> {
+                self.upgrade()
+            }
+            fn clone(view: &Self::Strong) -> Self::Strong {
+                view.clone()
+            }
+        }
+
+        impl<T: Send + Sync> std::hash::Hash for ArcUnsafe<T> {
+            fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+                let address = Arc::as_ptr(&self.ptr);
+                address.hash(state);
+            }
+        }
+        
+        impl<T: Send + Sync> std::hash::Hash for WeakUnsafe<T> {
+            fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+                let address = Weak::as_ptr(&self.ptr);
+                address.hash(state);
+            }
+        }
+
+        impl<T: Send + Sync> Ord for ArcUnsafe<T> {
+            fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+                let ptr1 = Arc::as_ptr(self.ptr());
+                let ptr2 = Arc::as_ptr(other.ptr());
+                ptr1.cmp(&ptr2)
+            }
+        }
+        
+        impl<T: Send + Sync> Ord for WeakUnsafe<T> {
+            fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+                let ptr1 = Weak::as_ptr(self.ptr());
+                let ptr2 = Weak::as_ptr(other.ptr());
+                ptr1.cmp(&ptr2)
+            }
+        }
+
+        impl<T: Send + Sync> PartialOrd for ArcUnsafe<T> {
+            fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+                Some(self.cmp(other))
+            }
+        }
+        
+        impl<T: Send + Sync> PartialOrd for WeakUnsafe<T> {
+            fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+                Some(self.cmp(other))
+            }
+        }
+    }
+}
+
+cfg_if::cfg_if! {
+    if #[cfg(feature="unsafe_pointer")] {
+        pub type ArcManualSafeLock<T> = ArcUnsafe<T>;
+        pub type WeakManualSafeLock<T> = WeakUnsafe<T>;
+    } else {
+        pub type ArcManualSafeLock<T> = ArcRwLock<T>;
+        pub type WeakManualSafeLock<T> = WeakRwLock<T>;
+    }
+}
+
 
 #[cfg(test)]
 mod tests {

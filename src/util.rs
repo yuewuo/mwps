@@ -17,6 +17,7 @@ use std::collections::BTreeSet;
 use std::fs::File;
 use std::io::prelude::*;
 use std::time::Instant;
+use crate::dual_module_pq::EdgeWeak;
 
 cfg_if::cfg_if! {
     if #[cfg(feature="f64_weight")] {
@@ -334,6 +335,7 @@ impl F64Rng for DeterministicRng {
 /// the result of MWPF algorithm: a parity subgraph (defined by some edges that,
 /// if are selected, will generate the parity result in the syndrome)
 pub type Subgraph = Vec<EdgeIndex>;
+pub type InternalSubgraph = Vec<EdgeWeak>;
 
 pub struct OutputSubgraph {
     pub subgraph: Subgraph,
@@ -342,6 +344,14 @@ pub struct OutputSubgraph {
 
 impl OutputSubgraph {
     pub fn new(subgraph: Subgraph, flip_edge_indices: hashbrown::HashSet<EdgeIndex>) -> Self {
+        Self {
+            subgraph,
+            flip_edge_indices,
+        }
+    }
+
+    pub fn new_internal(internal_subgraph: InternalSubgraph, flip_edge_indices: hashbrown::HashSet<EdgeIndex>) -> Self {
+        let subgraph = internal_subgraph.iter().map(|edge| edge.upgrade_force().read_recursive().edge_index).collect();
         Self {
             subgraph,
             flip_edge_indices,

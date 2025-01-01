@@ -244,45 +244,46 @@ impl TypedValueParser for SerdeJsonParser {
     }
 }
 
-impl MatrixSpeedClass {
-    pub fn run(&self, parameters: MatrixSpeedParameters, samples: Vec<Vec<(Vec<usize>, bool)>>) {
-        match *self {
-            MatrixSpeedClass::EchelonTailTight => {
-                let mut matrix = Echelon::<Tail<Tight<BasicMatrix>>>::new();
-                for edge_index in 0..parameters.width {
-                    matrix.add_tight_variable(edge_index);
-                }
-                Self::run_on_matrix_interface(&matrix, samples)
-            }
-            MatrixSpeedClass::EchelonTight => {
-                let mut matrix = Echelon::<Tight<BasicMatrix>>::new();
-                for edge_index in 0..parameters.width {
-                    matrix.add_tight_variable(edge_index);
-                }
-                Self::run_on_matrix_interface(&matrix, samples)
-            }
-            MatrixSpeedClass::Echelon => {
-                let mut matrix = Echelon::<BasicMatrix>::new();
-                for edge_index in 0..parameters.width {
-                    matrix.add_variable(edge_index);
-                }
-                Self::run_on_matrix_interface(&matrix, samples)
-            }
-        }
-    }
+// The MatrixSpeedClass is commented out because we are now passing pointers to maxtrices instead of numbers
+// impl MatrixSpeedClass {
+//     pub fn run(&self, parameters: MatrixSpeedParameters, samples: Vec<Vec<(Vec<usize>, bool)>>) {
+//         match *self {
+//             MatrixSpeedClass::EchelonTailTight => {
+//                 let mut matrix = Echelon::<Tail<Tight<BasicMatrix>>>::new();
+//                 for edge_index in 0..parameters.width {
+//                     matrix.add_tight_variable(edge_index);
+//                 }
+//                 Self::run_on_matrix_interface(&matrix, samples)
+//             }
+//             MatrixSpeedClass::EchelonTight => {
+//                 let mut matrix = Echelon::<Tight<BasicMatrix>>::new();
+//                 for edge_index in 0..parameters.width {
+//                     matrix.add_tight_variable(edge_index);
+//                 }
+//                 Self::run_on_matrix_interface(&matrix, samples)
+//             }
+//             MatrixSpeedClass::Echelon => {
+//                 let mut matrix = Echelon::<BasicMatrix>::new();
+//                 for edge_index in 0..parameters.width {
+//                     matrix.add_variable(edge_index);
+//                 }
+//                 Self::run_on_matrix_interface(&matrix, samples)
+//             }
+//         }
+//     }
 
-    pub fn run_on_matrix_interface<M: MatrixView + Clone>(matrix: &M, samples: Vec<Vec<(Vec<usize>, bool)>>) {
-        for parity_checks in samples.iter() {
-            let mut matrix = matrix.clone();
-            for (vertex_index, (incident_edges, parity)) in parity_checks.iter().enumerate() {
-                matrix.add_constraint(vertex_index, incident_edges, *parity);
-            }
-            // for a MatrixView, visiting the columns and rows is sufficient to update its internal state
-            matrix.columns();
-            matrix.rows();
-        }
-    }
-}
+//     pub fn run_on_matrix_interface<M: MatrixView + Clone>(matrix: &M, samples: Vec<Vec<(Vec<usize>, bool)>>) {
+//         for parity_checks in samples.iter() {
+//             let mut matrix = matrix.clone();
+//             for (vertex_index, (incident_edges, parity)) in parity_checks.iter().enumerate() {
+//                 matrix.add_constraint(vertex_index, incident_edges, *parity);
+//             }
+//             // for a MatrixView, visiting the columns and rows is sufficient to update its internal state
+//             matrix.columns();
+//             matrix.rows();
+//         }
+//     }
+// }
 
 impl Cli {
     pub fn run(self) {
@@ -520,7 +521,7 @@ impl Cli {
                     samples.push(parity_checks);
                 }
                 // call the matrix operation
-                matrix_type.run(parameters, samples);
+                // matrix_type.run(parameters, samples);
             }
             Commands::Test { command } => match command {
                 TestCommands::Common => {

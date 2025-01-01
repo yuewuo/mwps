@@ -17,6 +17,8 @@ use num_traits::One;
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
+use crate::dual_module_pq::{EdgePtr, VertexPtr};
+
 #[derive(Debug, Clone, Default)]
 pub struct PluginSingleHair {}
 
@@ -35,7 +37,7 @@ impl PluginImpl for PluginSingleHair {
         let mut relaxers = vec![];
         for dual_node_ptr in positive_dual_nodes.iter() {
             let dual_node = dual_node_ptr.read_recursive();
-            let mut hair_view = HairView::new(matrix, dual_node.invalid_subgraph.hair.iter().cloned());
+            let mut hair_view = HairView::new(matrix, dual_node.invalid_subgraph.hair.iter().map(|e| e.downgrade()));
             debug_assert!(hair_view.get_echelon_satisfiable());
             // hair_view.printstd();
             // optimization: check if there exists a single-hair solution, if not, clear the previous relaxers
@@ -58,23 +60,26 @@ impl PluginImpl for PluginSingleHair {
                 for column in 0..hair_view.columns() {
                     let var_index = hair_view.column_to_var_index(column);
                     if !hair_view.get_lhs(row, var_index) {
-                        let edge_index = hair_view.var_to_edge_index(var_index);
+                        let edge_index = hair_view.var_to_edge_weak(var_index);
                         unnecessary_edges.push(edge_index);
                     }
                 }
                 if !unnecessary_edges.is_empty() {
                     // we can construct a relaxer here, by growing a new invalid subgraph that
                     // removes those unnecessary edges and shrinking the existing one
-                    let mut vertices: BTreeSet<VertexIndex> = hair_view.get_vertices();
-                    let mut edges: BTreeSet<EdgeIndex> = BTreeSet::from_iter(hair_view.get_base_view_edges());
-                    for &edge_index in dual_node.invalid_subgraph.hair.iter() {
-                        edges.remove(&edge_index);
+                    let mut vertices: BTreeSet<VertexPtr> = hair_view.get_vertices().iter().map(|v| v.upgrade_force()).collect::<BTreeSet<_>>();
+                    let mut edges: BTreeSet<EdgePtr> = hair_view.get_base_view_edges().iter().map(|e| e.upgrade_force()).collect::<BTreeSet<_>>();
+                    for edge_ptr in dual_node.invalid_subgraph.hair.iter() {
+                        edges.remove(&edge_ptr);
                     }
-                    for &edge_index in unnecessary_edges.iter() {
-                        edges.insert(edge_index);
-                        vertices.extend(decoding_graph.get_edge_neighbors(edge_index));
+                    for edge_weak in unnecessary_edges.iter() {
+                        let edge_ptr = edge_weak.upgrade_force();
+                        edges.insert(edge_ptr.clone());
+                        for vertex_weak in edge_ptr.read_recursive().vertices.iter() {
+                            vertices.insert(vertex_weak.upgrade_force());
+                        }
                     }
-                    let invalid_subgraph = Arc::new(InvalidSubgraph::new_complete(vertices, edges, decoding_graph));
+                    let invalid_subgraph = Arc::new(InvalidSubgraph::new_complete(&vertices, &edges));
                     let relaxer = Relaxer::new(
                         [
                             (invalid_subgraph, Rational::one()),
