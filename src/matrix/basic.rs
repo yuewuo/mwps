@@ -35,28 +35,28 @@ impl MatrixBasic for BasicMatrix {
 
     fn add_constraint(
         &mut self,
-        vertex_ptr: VertexPtr,
+        vertex_weak: VertexWeak,
+        incident_edges: &[EdgeWeak],
+        parity: bool,
     ) -> Option<Vec<VarIndex>> {
-        if self.vertices.contains(&vertex_ptr.downgrade()) {
+        if self.vertices.contains(&vertex_weak) {
             // no need to add repeat constraint
             return None;
         }
         let mut var_indices = None;
-        self.vertices.insert(vertex_ptr.downgrade());
-        let vertex = vertex_ptr.read_recursive();
-        for edge_weak in vertex.edges.iter() {
+        self.vertices.insert(vertex_weak.clone());
+        for edge_weak in incident_edges.iter() {
             if let Some(var_index) = self.add_variable(edge_weak.clone()) {
                 // this is a newly added edge
                 var_indices.get_or_insert_with(Vec::new).push(var_index);
             }
         }
         let mut row = ParityRow::new_length(self.variables.len());
-        for edge_weak in vertex.edges.iter() {
+        for edge_weak in incident_edges.iter() {
             let var_index = self.edges[&edge_weak];
             row.set_left(var_index, true);
         }
-        row.set_right(vertex.is_defect);
-        drop(vertex);
+        row.set_right(parity);
         self.constraints.push(row);
         var_indices
     }
@@ -115,317 +115,250 @@ impl VizTrait for BasicMatrix {
     }
 }
 
-// #[cfg(test)]
-// pub mod tests {
-//     use super::*;
-//     use crate::pointers::*;
+#[cfg(test)]
+pub mod tests {
+    use super::*;
+    use crate::pointers::*;
+    use crate::num_traits::Zero;
+    use crate::dual_module_pq::{Vertex, Edge, VertexPtr, EdgePtr};
+    use std::collections::HashSet;
 
-//     #[test]
-//     fn basic_matrix_1() {
-//         // cargo test --features=colorful basic_matrix_1 -- --nocapture
-//         let mut matrix = BasicMatrix::new();
-//         matrix.printstd();
-//         assert_eq!(
-//             matrix.printstd_str(),
-//             "\
-// ┌┬───┐
-// ┊┊ = ┊
-// ╞╪═══╡
-// └┴───┘
-// "
-//         );
+    pub fn initialize_vertex_edges_for_matrix_testing(
+        vertex_indices: Vec<VertexIndex>,
+        edge_indices: Vec<EdgeIndex>,
+    ) -> (Vec<VertexPtr>, Vec<EdgePtr>) {
+        // create edges
+        let edges: Vec<EdgePtr> = edge_indices.into_iter()
+            .map(|edge_index| {
+                EdgePtr::new_value(Edge {
+                    edge_index: edge_index,
+                    weight: Rational::zero(),
+                    dual_nodes: vec![],
+                    vertices: vec![],
+                    last_updated_time: Rational::zero(),
+                    growth_at_last_updated_time: Rational::zero(),
+                    grow_rate: Rational::zero(),
+                    #[cfg(feature = "incr_lp")]
+                    cluster_weights: hashbrown::HashMap::new(),
+                })
+            }).collect();
 
-//         // create vertices 
-//         let vertices: Vec<VertexPtr> = (0..3)
-//             .map(|vertex_index| {
-//                 VertexPtr::new_value(Vertex {
-//                     vertex_index,
-//                     is_defect: false,
-//                     edges: vec![],
-//                 })
-//             })
-//             .collect();
-
-//         // create edges
-//         let edges: Vec<EdgePtr> = vec![1, 4, 12, 345].into_iter()
-//             .map(|edge_index| {
-//                 EdgePtr::new_value(Edge {
-//                     edge_index: edge_index,
-//                     weight: Rational::zero(),
-//                     dual_nodes: vec![],
-//                     vertices: vec![],
-//                     last_updated_time: Rational::zero(),
-//                     growth_at_last_updated_time: Rational::zero(),
-//                     grow_rate: Rational::zero(),
-//                     unit_index: None,
-//                     connected_to_boundary_vertex: false,
-//                     #[cfg(feature = "incr_lp")]
-//                     cluster_weights: hashbrown::HashMap::new(),
-//                 })
-//             }).collect();
+        // create vertices 
+        let vertices: Vec<VertexPtr> = vertex_indices.into_iter()
+            .map(|vertex_index| {
+                VertexPtr::new_value(Vertex {
+                    vertex_index,
+                    is_defect: false,
+                    edges: vec![],
+                })
+            })
+            .collect();
         
+        (vertices, edges)
+    }
 
+    pub fn edge_vec_from_indices(edge_sequences: &[usize], edges: &Vec<EdgePtr>) -> Vec<EdgeWeak> {
+        edge_sequences.to_vec().iter().map(|&edge_sequence| edges[edge_sequence].downgrade()).collect::<Vec<_>>()
+    }
 
-//         matrix.add_variable(edges[0].downgrade());
-//         matrix.add_variable(edges[1].downgrade());
-//         matrix.add_variable(edges[2].downgrade());
-//         matrix.add_variable(edges[3].downgrade());
-//         matrix.printstd();
-//         assert_eq!(
-//             matrix.printstd_str(),
-//             "\
-// ┌┬─┬─┬─┬─┬───┐
-// ┊┊1┊4┊1┊3┊ = ┊
-// ┊┊ ┊ ┊2┊4┊   ┊
-// ┊┊ ┊ ┊ ┊5┊   ┊
-// ╞╪═╪═╪═╪═╪═══╡
-// └┴─┴─┴─┴─┴───┘
-// "
-//         );
-//         vertices[0].write().is_defect = true;
-//         vertices[0].write().edges = vec![edges[0].downgrade(), edges[1].downgrade(), edges[2].downgrade()];
-//         vertices[1].write().is_defect = false;
-//         vertices[1].write().edges = vec![edges[1].downgrade(), edges[3].downgrade()];
-//         vertices[2].write().is_defect = true;
-//         vertices[2].write().edges = vec![edges[0].downgrade(), edges[3].downgrade()];
-//         matrix.add_constraint(vertices[0].downgrade());
-//         matrix.add_constraint(vertices[1].downgrade());
-//         matrix.add_constraint(vertices[2].downgrade());
-//         matrix.printstd();
-//         assert_eq!(
-//             matrix.clone().printstd_str(),
-//             "\
-// ┌─┬─┬─┬─┬─┬───┐
-// ┊ ┊1┊4┊1┊3┊ = ┊
-// ┊ ┊ ┊ ┊2┊4┊   ┊
-// ┊ ┊ ┊ ┊ ┊5┊   ┊
-// ╞═╪═╪═╪═╪═╪═══╡
-// ┊0┊1┊1┊1┊ ┊ 1 ┊
-// ├─┼─┼─┼─┼─┼───┤
-// ┊1┊ ┊1┊ ┊1┊   ┊
-// ├─┼─┼─┼─┼─┼───┤
-// ┊2┊1┊ ┊ ┊1┊ 1 ┊
-// └─┴─┴─┴─┴─┴───┘
-// "
-//         );
-//         assert_eq!(matrix.get_vertices(), [0, 1, 2].into());
-//         assert_eq!(matrix.get_view_edges(), [1, 4, 12, 345]);
-//     }
+    #[test]
+    fn basic_matrix_1() {
+        // cargo test --features=colorful basic_matrix_1 -- --nocapture
+        let mut matrix = BasicMatrix::new();
+        matrix.printstd();
+        assert_eq!(
+            matrix.printstd_str(),
+            "\
+┌┬───┐
+┊┊ = ┊
+╞╪═══╡
+└┴───┘
+"
+        );
 
-//     #[test]
-//     fn basic_matrix_should_not_add_repeated_constraint() {
-//         // cargo test --features=colorful basic_matrix_should_not_add_repeated_constraint -- --nocapture
-//         let mut matrix = BasicMatrix::new();
+        let vertex_indices = vec![0, 1, 2];
+        let edge_indices = vec![1, 4, 12, 345];
+        let vertex_incident_edges_vec = vec![
+            vec![0, 1, 2],
+            vec![1, 3],
+            vec![0, 3],
+        ];
+        let (vertices, edges) = initialize_vertex_edges_for_matrix_testing(vertex_indices, edge_indices);
 
-//         // create vertices 
-//         let vertices: Vec<VertexPtr> = (0..3)
-//             .map(|vertex_index| {
-//                 VertexPtr::new_value(Vertex {
-//                     vertex_index,
-//                     is_defect: false,
-//                     edges: vec![],
-//                 })
-//             })
-//             .collect();
+        matrix.add_variable(edges[0].downgrade());
+        matrix.add_variable(edges[1].downgrade());
+        matrix.add_variable(edges[2].downgrade());
+        matrix.add_variable(edges[3].downgrade());
+        matrix.printstd();
+        assert_eq!(
+            matrix.printstd_str(),
+            "\
+┌┬─┬─┬─┬─┬───┐
+┊┊1┊4┊1┊3┊ = ┊
+┊┊ ┊ ┊2┊4┊   ┊
+┊┊ ┊ ┊ ┊5┊   ┊
+╞╪═╪═╪═╪═╪═══╡
+└┴─┴─┴─┴─┴───┘
+"
+        );
+        matrix.add_constraint(vertices[0].downgrade(), &edge_vec_from_indices(&vertex_incident_edges_vec[0], &edges), true);
+        matrix.add_constraint(vertices[1].downgrade(), &edge_vec_from_indices(&vertex_incident_edges_vec[1], &edges), false);
+        matrix.add_constraint(vertices[2].downgrade(), &edge_vec_from_indices(&vertex_incident_edges_vec[2], &edges), true);
+        matrix.printstd();
+        assert_eq!(
+            matrix.clone().printstd_str(),
+            "\
+┌─┬─┬─┬─┬─┬───┐
+┊ ┊1┊4┊1┊3┊ = ┊
+┊ ┊ ┊ ┊2┊4┊   ┊
+┊ ┊ ┊ ┊ ┊5┊   ┊
+╞═╪═╪═╪═╪═╪═══╡
+┊0┊1┊1┊1┊ ┊ 1 ┊
+├─┼─┼─┼─┼─┼───┤
+┊1┊ ┊1┊ ┊1┊   ┊
+├─┼─┼─┼─┼─┼───┤
+┊2┊1┊ ┊ ┊1┊ 1 ┊
+└─┴─┴─┴─┴─┴───┘
+"
+        );
+        assert_eq!(
+            matrix.get_vertices().iter().map(|v| v.upgrade_force().read_recursive().vertex_index).collect::<HashSet<_>>(), 
+            [0, 1, 2].into_iter().collect::<HashSet<_>>());
+        assert_eq!(
+            matrix.get_view_edges().iter().map(|e| e.upgrade_force().read_recursive().edge_index).collect::<HashSet<_>>(), 
+            [1, 4, 12, 345].into_iter().collect::<HashSet<_>>());
+    }
 
-//         // create edges
-//         let edges: Vec<EdgePtr> = vec![1, 4, 8].into_iter()
-//             .map(|edge_index| {
-//                 EdgePtr::new_value(Edge {
-//                     edge_index: edge_index,
-//                     weight: Rational::zero(),
-//                     dual_nodes: vec![],
-//                     vertices: vec![],
-//                     last_updated_time: Rational::zero(),
-//                     growth_at_last_updated_time: Rational::zero(),
-//                     grow_rate: Rational::zero(),
-//                     unit_index: None,
-//                     connected_to_boundary_vertex: false,
-//                     #[cfg(feature = "incr_lp")]
-//                     cluster_weights: hashbrown::HashMap::new(),
-//                 })
-//             }).collect();
+    #[test]
+    fn basic_matrix_should_not_add_repeated_constraint() {
+        // cargo test --features=colorful basic_matrix_should_not_add_repeated_constraint -- --nocapture
+        let mut matrix = BasicMatrix::new();
+        let vertex_indices = vec![0, 1, 2];
+        let edge_indices = vec![1, 4, 8];
+        let vertex_incident_edges_vec = vec![
+            vec![0, 1, 2],
+            vec![1, 2],
+            vec![1],
+        ];
+        let (vertices, edges) = initialize_vertex_edges_for_matrix_testing(vertex_indices, edge_indices);
 
-//         vertices[0].write().is_defect = false;
-//         vertices[0].write().edges = vec![edges[0].downgrade(), edges[1].downgrade(), edges[2].downgrade()];
-//         vertices[1].write().is_defect = true;
-//         vertices[1].write().edges = vec![edges[1].downgrade(), edges[2].downgrade()];
-//         vertices[2].write().is_defect = true;
-//         vertices[2].write().edges = vec![edges[1].downgrade()];
+        assert_eq!(matrix.add_constraint(vertices[0].downgrade(), &edge_vec_from_indices(&vertex_incident_edges_vec[0], &edges), false), Some(vec![0, 1, 2]));
+        assert_eq!(matrix.add_constraint(vertices[1].downgrade(), &edge_vec_from_indices(&vertex_incident_edges_vec[1], &edges), true), None);
+        assert_eq!(matrix.add_constraint(vertices[0].downgrade(), &edge_vec_from_indices(&vertex_incident_edges_vec[2], &edges), true), None); // repeated
+        matrix.printstd();
+        assert_eq!(
+            matrix.clone().printstd_str(),
+            "\
+┌─┬─┬─┬─┬───┐
+┊ ┊1┊4┊8┊ = ┊
+╞═╪═╪═╪═╪═══╡
+┊0┊1┊1┊1┊   ┊
+├─┼─┼─┼─┼───┤
+┊1┊ ┊1┊1┊ 1 ┊
+└─┴─┴─┴─┴───┘
+"
+        );
+    }
 
-//         assert_eq!(matrix.add_constraint(vertices[0].downgrade()), Some(vec![0, 1, 2]));
-//         assert_eq!(matrix.add_constraint(vertices[1].downgrade()), None);
-//         assert_eq!(matrix.add_constraint(vertices[0].downgrade()), None); // repeated
-//         matrix.printstd();
-//         assert_eq!(
-//             matrix.clone().printstd_str(),
-//             "\
-// ┌─┬─┬─┬─┬───┐
-// ┊ ┊1┊4┊8┊ = ┊
-// ╞═╪═╪═╪═╪═══╡
-// ┊0┊1┊1┊1┊   ┊
-// ├─┼─┼─┼─┼───┤
-// ┊1┊ ┊1┊1┊ 1 ┊
-// └─┴─┴─┴─┴───┘
-// "
-//         );
-//     }
-
-//     #[test]
-//     fn basic_matrix_row_operations() {
-//         // cargo test --features=colorful basic_matrix_row_operations -- --nocapture
-//         let mut matrix = BasicMatrix::new();
-
-//         // create vertices 
-//         let vertices: Vec<VertexPtr> = (0..3)
-//             .map(|vertex_index| {
-//                 VertexPtr::new_value(Vertex {
-//                     vertex_index,
-//                     is_defect: false,
-//                     edges: vec![],
-//                 })
-//             })
-//             .collect();
-
-//         // create edges
-//         let edges: Vec<EdgePtr> = vec![1, 4, 6, 9].into_iter()
-//             .map(|edge_index| {
-//                 EdgePtr::new_value(Edge {
-//                     edge_index: edge_index,
-//                     weight: Rational::zero(),
-//                     dual_nodes: vec![],
-//                     vertices: vec![],
-//                     last_updated_time: Rational::zero(),
-//                     growth_at_last_updated_time: Rational::zero(),
-//                     grow_rate: Rational::zero(),
-//                     unit_index: None,
-//                     connected_to_boundary_vertex: false,
-//                     #[cfg(feature = "incr_lp")]
-//                     cluster_weights: hashbrown::HashMap::new(),
-//                 })
-//             }).collect();
-
+    #[test]
+    fn basic_matrix_row_operations() {
+        // cargo test --features=colorful basic_matrix_row_operations -- --nocapture
+        let mut matrix = BasicMatrix::new();
+        let vertex_indices = vec![0, 1, 2];
+        let edge_indices = vec![1, 4, 6, 9];
+        let vertex_incident_edges_vec = vec![
+            vec![0, 1, 2],
+            vec![1, 3],
+            vec![0, 3],
+        ];
+        let (vertices, edges) = initialize_vertex_edges_for_matrix_testing(vertex_indices, edge_indices);
         
-//         vertices[0].write().is_defect = true;
-//         vertices[0].write().edges = vec![edges[0].downgrade(), edges[1].downgrade(), edges[2].downgrade()];
-//         vertices[1].write().is_defect = false;
-//         vertices[1].write().edges = vec![edges[1].downgrade(), edges[3].downgrade()];
-//         vertices[2].write().is_defect = true;
-//         vertices[2].write().edges = vec![edges[0].downgrade(), edges[3].downgrade()];
-//         matrix.add_constraint(vertices[0].downgrade());
-//         matrix.add_constraint(vertices[1].downgrade());
-//         matrix.add_constraint(vertices[2].downgrade());
-//         matrix.printstd();
-//         assert_eq!(
-//             matrix.clone().printstd_str(),
-//             "\
-// ┌─┬─┬─┬─┬─┬───┐
-// ┊ ┊1┊4┊6┊9┊ = ┊
-// ╞═╪═╪═╪═╪═╪═══╡
-// ┊0┊1┊1┊1┊ ┊ 1 ┊
-// ├─┼─┼─┼─┼─┼───┤
-// ┊1┊ ┊1┊ ┊1┊   ┊
-// ├─┼─┼─┼─┼─┼───┤
-// ┊2┊1┊ ┊ ┊1┊ 1 ┊
-// └─┴─┴─┴─┴─┴───┘
-// "
-//         );
-//         matrix.swap_row(2, 1);
-//         matrix.printstd();
-//         assert_eq!(
-//             matrix.clone().printstd_str(),
-//             "\
-// ┌─┬─┬─┬─┬─┬───┐
-// ┊ ┊1┊4┊6┊9┊ = ┊
-// ╞═╪═╪═╪═╪═╪═══╡
-// ┊0┊1┊1┊1┊ ┊ 1 ┊
-// ├─┼─┼─┼─┼─┼───┤
-// ┊1┊1┊ ┊ ┊1┊ 1 ┊
-// ├─┼─┼─┼─┼─┼───┤
-// ┊2┊ ┊1┊ ┊1┊   ┊
-// └─┴─┴─┴─┴─┴───┘
-// "
-//         );
-//         matrix.xor_row(0, 1);
-//         matrix.printstd();
-//         assert_eq!(
-//             matrix.clone().printstd_str(),
-//             "\
-// ┌─┬─┬─┬─┬─┬───┐
-// ┊ ┊1┊4┊6┊9┊ = ┊
-// ╞═╪═╪═╪═╪═╪═══╡
-// ┊0┊ ┊1┊1┊1┊   ┊
-// ├─┼─┼─┼─┼─┼───┤
-// ┊1┊1┊ ┊ ┊1┊ 1 ┊
-// ├─┼─┼─┼─┼─┼───┤
-// ┊2┊ ┊1┊ ┊1┊   ┊
-// └─┴─┴─┴─┴─┴───┘
-// "
-//         );
-//     }
+        matrix.add_constraint(vertices[0].downgrade(), &edge_vec_from_indices(&vertex_incident_edges_vec[0], &edges), true);
+        matrix.add_constraint(vertices[1].downgrade(), &edge_vec_from_indices(&vertex_incident_edges_vec[1], &edges), false);
+        matrix.add_constraint(vertices[2].downgrade(), &edge_vec_from_indices(&vertex_incident_edges_vec[2], &edges), true);
+        matrix.printstd();
+        assert_eq!(
+            matrix.clone().printstd_str(),
+            "\
+┌─┬─┬─┬─┬─┬───┐
+┊ ┊1┊4┊6┊9┊ = ┊
+╞═╪═╪═╪═╪═╪═══╡
+┊0┊1┊1┊1┊ ┊ 1 ┊
+├─┼─┼─┼─┼─┼───┤
+┊1┊ ┊1┊ ┊1┊   ┊
+├─┼─┼─┼─┼─┼───┤
+┊2┊1┊ ┊ ┊1┊ 1 ┊
+└─┴─┴─┴─┴─┴───┘
+"
+        );
+        matrix.swap_row(2, 1);
+        matrix.printstd();
+        assert_eq!(
+            matrix.clone().printstd_str(),
+            "\
+┌─┬─┬─┬─┬─┬───┐
+┊ ┊1┊4┊6┊9┊ = ┊
+╞═╪═╪═╪═╪═╪═══╡
+┊0┊1┊1┊1┊ ┊ 1 ┊
+├─┼─┼─┼─┼─┼───┤
+┊1┊1┊ ┊ ┊1┊ 1 ┊
+├─┼─┼─┼─┼─┼───┤
+┊2┊ ┊1┊ ┊1┊   ┊
+└─┴─┴─┴─┴─┴───┘
+"
+        );
+        matrix.xor_row(0, 1);
+        matrix.printstd();
+        assert_eq!(
+            matrix.clone().printstd_str(),
+            "\
+┌─┬─┬─┬─┬─┬───┐
+┊ ┊1┊4┊6┊9┊ = ┊
+╞═╪═╪═╪═╪═╪═══╡
+┊0┊ ┊1┊1┊1┊   ┊
+├─┼─┼─┼─┼─┼───┤
+┊1┊1┊ ┊ ┊1┊ 1 ┊
+├─┼─┼─┼─┼─┼───┤
+┊2┊ ┊1┊ ┊1┊   ┊
+└─┴─┴─┴─┴─┴───┘
+"
+        );
+    }
 
-//     #[test]
-//     fn basic_matrix_manual_echelon() {
-//         // cargo test --features=colorful basic_matrix_manual_echelon -- --nocapture
-//         let mut matrix = BasicMatrix::new();
+    #[test]
+    fn basic_matrix_manual_echelon() {
+        // cargo test --features=colorful basic_matrix_manual_echelon -- --nocapture
+        let mut matrix = BasicMatrix::new();
+        let vertex_indices = vec![0, 1, 2];
+        let edge_indices = vec![1, 4, 6, 9];
+        let vertex_incident_edges_vec = vec![
+            vec![0, 1, 2],
+            vec![1, 3],
+            vec![0, 3],
+        ];
+        let (vertices, edges) = initialize_vertex_edges_for_matrix_testing(vertex_indices, edge_indices);
 
-//         // create vertices 
-//         let vertices: Vec<VertexPtr> = (0..3)
-//             .map(|vertex_index| {
-//                 VertexPtr::new_value(Vertex {
-//                     vertex_index,
-//                     is_defect: false,
-//                     edges: vec![],
-//                 })
-//             })
-//             .collect();
-
-
-//         // create edges
-//         let edges: Vec<EdgePtr> = vec![1, 4, 6, 9].into_iter()
-//             .map(|edge_index| {
-//                 EdgePtr::new_value(Edge {
-//                     edge_index: edge_index,
-//                     weight: Rational::zero(),
-//                     dual_nodes: vec![],
-//                     vertices: vec![],
-//                     last_updated_time: Rational::zero(),
-//                     growth_at_last_updated_time: Rational::zero(),
-//                     grow_rate: Rational::zero(),
-//                     unit_index: None,
-//                     connected_to_boundary_vertex: false,
-//                     #[cfg(feature = "incr_lp")]
-//                     cluster_weights: hashbrown::HashMap::new(),
-//                 })
-//             }).collect();
-
-//         vertices[0].write().is_defect = true;
-//         vertices[0].write().edges = vec![edges[0].downgrade(), edges[1].downgrade(), edges[2].downgrade()];
-//         vertices[1].write().is_defect = false;
-//         vertices[1].write().edges = vec![edges[1].downgrade(), edges[3].downgrade()];
-//         vertices[2].write().is_defect = true;
-//         vertices[2].write().edges = vec![edges[0].downgrade(), edges[3].downgrade()];
-//         matrix.add_constraint(vertices[0].downgrade());
-//         matrix.add_constraint(vertices[1].downgrade());
-//         matrix.add_constraint(vertices[2].downgrade());
-//         matrix.xor_row(2, 0);
-//         matrix.xor_row(0, 1);
-//         matrix.xor_row(2, 1);
-//         matrix.xor_row(0, 2);
-//         matrix.printstd();
-//         assert_eq!(
-//             matrix.clone().printstd_str(),
-//             "\
-// ┌─┬─┬─┬─┬─┬───┐
-// ┊ ┊1┊4┊6┊9┊ = ┊
-// ╞═╪═╪═╪═╪═╪═══╡
-// ┊0┊1┊ ┊ ┊1┊ 1 ┊
-// ├─┼─┼─┼─┼─┼───┤
-// ┊1┊ ┊1┊ ┊1┊   ┊
-// ├─┼─┼─┼─┼─┼───┤
-// ┊2┊ ┊ ┊1┊ ┊   ┊
-// └─┴─┴─┴─┴─┴───┘
-// "
-//         );
-//     }
-// }
+        matrix.add_constraint(vertices[0].downgrade(), &edge_vec_from_indices(&vertex_incident_edges_vec[0], &edges), true);
+        matrix.add_constraint(vertices[1].downgrade(), &edge_vec_from_indices(&vertex_incident_edges_vec[1], &edges), false);
+        matrix.add_constraint(vertices[2].downgrade(), &edge_vec_from_indices(&vertex_incident_edges_vec[2], &edges), true);
+        matrix.xor_row(2, 0);
+        matrix.xor_row(0, 1);
+        matrix.xor_row(2, 1);
+        matrix.xor_row(0, 2);
+        matrix.printstd();
+        assert_eq!(
+            matrix.clone().printstd_str(),
+            "\
+┌─┬─┬─┬─┬─┬───┐
+┊ ┊1┊4┊6┊9┊ = ┊
+╞═╪═╪═╪═╪═╪═══╡
+┊0┊1┊ ┊ ┊1┊ 1 ┊
+├─┼─┼─┼─┼─┼───┤
+┊1┊ ┊1┊ ┊1┊   ┊
+├─┼─┼─┼─┼─┼───┤
+┊2┊ ┊ ┊1┊ ┊   ┊
+└─┴─┴─┴─┴─┴───┘
+"
+        );
+    }
+}

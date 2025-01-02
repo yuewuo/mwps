@@ -134,65 +134,85 @@ impl Relaxer {
     }
 }
 
-// #[cfg(test)]
-// mod tests {
-//     use super::*;
-//     use crate::decoding_hypergraph::tests::*;
-//     use crate::invalid_subgraph::tests::*;
-//     use num_traits::One;
-//     use std::collections::BTreeSet;
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::decoding_hypergraph::tests::*;
+    use crate::invalid_subgraph::tests::*;
+    use num_traits::One;
+    use std::collections::BTreeSet;
+    use crate::dual_module_pq::DualModulePQ;
+    use crate::dual_module::DualModuleImpl;
+    use crate::dual_module::DualModuleInterfacePtr;
 
-//     #[test]
-//     fn relaxer_good() {
-//         // cargo test relaxer_good -- --nocapture
-//         let visualize_filename = "relaxer_good.json".to_string();
-//         let (decoding_graph, ..) = color_code_5_decoding_graph(vec![7, 1], visualize_filename);
-//         let invalid_subgraph = Arc::new(InvalidSubgraph::new_complete(
-//             vec![7].into_iter().collect(),
-//             BTreeSet::new(),
-//             decoding_graph.as_ref(),
-//         ));
-//         use num_traits::One;
-//         let relaxer = Relaxer::new([(invalid_subgraph, Rational::one())].into());
-//         println!("relaxer: {relaxer:?}");
-//         assert!(relaxer.untighten_edges.is_empty());
-//     }
+    #[test]
+    fn relaxer_good() {
+        // cargo test relaxer_good -- --nocapture
+        let visualize_filename = "relaxer_good.json".to_string();
+        let (decoding_graph, ..) = color_code_5_decoding_graph(vec![7, 1], visualize_filename);
+        let initializer = decoding_graph.model_graph.initializer.clone();
+        let mut dual_module = DualModulePQ::new_empty(&initializer); // initialize vertex and edge pointers
+        let interface_ptr = DualModuleInterfacePtr::new(decoding_graph.model_graph.clone());
+        interface_ptr.load(decoding_graph.syndrome_pattern.clone(), &mut dual_module); // this is needed to load the defect vertices
 
-//     #[test]
-//     #[cfg_attr(debug_assertions, should_panic)]
-//     fn relaxer_bad() {
-//         // cargo test relaxer_bad -- --nocapture
-//         let visualize_filename = "relaxer_bad.json".to_string();
-//         let (decoding_graph, ..) = color_code_5_decoding_graph(vec![7, 1], visualize_filename);
-//         let invalid_subgraph = Arc::new(InvalidSubgraph::new_complete(
-//             vec![7].into_iter().collect(),
-//             BTreeSet::new(),
-//             decoding_graph.as_ref(),
-//         ));
-//         let relaxer: Relaxer = Relaxer::new([(invalid_subgraph, Rational::zero())].into());
-//         println!("relaxer: {relaxer:?}"); // should not print because it panics
-//     }
+        let invalid_subgraph = Arc::new(InvalidSubgraph::new_complete_from_indices(
+            vec![7].into_iter().collect(),
+            BTreeSet::new(),
+            &mut dual_module
+        ));
+        use num_traits::One;
+        let relaxer = Relaxer::new([(invalid_subgraph, Rational::one())].into());
+        println!("relaxer: {relaxer:?}");
+        assert!(relaxer.untighten_edges.is_empty());
+    }
 
-//     #[test]
-//     fn relaxer_hash() {
-//         // cargo test relaxer_hash -- --nocapture
-//         let vertices: BTreeSet<VertexIndex> = [1, 2, 3].into();
-//         let edges: BTreeSet<EdgeIndex> = [4, 5].into();
-//         let hair: BTreeSet<EdgeIndex> = [6, 7, 8].into();
-//         let invalid_subgraph = InvalidSubgraph::new_raw(vertices.clone(), edges.clone(), hair.clone());
-//         let relaxer_1 = Relaxer::new([(Arc::new(invalid_subgraph.clone()), Rational::one())].into());
-//         let relaxer_2 = Relaxer::new([(Arc::new(invalid_subgraph), Rational::one())].into());
-//         assert_eq!(relaxer_1, relaxer_2);
-//         // they should have the same hash value
-//         assert_eq!(
-//             get_default_hash_value(&relaxer_1),
-//             get_default_hash_value(&relaxer_1.hash_value)
-//         );
-//         assert_eq!(get_default_hash_value(&relaxer_1), get_default_hash_value(&relaxer_2));
-//         // the pointer should also have the same hash value
-//         let ptr_1 = Arc::new(relaxer_1);
-//         let ptr_2 = Arc::new(relaxer_2);
-//         assert_eq!(get_default_hash_value(&ptr_1), get_default_hash_value(&ptr_1.hash_value));
-//         assert_eq!(get_default_hash_value(&ptr_1), get_default_hash_value(&ptr_2));
-//     }
-// }
+    #[test]
+    #[cfg_attr(debug_assertions, should_panic)]
+    fn relaxer_bad() {
+        // cargo test relaxer_bad -- --nocapture
+        let visualize_filename = "relaxer_bad.json".to_string();
+        let (decoding_graph, ..) = color_code_5_decoding_graph(vec![7, 1], visualize_filename);
+        let initializer = decoding_graph.model_graph.initializer.clone();
+        let mut dual_module = DualModulePQ::new_empty(&initializer); // initialize vertex and edge pointers
+        let interface_ptr = DualModuleInterfacePtr::new(decoding_graph.model_graph.clone());
+        interface_ptr.load(decoding_graph.syndrome_pattern.clone(), &mut dual_module); // this is needed to load the defect vertices
+
+        let invalid_subgraph = Arc::new(InvalidSubgraph::new_complete_from_indices(
+            vec![7].into_iter().collect(),
+            BTreeSet::new(),
+            &mut dual_module
+        ));
+        let relaxer: Relaxer = Relaxer::new([(invalid_subgraph, Rational::zero())].into());
+        println!("relaxer: {relaxer:?}"); // should not print because it panics
+    }
+
+    #[test]
+    fn relaxer_hash() {
+        // cargo test relaxer_hash -- --nocapture
+        let visualize_filename = "relaxer_hash.json".to_string();
+        let (decoding_graph, ..) = color_code_5_decoding_graph(vec![7, 1], visualize_filename);
+        let initializer = decoding_graph.model_graph.initializer.clone();
+        let mut dual_module = DualModulePQ::new_empty(&initializer); // initialize vertex and edge pointers
+        let interface_ptr = DualModuleInterfacePtr::new(decoding_graph.model_graph.clone());
+        interface_ptr.load(decoding_graph.syndrome_pattern.clone(), &mut dual_module); // this is needed to load the defect vertices
+
+        let vertices: BTreeSet<VertexIndex> = [1, 2, 3].into();
+        let edges: BTreeSet<EdgeIndex> = [4, 5].into();
+        let hair: BTreeSet<EdgeIndex> = [6, 7, 8].into();
+        let invalid_subgraph = InvalidSubgraph::new_raw_from_indices(vertices.clone(), edges.clone(), hair.clone(), &mut dual_module);
+        let relaxer_1 = Relaxer::new([(Arc::new(invalid_subgraph.clone()), Rational::one())].into());
+        let relaxer_2 = Relaxer::new([(Arc::new(invalid_subgraph), Rational::one())].into());
+        assert_eq!(relaxer_1, relaxer_2);
+        // they should have the same hash value
+        assert_eq!(
+            get_default_hash_value(&relaxer_1),
+            get_default_hash_value(&relaxer_1.hash_value)
+        );
+        assert_eq!(get_default_hash_value(&relaxer_1), get_default_hash_value(&relaxer_2));
+        // the pointer should also have the same hash value
+        let ptr_1 = Arc::new(relaxer_1);
+        let ptr_2 = Arc::new(relaxer_2);
+        assert_eq!(get_default_hash_value(&ptr_1), get_default_hash_value(&ptr_1.hash_value));
+        assert_eq!(get_default_hash_value(&ptr_1), get_default_hash_value(&ptr_2));
+    }
+}

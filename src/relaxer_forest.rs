@@ -151,184 +151,224 @@ impl RelaxerForest {
     }
 }
 
-// #[cfg(test)]
-// pub mod tests {
-//     use super::*;
-//     use num_traits::{FromPrimitive, One};
+#[cfg(test)]
+pub mod tests {
+    use super::*;
+    use num_traits::{FromPrimitive, One};
+    use crate::dual_module::DualModuleInterfacePtr;
+    use crate::decoding_hypergraph::tests::color_code_5_decoding_graph;
+    use crate::dual_module_pq::DualModulePQ;
+    use crate::dual_module::DualModuleImpl;
 
-//     #[test]
-//     fn relaxer_forest_example() {
-//         // cargo test relaxer_forest_example -- --nocapture
-//         let tight_edges = [0, 1, 2, 3, 4, 5, 6];
-//         let shrinkable_subgraphs = [
-//             Arc::new(InvalidSubgraph::new_raw([].into(), [].into(), [1, 2, 3].into())),
-//             Arc::new(InvalidSubgraph::new_raw([].into(), [].into(), [4, 5].into())),
-//         ];
-//         let mut relaxer_forest = RelaxerForest::new(tight_edges.into_iter(), shrinkable_subgraphs.iter().cloned());
-//         let invalid_subgraph_1 = Arc::new(InvalidSubgraph::new_raw([].into(), [].into(), [7, 8, 9].into()));
-//         let relaxer_1 = Arc::new(Relaxer::new_raw(
-//             [
-//                 (invalid_subgraph_1.clone(), Rational::one()),
-//                 (shrinkable_subgraphs[0].clone(), -Rational::one()),
-//             ]
-//             .into(),
-//         ));
-//         let expanded_1 = relaxer_forest.expand(&relaxer_1);
-//         assert_eq!(expanded_1, *relaxer_1);
-//         relaxer_forest.add(relaxer_1);
-//         // now add a relaxer that is relying on relaxer_1
-//         let invalid_subgraph_2 = Arc::new(InvalidSubgraph::new_raw([].into(), [].into(), [1, 2, 7].into()));
-//         let relaxer_2 = Arc::new(Relaxer::new_raw([(invalid_subgraph_2.clone(), Rational::one())].into()));
-//         let expanded_2 = relaxer_forest.expand(&relaxer_2);
-//         assert_eq!(
-//             expanded_2,
-//             Relaxer::new(
-//                 [
-//                     (invalid_subgraph_1, Rational::one()),
-//                     (shrinkable_subgraphs[0].clone(), -Rational::one()),
-//                     (invalid_subgraph_2, Rational::one())
-//                 ]
-//                 .into()
-//             )
-//         );
-//         // println!("{expanded_2:#?}");
-//     }
+    #[test]
+    fn relaxer_forest_example() {
+        // cargo test relaxer_forest_example -- --nocapture
+        // initialize an arbitrary decoding graph, this is required because invalid subgraph needs the vertex and edge pointers
+        let visualize_filename = "relaxer_forest_example.json".to_string();
+        let (decoding_graph, ..) = color_code_5_decoding_graph(vec![7, 1], visualize_filename);
+        let initializer = decoding_graph.model_graph.initializer.clone();
+        let mut dual_module = DualModulePQ::new_empty(&initializer);
+        let interface_ptr = DualModuleInterfacePtr::new(decoding_graph.model_graph.clone());
+        interface_ptr.load(decoding_graph.syndrome_pattern.clone(), &mut dual_module); // this is needed to load the defect vertices
 
-//     #[test]
-//     fn relaxer_forest_require_multiple() {
-//         // cargo test relaxer_forest_require_multiple -- --nocapture
-//         let tight_edges = [0, 1, 2, 3, 4, 5, 6];
-//         let shrinkable_subgraphs = [
-//             Arc::new(InvalidSubgraph::new_raw([].into(), [].into(), [1, 2].into())),
-//             Arc::new(InvalidSubgraph::new_raw([].into(), [].into(), [3].into())),
-//         ];
-//         let mut relaxer_forest = RelaxerForest::new(tight_edges.into_iter(), shrinkable_subgraphs.iter().cloned());
-//         let invalid_subgraph_1 = Arc::new(InvalidSubgraph::new_raw([].into(), [].into(), [7, 8, 9].into()));
-//         let relaxer_1 = Arc::new(Relaxer::new_raw(
-//             [
-//                 (invalid_subgraph_1.clone(), Rational::one()),
-//                 (shrinkable_subgraphs[0].clone(), -Rational::one()),
-//             ]
-//             .into(),
-//         ));
-//         relaxer_forest.add(relaxer_1);
-//         let invalid_subgraph_2 = Arc::new(InvalidSubgraph::new_raw([].into(), [].into(), [1, 2, 7].into()));
-//         let invalid_subgraph_3 = Arc::new(InvalidSubgraph::new_raw([].into(), [].into(), [2].into()));
-//         let relaxer_2 = Arc::new(Relaxer::new_raw(
-//             [
-//                 (invalid_subgraph_2.clone(), Rational::one()),
-//                 (invalid_subgraph_3.clone(), Rational::one()),
-//             ]
-//             .into(),
-//         ));
-//         let expanded_2 = relaxer_forest.expand(&relaxer_2);
-//         assert_eq!(
-//             expanded_2,
-//             Relaxer::new(
-//                 [
-//                     (invalid_subgraph_2, Rational::one()),
-//                     (invalid_subgraph_3, Rational::one()),
-//                     (invalid_subgraph_1, Rational::from_usize(2).unwrap()),
-//                     (shrinkable_subgraphs[0].clone(), -Rational::from_usize(2).unwrap()),
-//                 ]
-//                 .into()
-//             )
-//         );
-//         // println!("{expanded_2:#?}");
-//     }
+        let tight_edges = [0, 1, 2, 3, 4, 5, 6];
+        let shrinkable_subgraphs = [
+            Arc::new(InvalidSubgraph::new_raw_from_indices([].into(), [].into(), [1, 2, 3].into(), &mut dual_module)),
+            Arc::new(InvalidSubgraph::new_raw_from_indices([].into(), [].into(), [4, 5].into(), &mut dual_module)),
+        ];
+        let tight_edges_weak = dual_module.get_edge_ptr_vec(&tight_edges).into_iter().map(|e| e.downgrade()).collect::<Vec<_>>();
+        let mut relaxer_forest = RelaxerForest::new(tight_edges_weak.into_iter(), shrinkable_subgraphs.iter().cloned());
+        let invalid_subgraph_1 = Arc::new(InvalidSubgraph::new_raw_from_indices([].into(), [].into(), [7, 8, 9].into(), &mut dual_module));
+        let relaxer_1 = Arc::new(Relaxer::new_raw(
+            [
+                (invalid_subgraph_1.clone(), Rational::one()),
+                (shrinkable_subgraphs[0].clone(), -Rational::one()),
+            ]
+            .into(),
+        ));
+        let expanded_1 = relaxer_forest.expand(&relaxer_1);
+        assert_eq!(expanded_1, *relaxer_1);
+        relaxer_forest.add(relaxer_1);
+        // now add a relaxer that is relying on relaxer_1
+        let invalid_subgraph_2 = Arc::new(InvalidSubgraph::new_raw_from_indices([].into(), [].into(), [1, 2, 7].into(), &mut dual_module));
+        let relaxer_2 = Arc::new(Relaxer::new_raw([(invalid_subgraph_2.clone(), Rational::one())].into()));
+        let expanded_2 = relaxer_forest.expand(&relaxer_2);
+        assert_eq!(
+            expanded_2,
+            Relaxer::new(
+                [
+                    (invalid_subgraph_1, Rational::one()),
+                    (shrinkable_subgraphs[0].clone(), -Rational::one()),
+                    (invalid_subgraph_2, Rational::one())
+                ]
+                .into()
+            )
+        );
+        // println!("{expanded_2:#?}");
+    }
 
-//     #[test]
-//     fn relaxer_forest_relaxing_same_edge() {
-//         // cargo test relaxer_forest_relaxing_same_edge -- --nocapture
-//         let tight_edges = [0, 1, 2, 3, 4, 5, 6];
-//         let shrinkable_subgraphs = [
-//             Arc::new(InvalidSubgraph::new_raw([].into(), [].into(), [1, 2].into())),
-//             Arc::new(InvalidSubgraph::new_raw([].into(), [].into(), [2, 3].into())),
-//         ];
-//         let mut relaxer_forest = RelaxerForest::new(tight_edges.into_iter(), shrinkable_subgraphs.iter().cloned());
-//         let invalid_subgraph_1 = Arc::new(InvalidSubgraph::new_raw([].into(), [].into(), [7, 8, 9].into()));
-//         let relaxer_1 = Arc::new(Relaxer::new_raw(
-//             [
-//                 (invalid_subgraph_1.clone(), Rational::one()),
-//                 (shrinkable_subgraphs[0].clone(), -Rational::one()),
-//             ]
-//             .into(),
-//         ));
-//         relaxer_forest.add(relaxer_1);
-//         let invalid_subgraph_2 = Arc::new(InvalidSubgraph::new_raw([].into(), [].into(), [10, 11].into()));
-//         let relaxer_2 = Arc::new(Relaxer::new_raw(
-//             [
-//                 (invalid_subgraph_2.clone(), Rational::one()),
-//                 (shrinkable_subgraphs[1].clone(), -Rational::one()),
-//             ]
-//             .into(),
-//         ));
-//         relaxer_forest.add(relaxer_2);
-//     }
+    #[test]
+    fn relaxer_forest_require_multiple() {
+        // cargo test relaxer_forest_require_multiple -- --nocapture
+        // initialize an arbitrary decoding graph, this is required because invalid subgraph needs the vertex and edge pointers
+        let visualize_filename = "relaxer_forest_require_multiple.json".to_string();
+        let (decoding_graph, ..) = color_code_5_decoding_graph(vec![7, 1], visualize_filename);
+        let initializer = decoding_graph.model_graph.initializer.clone();
+        let mut dual_module = DualModulePQ::new_empty(&initializer);
+        let interface_ptr = DualModuleInterfacePtr::new(decoding_graph.model_graph.clone());
+        interface_ptr.load(decoding_graph.syndrome_pattern.clone(), &mut dual_module); // this is needed to load the defect vertices
 
-//     #[test]
-//     fn relaxer_forest_validate() {
-//         // cargo test relaxer_forest_validate -- --nocapture
-//         let tight_edges = [0, 1, 2, 3, 4, 5, 6];
-//         let shrinkable_subgraphs = [
-//             Arc::new(InvalidSubgraph::new_raw([1].into(), [].into(), [1, 2].into())),
-//             Arc::new(InvalidSubgraph::new_raw([].into(), [].into(), [].into())),
-//         ];
-//         let relaxer_forest = RelaxerForest::new(tight_edges.into_iter(), shrinkable_subgraphs.iter().cloned());
-//         println!("relaxer_forest: {:?}", relaxer_forest.shrinkable_subgraphs);
-//         // invalid relaxer is forbidden
-//         let invalid_relaxer = Relaxer::new_raw(
-//             [(
-//                 Arc::new(InvalidSubgraph::new_raw([].into(), [].into(), [].into())),
-//                 -Rational::one(),
-//             )]
-//             .into(),
-//         );
-//         let error_message = relaxer_forest.validate(&invalid_relaxer).expect_err("should panic");
-//         assert_eq!(
-//             &error_message[..RELAXER_ERR_MSG_NEGATIVE_SUMMATION.len()],
-//             RELAXER_ERR_MSG_NEGATIVE_SUMMATION
-//         );
-//         // relaxer that increases a tight edge is forbidden
-//         let relaxer = Relaxer::new_raw(
-//             [(
-//                 Arc::new(InvalidSubgraph::new_raw([].into(), [].into(), [1].into())),
-//                 Rational::one(),
-//             )]
-//             .into(),
-//         );
-//         let error_message = relaxer_forest.validate(&relaxer).expect_err("should panic");
-//         assert_eq!(
-//             &error_message[..FOREST_ERR_MSG_GROW_TIGHT_EDGE.len()],
-//             FOREST_ERR_MSG_GROW_TIGHT_EDGE
-//         );
-//         // relaxer that shrinks a zero dual variable is forbidden
-//         let relaxer = Relaxer::new_raw(
-//             [
-//                 (
-//                     Arc::new(InvalidSubgraph::new_raw([].into(), [].into(), [9].into())),
-//                     Rational::one(),
-//                 ),
-//                 (
-//                     Arc::new(InvalidSubgraph::new_raw([].into(), [].into(), [2, 3].into())),
-//                     -Rational::one(),
-//                 ),
-//             ]
-//             .into(),
-//         );
-//         let error_message = relaxer_forest.validate(&relaxer).expect_err("should panic");
-//         assert_eq!(
-//             &error_message[..FOREST_ERR_MSG_UNSHRINKABLE.len()],
-//             FOREST_ERR_MSG_UNSHRINKABLE
-//         );
-//         // otherwise a relaxer is ok
-//         let relaxer = Relaxer::new_raw(
-//             [(
-//                 Arc::new(InvalidSubgraph::new_raw([].into(), [].into(), [9].into())),
-//                 Rational::one(),
-//             )]
-//             .into(),
-//         );
-//         relaxer_forest.validate(&relaxer).unwrap();
-//     }
-// }
+        let tight_edges = [0, 1, 2, 3, 4, 5, 6];
+        let shrinkable_subgraphs = [
+            Arc::new(InvalidSubgraph::new_raw_from_indices([].into(), [].into(), [1, 2].into(), &mut dual_module)),
+            Arc::new(InvalidSubgraph::new_raw_from_indices([].into(), [].into(), [3].into(), &mut dual_module)),
+        ];
+        let tight_edges_weak = dual_module.get_edge_ptr_vec(&tight_edges).into_iter().map(|e| e.downgrade()).collect::<Vec<_>>();
+        let mut relaxer_forest = RelaxerForest::new(tight_edges_weak.into_iter(), shrinkable_subgraphs.iter().cloned());
+        let invalid_subgraph_1 = Arc::new(InvalidSubgraph::new_raw_from_indices([].into(), [].into(), [7, 8, 9].into(), &mut dual_module));
+        let relaxer_1 = Arc::new(Relaxer::new_raw(
+            [
+                (invalid_subgraph_1.clone(), Rational::one()),
+                (shrinkable_subgraphs[0].clone(), -Rational::one()),
+            ]
+            .into(),
+        ));
+        relaxer_forest.add(relaxer_1);
+        let invalid_subgraph_2 = Arc::new(InvalidSubgraph::new_raw_from_indices([].into(), [].into(), [1, 2, 7].into(), &mut dual_module));
+        let invalid_subgraph_3 = Arc::new(InvalidSubgraph::new_raw_from_indices([].into(), [].into(), [2].into(), &mut dual_module));
+        let relaxer_2 = Arc::new(Relaxer::new_raw(
+            [
+                (invalid_subgraph_2.clone(), Rational::one()),
+                (invalid_subgraph_3.clone(), Rational::one()),
+            ]
+            .into(),
+        ));
+        let expanded_2 = relaxer_forest.expand(&relaxer_2);
+        assert_eq!(
+            expanded_2,
+            Relaxer::new(
+                [
+                    (invalid_subgraph_2, Rational::one()),
+                    (invalid_subgraph_3, Rational::one()),
+                    (invalid_subgraph_1, Rational::from_usize(2).unwrap()),
+                    (shrinkable_subgraphs[0].clone(), -Rational::from_usize(2).unwrap()),
+                ]
+                .into()
+            )
+        );
+        // println!("{expanded_2:#?}");
+    }
+
+    #[test]
+    fn relaxer_forest_relaxing_same_edge() {
+        // cargo test relaxer_forest_relaxing_same_edge -- --nocapture
+        // initialize an arbitrary decoding graph, this is required because invalid subgraph needs the vertex and edge pointers
+        let visualize_filename = "relaxer_forest_relaxing_same_edge.json".to_string();
+        let (decoding_graph, ..) = color_code_5_decoding_graph(vec![7, 1], visualize_filename);
+        let initializer = decoding_graph.model_graph.initializer.clone();
+        let mut dual_module = DualModulePQ::new_empty(&initializer); // initialize vertex and edge pointers
+        let interface_ptr = DualModuleInterfacePtr::new(decoding_graph.model_graph.clone());
+        interface_ptr.load(decoding_graph.syndrome_pattern.clone(), &mut dual_module); // this is needed to load the defect vertices
+
+        let tight_edges = [0, 1, 2, 3, 4, 5, 6];
+        let shrinkable_subgraphs = [
+            Arc::new(InvalidSubgraph::new_raw_from_indices([].into(), [].into(), [1, 2].into(), &mut dual_module)),
+            Arc::new(InvalidSubgraph::new_raw_from_indices([].into(), [].into(), [2, 3].into(), &mut dual_module)),
+        ];
+        let tight_edges_weak = dual_module.get_edge_ptr_vec(&tight_edges).into_iter().map(|e| e.downgrade()).collect::<Vec<_>>();
+        let mut relaxer_forest = RelaxerForest::new(tight_edges_weak.into_iter(), shrinkable_subgraphs.iter().cloned());
+        let invalid_subgraph_1 = Arc::new(InvalidSubgraph::new_raw_from_indices([].into(), [].into(), [7, 8, 9].into(), &mut dual_module));
+        let relaxer_1 = Arc::new(Relaxer::new_raw(
+            [
+                (invalid_subgraph_1.clone(), Rational::one()),
+                (shrinkable_subgraphs[0].clone(), -Rational::one()),
+            ]
+            .into(),
+        ));
+        relaxer_forest.add(relaxer_1);
+        let invalid_subgraph_2 = Arc::new(InvalidSubgraph::new_raw_from_indices([].into(), [].into(), [10, 11].into(), &mut dual_module));
+        let relaxer_2 = Arc::new(Relaxer::new_raw(
+            [
+                (invalid_subgraph_2.clone(), Rational::one()),
+                (shrinkable_subgraphs[1].clone(), -Rational::one()),
+            ]
+            .into(),
+        ));
+        relaxer_forest.add(relaxer_2);
+    }
+
+    #[test]
+    fn relaxer_forest_validate() {
+        // cargo test relaxer_forest_validate -- --nocapture
+        // initialize an arbitrary decoding graph, this is required because invalid subgraph needs the vertex and edge pointers
+        let visualize_filename = "relaxer_forest_validate.json".to_string();
+        let (decoding_graph, ..) = color_code_5_decoding_graph(vec![7, 1], visualize_filename);
+        let initializer = decoding_graph.model_graph.initializer.clone();
+        let mut dual_module = DualModulePQ::new_empty(&initializer); // initialize vertex and edge pointers
+        let interface_ptr = DualModuleInterfacePtr::new(decoding_graph.model_graph.clone());
+        interface_ptr.load(decoding_graph.syndrome_pattern.clone(), &mut dual_module); // this is needed to load the defect vertices
+ 
+        let tight_edges = [0, 1, 2, 3, 4, 5, 6];
+        let shrinkable_subgraphs = [
+            Arc::new(InvalidSubgraph::new_raw_from_indices([1].into(), [].into(), [1, 2].into(), &mut dual_module)),
+            Arc::new(InvalidSubgraph::new_raw_from_indices([].into(), [].into(), [].into(), &mut dual_module)),
+        ];
+        let tight_edges_weak = dual_module.get_edge_ptr_vec(&tight_edges).into_iter().map(|e| e.downgrade()).collect::<Vec<_>>();
+        let relaxer_forest = RelaxerForest::new(tight_edges_weak.into_iter(), shrinkable_subgraphs.iter().cloned());
+        println!("relaxer_forest: {:?}", relaxer_forest.shrinkable_subgraphs);
+        // invalid relaxer is forbidden
+        let invalid_relaxer = Relaxer::new_raw(
+            [(
+                Arc::new(InvalidSubgraph::new_raw_from_indices([].into(), [].into(), [].into(), &mut dual_module)),
+                -Rational::one(),
+            )]
+            .into(),
+        );
+        let error_message = relaxer_forest.validate(&invalid_relaxer).expect_err("should panic");
+        assert_eq!(
+            &error_message[..RELAXER_ERR_MSG_NEGATIVE_SUMMATION.len()],
+            RELAXER_ERR_MSG_NEGATIVE_SUMMATION
+        );
+        // relaxer that increases a tight edge is forbidden
+        let relaxer = Relaxer::new_raw(
+            [(
+                Arc::new(InvalidSubgraph::new_raw_from_indices([].into(), [].into(), [1].into(), &mut dual_module)),
+                Rational::one(),
+            )]
+            .into(),
+        );
+        let error_message = relaxer_forest.validate(&relaxer).expect_err("should panic");
+        assert_eq!(
+            &error_message[..FOREST_ERR_MSG_GROW_TIGHT_EDGE.len()],
+            FOREST_ERR_MSG_GROW_TIGHT_EDGE
+        );
+        // relaxer that shrinks a zero dual variable is forbidden
+        let relaxer = Relaxer::new_raw(
+            [
+                (
+                    Arc::new(InvalidSubgraph::new_raw_from_indices([].into(), [].into(), [9].into(), &mut dual_module)),
+                    Rational::one(),
+                ),
+                (
+                    Arc::new(InvalidSubgraph::new_raw_from_indices([].into(), [].into(), [2, 3].into(), &mut dual_module)),
+                    -Rational::one(),
+                ),
+            ]
+            .into(),
+        );
+        let error_message = relaxer_forest.validate(&relaxer).expect_err("should panic");
+        assert_eq!(
+            &error_message[..FOREST_ERR_MSG_UNSHRINKABLE.len()],
+            FOREST_ERR_MSG_UNSHRINKABLE
+        );
+        // otherwise a relaxer is ok
+        let relaxer = Relaxer::new_raw(
+            [(
+                Arc::new(InvalidSubgraph::new_raw_from_indices([].into(), [].into(), [9].into(), &mut dual_module)),
+                Rational::one(),
+            )]
+            .into(),
+        );
+        relaxer_forest.validate(&relaxer).unwrap();
+    }
+}

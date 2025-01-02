@@ -110,7 +110,9 @@ impl<'a, M: MatrixTail + MatrixEchelon> MatrixBasic for HairView<'a, M> {
 
     fn add_constraint(
         &mut self,
-        _vertex_ptr: VertexPtr,
+        _vertex_weak: VertexWeak,
+        _incident_edges: &[EdgeWeak],
+        _parity: bool,
     ) -> Option<Vec<VarIndex>> {
         panic!("cannot mutate a hair view");
     }
@@ -203,225 +205,286 @@ impl<'a, M: MatrixTail + MatrixEchelon> VizTrait for HairView<'a, M> {
     }
 }
 
-// #[cfg(test)]
-// pub mod tests {
-//     use super::super::basic::*;
-//     use super::super::echelon::*;
-//     use super::super::tail::*;
-//     use super::super::tight::*;
-//     use super::*;
+#[cfg(test)]
+pub mod tests {
+    use super::super::basic::*;
+    use super::super::echelon::*;
+    use super::super::tail::*;
+    use super::super::tight::*;
+    use super::*;
+    use crate::matrix::basic::tests::{initialize_vertex_edges_for_matrix_testing, edge_vec_from_indices};
+    use std::collections::HashSet;
+    use crate::dual_module_pq::{EdgePtr, VertexPtr};
 
-//     type EchelonMatrix = Echelon<Tail<Tight<BasicMatrix>>>;
 
-//     #[test]
-//     fn hair_view_simple() {
-//         // cargo test --features=colorful hair_view_simple -- --nocapture
-//         let mut matrix = EchelonMatrix::new();
-//         matrix.add_constraint(0, &[1, 4, 6], true);
-//         matrix.add_constraint(1, &[4, 9], false);
-//         matrix.add_constraint(2, &[1, 9], true);
-//         assert_eq!(matrix.edge_to_var_index(4), Some(1));
-//         for edge_index in [1, 4, 6, 9] {
-//             matrix.update_edge_tightness(edge_index, true);
-//         }
-//         matrix.printstd();
-//         assert_eq!(
-//             matrix.printstd_str(),
-//             "\
-// ┌──┬─┬─┬─┬─┬───┬─┐
-// ┊ E┊1┊4┊6┊9┊ = ┊▼┊
-// ╞══╪═╪═╪═╪═╪═══╪═╡
-// ┊ 0┊1┊ ┊ ┊1┊ 1 ┊1┊
-// ├──┼─┼─┼─┼─┼───┼─┤
-// ┊ 1┊ ┊1┊ ┊1┊   ┊4┊
-// ├──┼─┼─┼─┼─┼───┼─┤
-// ┊ 2┊ ┊ ┊1┊ ┊   ┊6┊
-// ├──┼─┼─┼─┼─┼───┼─┤
-// ┊ ▶┊0┊1┊2┊*┊◀  ┊▲┊
-// └──┴─┴─┴─┴─┴───┴─┘
-// "
-//         );
-//         let mut hair_view = HairView::new(&mut matrix, [6, 9].into_iter());
-//         assert_eq!(hair_view.edge_to_var_index(4), Some(1));
-//         hair_view.printstd();
-//         assert_eq!(
-//             hair_view.printstd_str(),
-//             "\
-// ┌──┬─┬─┬───┬─┐
-// ┊ H┊6┊9┊ = ┊▼┊
-// ╞══╪═╪═╪═══╪═╡
-// ┊ 0┊1┊ ┊   ┊6┊
-// ├──┼─┼─┼───┼─┤
-// ┊ ▶┊0┊*┊◀  ┊▲┊
-// └──┴─┴─┴───┴─┘
-// "
-//         );
-//         let mut hair_view = HairView::new(&mut matrix, [1, 6].into_iter());
-//         hair_view.base.printstd();
-//         assert_eq!(
-//             hair_view.base.printstd_str(),
-//             "\
-// ┌──┬─┬─┬─┬─┬───┬─┐
-// ┊ E┊4┊9┊1┊6┊ = ┊▼┊
-// ╞══╪═╪═╪═╪═╪═══╪═╡
-// ┊ 0┊1┊ ┊1┊ ┊ 1 ┊4┊
-// ├──┼─┼─┼─┼─┼───┼─┤
-// ┊ 1┊ ┊1┊1┊ ┊ 1 ┊9┊
-// ├──┼─┼─┼─┼─┼───┼─┤
-// ┊ 2┊ ┊ ┊ ┊1┊   ┊6┊
-// ├──┼─┼─┼─┼─┼───┼─┤
-// ┊ ▶┊0┊1┊*┊2┊◀  ┊▲┊
-// └──┴─┴─┴─┴─┴───┴─┘
-// "
-//         );
-//         hair_view.printstd();
-//         assert_eq!(
-//             hair_view.printstd_str(),
-//             "\
-// ┌──┬─┬─┬───┬─┐
-// ┊ H┊1┊6┊ = ┊▼┊
-// ╞══╪═╪═╪═══╪═╡
-// ┊ 0┊ ┊1┊   ┊6┊
-// ├──┼─┼─┼───┼─┤
-// ┊ ▶┊*┊0┊◀  ┊▲┊
-// └──┴─┴─┴───┴─┘
-// "
-//         );
-//         assert_eq!(hair_view.get_tail_edges_vec(), [1, 6]);
-//         assert!(hair_view.is_tight(1));
-//         assert!(hair_view.get_echelon_satisfiable());
-//         assert_eq!(hair_view.get_vertices(), [0, 1, 2].into());
-//         assert_eq!(hair_view.get_base_view_edges(), [4, 9, 1, 6]);
-//     }
+    type EchelonMatrix = Echelon<Tail<Tight<BasicMatrix>>>;
 
-//     fn generate_demo_matrix() -> EchelonMatrix {
-//         let mut matrix = EchelonMatrix::new();
-//         matrix.add_constraint(0, &[1, 4, 6], true);
-//         matrix.add_constraint(1, &[4, 9], false);
-//         for edge_index in [1, 4, 6, 9] {
-//             matrix.update_edge_tightness(edge_index, true);
-//         }
-//         matrix
-//     }
+    #[test]
+    fn hair_view_simple() {
+        // cargo test --features=colorful hair_view_simple -- --nocapture
+        let mut matrix = EchelonMatrix::new();
+        let vertex_indices = vec![0, 1, 2];
+        let edge_indices = vec![1, 4, 6, 9];
+        let vertex_incident_edges_vec = vec![
+            vec![0, 1, 2],
+            vec![1, 3],
+            vec![0, 3],
+        ];
+        let (vertices, edges) = initialize_vertex_edges_for_matrix_testing(vertex_indices, edge_indices);
 
-//     #[test]
-//     #[should_panic]
-//     fn hair_view_should_not_modify_tail_edges() {
-//         // cargo test hair_view_should_not_modify_tail_edges -- --nocapture
-//         let mut matrix = generate_demo_matrix();
-//         let mut hair_view = HairView::new(&mut matrix, [].into_iter());
-//         hair_view.get_tail_edges_mut();
-//     }
+        matrix.add_constraint(vertices[0].downgrade(), &edge_vec_from_indices(&vertex_incident_edges_vec[0], &edges), true);
+        matrix.add_constraint(vertices[1].downgrade(), &edge_vec_from_indices(&vertex_incident_edges_vec[1], &edges), false);
+        matrix.add_constraint(vertices[2].downgrade(), &edge_vec_from_indices(&vertex_incident_edges_vec[2], &edges), true);
+        assert_eq!(matrix.edge_to_var_index(edges[1].downgrade()), Some(1));
+        for edge_ptr in edges.iter() {
+            matrix.update_edge_tightness(edge_ptr.downgrade(), true);
+        }
+        matrix.printstd();
+        assert_eq!(
+            matrix.printstd_str(),
+            "\
+┌──┬─┬─┬─┬─┬───┬─┐
+┊ E┊1┊4┊6┊9┊ = ┊▼┊
+╞══╪═╪═╪═╪═╪═══╪═╡
+┊ 0┊1┊ ┊ ┊1┊ 1 ┊1┊
+├──┼─┼─┼─┼─┼───┼─┤
+┊ 1┊ ┊1┊ ┊1┊   ┊4┊
+├──┼─┼─┼─┼─┼───┼─┤
+┊ 2┊ ┊ ┊1┊ ┊   ┊6┊
+├──┼─┼─┼─┼─┼───┼─┤
+┊ ▶┊0┊1┊2┊*┊◀  ┊▲┊
+└──┴─┴─┴─┴─┴───┴─┘
+"
+        );
+        let mut hair_view = HairView::new(&mut matrix, [edges[2].downgrade(), edges[3].downgrade()].into_iter());
+        assert_eq!(hair_view.edge_to_var_index(edges[1].downgrade()), Some(1));
+        hair_view.printstd();
+        assert_eq!(
+            hair_view.printstd_str(),
+            "\
+┌──┬─┬─┬───┬─┐
+┊ H┊6┊9┊ = ┊▼┊
+╞══╪═╪═╪═══╪═╡
+┊ 0┊1┊ ┊   ┊6┊
+├──┼─┼─┼───┼─┤
+┊ ▶┊0┊*┊◀  ┊▲┊
+└──┴─┴─┴───┴─┘
+"
+        );
+        let mut hair_view = HairView::new(&mut matrix, [edges[0].downgrade(), edges[2].downgrade()].into_iter());
+        hair_view.base.printstd();
+        assert_eq!(
+            hair_view.base.printstd_str(),
+            "\
+┌──┬─┬─┬─┬─┬───┬─┐
+┊ E┊4┊9┊1┊6┊ = ┊▼┊
+╞══╪═╪═╪═╪═╪═══╪═╡
+┊ 0┊1┊ ┊1┊ ┊ 1 ┊4┊
+├──┼─┼─┼─┼─┼───┼─┤
+┊ 1┊ ┊1┊1┊ ┊ 1 ┊9┊
+├──┼─┼─┼─┼─┼───┼─┤
+┊ 2┊ ┊ ┊ ┊1┊   ┊6┊
+├──┼─┼─┼─┼─┼───┼─┤
+┊ ▶┊0┊1┊*┊2┊◀  ┊▲┊
+└──┴─┴─┴─┴─┴───┴─┘
+"
+        );
+        hair_view.printstd();
+        assert_eq!(
+            hair_view.printstd_str(),
+            "\
+┌──┬─┬─┬───┬─┐
+┊ H┊1┊6┊ = ┊▼┊
+╞══╪═╪═╪═══╪═╡
+┊ 0┊ ┊1┊   ┊6┊
+├──┼─┼─┼───┼─┤
+┊ ▶┊*┊0┊◀  ┊▲┊
+└──┴─┴─┴───┴─┘
+"
+        );
+        assert_eq!(
+            hair_view.get_tail_edges_vec().iter().map(|e| e.upgrade_force().read_recursive().edge_index).collect::<HashSet<_>>(), 
+            [1, 6].into_iter().collect::<HashSet<_>>());
+        assert!(hair_view.is_tight(edges[0].downgrade()));
+        assert!(hair_view.get_echelon_satisfiable());
+        assert_eq!(
+            hair_view.get_vertices().iter().map(|v| v.upgrade_force().read_recursive().vertex_index).collect::<HashSet<_>>(), 
+            [0, 1, 2].into_iter().collect::<HashSet<_>>());
+        assert_eq!(
+            hair_view.get_base_view_edges().iter().map(|e| e.upgrade_force().read_recursive().edge_index).collect::<HashSet<_>>(),
+            [4, 9, 1, 6].into_iter().collect::<HashSet<_>>());
+    }
 
-//     #[test]
-//     #[should_panic]
-//     fn hair_view_should_not_update_edge_tightness() {
-//         // cargo test hair_view_should_not_update_edge_tightness -- --nocapture
-//         let mut matrix = generate_demo_matrix();
-//         let mut hair_view = HairView::new(&mut matrix, [].into_iter());
-//         hair_view.update_edge_tightness(1, false);
-//     }
+    fn generate_demo_matrix(edges: &Vec<EdgePtr>, vertices: &Vec<VertexPtr>) -> EchelonMatrix {
+        let mut matrix = EchelonMatrix::new();
+        matrix.add_constraint(vertices[0].downgrade(), &[edges[0].downgrade(), edges[1].downgrade(), edges[2].downgrade()], true);
+        matrix.add_constraint(vertices[1].downgrade(), &[edges[1].downgrade(), edges[3].downgrade()], false);
+        for edge_index in 0..4 {
+            matrix.update_edge_tightness(edges[edge_index].downgrade(), true);
+        }
+        matrix
+    }
 
-//     #[test]
-//     #[should_panic]
-//     fn hair_view_should_not_add_variable() {
-//         // cargo test hair_view_should_not_add_variable -- --nocapture
-//         let mut matrix = generate_demo_matrix();
-//         let mut hair_view = HairView::new(&mut matrix, [].into_iter());
-//         hair_view.add_variable(100);
-//     }
+    #[test]
+    #[should_panic]
+    fn hair_view_should_not_modify_tail_edges() {
+        // cargo test hair_view_should_not_modify_tail_edges -- --nocapture
+        let vertex_indices = vec![0, 1];
+        let edge_indices = vec![1, 4, 6, 9];
+        let (vertices, edges) = initialize_vertex_edges_for_matrix_testing(vertex_indices, edge_indices);
 
-//     #[test]
-//     #[should_panic]
-//     fn hair_view_should_not_add_constraint() {
-//         // cargo test hair_view_should_not_add_constraint -- --nocapture
-//         let mut matrix = generate_demo_matrix();
-//         let mut hair_view = HairView::new(&mut matrix, [].into_iter());
-//         hair_view.add_constraint(5, &[1, 2, 3], false);
-//     }
+        let mut matrix = generate_demo_matrix(&edges, &vertices);
+        let mut hair_view = HairView::new(&mut matrix, [].into_iter());
+        hair_view.get_tail_edges_mut();
+    }
 
-//     #[test]
-//     #[should_panic]
-//     fn hair_view_should_not_xor_row() {
-//         // cargo test hair_view_should_not_xor_row -- --nocapture
-//         let mut matrix = generate_demo_matrix();
-//         let mut hair_view = HairView::new(&mut matrix, [].into_iter());
-//         hair_view.xor_row(0, 1);
-//     }
+    #[test]
+    #[should_panic]
+    fn hair_view_should_not_update_edge_tightness() {
+        // cargo test hair_view_should_not_update_edge_tightness -- --nocapture
+        let vertex_indices = vec![0, 1];
+        let edge_indices = vec![1, 4, 6, 9];
+        let (vertices, edges) = initialize_vertex_edges_for_matrix_testing(vertex_indices, edge_indices);
 
-//     #[test]
-//     #[should_panic]
-//     fn hair_view_should_not_swap_row() {
-//         // cargo test hair_view_should_not_swap_row -- --nocapture
-//         let mut matrix = generate_demo_matrix();
-//         let mut hair_view = HairView::new(&mut matrix, [].into_iter());
-//         hair_view.swap_row(0, 1);
-//     }
+        let mut matrix = generate_demo_matrix(&edges, &vertices);
+        let mut hair_view = HairView::new(&mut matrix, [].into_iter());
+        hair_view.update_edge_tightness(edges[0].downgrade(), false);
+    }
 
-//     #[test]
-//     #[should_panic]
-//     fn hair_view_should_not_get_echelon_info() {
-//         // cargo test hair_view_should_not_get_echelon_info -- --nocapture
-//         let mut matrix = generate_demo_matrix();
-//         let mut hair_view = HairView::new(&mut matrix, [].into_iter());
-//         hair_view.get_echelon_info();
-//     }
+    #[test]
+    #[should_panic]
+    fn hair_view_should_not_add_variable() {
+        // cargo test hair_view_should_not_add_variable -- --nocapture
+        let vertex_indices = vec![0, 1];
+        let edge_indices = vec![1, 4, 6, 9, 100];
+        let (vertices, edges) = initialize_vertex_edges_for_matrix_testing(vertex_indices, edge_indices);
 
-//     #[test]
-//     #[should_panic]
-//     fn hair_view_should_not_get_echelon_info_immutable() {
-//         // cargo test hair_view_should_not_get_echelon_info_immutable -- --nocapture
-//         let mut matrix = generate_demo_matrix();
-//         let hair_view = HairView::new(&mut matrix, [].into_iter());
-//         hair_view.get_echelon_info_immutable();
-//     }
+        let mut matrix = generate_demo_matrix(&edges, &vertices);
+        let mut hair_view = HairView::new(&mut matrix, [].into_iter());
+        hair_view.add_variable(edges[4].downgrade());
+    }
 
-//     #[test]
-//     fn hair_view_unsatisfiable() {
-//         // cargo test --features=colorful hair_view_unsatisfiable -- --nocapture
-//         let mut matrix = EchelonMatrix::new();
-//         matrix.add_constraint(0, &[1, 4, 6], true);
-//         matrix.add_constraint(1, &[4, 9], false);
-//         matrix.add_constraint(2, &[1, 9], true);
-//         matrix.add_constraint(3, &[1, 9], false);
-//         for edge_index in [1, 4, 6, 9] {
-//             matrix.update_edge_tightness(edge_index, true);
-//         }
-//         matrix.printstd();
-//         assert_eq!(
-//             matrix.printstd_str(),
-//             "\
-// ┌──┬─┬─┬─┬─┬───┬─┐
-// ┊ X┊1┊4┊6┊9┊ = ┊▼┊
-// ╞══╪═╪═╪═╪═╪═══╪═╡
-// ┊ 0┊1┊ ┊ ┊1┊ 1 ┊1┊
-// ├──┼─┼─┼─┼─┼───┼─┤
-// ┊ 1┊ ┊1┊ ┊1┊   ┊4┊
-// ├──┼─┼─┼─┼─┼───┼─┤
-// ┊ 2┊ ┊ ┊1┊ ┊   ┊6┊
-// ├──┼─┼─┼─┼─┼───┼─┤
-// ┊ 3┊ ┊ ┊ ┊ ┊ 1 ┊*┊
-// ├──┼─┼─┼─┼─┼───┼─┤
-// ┊ ▶┊0┊1┊2┊*┊◀  ┊▲┊
-// └──┴─┴─┴─┴─┴───┴─┘
-// "
-//         );
-//         let mut hair_view = HairView::new(&mut matrix, [6, 9].into_iter());
-//         hair_view.printstd();
-//         assert_eq!(
-//             hair_view.printstd_str(),
-//             "\
-// ┌──┬─┬─┬───┬─┐
-// ┊ X┊6┊9┊ = ┊▼┊
-// ╞══╪═╪═╪═══╪═╡
-// ┊ 0┊1┊ ┊   ┊6┊
-// ├──┼─┼─┼───┼─┤
-// ┊ 1┊ ┊ ┊ 1 ┊*┊
-// ├──┼─┼─┼───┼─┤
-// ┊ ▶┊0┊*┊◀  ┊▲┊
-// └──┴─┴─┴───┴─┘
-// "
-//         );
-//         assert!(!hair_view.get_echelon_satisfiable());
-//     }
-// }
+    #[test]
+    #[should_panic]
+    fn hair_view_should_not_add_constraint() {
+        // cargo test hair_view_should_not_add_constraint -- --nocapture
+        let vertex_indices = vec![0, 1, 5];
+        let edge_indices = vec![1, 4, 6, 9, 2, 3];
+        let (vertices, edges) = initialize_vertex_edges_for_matrix_testing(vertex_indices, edge_indices);
+
+        let mut matrix = generate_demo_matrix(&edges, &vertices);
+        let mut hair_view = HairView::new(&mut matrix, [].into_iter());
+        hair_view.add_constraint(vertices[2].downgrade(), &[edges[0].downgrade(), edges[4].downgrade(), edges[5].downgrade()], false);
+    }
+
+    #[test]
+    #[should_panic]
+    fn hair_view_should_not_xor_row() {
+        // cargo test hair_view_should_not_xor_row -- --nocapture
+        let vertex_indices = vec![0, 1, 5];
+        let edge_indices = vec![1, 4, 6, 9, 2, 3];
+        let (vertices, edges) = initialize_vertex_edges_for_matrix_testing(vertex_indices, edge_indices);
+
+        let mut matrix = generate_demo_matrix(&edges, &vertices);
+        let mut hair_view = HairView::new(&mut matrix, [].into_iter());
+        hair_view.xor_row(0, 1);
+    }
+
+    #[test]
+    #[should_panic]
+    fn hair_view_should_not_swap_row() {
+        // cargo test hair_view_should_not_swap_row -- --nocapture
+        let vertex_indices = vec![0, 1, 5];
+        let edge_indices = vec![1, 4, 6, 9, 2, 3];
+        let (vertices, edges) = initialize_vertex_edges_for_matrix_testing(vertex_indices, edge_indices);
+
+        let mut matrix = generate_demo_matrix(&edges, &vertices);
+        let mut hair_view = HairView::new(&mut matrix, [].into_iter());
+        hair_view.swap_row(0, 1);
+    }
+
+    #[test]
+    #[should_panic]
+    fn hair_view_should_not_get_echelon_info() {
+        // cargo test hair_view_should_not_get_echelon_info -- --nocapture
+        let vertex_indices = vec![0, 1, 5];
+        let edge_indices = vec![1, 4, 6, 9, 2, 3];
+        let (vertices, edges) = initialize_vertex_edges_for_matrix_testing(vertex_indices, edge_indices);
+
+        let mut matrix = generate_demo_matrix(&edges, &vertices);
+        let mut hair_view = HairView::new(&mut matrix, [].into_iter());
+        hair_view.get_echelon_info();
+    }
+
+    #[test]
+    #[should_panic]
+    fn hair_view_should_not_get_echelon_info_immutable() {
+        // cargo test hair_view_should_not_get_echelon_info_immutable -- --nocapture
+        let vertex_indices = vec![0, 1, 5];
+        let edge_indices = vec![1, 4, 6, 9, 2, 3];
+        let (vertices, edges) = initialize_vertex_edges_for_matrix_testing(vertex_indices, edge_indices);
+        let mut matrix = generate_demo_matrix(&edges, &vertices);
+
+        let hair_view = HairView::new(&mut matrix, [].into_iter());
+        hair_view.get_echelon_info_immutable();
+    }
+
+    #[test]
+    fn hair_view_unsatisfiable() {
+        // cargo test --features=colorful hair_view_unsatisfiable -- --nocapture
+        let mut matrix = EchelonMatrix::new();
+        let vertex_indices = vec![0, 1, 2, 3];
+        let edge_indices = vec![1, 4, 6, 9];
+        let vertex_incident_edges_vec = vec![
+            vec![0, 1, 2],
+            vec![1, 3],
+            vec![0, 3],
+            vec![0, 3],
+        ];
+        let (vertices, edges) = initialize_vertex_edges_for_matrix_testing(vertex_indices, edge_indices);
+        matrix.add_constraint(vertices[0].downgrade(), &edge_vec_from_indices(&vertex_incident_edges_vec[0], &edges), true);
+        matrix.add_constraint(vertices[1].downgrade(), &edge_vec_from_indices(&vertex_incident_edges_vec[1], &edges), false);
+        matrix.add_constraint(vertices[2].downgrade(), &edge_vec_from_indices(&vertex_incident_edges_vec[2], &edges), true);
+        matrix.add_constraint(vertices[3].downgrade(), &edge_vec_from_indices(&vertex_incident_edges_vec[3], &edges), false);
+        
+        for edge_ptr in edges.iter() {
+            matrix.update_edge_tightness(edge_ptr.downgrade(), true);
+        }
+        matrix.printstd();
+        assert_eq!(
+            matrix.printstd_str(),
+            "\
+┌──┬─┬─┬─┬─┬───┬─┐
+┊ X┊1┊4┊6┊9┊ = ┊▼┊
+╞══╪═╪═╪═╪═╪═══╪═╡
+┊ 0┊1┊ ┊ ┊1┊ 1 ┊1┊
+├──┼─┼─┼─┼─┼───┼─┤
+┊ 1┊ ┊1┊ ┊1┊   ┊4┊
+├──┼─┼─┼─┼─┼───┼─┤
+┊ 2┊ ┊ ┊1┊ ┊   ┊6┊
+├──┼─┼─┼─┼─┼───┼─┤
+┊ 3┊ ┊ ┊ ┊ ┊ 1 ┊*┊
+├──┼─┼─┼─┼─┼───┼─┤
+┊ ▶┊0┊1┊2┊*┊◀  ┊▲┊
+└──┴─┴─┴─┴─┴───┴─┘
+"
+        );
+        let mut hair_view = HairView::new(&mut matrix, [edges[2].downgrade(), edges[3].downgrade()].into_iter());
+        hair_view.printstd();
+        assert_eq!(
+            hair_view.printstd_str(),
+            "\
+┌──┬─┬─┬───┬─┐
+┊ X┊6┊9┊ = ┊▼┊
+╞══╪═╪═╪═══╪═╡
+┊ 0┊1┊ ┊   ┊6┊
+├──┼─┼─┼───┼─┤
+┊ 1┊ ┊ ┊ 1 ┊*┊
+├──┼─┼─┼───┼─┤
+┊ ▶┊0┊*┊◀  ┊▲┊
+└──┴─┴─┴───┴─┘
+"
+        );
+        assert!(!hair_view.get_echelon_satisfiable());
+    }
+}

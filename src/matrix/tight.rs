@@ -64,9 +64,11 @@ impl<M: MatrixView> MatrixBasic for Tight<M> {
 
     fn add_constraint(
         &mut self,
-        vertex_ptr: VertexPtr,
+        vertex_weak: VertexWeak,
+        incident_edges: &[EdgeWeak],
+        parity: bool,
     ) -> Option<Vec<VarIndex>> {
-        self.base.add_constraint(vertex_ptr)
+        self.base.add_constraint(vertex_weak, incident_edges, parity)
     }
 
     fn xor_row(&mut self, target: RowIndex, source: RowIndex) {
@@ -137,163 +139,214 @@ impl<M: MatrixView> VizTrait for Tight<M> {
     }
 }
 
-// #[cfg(test)]
-// pub mod tests {
-//     use super::super::basic::*;
-//     use super::*;
+#[cfg(test)]
+pub mod tests {
+    use super::super::basic::*;
+    use super::*;
+    use crate::matrix::basic::tests::{initialize_vertex_edges_for_matrix_testing, edge_vec_from_indices};
+    use std::collections::HashSet;
+    use crate::dual_module_pq::{EdgePtr, VertexPtr};
 
-//     type TightMatrix = Tight<BasicMatrix>;
 
-//     #[test]
-//     fn tight_matrix_1() {
-//         // cargo test --features=colorful tight_matrix_1 -- --nocapture
-//         let mut matrix = TightMatrix::new();
-//         matrix.add_constraint(0, &[1, 4, 6], true);
-//         matrix.add_constraint(1, &[4, 9], false);
-//         matrix.add_constraint(2, &[1, 9], true);
-//         matrix.printstd();
-//         // this is because by default all edges are not tight
-//         assert_eq!(
-//             matrix.clone().printstd_str(),
-//             "\
-// ┌─┬───┐
-// ┊ ┊ = ┊
-// ╞═╪═══╡
-// ┊0┊ 1 ┊
-// ├─┼───┤
-// ┊1┊   ┊
-// ├─┼───┤
-// ┊2┊ 1 ┊
-// └─┴───┘
-// "
-//         );
-//         matrix.update_edge_tightness(4, true);
-//         matrix.update_edge_tightness(9, true);
-//         matrix.printstd();
-//         assert_eq!(
-//             matrix.clone().printstd_str(),
-//             "\
-// ┌─┬─┬─┬───┐
-// ┊ ┊4┊9┊ = ┊
-// ╞═╪═╪═╪═══╡
-// ┊0┊1┊ ┊ 1 ┊
-// ├─┼─┼─┼───┤
-// ┊1┊1┊1┊   ┊
-// ├─┼─┼─┼───┤
-// ┊2┊ ┊1┊ 1 ┊
-// └─┴─┴─┴───┘
-// "
-//         );
-//         matrix.update_edge_tightness(9, false);
-//         matrix.printstd();
-//         assert_eq!(
-//             matrix.clone().printstd_str(),
-//             "\
-// ┌─┬─┬───┐
-// ┊ ┊4┊ = ┊
-// ╞═╪═╪═══╡
-// ┊0┊1┊ 1 ┊
-// ├─┼─┼───┤
-// ┊1┊1┊   ┊
-// ├─┼─┼───┤
-// ┊2┊ ┊ 1 ┊
-// └─┴─┴───┘
-// "
-//         );
-//     }
+    type TightMatrix = Tight<BasicMatrix>;
 
-//     #[test]
-//     #[cfg_attr(debug_assertions, should_panic)]
-//     fn tight_matrix_cannot_set_nonexistent_edge() {
-//         // cargo test tight_matrix_cannot_set_nonexistent_edge -- --nocapture
-//         let mut matrix = TightMatrix::new();
-//         matrix.add_constraint(0, &[1, 4, 6], true);
-//         matrix.update_edge_tightness(2, true);
-//     }
+    #[test]
+    fn tight_matrix_1() {
+        // cargo test --features=colorful tight_matrix_1 -- --nocapture
+        let mut matrix = TightMatrix::new();
+        let vertex_indices = vec![0, 1, 2];
+        let edge_indices = vec![1, 4, 6, 9];
+        let vertex_incident_edges_vec = vec![
+            vec![0, 1, 2],
+            vec![1, 3],
+            vec![0, 3],
+        ];
+        let (vertices, edges) = initialize_vertex_edges_for_matrix_testing(vertex_indices, edge_indices);
 
-//     #[test]
-//     #[cfg_attr(debug_assertions, should_panic)]
-//     fn tight_matrix_cannot_read_nonexistent_edge() {
-//         // cargo test tight_matrix_cannot_read_nonexistent_edge -- --nocapture
-//         let mut matrix = TightMatrix::new();
-//         matrix.add_constraint(0, &[1, 4, 6], true);
-//         matrix.is_tight(2);
-//     }
+        matrix.add_constraint(vertices[0].downgrade(), &edge_vec_from_indices(&vertex_incident_edges_vec[0], &edges), true);
+        matrix.add_constraint(vertices[1].downgrade(), &edge_vec_from_indices(&vertex_incident_edges_vec[1], &edges), false);
+        matrix.add_constraint(vertices[2].downgrade(), &edge_vec_from_indices(&vertex_incident_edges_vec[2], &edges), true);
+        matrix.printstd();
+        // this is because by default all edges are not tight
+        assert_eq!(
+            matrix.clone().printstd_str(),
+            "\
+┌─┬───┐
+┊ ┊ = ┊
+╞═╪═══╡
+┊0┊ 1 ┊
+├─┼───┤
+┊1┊   ┊
+├─┼───┤
+┊2┊ 1 ┊
+└─┴───┘
+"
+        );
+        matrix.update_edge_tightness(edges[1].downgrade(), true);
+        matrix.update_edge_tightness(edges[3].downgrade(), true);
+        matrix.printstd();
+        assert_eq!(
+            matrix.clone().printstd_str(),
+            "\
+┌─┬─┬─┬───┐
+┊ ┊4┊9┊ = ┊
+╞═╪═╪═╪═══╡
+┊0┊1┊ ┊ 1 ┊
+├─┼─┼─┼───┤
+┊1┊1┊1┊   ┊
+├─┼─┼─┼───┤
+┊2┊ ┊1┊ 1 ┊
+└─┴─┴─┴───┘
+"
+        );
+        matrix.update_edge_tightness(edges[3].downgrade(), false);
+        matrix.printstd();
+        assert_eq!(
+            matrix.clone().printstd_str(),
+            "\
+┌─┬─┬───┐
+┊ ┊4┊ = ┊
+╞═╪═╪═══╡
+┊0┊1┊ 1 ┊
+├─┼─┼───┤
+┊1┊1┊   ┊
+├─┼─┼───┤
+┊2┊ ┊ 1 ┊
+└─┴─┴───┘
+"
+        );
+    }
 
-//     #[test]
-//     fn tight_matrix_basic_trait() {
-//         // cargo test --features=colorful tight_matrix_basic_trait -- --nocapture
-//         let mut matrix = TightMatrix::new();
-//         matrix.add_variable(3); // untight edges will not show
-//         matrix.add_constraint(0, &[1, 4, 6], true);
-//         matrix.add_constraint(1, &[4, 9], false);
-//         matrix.add_constraint(2, &[1, 9], true);
-//         matrix.swap_row(2, 1);
-//         matrix.xor_row(0, 1);
-//         for edge_index in [1, 4, 6, 9] {
-//             matrix.update_edge_tightness(edge_index, true);
-//         }
-//         matrix.printstd();
-//         assert_eq!(
-//             matrix.clone().printstd_str(),
-//             "\
-// ┌─┬─┬─┬─┬─┬───┐
-// ┊ ┊1┊4┊6┊9┊ = ┊
-// ╞═╪═╪═╪═╪═╪═══╡
-// ┊0┊ ┊1┊1┊1┊   ┊
-// ├─┼─┼─┼─┼─┼───┤
-// ┊1┊1┊ ┊ ┊1┊ 1 ┊
-// ├─┼─┼─┼─┼─┼───┤
-// ┊2┊ ┊1┊ ┊1┊   ┊
-// └─┴─┴─┴─┴─┴───┘
-// "
-//         );
-//     }
+    #[test]
+    #[cfg_attr(debug_assertions, should_panic)]
+    fn tight_matrix_cannot_set_nonexistent_edge() {
+        // cargo test tight_matrix_cannot_set_nonexistent_edge -- --nocapture
+        let mut matrix = TightMatrix::new();
+        let vertex_indices = vec![0, 1, 2];
+        let edge_indices = vec![1, 4, 6, 9, 2];
+        let vertex_incident_edges_vec = vec![
+            vec![0, 1, 2],
+        ];
+        let (vertices, edges) = initialize_vertex_edges_for_matrix_testing(vertex_indices, edge_indices);
 
-//     #[test]
-//     fn tight_matrix_rebuild_var_indices() {
-//         // cargo test --features=colorful tight_matrix_rebuild_var_indices -- --nocapture
-//         let mut matrix = TightMatrix::new();
-//         matrix.add_variable(3); // untight edges will not show
-//         matrix.add_constraint(0, &[1, 4, 6], true);
-//         assert_eq!(matrix.columns(), 0);
-//         for edge_index in [1, 4, 6] {
-//             matrix.update_edge_tightness(edge_index, true);
-//         }
-//         assert_eq!(matrix.columns(), 3);
-//         assert_eq!(matrix.columns(), 3); // should only update var_indices_once
-//         matrix.add_constraint(1, &[4, 9], false);
-//         matrix.add_constraint(2, &[1, 9], true);
-//         matrix.update_edge_tightness(9, true);
-//         matrix.update_edge_tightness(4, false);
-//         matrix.update_edge_tightness(6, false);
-//         assert_eq!(matrix.columns(), 2);
-//         matrix.printstd();
-//         assert_eq!(
-//             matrix.clone().printstd_str(),
-//             "\
-// ┌─┬─┬─┬───┐
-// ┊ ┊1┊9┊ = ┊
-// ╞═╪═╪═╪═══╡
-// ┊0┊1┊ ┊ 1 ┊
-// ├─┼─┼─┼───┤
-// ┊1┊ ┊1┊   ┊
-// ├─┼─┼─┼───┤
-// ┊2┊1┊1┊ 1 ┊
-// └─┴─┴─┴───┘
-// "
-//         );
-//     }
+        matrix.add_constraint(vertices[0].downgrade(), &edge_vec_from_indices(&vertex_incident_edges_vec[0], &edges), true);
+        matrix.update_edge_tightness(edges[4].downgrade(), true);
+    }
 
-//     #[test]
-//     #[should_panic]
-//     fn tight_matrix_cannot_call_dirty_column() {
-//         // cargo test tight_matrix_cannot_call_dirty_column -- --nocapture
-//         let mut matrix = TightMatrix::new();
-//         matrix.add_constraint(0, &[1, 4, 6], true);
-//         matrix.update_edge_tightness(1, true);
-//         // even though there is indeed such a column, we forbid such dangerous calls
-//         // always call `columns()` before accessing any column
-//         matrix.column_to_var_index(0);
-//     }
-// }
+    #[test]
+    #[cfg_attr(debug_assertions, should_panic)]
+    fn tight_matrix_cannot_read_nonexistent_edge() {
+        // cargo test tight_matrix_cannot_read_nonexistent_edge -- --nocapture
+        let mut matrix = TightMatrix::new();
+        let vertex_indices = vec![0, 1, 2];
+        let edge_indices = vec![1, 4, 6, 9, 2];
+        let vertex_incident_edges_vec = vec![
+            vec![0, 1, 2],
+        ];
+        let (vertices, edges) = initialize_vertex_edges_for_matrix_testing(vertex_indices, edge_indices);
+        matrix.add_constraint(vertices[0].downgrade(), &edge_vec_from_indices(&vertex_incident_edges_vec[0], &edges), true);
+        matrix.is_tight(edges[4].downgrade());
+    }
+
+    #[test]
+    fn tight_matrix_basic_trait() {
+        // cargo test --features=colorful tight_matrix_basic_trait -- --nocapture
+        let mut matrix = TightMatrix::new();
+        let vertex_indices = vec![0, 1, 2];
+        let edge_indices = vec![1, 4, 6, 9, 3];
+        let vertex_incident_edges_vec = vec![
+            vec![0, 1, 2],
+            vec![1, 3],
+            vec![0, 3],
+        ];
+        let (vertices, edges) = initialize_vertex_edges_for_matrix_testing(vertex_indices, edge_indices);
+        
+        matrix.add_variable(edges[4].downgrade()); // untight edges will not show
+        matrix.add_constraint(vertices[0].downgrade(), &edge_vec_from_indices(&vertex_incident_edges_vec[0], &edges), true);
+        matrix.add_constraint(vertices[1].downgrade(), &edge_vec_from_indices(&vertex_incident_edges_vec[1], &edges), false);
+        matrix.add_constraint(vertices[2].downgrade(), &edge_vec_from_indices(&vertex_incident_edges_vec[2], &edges), true);
+        matrix.swap_row(2, 1);
+        matrix.xor_row(0, 1);
+        for edge_index in 0..4 {
+            matrix.update_edge_tightness(edges[edge_index].downgrade(), true);
+        }
+        matrix.printstd();
+        assert_eq!(
+            matrix.clone().printstd_str(),
+            "\
+┌─┬─┬─┬─┬─┬───┐
+┊ ┊1┊4┊6┊9┊ = ┊
+╞═╪═╪═╪═╪═╪═══╡
+┊0┊ ┊1┊1┊1┊   ┊
+├─┼─┼─┼─┼─┼───┤
+┊1┊1┊ ┊ ┊1┊ 1 ┊
+├─┼─┼─┼─┼─┼───┤
+┊2┊ ┊1┊ ┊1┊   ┊
+└─┴─┴─┴─┴─┴───┘
+"
+        );
+    }
+
+    #[test]
+    fn tight_matrix_rebuild_var_indices() {
+        // cargo test --features=colorful tight_matrix_rebuild_var_indices -- --nocapture
+        let mut matrix = TightMatrix::new();
+        let vertex_indices = vec![0, 1, 2];
+        let edge_indices = vec![1, 4, 6, 9, 3];
+        let vertex_incident_edges_vec = vec![
+            vec![0, 1, 2],
+            vec![1, 3],
+            vec![0, 3],
+        ];
+        let (vertices, edges) = initialize_vertex_edges_for_matrix_testing(vertex_indices, edge_indices);
+        
+        matrix.add_variable(edges[4].downgrade()); // untight edges will not show
+        matrix.add_constraint(vertices[0].downgrade(), &edge_vec_from_indices(&vertex_incident_edges_vec[0], &edges), true);
+        assert_eq!(matrix.columns(), 0);
+        for edge_index in 0..3 {
+            matrix.update_edge_tightness(edges[edge_index].downgrade(), true);
+        }
+        assert_eq!(matrix.columns(), 3);
+        assert_eq!(matrix.columns(), 3); // should only update var_indices_once
+        matrix.add_constraint(vertices[1].downgrade(), &edge_vec_from_indices(&vertex_incident_edges_vec[1], &edges), false);
+        matrix.add_constraint(vertices[2].downgrade(), &edge_vec_from_indices(&vertex_incident_edges_vec[2], &edges), true);
+
+        matrix.update_edge_tightness(edges[3].downgrade(), true);
+        matrix.update_edge_tightness(edges[1].downgrade(), false);
+        matrix.update_edge_tightness(edges[2].downgrade(), false);
+        assert_eq!(matrix.columns(), 2);
+        matrix.printstd();
+        assert_eq!(
+            matrix.clone().printstd_str(),
+            "\
+┌─┬─┬─┬───┐
+┊ ┊1┊9┊ = ┊
+╞═╪═╪═╪═══╡
+┊0┊1┊ ┊ 1 ┊
+├─┼─┼─┼───┤
+┊1┊ ┊1┊   ┊
+├─┼─┼─┼───┤
+┊2┊1┊1┊ 1 ┊
+└─┴─┴─┴───┘
+"
+        );
+    }
+
+    #[test]
+    #[should_panic]
+    fn tight_matrix_cannot_call_dirty_column() {
+        // cargo test tight_matrix_cannot_call_dirty_column -- --nocapture
+        let mut matrix = TightMatrix::new();
+        let vertex_indices = vec![0];
+        let edge_indices = vec![1, 4, 6, 9];
+        let vertex_incident_edges_vec = vec![
+            vec![0, 1, 2],
+        ];
+        let (vertices, edges) = initialize_vertex_edges_for_matrix_testing(vertex_indices, edge_indices);
+        matrix.add_constraint(vertices[0].downgrade(), &edge_vec_from_indices(&vertex_incident_edges_vec[0], &edges), true);
+        matrix.update_edge_tightness(edges[0].downgrade(), true);
+        // even though there is indeed such a column, we forbid such dangerous calls
+        // always call `columns()` before accessing any column
+        matrix.column_to_var_index(0);
+    }
+}

@@ -815,7 +815,11 @@ impl PrimalModuleSerial {
         for vertex_ptr in cluster_2.vertices.iter() {
             if !cluster_1.vertices.contains(&vertex_ptr) {
                 cluster_1.vertices.insert(vertex_ptr.clone());
-                cluster_1.matrix.add_constraint(vertex_ptr.clone());
+                let vertex_weak = vertex_ptr.downgrade();
+                let vertex = vertex_ptr.read_recursive();
+                let incident_edges = &vertex.edges;
+                let parity = vertex.is_defect;
+                cluster_1.matrix.add_constraint(vertex_weak, incident_edges, parity);
             }
         }
         cluster_1.relaxer_optimizer.append(&mut cluster_2.relaxer_optimizer);
@@ -859,7 +863,11 @@ impl PrimalModuleSerial {
                         let vertex_ptr = vertex_weak.upgrade_force();
                         if !cluster.vertices.contains(&vertex_ptr) {
                             cluster.vertices.insert(vertex_ptr.clone());
-                            cluster.matrix.add_constraint(vertex_ptr.clone());
+                            let vertex_weak = vertex_ptr.downgrade();
+                            let vertex = vertex_ptr.read_recursive();
+                            let incident_edges = &vertex.edges;
+                            let parity = vertex.is_defect;
+                            cluster.matrix.add_constraint(vertex_weak, incident_edges, parity);
                         }
                     }
                     cluster.edges.insert(edge_ptr.clone());
@@ -930,7 +938,11 @@ impl PrimalModuleSerial {
                         let vertex_ptr = vertex_weak.upgrade_force();
                         if !cluster.vertices.contains(&vertex_ptr) {
                             cluster.vertices.insert(vertex_ptr.clone());
-                            cluster.matrix.add_constraint(vertex_ptr.clone());
+                            let vertex_weak = vertex_ptr.downgrade();
+                            let vertex = vertex_ptr.read_recursive();
+                            let incident_edges = &vertex.edges;
+                            let parity = vertex.is_defect;
+                            cluster.matrix.add_constraint(vertex_weak, incident_edges, parity);
                         }
                     }
                     cluster.edges.insert(edge_ptr.clone());
@@ -1030,7 +1042,11 @@ impl PrimalModuleSerial {
                         let vertex_ptr = vertex_weak.upgrade_force();
                         if !cluster.vertices.contains(&vertex_ptr) {
                             cluster.vertices.insert(vertex_ptr.clone());
-                            cluster.matrix.add_constraint(vertex_ptr.clone());
+                            let vertex_weak = vertex_ptr.downgrade();
+                            let vertex = vertex_ptr.read_recursive();
+                            let incident_edges = &vertex.edges;
+                            let parity = vertex.is_defect;
+                            cluster.matrix.add_constraint(vertex_weak, incident_edges, parity);
                         }
                     }
                     cluster.edges.insert(edge_ptr.clone());

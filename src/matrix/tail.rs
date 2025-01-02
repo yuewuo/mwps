@@ -70,9 +70,11 @@ impl<M: MatrixView> MatrixBasic for Tail<M> {
 
     fn add_constraint(
         &mut self,
-        vertex_ptr: VertexPtr,
+        vertex_weak: VertexWeak,
+        incident_edges: &[EdgeWeak],
+        parity: bool,
     ) -> Option<Vec<VarIndex>> {
-        self.base.add_constraint(vertex_ptr)
+        self.base.add_constraint(vertex_weak, incident_edges, parity)
     }
 
     fn xor_row(&mut self, target: RowIndex, source: RowIndex) {
@@ -147,116 +149,147 @@ impl<M: MatrixView> VizTrait for Tail<M> {
     }
 }
 
-// #[cfg(test)]
-// pub mod tests {
-//     use super::super::basic::*;
-//     use super::super::tight::*;
-//     use super::*;
+#[cfg(test)]
+pub mod tests {
+    use super::super::basic::*;
+    use super::super::tight::*;
+    use super::*;
+    use crate::matrix::basic::tests::{initialize_vertex_edges_for_matrix_testing, edge_vec_from_indices};
+    use std::collections::HashSet;
+    use crate::dual_module_pq::{EdgePtr, VertexPtr};
 
-//     type TailMatrix = Tail<Tight<BasicMatrix>>;
 
-//     #[test]
-//     fn tail_matrix_1() {
-//         // cargo test --features=colorful tail_matrix_1 -- --nocapture
-//         let mut matrix = TailMatrix::new();
-//         matrix.add_constraint(0, &[1, 4, 6], true);
-//         matrix.add_constraint(1, &[4, 9], false);
-//         matrix.add_constraint(2, &[1, 9], true);
-//         assert_eq!(matrix.edge_to_var_index(4), Some(1));
-//         matrix.printstd();
-//         assert_eq!(
-//             matrix.clone().printstd_str(),
-//             "\
-// ┌─┬───┐
-// ┊ ┊ = ┊
-// ╞═╪═══╡
-// ┊0┊ 1 ┊
-// ├─┼───┤
-// ┊1┊   ┊
-// ├─┼───┤
-// ┊2┊ 1 ┊
-// └─┴───┘
-// "
-//         );
-//         for edge_index in [1, 4, 6, 9] {
-//             matrix.update_edge_tightness(edge_index, true);
-//         }
-//         matrix.printstd();
-//         assert_eq!(
-//             matrix.clone().printstd_str(),
-//             "\
-// ┌─┬─┬─┬─┬─┬───┐
-// ┊ ┊1┊4┊6┊9┊ = ┊
-// ╞═╪═╪═╪═╪═╪═══╡
-// ┊0┊1┊1┊1┊ ┊ 1 ┊
-// ├─┼─┼─┼─┼─┼───┤
-// ┊1┊ ┊1┊ ┊1┊   ┊
-// ├─┼─┼─┼─┼─┼───┤
-// ┊2┊1┊ ┊ ┊1┊ 1 ┊
-// └─┴─┴─┴─┴─┴───┘
-// "
-//         );
-//         matrix.set_tail_edges([1, 6].into_iter());
-//         matrix.printstd();
-//         assert_eq!(
-//             matrix.clone().printstd_str(),
-//             "\
-// ┌─┬─┬─┬─┬─┬───┐
-// ┊ ┊4┊9┊1┊6┊ = ┊
-// ╞═╪═╪═╪═╪═╪═══╡
-// ┊0┊1┊ ┊1┊1┊ 1 ┊
-// ├─┼─┼─┼─┼─┼───┤
-// ┊1┊1┊1┊ ┊ ┊   ┊
-// ├─┼─┼─┼─┼─┼───┤
-// ┊2┊ ┊1┊1┊ ┊ 1 ┊
-// └─┴─┴─┴─┴─┴───┘
-// "
-//         );
-//         assert_eq!(matrix.get_tail_edges_vec(), [1, 6]);
-//         assert_eq!(matrix.edge_to_var_index(4), Some(1));
-//     }
+    type TailMatrix = Tail<Tight<BasicMatrix>>;
 
-//     #[test]
-//     #[should_panic]
-//     fn tail_matrix_cannot_call_dirty_column() {
-//         // cargo test tail_matrix_cannot_call_dirty_column -- --nocapture
-//         let mut matrix = TailMatrix::new();
-//         matrix.add_constraint(0, &[1, 4, 6], true);
-//         matrix.update_edge_tightness(1, true);
-//         // even though there is indeed such a column, we forbid such dangerous calls
-//         // always call `columns()` before accessing any column
-//         matrix.column_to_var_index(0);
-//     }
+    #[test]
+    fn tail_matrix_1() {
+        // cargo test --features=colorful tail_matrix_1 -- --nocapture
+        let mut matrix = TailMatrix::new();
+        let vertex_indices = vec![0, 1, 2];
+        let edge_indices = vec![1, 4, 6, 9];
+        let vertex_incident_edges_vec = vec![
+            vec![0, 1, 2],
+            vec![1, 3],
+            vec![0, 3],
+        ];
+        let (vertices, edges) = initialize_vertex_edges_for_matrix_testing(vertex_indices, edge_indices);
+       
+        matrix.add_constraint(vertices[0].downgrade(), &edge_vec_from_indices(&vertex_incident_edges_vec[0], &edges), true);
+        matrix.add_constraint(vertices[1].downgrade(), &edge_vec_from_indices(&vertex_incident_edges_vec[1], &edges), false);
+        matrix.add_constraint(vertices[2].downgrade(), &edge_vec_from_indices(&vertex_incident_edges_vec[2], &edges), true);
+        assert_eq!(matrix.edge_to_var_index(edges[1].downgrade()), Some(1));
+        matrix.printstd();
+        assert_eq!(
+            matrix.clone().printstd_str(),
+            "\
+┌─┬───┐
+┊ ┊ = ┊
+╞═╪═══╡
+┊0┊ 1 ┊
+├─┼───┤
+┊1┊   ┊
+├─┼───┤
+┊2┊ 1 ┊
+└─┴───┘
+"
+        );
+        for edge_ptr in edges.iter() {
+            matrix.update_edge_tightness(edge_ptr.downgrade(), true);
+        }
+        matrix.printstd();
+        assert_eq!(
+            matrix.clone().printstd_str(),
+            "\
+┌─┬─┬─┬─┬─┬───┐
+┊ ┊1┊4┊6┊9┊ = ┊
+╞═╪═╪═╪═╪═╪═══╡
+┊0┊1┊1┊1┊ ┊ 1 ┊
+├─┼─┼─┼─┼─┼───┤
+┊1┊ ┊1┊ ┊1┊   ┊
+├─┼─┼─┼─┼─┼───┤
+┊2┊1┊ ┊ ┊1┊ 1 ┊
+└─┴─┴─┴─┴─┴───┘
+"
+        );
+        matrix.set_tail_edges([edges[0].downgrade(), edges[2].downgrade()].into_iter());
+        matrix.printstd();
+        assert_eq!(
+            matrix.clone().printstd_str(),
+            "\
+┌─┬─┬─┬─┬─┬───┐
+┊ ┊4┊9┊1┊6┊ = ┊
+╞═╪═╪═╪═╪═╪═══╡
+┊0┊1┊ ┊1┊1┊ 1 ┊
+├─┼─┼─┼─┼─┼───┤
+┊1┊1┊1┊ ┊ ┊   ┊
+├─┼─┼─┼─┼─┼───┤
+┊2┊ ┊1┊1┊ ┊ 1 ┊
+└─┴─┴─┴─┴─┴───┘
+"
+        );
+        assert_eq!(
+            matrix.get_tail_edges_vec().iter().map(|e| e.upgrade_force().read_recursive().edge_index).collect::<HashSet<_>>(), 
+            [1, 6].into_iter().collect::<HashSet<_>>());
+        assert_eq!(matrix.edge_to_var_index(edges[1].downgrade()), Some(1));
+    }
 
-//     #[test]
-//     fn tail_matrix_basic_trait() {
-//         // cargo test --features=colorful tail_matrix_basic_trait -- --nocapture
-//         let mut matrix = TailMatrix::new();
-//         matrix.add_variable(3); // untight edges will not show
-//         matrix.add_constraint(0, &[1, 4, 6], true);
-//         matrix.add_constraint(1, &[4, 9], false);
-//         matrix.add_constraint(2, &[1, 9], true);
-//         matrix.swap_row(2, 1);
-//         matrix.xor_row(0, 1);
-//         for edge_index in [1, 4, 6, 9] {
-//             matrix.update_edge_tightness(edge_index, true);
-//         }
-//         matrix.printstd();
-//         assert_eq!(
-//             matrix.clone().printstd_str(),
-//             "\
-// ┌─┬─┬─┬─┬─┬───┐
-// ┊ ┊1┊4┊6┊9┊ = ┊
-// ╞═╪═╪═╪═╪═╪═══╡
-// ┊0┊ ┊1┊1┊1┊   ┊
-// ├─┼─┼─┼─┼─┼───┤
-// ┊1┊1┊ ┊ ┊1┊ 1 ┊
-// ├─┼─┼─┼─┼─┼───┤
-// ┊2┊ ┊1┊ ┊1┊   ┊
-// └─┴─┴─┴─┴─┴───┘
-// "
-//         );
-//         assert!(matrix.is_tight(1));
-//         assert_eq!(matrix.edge_to_var_index(4), Some(2));
-//     }
-// }
+    #[test]
+    #[should_panic]
+    fn tail_matrix_cannot_call_dirty_column() {
+        // cargo test tail_matrix_cannot_call_dirty_column -- --nocapture
+        let mut matrix = TailMatrix::new();
+        let vertex_indices = vec![0, 1, 2];
+        let edge_indices = vec![1, 4, 6, 9];
+        let vertex_incident_edges_vec = vec![
+            vec![0, 1, 2],
+        ];
+        let (vertices, edges) = initialize_vertex_edges_for_matrix_testing(vertex_indices, edge_indices);
+        matrix.add_constraint(vertices[0].downgrade(), &edge_vec_from_indices(&vertex_incident_edges_vec[0], &edges), true);
+
+        matrix.update_edge_tightness(edges[0].downgrade(), true);
+        // even though there is indeed such a column, we forbid such dangerous calls
+        // always call `columns()` before accessing any column
+        matrix.column_to_var_index(0);
+    }
+
+    #[test]
+    fn tail_matrix_basic_trait() {
+        // cargo test --features=colorful tail_matrix_basic_trait -- --nocapture
+        let mut matrix = TailMatrix::new();
+        let vertex_indices = vec![0, 1, 2];
+        let edge_indices = vec![1, 4, 6, 9, 3];
+        let vertex_incident_edges_vec = vec![
+            vec![0, 1, 2],
+            vec![1, 3],
+            vec![0, 3],
+        ];
+        let (vertices, edges) = initialize_vertex_edges_for_matrix_testing(vertex_indices, edge_indices);
+       
+        matrix.add_variable(edges[4].downgrade()); // untight edges will not show
+        matrix.add_constraint(vertices[0].downgrade(), &edge_vec_from_indices(&vertex_incident_edges_vec[0], &edges), true);
+        matrix.add_constraint(vertices[1].downgrade(), &edge_vec_from_indices(&vertex_incident_edges_vec[1], &edges), false);
+        matrix.add_constraint(vertices[2].downgrade(), &edge_vec_from_indices(&vertex_incident_edges_vec[2], &edges), true);
+        matrix.swap_row(2, 1);
+        matrix.xor_row(0, 1);
+        for edge_index in 0..4 {
+            matrix.update_edge_tightness(edges[edge_index].downgrade(), true);
+        }
+        matrix.printstd();
+        assert_eq!(
+            matrix.clone().printstd_str(),
+            "\
+┌─┬─┬─┬─┬─┬───┐
+┊ ┊1┊4┊6┊9┊ = ┊
+╞═╪═╪═╪═╪═╪═══╡
+┊0┊ ┊1┊1┊1┊   ┊
+├─┼─┼─┼─┼─┼───┤
+┊1┊1┊ ┊ ┊1┊ 1 ┊
+├─┼─┼─┼─┼─┼───┤
+┊2┊ ┊1┊ ┊1┊   ┊
+└─┴─┴─┴─┴─┴───┘
+"
+        );
+        assert!(matrix.is_tight(edges[0].downgrade()));
+        assert_eq!(matrix.edge_to_var_index(edges[1].downgrade()), Some(2));
+    }
+}

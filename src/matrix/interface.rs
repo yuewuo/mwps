@@ -38,7 +38,9 @@ pub trait MatrixBasic {
     /// add constraint will implicitly call `add_variable` if the edge is not added and return the indices of them
     fn add_constraint(
         &mut self,
-        vertex_ptr: VertexPtr,
+        vertex_weak: VertexWeak,
+        incident_edges: &[EdgeWeak],
+        parity: bool,
     ) -> Option<Vec<VarIndex>>;
 
     /// row operations
@@ -353,122 +355,150 @@ impl std::fmt::Debug for RowInfo {
     }
 }
 
-// #[cfg(test)]
-// pub mod tests {
-//     use super::super::*;
-//     use super::*;
-//     use std::collections::BTreeMap;
+#[cfg(test)]
+pub mod tests {
+    use super::super::*;
+    use super::*;
+    use std::collections::BTreeMap;
+    use crate::matrix::basic::tests::{initialize_vertex_edges_for_matrix_testing, edge_vec_from_indices};
+    use std::collections::HashSet;
+    use crate::dual_module_pq::{EdgePtr, VertexPtr};
 
-//     type TightMatrix = Tight<BasicMatrix>;
 
-//     #[test]
-//     fn matrix_interface_simple() {
-//         // cargo test --features=colorful matrix_interface_simple -- --nocapture
-//         let mut matrix = TightMatrix::new();
-//         matrix.add_tight_variable(233);
-//         matrix.add_tight_variable(14);
-//         matrix.add_variable(68);
-//         matrix.add_tight_variable(75);
-//         matrix.printstd();
-//         assert_eq!(matrix.get_view_edges(), [233, 14, 75]);
-//         assert_eq!(matrix.var_to_column_index(0), Some(0));
-//         assert_eq!(matrix.var_to_column_index(1), Some(1));
-//         assert_eq!(matrix.var_to_column_index(2), None);
-//         assert_eq!(matrix.var_to_column_index(3), Some(2));
-//         assert_eq!(matrix.edge_to_column_index(233), Some(0));
-//         assert_eq!(matrix.edge_to_column_index(14), Some(1));
-//         assert_eq!(matrix.edge_to_column_index(68), None);
-//         assert_eq!(matrix.edge_to_column_index(75), Some(2));
-//         assert_eq!(matrix.edge_to_column_index(666), None);
-//     }
+    type TightMatrix = Tight<BasicMatrix>;
 
-//     #[test]
-//     fn matrix_interface_echelon_info() {
-//         // cargo test matrix_interface_echelon_info -- --nocapture
-//         let mut column_info = ColumnInfo::new();
-//         column_info.set(13);
-//         assert_eq!(format!("{column_info:?}"), "Row(13)");
-//         column_info.set_not_dependent();
-//         assert_eq!(format!("{column_info:?}"), "Row(*)");
-//         assert_eq!(format!("{:?}", column_info.clone()), "Row(*)");
-//         let mut row_info = RowInfo::new();
-//         row_info.set(13);
-//         assert_eq!(format!("{row_info:?}"), "Col(13)");
-//         row_info.set_no_leading();
-//         assert_eq!(format!("{row_info:?}"), "Col(*)");
-//         assert_eq!(format!("{:?}", row_info.clone()), "Col(*)");
-//         let echelon_info = EchelonInfo::new();
-//         println!("echelon_info: {echelon_info:?}");
-//     }
+    #[test]
+    fn matrix_interface_simple() {
+        // cargo test --features=colorful matrix_interface_simple -- --nocapture
+        let mut matrix = TightMatrix::new();
+        let vertex_indices = vec![0, 1, 2, 3];
+        let edge_indices = vec![233, 14, 68, 75, 666];
+        let (vertices, edges) = initialize_vertex_edges_for_matrix_testing(vertex_indices, edge_indices);
 
-//     #[derive(Default)]
-//     struct TestEdgeWeights {
-//         pub weights: BTreeMap<EdgeIndex, Weight>,
-//     }
+        matrix.add_tight_variable(edges[0].downgrade());
+        matrix.add_tight_variable(edges[1].downgrade());
+        matrix.add_variable(edges[2].downgrade());
+        matrix.add_tight_variable(edges[3].downgrade());
+        matrix.printstd();
+        assert_eq!(
+            matrix.get_view_edges().iter().map(|e| e.upgrade_force().read_recursive().edge_index).collect::<HashSet<_>>(), 
+            [233, 14, 75].into_iter().collect::<HashSet<_>>());
+        assert_eq!(matrix.var_to_column_index(0), Some(0));
+        assert_eq!(matrix.var_to_column_index(1), Some(1));
+        assert_eq!(matrix.var_to_column_index(2), None);
+        assert_eq!(matrix.var_to_column_index(3), Some(2));
+        assert_eq!(matrix.edge_to_column_index(edges[0].downgrade()), Some(0));
+        assert_eq!(matrix.edge_to_column_index(edges[1].downgrade()), Some(1));
+        assert_eq!(matrix.edge_to_column_index(edges[2].downgrade()), None);
+        assert_eq!(matrix.edge_to_column_index(edges[3].downgrade()), Some(2));
+        assert_eq!(matrix.edge_to_column_index(edges[4].downgrade()), None);
+    }
 
-//     impl TestEdgeWeights {
-//         fn new(weights: &[(EdgeIndex, Weight)]) -> Self {
-//             let mut result: TestEdgeWeights = Default::default();
-//             for (edge_index, weight) in weights {
-//                 result.weights.insert(edge_index.clone(), weight.clone());
-//             }
-//             result
-//         }
-//         fn get_solution_local_minimum(&self, matrix: &mut Echelon<Tail<BasicMatrix>>) -> Option<InternalSubgraph> {
-//             matrix.get_solution_local_minimum(|edge_index| {
-//                 if let Some(weight) = self.weights.get(&edge_index) {
-//                     weight.clone()
-//                 } else {
-//                     Rational::from(1.)
-//                 }
-//             })
-//         }
-//     }
+    #[test]
+    fn matrix_interface_echelon_info() {
+        // cargo test matrix_interface_echelon_info -- --nocapture
+        let mut column_info = ColumnInfo::new();
+        column_info.set(13);
+        assert_eq!(format!("{column_info:?}"), "Row(13)");
+        column_info.set_not_dependent();
+        assert_eq!(format!("{column_info:?}"), "Row(*)");
+        assert_eq!(format!("{:?}", column_info.clone()), "Row(*)");
+        let mut row_info = RowInfo::new();
+        row_info.set(13);
+        assert_eq!(format!("{row_info:?}"), "Col(13)");
+        row_info.set_no_leading();
+        assert_eq!(format!("{row_info:?}"), "Col(*)");
+        assert_eq!(format!("{:?}", row_info.clone()), "Col(*)");
+        let echelon_info = EchelonInfo::new();
+        println!("echelon_info: {echelon_info:?}");
+    }
 
-//     #[test]
-//     fn matrix_interface_echelon_solution() {
-//         // cargo test --features=colorful matrix_interface_echelon_solution -- --nocapture
-//         /* 0,1,2: vertices; (0),(1),(2): edges; !n!: odd vertex
-//                1 (1) 0
-//               (2)   (0)
-//          3 (3) 2 (8)!7!
-//         (4)   (7)   (9)
-//         !4!(5) 5 (6) 6
-//             */
-//         let mut matrix = Echelon::<Tail<BasicMatrix>>::new();
-//         let parity_checks = vec![
-//             (vec![0, 1], false),
-//             (vec![1, 2], false),
-//             (vec![2, 3, 7, 8], false),
-//             (vec![3, 4], false),
-//             (vec![4, 5], true),
-//             (vec![5, 6, 7], false),
-//             (vec![6, 9], false),
-//             (vec![0, 8, 9], true),
-//         ];
-//         for (vertex_index, (incident_edges, parity)) in parity_checks.iter().enumerate() {
-//             matrix.add_constraint(vertex_index, incident_edges, *parity);
-//         }
-//         matrix.printstd();
-//         assert_eq!(matrix.get_solution(), Some(vec![0, 1, 2, 3, 4]));
-//         let weights = TestEdgeWeights::new(&[(3, Rational::from(10.)), (9, Rational::from(10.))]);
-//         assert_eq!(weights.get_solution_local_minimum(&mut matrix), Some(vec![5, 7, 8]));
-//         let weights = TestEdgeWeights::new(&[(7, Rational::from(10.)), (9, Rational::from(10.))]);
-//         assert_eq!(weights.get_solution_local_minimum(&mut matrix), Some(vec![3, 4, 8]));
-//         let weights = TestEdgeWeights::new(&[(3, Rational::from(10.)), (4, Rational::from(10.)), (7, Rational::from(10.))]);
-//         assert_eq!(weights.get_solution_local_minimum(&mut matrix), Some(vec![5, 6, 9]));
-//     }
+    #[derive(Default)]
+    struct TestEdgeWeights {
+        pub weights: BTreeMap<EdgeWeak, Weight>,
+    }
 
-//     #[test]
-//     fn matrix_interface_echelon_no_solution() {
-//         // cargo test matrix_interface_echelon_no_solution -- --nocapture
-//         let mut matrix = Echelon::<Tail<BasicMatrix>>::new();
-//         let parity_checks = vec![(vec![0, 1], false), (vec![0, 1], true)];
-//         for (vertex_index, (incident_edges, parity)) in parity_checks.iter().enumerate() {
-//             matrix.add_constraint(vertex_index, incident_edges, *parity);
-//         }
-//         assert_eq!(matrix.get_solution(), None);
-//         let weights = TestEdgeWeights::new(&[]);
-//         assert_eq!(weights.get_solution_local_minimum(&mut matrix), None);
-//     }
-// }
+    impl TestEdgeWeights {
+        fn new(weights: &[(EdgeWeak, Weight)]) -> Self {
+            let mut result: TestEdgeWeights = Default::default();
+            for (edge_weak, weight) in weights {
+                result.weights.insert(edge_weak.clone(), weight.clone());
+            }
+            result
+        }
+        fn get_solution_local_minimum(&self, matrix: &mut Echelon<Tail<BasicMatrix>>) -> Option<InternalSubgraph> {
+            matrix.get_solution_local_minimum(|edge_weak| {
+                if let Some(weight) = self.weights.get(&edge_weak) {
+                    weight.clone()
+                } else {
+                    Rational::from(1.)
+                }
+            })
+        }
+    }
+
+    #[test]
+    fn matrix_interface_echelon_solution() {
+        // cargo test --features=colorful matrix_interface_echelon_solution -- --nocapture
+        /* 0,1,2: vertices; (0),(1),(2): edges; !n!: odd vertex
+               1 (1) 0
+              (2)   (0)
+         3 (3) 2 (8)!7!
+        (4)   (7)   (9)
+        !4!(5) 5 (6) 6
+            */
+        let mut matrix = Echelon::<Tail<BasicMatrix>>::new();
+        let parity_checks = vec![
+            (vec![0, 1], false),
+            (vec![1, 2], false),
+            (vec![2, 3, 7, 8], false),
+            (vec![3, 4], false),
+            (vec![4, 5], true),
+            (vec![5, 6, 7], false),
+            (vec![6, 9], false),
+            (vec![0, 8, 9], true),
+        ];
+        let vertex_indices: Vec<usize> = (0..parity_checks.len()).collect();
+        let edge_indices: Vec<usize> = (0..10).collect();
+        let (vertices, edges) = initialize_vertex_edges_for_matrix_testing(vertex_indices, edge_indices);
+
+        for (vertex_index, (incident_edges, parity)) in parity_checks.iter().enumerate() {
+            let incident_edges_weak: Vec<EdgeWeak> = incident_edges.iter().map(|&i| edges[i].downgrade()).collect();
+            matrix.add_constraint(vertices[vertex_index].downgrade(), &incident_edges_weak, *parity);
+        }
+        matrix.printstd();
+        assert_eq!(
+            matrix.get_solution().unwrap().iter().map(|e| e.upgrade_force().read_recursive().edge_index).collect::<HashSet<_>>(),
+            vec![0, 1, 2, 3, 4].into_iter().collect::<HashSet<_>>());
+        let weights = TestEdgeWeights::new(&[(edges[3].downgrade(), Rational::from(10.)), (edges[9].downgrade(), Rational::from(10.))]);
+        assert_eq!(
+            weights.get_solution_local_minimum(&mut matrix).unwrap().iter().map(|e| e.upgrade_force().read_recursive().edge_index).collect::<HashSet<_>>(), 
+            vec![5, 7, 8].into_iter().collect::<HashSet<_>>());
+        let weights = TestEdgeWeights::new(&[(edges[7].downgrade(), Rational::from(10.)), (edges[9].downgrade(), Rational::from(10.))]);
+        assert_eq!(
+            weights.get_solution_local_minimum(&mut matrix).unwrap().iter().map(|e| e.upgrade_force().read_recursive().edge_index).collect::<HashSet<_>>(), 
+            vec![3, 4, 8].into_iter().collect::<HashSet<_>>());
+        let weights = TestEdgeWeights::new(&[(edges[3].downgrade(), Rational::from(10.)), (edges[4].downgrade(), Rational::from(10.)), (edges[7].downgrade(), Rational::from(10.))]);
+        assert_eq!(
+            weights.get_solution_local_minimum(&mut matrix).unwrap().iter().map(|e| e.upgrade_force().read_recursive().edge_index).collect::<HashSet<_>>(),
+            vec![5, 6, 9].into_iter().collect::<HashSet<_>>());
+    }
+
+    #[test]
+    fn matrix_interface_echelon_no_solution() {
+        // cargo test matrix_interface_echelon_no_solution -- --nocapture
+        let mut matrix = Echelon::<Tail<BasicMatrix>>::new();
+        let parity_checks = vec![(vec![0, 1], false), (vec![0, 1], true)];
+        let vertex_indices: Vec<usize> = (0..parity_checks.len()).collect();
+        let edge_indices: Vec<usize> = (0..10).collect();
+        let (vertices, edges) = initialize_vertex_edges_for_matrix_testing(vertex_indices, edge_indices);
+
+        for (vertex_index, (incident_edges, parity)) in parity_checks.iter().enumerate() {
+            let incident_edges_weak: Vec<EdgeWeak> = incident_edges.iter().map(|&i| edges[i].downgrade()).collect();
+            matrix.add_constraint(vertices[vertex_index].downgrade(), &incident_edges_weak, *parity);
+        }
+        assert_eq!(matrix.get_solution(), None);
+        let weights = TestEdgeWeights::new(&[]);
+        assert_eq!(weights.get_solution_local_minimum(&mut matrix), None);
+    }
+}

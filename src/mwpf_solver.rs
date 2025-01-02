@@ -359,7 +359,11 @@ impl SolverSerialPlugins {
         // construct the parity matrix
         let interface = self.interface_ptr.read();
         for vertex_ptr in cluster.vertices.iter() {
-            cluster.parity_matrix.add_constraint(vertex_ptr.clone());
+            let vertex_weak = vertex_ptr.downgrade();
+            let vertex = vertex_ptr.read_recursive();
+            let incident_edges = &vertex.edges;
+            let parity = vertex.is_defect;
+            cluster.parity_matrix.add_constraint(vertex_weak, incident_edges, parity);
         }
         cluster
     }

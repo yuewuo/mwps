@@ -132,7 +132,7 @@ impl std::fmt::Debug for DualNodePtr {
             .field("index", &dual_node.index)
             .field("dual_variable", &dual_node.get_dual_variable())
             .field("grow_rate", &dual_node.grow_rate)
-            .field("hair", &dual_node.invalid_subgraph.hair)
+            .field("hair", &dual_node.invalid_subgraph.hair.iter().map(|e| e.read_recursive().edge_index).collect::<Vec<_>>())
             .finish()
         // let new = ArcRwLock::new_value(Rational::zero());
         // let global_time = dual_node.global_time.as_ref().unwrap_or(&new).read_recursive();
@@ -537,6 +537,10 @@ pub trait DualModuleImpl {
 
     fn get_edge_ptr(&self, edge_index: EdgeIndex) -> EdgePtr;
 
+    fn get_vertex_ptr_vec(&self, vertex_indices: &[VertexIndex]) -> Vec<VertexPtr>;
+
+    fn get_edge_ptr_vec(&self, edge_indices: &[EdgeIndex]) -> Vec<EdgePtr>;
+
     fn get_vertex_num(&self) -> usize;
 
     fn get_edge_num(&self) -> usize;
@@ -795,7 +799,11 @@ impl DualModuleInterfacePtr {
         }
 
         for vertex_ptr in vertices.iter() {
-            matrix.add_constraint(vertex_ptr.clone());
+            let vertex_weak = vertex_ptr.downgrade();
+            let vertex = vertex_ptr.read_recursive();
+            let incident_edges = &vertex.edges;
+            let parity = vertex.is_defect;
+            matrix.add_constraint(vertex_weak, incident_edges, parity);
         }
         matrix.get_solution()
     }
@@ -803,9 +811,10 @@ impl DualModuleInterfacePtr {
 
 // shortcuts for easier code writing at debugging
 impl DualModuleInterfacePtr {
-    pub fn create_node_vec(&self, edges: &[EdgeWeak], dual_module: &mut impl DualModuleImpl) -> DualNodePtr {
+    pub fn create_node_vec_from_indices(&self, edges: &[EdgeIndex], dual_module: &mut impl DualModuleImpl) -> DualNodePtr {
+        let edges_ptr = edges.iter().map(|&idx| dual_module.get_edge_ptr(idx)).collect::<BTreeSet<_>>();
         let invalid_subgraph = Arc::new(InvalidSubgraph::new(
-            &edges.iter().filter_map(|weak_edge| weak_edge.upgrade()).collect::<BTreeSet<_>>(),
+            &edges_ptr
         ));
         self.create_node(invalid_subgraph, dual_module)
     }

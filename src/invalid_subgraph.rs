@@ -162,15 +162,16 @@ impl InvalidSubgraph {
         }
         // check the edges indeed cannot satisfy the requirement of the vertices
         let mut matrix = Echelon::<CompleteMatrix>::new();
-        matrix.printstd();
         for edge_ptr in self.edges.iter() {
             matrix.add_variable(edge_ptr.downgrade());
         }
-        matrix.printstd();
         for vertex_ptr in self.vertices.iter() {
-            matrix.add_constraint(vertex_ptr.clone());
+            let vertex_weak = vertex_ptr.downgrade();
+            let vertex = vertex_ptr.read_recursive();
+            let incident_edges = &vertex.edges;
+            let parity = vertex.is_defect;
+            matrix.add_constraint(vertex_weak, incident_edges, parity);
         }
-        matrix.printstd();
         if matrix.get_echelon_info().satisfiable {
             return Err(format!(
                 "it's a valid subgraph because edges {:?} ⊆ {:?} can satisfy the parity requirement from vertices {:?}",
@@ -188,7 +189,11 @@ impl InvalidSubgraph {
             matrix.add_variable(edge_ptr.downgrade());
         }
         for vertex_ptr in self.vertices.iter() {
-            matrix.add_constraint(vertex_ptr.clone());
+            let vertex_weak = vertex_ptr.downgrade();
+            let vertex = vertex_ptr.read_recursive();
+            let incident_edges = &vertex.edges;
+            let parity = vertex.is_defect;
+            matrix.add_constraint(vertex_weak, incident_edges, parity);
         }
         matrix
     }
@@ -228,6 +233,7 @@ pub mod tests {
     use crate::dual_module_pq::{Vertex, Edge, VertexPtr, EdgePtr};
     use std::collections::HashSet;
     use crate::dual_module_pq::DualModulePQ;
+    use crate::dual_module::DualModuleInterfacePtr;
     use sugar::*;
 
     #[test]
@@ -237,6 +243,9 @@ pub mod tests {
         let (decoding_graph, ..) = color_code_5_decoding_graph(vec![7, 1], visualize_filename);
         let initializer = decoding_graph.model_graph.initializer.clone();
         let mut dual_module = DualModulePQ::new_empty(&initializer);
+        let interface_ptr = DualModuleInterfacePtr::new(decoding_graph.model_graph.clone());
+        interface_ptr.load(decoding_graph.syndrome_pattern.clone(), &mut dual_module); // this is needed to load the defect vertices
+
         let invalid_subgraph_1 = InvalidSubgraph::new_from_indices(btreeset! {13}, &mut dual_module);
         println!("invalid_subgraph_1: {invalid_subgraph_1:?}");
         assert_eq!(
@@ -272,7 +281,8 @@ pub mod tests {
     fn invalid_subgraph_hash() {
         // cargo test invalid_subgraph_hash -- --nocapture
         let visualize_filename = "invalid_subgraph_good.json".to_string();
-        let (decoding_graph, ..) = color_code_5_decoding_graph(vec![7, 1], visualize_filename);
+        // we use an arbitrary decoding graph, the defect vertices here are not loaded
+        let (decoding_graph, ..) = color_code_5_decoding_graph(vec![7, 1], visualize_filename); 
         let initializer = decoding_graph.model_graph.initializer.clone();
         let mut dual_module = DualModulePQ::new_empty(&initializer);
 

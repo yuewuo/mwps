@@ -140,42 +140,54 @@ impl VizTable {
     }
 }
 
-// #[cfg(test)]
-// pub mod tests {
-//     use super::super::*;
+#[cfg(test)]
+pub mod tests {
+    use super::super::*;
+    use crate::matrix::basic::tests::{initialize_vertex_edges_for_matrix_testing, edge_vec_from_indices};
+    use std::collections::HashSet;
+    use crate::dual_module_pq::{EdgePtr, VertexPtr};
 
-//     #[test]
-//     fn viz_table_1() {
-//         // cargo test --features=colorful viz_table_1 -- --nocapture
-//         let mut matrix = BasicMatrix::new();
-//         matrix.add_constraint(0, &[1, 4, 16], true);
-//         matrix.add_constraint(1, &[4, 23], false);
-//         matrix.add_constraint(2, &[1, 23], true);
-//         matrix.printstd();
-//         assert_eq!(
-//             matrix.clone().printstd_str(),
-//             "\
-// ┌─┬─┬─┬─┬─┬───┐
-// ┊ ┊1┊4┊1┊2┊ = ┊
-// ┊ ┊ ┊ ┊6┊3┊   ┊
-// ╞═╪═╪═╪═╪═╪═══╡
-// ┊0┊1┊1┊1┊ ┊ 1 ┊
-// ├─┼─┼─┼─┼─┼───┤
-// ┊1┊ ┊1┊ ┊1┊   ┊
-// ├─┼─┼─┼─┼─┼───┤
-// ┊2┊1┊ ┊ ┊1┊ 1 ┊
-// └─┴─┴─┴─┴─┴───┘
-// "
-//         );
-//         let mut viz_table = matrix.viz_table();
-//         assert_eq!(
-//             serde_json::Value::from(viz_table.viz_table()),
-//             json!([
-//                 ["", "1", "4", "1\n6", "2\n3", " = "],
-//                 ["0", "1", "1", "1", " ", " 1 "],
-//                 ["1", " ", "1", " ", "1", "   "],
-//                 ["2", "1", " ", " ", "1", " 1 "]
-//             ])
-//         )
-//     }
-// }
+
+    #[test]
+    fn viz_table_1() {
+        // cargo test --features=colorful viz_table_1 -- --nocapture
+        let mut matrix = BasicMatrix::new();
+        let vertex_indices = vec![0, 1, 2];
+        let edge_indices = vec![1, 4, 16, 23];
+        let vertex_incident_edges_vec = vec![
+            vec![0, 1, 2],
+            vec![1, 3],
+            vec![0, 3],
+        ];
+        let (vertices, edges) = initialize_vertex_edges_for_matrix_testing(vertex_indices, edge_indices);
+        matrix.add_constraint(vertices[0].downgrade(), &edge_vec_from_indices(&vertex_incident_edges_vec[0], &edges), true);
+        matrix.add_constraint(vertices[1].downgrade(), &edge_vec_from_indices(&vertex_incident_edges_vec[1], &edges), false);
+        matrix.add_constraint(vertices[2].downgrade(), &edge_vec_from_indices(&vertex_incident_edges_vec[2], &edges), true);
+        matrix.printstd();
+        assert_eq!(
+            matrix.clone().printstd_str(),
+            "\
+┌─┬─┬─┬─┬─┬───┐
+┊ ┊1┊4┊1┊2┊ = ┊
+┊ ┊ ┊ ┊6┊3┊   ┊
+╞═╪═╪═╪═╪═╪═══╡
+┊0┊1┊1┊1┊ ┊ 1 ┊
+├─┼─┼─┼─┼─┼───┤
+┊1┊ ┊1┊ ┊1┊   ┊
+├─┼─┼─┼─┼─┼───┤
+┊2┊1┊ ┊ ┊1┊ 1 ┊
+└─┴─┴─┴─┴─┴───┘
+"
+        );
+        let mut viz_table = matrix.viz_table();
+        assert_eq!(
+            serde_json::Value::from(viz_table.viz_table()),
+            json!([
+                ["", "1", "4", "1\n6", "2\n3", " = "],
+                ["0", "1", "1", "1", " ", " 1 "],
+                ["1", " ", "1", " ", "1", "   "],
+                ["2", "1", " ", " ", "1", " 1 "]
+            ])
+        )
+    }
+}
