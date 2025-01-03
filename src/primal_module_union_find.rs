@@ -165,7 +165,7 @@ impl PrimalModuleImpl for PrimalModuleUnionFind {
         _dual_module: &mut impl DualModuleImpl,
     ) -> OutputSubgraph {
         let mut valid_clusters = BTreeSet::new();
-        let mut subgraph = vec![];
+        let mut internal_subgraph = vec![];
         for i in 0..self.union_find.size() {
             let root_index = self.union_find.find(i);
             if !valid_clusters.contains(&root_index) {
@@ -173,9 +173,10 @@ impl PrimalModuleImpl for PrimalModuleUnionFind {
                 let cluster_subgraph = interface_ptr
                     .find_valid_subgraph_auto_vertices(&self.union_find.get(root_index).internal_edges)
                     .expect("must be valid cluster");
-                subgraph.extend(cluster_subgraph);
+                internal_subgraph.extend(cluster_subgraph);
             }
         }
+        let subgraph = internal_subgraph.clone().into_iter().map(|e| e.upgrade_force().read_recursive().edge_index).collect::<Vec<_>>();
 
         // let mut subgraph_set = subgraph.into_iter().collect::<hashbrown::HashSet<EdgeIndex>>();
         // for to_flip in _dual_module.get_negative_edges().iter() {
@@ -188,7 +189,7 @@ impl PrimalModuleImpl for PrimalModuleUnionFind {
         // OutputSubgraph::new(subgraph_set.into_iter().collect(), Default::default())
 
         // note: note implmented to handle negative weights yet
-        OutputSubgraph::new_internal(subgraph, _dual_module.get_negative_edges())
+        OutputSubgraph::new(subgraph, _dual_module.get_negative_edges(), internal_subgraph)
     }
 }
 

@@ -138,6 +138,8 @@ pub mod tests {
                     last_updated_time: Rational::zero(),
                     growth_at_last_updated_time: Rational::zero(),
                     grow_rate: Rational::zero(),
+                    unit_index: Some(0), // dummy value
+                    connected_to_boundary_vertex: false, // dummy value
                     #[cfg(feature = "incr_lp")]
                     cluster_weights: hashbrown::HashMap::new(),
                 })
@@ -150,6 +152,7 @@ pub mod tests {
                     vertex_index,
                     is_defect: false,
                     edges: vec![],
+                    mirrored_vertices: vec![], // dummy vlaue
                 })
             })
             .collect();

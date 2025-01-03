@@ -24,11 +24,14 @@ extern crate urlencoding;
 #[cfg(feature = "wasm_binding")]
 extern crate wasm_bindgen;
 
+extern crate rayon;
+
 pub mod cli;
 pub mod cluster;
 pub mod decoding_hypergraph;
 pub mod dual_module;
 pub mod dual_module_pq;
+pub mod dual_module_parallel;
 pub mod example_codes;
 pub mod html_export;
 pub mod invalid_subgraph;
@@ -77,6 +80,7 @@ fn mwpf(m: &Bound<'_, PyModule>) -> PyResult<()> {
     Ok(())
 }
 
+use util::InternalSubgraph;
 #[cfg(feature = "wasm_binding")]
 use wasm_bindgen::prelude::*;
 

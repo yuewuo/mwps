@@ -12,7 +12,7 @@ use crate::model_hypergraph::*;
 use crate::num_traits::{FromPrimitive, One, Signed, ToPrimitive, Zero};
 use crate::pointers::*;
 use crate::primal_module::Affinity;
-use crate::primal_module_serial::PrimalClusterPtr;
+use crate::primal_module_serial::{PrimalClusterPtr, PrimalModuleSerialNodeWeak};
 use crate::relaxer_optimizer::OptimizerResult;
 use crate::util::*;
 use crate::visualize::*;
@@ -88,6 +88,8 @@ pub struct DualNode {
     pub last_updated_time: Rational,
     /// dual variable's value at the last updated time
     pub dual_variable_at_last_updated_time: Rational,
+    /// the corresponding PrimalModuleSerialNode
+    pub primal_module_serial_node: Option<PrimalModuleSerialNodeWeak>,
 }
 
 impl DualNode {
@@ -156,6 +158,14 @@ impl std::fmt::Debug for DualNodeWeak {
     }
 }
 
+impl DualNodePtr {
+    /// we mainly use the vertex_index from this function to run bfs to find the partition unit responsible for this dual node
+    pub fn get_representative_vertex(&self) -> VertexPtr {
+        let dual_node = self.read_recursive();
+        let defect_vertex = dual_node.invalid_subgraph.vertices.first().unwrap();
+        defect_vertex.clone()
+    }
+}
 /// an array of dual nodes
 /// dual nodes, once created, will never be deconstructed until the next run
 #[derive(Derivative)]
@@ -378,7 +388,7 @@ pub trait DualModuleImpl {
     fn get_obstacles_tune(
         &self,
         optimizer_result: OptimizerResult,
-        dual_node_deltas: BTreeMap<OrderedDualNodePtr, (Rational, NodeIndex)>,
+        dual_node_deltas: BTreeMap<OrderedDualNodePtr, (Rational, PrimalClusterPtr)>,
     ) -> BTreeSet<Obstacle> {
         let mut obstacles = BTreeSet::new();
         match optimizer_result {
@@ -400,7 +410,7 @@ pub trait DualModuleImpl {
             }
             OptimizerResult::Skipped => {
                 // if skipped, should check if is growable, if not return the obstacles that leads to that conclusion
-                for (dual_node_ptr, (grow_rate, _cluster_index)) in dual_node_deltas.into_iter() {
+                for (dual_node_ptr, (grow_rate, _cluster_ptr)) in dual_node_deltas.into_iter() {
                     // check if the single direction is growable
                     let mut actual_grow_rate = Rational::from_usize(std::usize::MAX).unwrap();
                     let node_ptr_read = dual_node_ptr.ptr.read_recursive();
@@ -616,6 +626,38 @@ impl DualReport {
             Self::Obstacles(obstacles) => Some(obstacles.iter()),
         }
     }
+
+    pub fn extend(&mut self, other: Self) {
+        match self {
+            Self::Obstacles(conflicts) => {
+                if let Self::Obstacles(other_conflicts) = other {
+                    conflicts.extend(other_conflicts);
+                } // only add conflicts
+            },
+            Self::Unbounded => {
+                match other {
+                    Self::Unbounded => {} // do nothing
+                    Self::ValidGrow(length) => *self = Self::ValidGrow(length),
+                    Self::Obstacles(mut other_list) => {
+                        let mut list = Vec::<Obstacle>::new();
+                        std::mem::swap(&mut list, &mut other_list);
+                        *self = Self::Obstacles(list);
+                    }
+                }
+            },
+            Self::ValidGrow(current_length) => match other {
+                Self::Obstacles(mut other_list) => {
+                    let mut list = Vec::<Obstacle>::new();
+                    std::mem::swap(&mut list, &mut other_list);
+                    *self = Self::Obstacles(list);
+                }
+                Self::Unbounded => {} // do nothing
+                Self::ValidGrow(length) => {
+                    *current_length = std::cmp::min(current_length.clone(), length);
+                }
+            }
+        }
+    }
 }
 
 impl DualModuleInterfacePtr {
@@ -680,6 +722,7 @@ impl DualModuleInterfacePtr {
             dual_variable_at_last_updated_time: Rational::zero(),
             global_time: None,
             last_updated_time: Rational::zero(),
+            primal_module_serial_node: None,
         });
 
         interface.nodes.push(node_ptr.clone());
@@ -766,6 +809,7 @@ impl DualModuleInterfacePtr {
             dual_variable_at_last_updated_time: Rational::zero(),
             global_time: None,
             last_updated_time: Rational::zero(),
+            primal_module_serial_node: None,
         });
 
         interface.nodes.push(node_ptr.clone());
@@ -780,7 +824,7 @@ impl DualModuleInterfacePtr {
         self.find_valid_subgraph_auto_vertices(edges).is_some()
     }
 
-    pub fn find_valid_subgraph_auto_vertices(&self, edges: &BTreeSet<EdgePtr>) -> Option<InternalSubgraph> {
+    pub fn find_valid_subgraph_auto_vertices(&self, edges: &BTreeSet<EdgePtr>) -> Option<Vec<EdgeWeak>> {
         let mut vertices: BTreeSet<VertexPtr> = BTreeSet::new();
         for edge_ptr in edges.iter() {
             let local_vertices = &edge_ptr.read_recursive().vertices;
@@ -792,7 +836,7 @@ impl DualModuleInterfacePtr {
         self.find_valid_subgraph(edges, &vertices)
     }
 
-    pub fn find_valid_subgraph(&self, edges: &BTreeSet<EdgePtr>, vertices: &BTreeSet<VertexPtr>) -> Option<InternalSubgraph> {
+    pub fn find_valid_subgraph(&self, edges: &BTreeSet<EdgePtr>, vertices: &BTreeSet<VertexPtr>) -> Option<Vec<EdgeWeak>> {
         let mut matrix = Echelon::<CompleteMatrix>::new();
         for edge_ptr in edges.iter() {
             matrix.add_variable(edge_ptr.downgrade());

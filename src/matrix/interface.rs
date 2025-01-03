@@ -143,7 +143,7 @@ pub trait MatrixEchelon: MatrixView {
     fn get_echelon_info(&mut self) -> &EchelonInfo;
     fn get_echelon_info_immutable(&self) -> &EchelonInfo;
 
-    fn get_solution(&mut self) -> Option<InternalSubgraph> {
+    fn get_solution(&mut self) -> Option<Vec<EdgeWeak>> {
         self.get_echelon_info(); // make sure it's in echelon form
         let info = self.get_echelon_info_immutable();
         if !info.satisfiable {
@@ -162,7 +162,7 @@ pub trait MatrixEchelon: MatrixView {
     }
 
     /// try every independent variables and try to minimize the total weight of the solution
-    fn get_solution_local_minimum<F>(&mut self, weight_of: F) -> Option<InternalSubgraph>
+    fn get_solution_local_minimum<F>(&mut self, weight_of: F) -> Option<Vec<EdgeWeak>>
     where
         F: Fn(EdgeWeak) -> Weight,
     {
@@ -373,7 +373,7 @@ pub mod tests {
         let mut matrix = TightMatrix::new();
         let vertex_indices = vec![0, 1, 2, 3];
         let edge_indices = vec![233, 14, 68, 75, 666];
-        let (vertices, edges) = initialize_vertex_edges_for_matrix_testing(vertex_indices, edge_indices);
+        let (_vertices, edges) = initialize_vertex_edges_for_matrix_testing(vertex_indices, edge_indices);
 
         matrix.add_tight_variable(edges[0].downgrade());
         matrix.add_tight_variable(edges[1].downgrade());
@@ -426,7 +426,7 @@ pub mod tests {
             }
             result
         }
-        fn get_solution_local_minimum(&self, matrix: &mut Echelon<Tail<BasicMatrix>>) -> Option<InternalSubgraph> {
+        fn get_solution_local_minimum(&self, matrix: &mut Echelon<Tail<BasicMatrix>>) -> Option<Vec<EdgeWeak>> {
             matrix.get_solution_local_minimum(|edge_weak| {
                 if let Some(weight) = self.weights.get(&edge_weak) {
                     weight.clone()

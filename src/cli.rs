@@ -740,7 +740,7 @@ impl ResultVerifier for VerifierActualError {
         } else {
             Rational::from(
                 self.initializer
-                    .get_subgraph_total_weight(&OutputSubgraph::new(error_pattern.clone(), Default::default())),
+                    .get_subgraph_total_weight(&OutputSubgraph::new(error_pattern.clone(), Default::default(), vec![])),
             )
         };
         let (subgraph, weight_range) = solver.subgraph_range_visualizer(visualizer);
