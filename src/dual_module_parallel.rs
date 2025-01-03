@@ -481,8 +481,8 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
     pub fn static_combine_all_mirrored_vertices(&mut self) {
         for unit_index in 0..self.units.len() {
             let mut unit = self.units[unit_index].read_recursive();
-            for i in 0..unit.serial_module.vertices.len() {
-                let vertex_ptr = &unit.serial_module.vertices[i];
+            for i in 0..unit.serial_module.all_mirrored_vertices.len() {
+                let vertex_ptr = &unit.serial_module.all_mirrored_vertices[i];
                 let mut edges_to_add = Vec::new();
                 for corresponding_mirrored_vertex in vertex_ptr.read_recursive().mirrored_vertices.iter() {
                     for edge_weak in corresponding_mirrored_vertex.upgrade_force().read_recursive().edges.iter() {
@@ -500,6 +500,29 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
                 vertex_ptr.write().edges.extend(edges_to_add);
             }
         }
+
+        // // previous implementation
+        // for unit_index in 0..self.units.len() {
+        //     let mut unit = self.units[unit_index].read_recursive();
+        //     for i in 0..unit.serial_module.vertices.len() {
+        //         let vertex_ptr = &unit.serial_module.vertices[i];
+        //         let mut edges_to_add = Vec::new();
+        //         for corresponding_mirrored_vertex in vertex_ptr.read_recursive().mirrored_vertices.iter() {
+        //             for edge_weak in corresponding_mirrored_vertex.upgrade_force().read_recursive().edges.iter() {
+        //                 let edge_ptr = edge_weak.upgrade_force();
+        //                 let mut edge = edge_ptr.write();
+        //                 for local_vertex in edge.vertices.iter_mut() {
+        //                     if local_vertex.eq(&corresponding_mirrored_vertex) {
+        //                         *local_vertex = vertex_ptr.downgrade();
+        //                     }
+        //                 }
+        //             }
+        //             edges_to_add.extend(corresponding_mirrored_vertex.upgrade_force().read_recursive().edges.iter().cloned());
+                
+        //         }
+        //         vertex_ptr.write().edges.extend(edges_to_add);
+        //     }
+        // }
     }
 }
 
@@ -2412,7 +2435,7 @@ pub mod tests {
             defect_vertices.clone(),
             Rational::from(60.58902296576552),
             vec![],
-            4,
+            2,
         );
     }
 
