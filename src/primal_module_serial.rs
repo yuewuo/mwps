@@ -1213,6 +1213,7 @@ pub mod tests {
                 .matches_subgraph_syndrome(&subgraph, &defect_vertices),
             "the result subgraph is invalid"
         );
+        assert_eq!(weight_range.upper, weight_range.lower, "lower and upper range do not match");
         assert_eq!(final_dual, weight_range.upper, "unmatched sum dual variables");
         assert_eq!(final_dual, weight_range.lower, "unexpected final dual variable sum");
         (interface_ptr, primal_module, dual_module)

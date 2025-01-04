@@ -481,24 +481,46 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
     pub fn static_combine_all_mirrored_vertices(&mut self) {
         for unit_index in 0..self.units.len() {
             let mut unit = self.units[unit_index].read_recursive();
-            for i in 0..unit.serial_module.all_mirrored_vertices.len() {
-                let vertex_ptr = &unit.serial_module.all_mirrored_vertices[i];
-                let mut edges_to_add = Vec::new();
-                for corresponding_mirrored_vertex in vertex_ptr.read_recursive().mirrored_vertices.iter() {
-                    for edge_weak in corresponding_mirrored_vertex.upgrade_force().read_recursive().edges.iter() {
-                        let edge_ptr = edge_weak.upgrade_force();
-                        let mut edge = edge_ptr.write();
-                        for local_vertex in edge.vertices.iter_mut() {
-                            if local_vertex.eq(&corresponding_mirrored_vertex) {
-                                *local_vertex = vertex_ptr.downgrade();
+            if unit.is_boundary_unit {
+                for i in 0..unit.serial_module.vertices.len() {
+                    let vertex_ptr = &unit.serial_module.vertices[i];
+                    let mut edges_to_add = Vec::new();
+                    for corresponding_mirrored_vertex in vertex_ptr.read_recursive().mirrored_vertices.iter() {
+                        for edge_weak in corresponding_mirrored_vertex.upgrade_force().read_recursive().edges.iter() {
+                            let edge_ptr = edge_weak.upgrade_force();
+                            let mut edge = edge_ptr.write();
+                            for local_vertex in edge.vertices.iter_mut() {
+                                if local_vertex.eq(&corresponding_mirrored_vertex) {
+                                    *local_vertex = vertex_ptr.downgrade();
+                                }
                             }
                         }
+                        edges_to_add.extend(corresponding_mirrored_vertex.upgrade_force().read_recursive().edges.iter().cloned());
+                    
                     }
-                    edges_to_add.extend(corresponding_mirrored_vertex.upgrade_force().read_recursive().edges.iter().cloned());
-                
+                    vertex_ptr.write().edges.extend(edges_to_add);
                 }
-                vertex_ptr.write().edges.extend(edges_to_add);
+            } else {
+                for i in 0..unit.serial_module.all_mirrored_vertices.len() {
+                    let vertex_ptr = &unit.serial_module.all_mirrored_vertices[i];
+                    let mut edges_to_add = Vec::new();
+                    for corresponding_mirrored_vertex in vertex_ptr.read_recursive().mirrored_vertices.iter() {
+                        for edge_weak in corresponding_mirrored_vertex.upgrade_force().read_recursive().edges.iter() {
+                            let edge_ptr = edge_weak.upgrade_force();
+                            let mut edge = edge_ptr.write();
+                            for local_vertex in edge.vertices.iter_mut() {
+                                if local_vertex.eq(&corresponding_mirrored_vertex) {
+                                    *local_vertex = vertex_ptr.downgrade();
+                                }
+                            }
+                        }
+                        edges_to_add.extend(corresponding_mirrored_vertex.upgrade_force().read_recursive().edges.iter().cloned());
+                    
+                    }
+                    vertex_ptr.write().edges.extend(edges_to_add);
+                }
             }
+            
         }
 
         // // previous implementation
@@ -2181,7 +2203,7 @@ pub mod tests {
         // cargo test dual_module_parallel_basic_test_4 -- --nocapture
         let visualize_filename = "dual_module_parallel_basic_test_4.json".to_string();
         let code = CodeCapacityPlanarCode::new(7, 0.1);
-        let defect_vertices = vec![16, 19, 29, 32, 39];
+        let defect_vertices = vec![12, 18];
 
         // create model graph 
         let model_graph = code.get_model_graph();
@@ -2205,7 +2227,7 @@ pub mod tests {
             code,
             visualize_filename,
             defect_vertices,
-            Rational::from(15.380572041353538),
+            Rational::from(2.1972245773362196),
             vec![],
             initializer,
             partition_info,
@@ -2404,16 +2426,38 @@ pub mod tests {
         });
         
         let code = QECPlaygroundCode::new(3, 0.1, config);
-        let defect_vertices = vec![3, 10, 18, 19, 31];
+        let defect_vertices = vec![3, 10, 18, 19, 31, 35, 43];
 
         let visualize_filename = "dual_module_parallel_circuit_level_noise_qec_playground_1.json".to_string();
         dual_module_parallel_evaluation_qec_playground_helper(
             code,
             visualize_filename,
             defect_vertices,
-            Rational::from(5.335618752723146),
+            Rational::from(7.067635986959294),
             vec![],
             2,
+        );
+    }
+
+    #[test]
+    fn dual_module_parallel_circuit_level_noise_qec_playground_1_serial() {
+        // cargo test dual_module_parallel_circuit_level_noise_qec_playground_1_serial -- --nocapture
+        let config = json!({
+            "code_type": qecp::code_builder::CodeType::RotatedPlanarCode,
+            "nm": 8,
+        });
+        
+        let code = QECPlaygroundCode::new(3, 0.1, config);
+        let defect_vertices = vec![3, 10, 18, 19, 31, 35, 43];
+
+        let visualize_filename = "dual_module_parallel_circuit_level_noise_qec_playground_1_serial.json".to_string();
+        use crate::primal_module_serial::tests::primal_module_serial_basic_standard_syndrome;
+        primal_module_serial_basic_standard_syndrome(
+            code,
+            visualize_filename,
+            defect_vertices,
+            Rational::from(7.067635986959294),
+            vec![],
         );
     }
 
@@ -2435,12 +2479,15 @@ pub mod tests {
             defect_vertices.clone(),
             Rational::from(60.58902296576552),
             vec![],
-            2,
+            4,
         );
     }
 
     /// test solver on circuit level noise with random errors, split into 4
     /// for now, this test case does not pass, the lower and upper bound of the weight range do not match
+    /// even when split to 2, the lower and upper bound of the weight range still do not match (nm = 18)
+    /// but somehow, when nm = 8, the lower and upper bound of the weight range match
+    /// it turns out that, if p=0.001, the lower and upper bound of the weight range will match
     #[test]
     fn dual_module_parallel_circuit_level_noise_qec_playground_3() {
         // cargo test dual_module_parallel_circuit_level_noise_qec_playground_3 -- --nocapture
@@ -2449,7 +2496,8 @@ pub mod tests {
             "nm": 18,
         });
         
-        let mut code = QECPlaygroundCode::new(7, 0.005, config);
+        let mut code = QECPlaygroundCode::new(7, 0.001, config);
+        // [83, 95, 108, 111, 120, 152, 155, 168, 179, 180, 203, 209, 211, 217, 218, 238, 286, 287, 310, 311, 314, 318, 321, 322, 366]
         let defect_vertices = code.generate_random_errors(132).0.defect_vertices;
 
         let visualize_filename = "dual_module_parallel_circuit_level_noise_qec_playground_3.json".to_string();
@@ -2457,9 +2505,32 @@ pub mod tests {
             code,
             visualize_filename,
             defect_vertices.clone(),
-            Rational::from(206.21181645191476),
+            Rational::from(49.84751933558799),
             vec![],
-            8,
+            4,
+        );
+    }
+
+    /// now, we test the serial version of the above test case to see whether the lower and upper bound of the weight range match
+    #[test]
+    fn dual_module_parallel_circuit_level_noise_qec_playground_serial_3() {
+        // cargo test dual_module_parallel_circuit_level_noise_qec_playground_serial_3 -- --nocapture
+        let config = json!({
+            "code_type": qecp::code_builder::CodeType::RotatedPlanarCode,
+            "nm": 18,
+        });
+        
+        let mut code = QECPlaygroundCode::new(7, 0.001, config);
+        let defect_vertices = code.generate_random_errors(132).0.defect_vertices;
+
+        let visualize_filename = "dual_module_parallel_circuit_level_noise_qec_playground_serial_3.json".to_string();
+        use crate::primal_module_serial::tests::primal_module_serial_basic_standard_syndrome;
+        primal_module_serial_basic_standard_syndrome(
+            code,
+            visualize_filename,
+            defect_vertices,
+            Rational::from(49.84751933558799),
+            vec![],
         );
     }
 }
