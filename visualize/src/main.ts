@@ -2,6 +2,7 @@ import { parity_matrix } from './parity_matrix/parity_matrix'
 import { type VisualizerData, ConfigProps } from '@/hyperion/hyperion'
 import Hyperion from '@/hyperion/Hyperion.vue'
 import { createApp, type App } from 'vue'
+import { createPinia } from 'pinia'
 import { bigInt, decompress_content } from '@/util'
 
 async function bind_to_div (div_selector: string, visualizer: VisualizerData | string, config?: ConfigProps): Promise<App<Element>> {
@@ -12,6 +13,7 @@ async function bind_to_div (div_selector: string, visualizer: VisualizerData | s
         visualizer = bigInt.JSONParse(json_str) as VisualizerData
     }
     const app = createApp(Hyperion, { visualizer, config })
+    app.use(createPinia())
     app.mount(div_selector)
     return app
 }

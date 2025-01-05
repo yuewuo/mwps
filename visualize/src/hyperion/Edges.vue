@@ -11,12 +11,27 @@
  */
 
 import { type Ref, computed, watchEffect, useTemplateRef, onMounted } from 'vue'
-import { compute_vector3, unit_up_vector, EdgeRingState, EdgeTubeState, EdgeStates, ring_resolution, compute_edge_to_dual_indices } from './hyperion'
+import {
+    compute_vector3,
+    unit_up_vector,
+    EdgeRingState,
+    EdgeTubeState,
+    EdgeStates,
+    ring_resolution,
+    compute_edge_to_dual_indices,
+    type EdgeBranchSegments,
+    calculate_edge_branch_segmented,
+} from './hyperion'
 import { type Config } from './config_pane'
 import { PhysicalMaterial, CylinderGeometry, RingGeometry } from 'troisjs'
 import MyInstancedMesh from '@/misc/MyInstancedMesh.vue'
 import { Object3D, BackSide, DoubleSide, Color, Vector3, Quaternion } from 'three'
 import { assert_inject } from '@/misc/util'
+import { useEdgesStore } from './store'
+
+const counter = useEdgesStore() // TODO
+counter.increment()
+console.log(counter.count)
 
 const config: Ref<Config> = assert_inject('config')
 const ring_index_of_ratio = (ratio: number) => Math.max(0, Math.min(ring_resolution, Math.round(ratio * ring_resolution)))
@@ -319,135 +334,14 @@ const edge_to_dual_indices = computed(() => {
     return compute_edge_to_dual_indices(snapshot)
 })
 
-/**
- * Idea from Katie 2024.10.2: draw each edge branch differently to show which vertices the dual variables contribute
- *
- * The previous visualization is to display all each hypergraph in deg_v branches, and each branch is identical.
- *     Then for each branch, we print the contribution of all the dual variables. This method is very simple, and essentially
- *     convert the hyperedge printing problem to deg_v number of simple edge printing. However, this method will not
- *     convey the information of which vertices are the dual variables "flooding" from. For example, a single defect vertex
- *     grows over its adjacent hyperedges, however this method does not allow readers to get the information of which vertex
- *     is growing by looking at the edge along.
- *
- * We then found a new method to display it better: Since we know the subset of vertices that a dual variable contributes,
- *     namely $e \cap V_S$, we can grow from these vertices and then show the direction of the dual variable. This method
- *     is stable, in a sense that a small change of dual variables corresponds to a small change of the visualization effect,
- *     given that the dual variables have a consistent order (by their indices).
- *
- * This function outputs an object describing the segments on each edge branch.
- */
-
-interface EdgeBranchSegments {
-    grown_end: Array<number>
-    grown_center: Array<number>
-    contributor_end: Array<Array<[number, number]>>
-    contributor_center: Array<Array<[number, number]>>
-}
-
 const edge_branch_segments = computed(() => {
     const snapshot = config.value.snapshot
     let edge_branch_segments: Array<EdgeBranchSegments> = []
     for (let edge_index = 0; edge_index < snapshot.edges.length; ++edge_index) {
-        edge_branch_segments.push(calculate_edge_branch_segmented(edge_index))
+        edge_branch_segments.push(calculate_edge_branch_segmented(snapshot, edge_to_dual_indices.value, edge_index))
     }
     return edge_branch_segments
 })
-
-function calculate_edge_branch_segmented(edge_index: number): EdgeBranchSegments {
-    const snapshot = config.value.snapshot
-    // calculate the list of contributing dual variables
-    let dual_indices = []
-    let edge = snapshot.edges[edge_index]
-    if (snapshot.dual_nodes != null) {
-        // check the non-zero contributing dual variables
-        for (let node_index of edge_to_dual_indices.value[edge_index]) {
-            if (snapshot.dual_nodes[node_index].d != 0) {
-                dual_indices.push(node_index)
-            }
-        }
-    }
-    // the grown value for each edge branch
-    let grown_end = Array(edge.v.length).fill(0)
-    let grown_center = Array(edge.v.length).fill(0)
-    // the contributing dual variables from the end vertex and the center vertex, respectively
-    let contributor_end: Array<Array<[number, number]>> = Array.from({ length: edge.v.length }, () => [])
-    let contributor_center: Array<Array<[number, number]>> = Array.from({ length: edge.v.length }, () => [])
-    if (snapshot.dual_nodes == null || dual_indices.length == 0) {
-        return { grown_end, grown_center, contributor_end, contributor_center }
-    }
-    // iterate over all dual variables and put them on the edge branches
-    let branch_weight = Math.abs(edge.w) / edge.v.length
-    for (let ni of dual_indices) {
-        const node = snapshot.dual_nodes[ni]
-        // calculate the contributing vertices of this dual variable: $e \cap V_S$
-        let vertices = []
-        let v_s = new Set(snapshot.dual_nodes[ni].v)
-        for (let [v_eid, v] of edge.v.entries()) {
-            if (v_s.has(v)) {
-                vertices.push(v_eid)
-            }
-        }
-        if (vertices.length == 0) {
-            // this doesn't make sense, but we should not crash the program
-            for (let [v_eid, _v] of edge.v.entries()) {
-                vertices.push(v_eid)
-            }
-        }
-        let center_grow = 0 // the amount of growth that must happen at the center because some edge branch is already tight
-        let branch_growth = node.d / vertices.length
-        // first, grow from end vertices, each with `branch_growth`
-        for (let v_eid of vertices) {
-            let remain = branch_weight - grown_end[v_eid] - grown_center[v_eid]
-            if (branch_growth <= remain) {
-                grown_end[v_eid] += branch_growth
-                contributor_end[v_eid].push([ni, branch_growth])
-            } else {
-                grown_end[v_eid] += remain
-                contributor_end[v_eid].push([ni, remain])
-                center_grow += branch_growth - remain
-            }
-        }
-        // then, grow from center vertices
-        while (center_grow > 0) {
-            let available_vertices = []
-            let min_positive_remain = null
-            for (let [v_eid] of edge.v.entries()) {
-                let remain = branch_weight - grown_end[v_eid] - grown_center[v_eid]
-                if (remain > 0) {
-                    available_vertices.push(v_eid)
-                    if (min_positive_remain == null) {
-                        min_positive_remain = remain
-                    } else if (remain < min_positive_remain) {
-                        min_positive_remain = remain
-                    }
-                }
-            }
-            if (min_positive_remain == null) {
-                if (center_grow > 1e-6) {
-                    // tolerance of error
-                    console.error(`need to grow from center of ${center_grow} but all branches are fully grown`)
-                }
-                break
-            }
-            // in this round, we can only grow `min_positive_remain` on the branches of `available_vertices`
-            if (min_positive_remain > center_grow / available_vertices.length) {
-                min_positive_remain = center_grow / available_vertices.length
-            }
-            center_grow -= min_positive_remain * available_vertices.length
-            for (let v_eid of available_vertices) {
-                grown_center[v_eid] += min_positive_remain
-                const center = contributor_center[v_eid]
-                // grow from center, potentially merging with existing segments
-                if (center.length > 0 && center[center.length - 1][0] == ni) {
-                    center[center.length - 1][1] += min_positive_remain
-                } else {
-                    center.push([ni, min_positive_remain])
-                }
-            }
-        }
-    }
-    return { grown_end, grown_center, contributor_end, contributor_center }
-}
 </script>
 
 <template>
