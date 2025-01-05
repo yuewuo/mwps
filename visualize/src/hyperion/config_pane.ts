@@ -12,7 +12,6 @@ import { loader as JsonLoader } from 'prism-esm/components/prism-json.js'
 import prismCSS from 'prism-esm/themes/prism.min.css?raw'
 import * as TextareaPlugin from '@pangenerator/tweakpane-textarea-plugin'
 import { default as Sizzle } from 'sizzle'
-import { ClusterPolygon } from '@/misc/cluster_polygon'
 
 interface KeyShortcutDescription {
     key: string
@@ -44,7 +43,7 @@ export class Config {
     constructor (data: RuntimeData, config_prop: ConfigProps) {
         this.data = data
         this.config_prop = config_prop
-        this.basic = new BasicConfig(data, config_prop)
+        this.basic = new BasicConfig(config_prop)
     }
 
     export_visualizer_parameters () {
@@ -382,19 +381,13 @@ export class BasicConfig {
     segments: number
     show_stats: boolean = false
     config_props: ConfigProps
-    cluster_plane_available: boolean = false
-    show_cluster_plane: boolean = false
 
-    constructor (runtime_data: RuntimeData, config_props: ConfigProps) {
+    constructor (config_props: ConfigProps) {
         this.config_props = config_props
         if (config_props.initial_aspect_ratio != undefined && !isNaN(config_props.initial_aspect_ratio)) {
             this.aspect_ratio = config_props.initial_aspect_ratio
         }
         this.segments = config_props.segments
-        this.cluster_plane_available = ClusterPolygon.cluster_plane_available(runtime_data.visualizer)
-        if (this.cluster_plane_available) {
-            this.show_cluster_plane = true
-        }
     }
 
     add_to (pane: FolderApi): void {
@@ -405,7 +398,6 @@ export class BasicConfig {
         pane.addBinding(this, 'light_intensity', { min: 0.1, max: 10 })
         pane.addBinding(this, 'show_stats')
         pane.addBinding(this, 'segments', { step: 1, min: 3, max: 128 })
-        pane.addBinding(this, 'show_cluster_plane', { label: 'cluster_plane', disabled: !this.cluster_plane_available })
     }
 }
 
