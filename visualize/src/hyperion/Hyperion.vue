@@ -133,11 +133,7 @@ onMounted(() => {
         }
     })
     container_resize_observer.observe(container.value as any)
-
-    // expose variables to global scope and the app instance (by `dom.__vue_app__.exposed`)
-    const instance = getCurrentInstance()!
-    ;(globalThis as any).hyperion_exposed = instance.exposed
-    ;(instance.appContext.app as any).exposed = instance.exposed
+    ;(globalThis as any).hyperion_exposed = getCurrentInstance()!.exposed
 })
 
 watchEffect(() => {
