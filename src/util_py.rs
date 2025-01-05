@@ -278,7 +278,23 @@ pub fn py_into_btree_set<'py, T: Ord + Clone + FromPyObject<'py>>(value: &Bound<
             "only empty dict is supported; please use set or list instead"
         );
     } else {
-        unimplemented!("unsupported python type, should be set, list or (empty)dict")
+        // last resort: try convert the object into a python list
+        let result: PyResult<()> = (|| {
+            let builtins = PyModule::import_bound(value.py(), "builtins")?;
+            let any = builtins.getattr("list")?.call1((value,))?;
+            let any_list: &Bound<PyList> = any.downcast()?;
+            for element in any_list.iter() {
+                result.insert(element.extract::<T>()?.clone());
+            }
+            Ok(())
+        })();
+        if result.is_err() {
+            let type_name = value.get_type().name()?;
+            unimplemented!(
+                "unsupported python type, should be set, list, (empty)dict, or anything that can be converted to a list; got {}",
+                type_name
+            )
+        }
     }
     Ok(result)
 }
