@@ -13,6 +13,7 @@ extern crate num_rational;
 extern crate num_traits;
 extern crate parking_lot;
 extern crate prettytable;
+extern crate core_affinity;
 #[cfg(feature = "python_binding")]
 #[macro_use]
 extern crate pyo3;
@@ -46,6 +47,7 @@ pub mod pointers;
 pub mod primal_module;
 pub mod primal_module_serial;
 pub mod primal_module_union_find;
+pub mod primal_module_parallel;
 pub mod relaxer;
 pub mod relaxer_forest;
 pub mod relaxer_optimizer;

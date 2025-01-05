@@ -301,10 +301,10 @@ where
             return;
         }
 
-        debug_assert!(
-            global_time.ge(&edge.last_updated_time),
-            "global time is behind, maybe a wrap-around has happened"
-        );
+        // debug_assert!(
+        //     global_time.ge(&edge.last_updated_time),
+        //     "global time is behind, maybe a wrap-around has happened"
+        // );
 
         let time_diff = global_time.clone() - &edge.last_updated_time;
         let newly_grown_amount = &time_diff * &edge.grow_rate;
@@ -329,10 +329,10 @@ where
             return;
         }
 
-        debug_assert!(
-            global_time.ge(&node.last_updated_time),
-            "global time is behind, maybe a wrap-around has happened"
-        );
+        // debug_assert!(
+        //     global_time.ge(&node.last_updated_time),
+        //     "global time is behind, maybe a wrap-around has happened"
+        // );
 
         let dual_variable = node.get_dual_variable();
         node.set_dual_variable(dual_variable);

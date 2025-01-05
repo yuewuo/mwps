@@ -68,7 +68,7 @@ impl VisualizePosition {
     }
 }
 
-trait VisualizerFileTrait: std::io::Write + std::io::Read + std::io::Seek + std::fmt::Debug + Send {
+trait VisualizerFileTrait: std::io::Write + std::io::Read + std::io::Seek + std::fmt::Debug + Send + Sync {
     fn set_len(&mut self, len: u64) -> std::io::Result<()>;
     fn sync_all(&mut self) -> std::io::Result<()>;
 }
@@ -98,7 +98,7 @@ pub struct Visualizer {
     /// original filepath
     pub filepath: Option<String>,
     /// save to file if applicable
-    file: Option<Box<dyn VisualizerFileTrait>>,
+    file: Option<Box<dyn VisualizerFileTrait + Sync>>,
     /// if waiting for the first snapshot
     empty_snapshot: bool,
     /// names of the snapshots
@@ -352,7 +352,7 @@ impl Visualizer {
         if center {
             positions = center_positions(positions);
         }
-        let mut file: Option<Box<dyn VisualizerFileTrait>> = match filepath {
+        let mut file: Option<Box<dyn VisualizerFileTrait + Sync>> = match filepath {
             Some(ref filepath) => Some(if filepath.is_empty() {
                 // 256MB max memory (uncompressed JSON can be very large, no need to write to file)
                 Box::new(SpooledTempFile::new(256 * 1024 * 1024))

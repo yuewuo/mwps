@@ -4,6 +4,7 @@
 //!
 
 use crate::decoding_hypergraph::*;
+use crate::dual_module;
 use crate::dual_module::*;
 use crate::invalid_subgraph::*;
 use crate::matrix::*;
@@ -27,6 +28,12 @@ use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 
 use crate::dual_module_pq::{EdgeWeak, EdgePtr, VertexPtr};
+use crate::dual_module_parallel::{DualModuleParallelUnitPtr, DualModuleParallelUnit};
+use crate::dual_module_pq::FutureQueueMethods;
+use std::ops::DerefMut;
+
+
+const MAX_HISTORY: usize = 10;
 
 pub struct PrimalModuleSerial {
     /// dual nodes information
@@ -729,8 +736,15 @@ impl PrimalModuleSerial {
         if node_index_1 == node_index_2 {
             return; // already the same node
         }
-        let primal_node_1 = self.nodes[node_index_1 as usize].read_recursive();
-        let primal_node_2 = self.nodes[node_index_2 as usize].read_recursive();
+        // let primal_node_1 = self.nodes[node_index_1 as usize].read_recursive();
+        // let primal_node_2 = self.nodes[node_index_2 as usize].read_recursive();
+        let primal_node_1_weak = dual_node_ptr_1.read_recursive().primal_module_serial_node.clone().unwrap();
+        let primal_node_2_weak = dual_node_ptr_2.read_recursive().primal_module_serial_node.clone().unwrap();
+        let primal_node_1_ptr = primal_node_1_weak.upgrade_force();
+        let primal_node_2_ptr = primal_node_2_weak.upgrade_force();
+        let primal_node_1 = primal_node_1_ptr.read_recursive();
+        let primal_node_2 = primal_node_2_ptr.read_recursive();
+        
         if primal_node_1.cluster_weak.ptr_eq(&primal_node_2.cluster_weak) {
             return; // already in the same cluster
         }
@@ -1152,6 +1166,188 @@ impl PrimalModuleSerial {
             println!("invalid subgraphs: {:?}", invalid_subgraphs.len());
         }
     }
+
+    /*
+        For parallel implementation.
+     */
+
+    // fn visualizer_callback_ptr<DualSerialModule: DualModuleImpl + Send + Sync + MWPSVisualizer, Queue>(
+    //     visualizer: &mut Visualizer,
+    // ) -> impl FnMut(&DualModuleInterfacePtr, &DualModuleParallelUnit<DualSerialModule, Queue>, &mut Self, &DualReport)
+    // where
+    //     Self: MWPSVisualizer + Sized,
+    //     Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug + Send + Sync + Clone,
+    // {
+    //     |interface: &DualModuleInterfacePtr, dual_module: &DualModuleParallelUnit<DualSerialModule, Queue>, primal_module: &mut Self, dual_report: &DualReport| {
+    //         if cfg!(debug_assertions) {
+    //             // println!("dual_report: {:?}", dual_report);
+    //             // dual_module.debug_print();
+    //         }
+    //         if dual_report.is_unbounded() {
+    //             visualizer
+    //                 .snapshot_combined("unbounded grow".to_string(), vec![interface, dual_module, primal_module])
+    //                 .unwrap();
+    //         } else if let Some(length) = dual_report.get_valid_growth() {
+    //             visualizer
+    //                 .snapshot_combined(format!("grow {length}"), vec![interface, dual_module, primal_module])
+    //                 .unwrap();
+    //         } else {
+    //             let first_conflict = format!("{:?}", dual_report.peek().unwrap());
+    //             visualizer
+    //                 .snapshot_combined(
+    //                     format!("resolve {first_conflict}"),
+    //                     vec![interface, dual_module, primal_module],
+    //                 )
+    //                 .unwrap();
+    //         };
+    //     }
+    // }
+
+    // for parallel 
+    pub fn solve_step_callback_ptr<DualSerialModule: DualModuleImpl + Send + Sync, Queue, F>(
+        &mut self,
+        interface: &DualModuleInterfacePtr,
+        syndrome_pattern: Arc<SyndromePattern>,
+        dual_module_ptr: &mut DualModuleParallelUnitPtr<DualSerialModule, Queue>,
+        callback: F,
+    ) where
+        F: FnMut(&DualModuleInterfacePtr, &DualModuleParallelUnit<DualSerialModule, Queue>, &mut Self, &DualReport),
+        Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug + Send + Sync + Clone,
+    {
+        // let mut dual_module = dual_module_ptr.write();
+        // interface.load_ptr(syndrome_pattern, dual_module_ptr);
+        interface.load(syndrome_pattern, dual_module_ptr.write().deref_mut());
+        self.load(interface, dual_module_ptr.write().deref_mut());
+        // drop(dual_module);
+        self.solve_step_callback_interface_loaded_ptr(interface, dual_module_ptr, callback);
+    }
+
+    // pub fn solve_visualizer_ptr<DualSerialModule: DualModuleImpl + Send + Sync + MWPSVisualizer, Queue, F>(
+    //     &mut self,
+    //     interface: &DualModuleInterfacePtr,
+    //     syndrome_pattern: Arc<SyndromePattern>,
+    //     dual_module_ptr: &mut DualModuleParallelUnitPtr<DualSerialModule, Queue>,
+    //     visualizer: Option<&mut Visualizer>,
+    // ) where
+    //     Self: MWPSVisualizer + Sized,
+    //     Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug + Send + Sync + Clone,
+    // {
+    //     if let Some(visualizer) = visualizer {
+    //         let callback = Self::visualizer_callback_ptr(visualizer);
+    //         interface.load(syndrome_pattern, dual_module_ptr.write().deref_mut());
+    //         self.load(interface, dual_module_ptr.write().deref_mut());
+    //         self.solve_step_callback_interface_loaded_ptr(interface, dual_module_ptr, callback);
+    //         visualizer
+    //             .snapshot_combined("solved".to_string(), vec![interface, dual_module_ptr.write().deref_mut(), self])
+    //             .unwrap();
+    //     } else {
+    //         interface.load(syndrome_pattern, dual_module_ptr.write().deref_mut());
+    //         self.load(interface, dual_module_ptr.write().deref_mut());
+    //         self.solve_step_callback_interface_loaded_ptr(interface, dual_module_ptr, |_, _, _, _| {});
+    //     }
+    //     // // let mut dual_module = dual_module_ptr.write();
+    //     // // interface.load_ptr(syndrome_pattern, dual_module_ptr);
+    //     // interface.load(syndrome_pattern, dual_module_ptr.write().deref_mut());
+    //     // self.load(interface, dual_module_ptr.write().deref_mut());
+    //     // // drop(dual_module);
+    //     // self.solve_step_callback_interface_loaded_ptr(interface, dual_module_ptr, callback);
+    // }
+
+    pub fn solve_step_callback_interface_loaded_ptr<DualSerialModule: DualModuleImpl + Send + Sync, Queue, F>(
+        &mut self,
+        interface: &DualModuleInterfacePtr,
+        dual_module_ptr: &mut DualModuleParallelUnitPtr<DualSerialModule, Queue>,
+        mut callback: F,
+    ) where
+        F: FnMut(&DualModuleInterfacePtr, &DualModuleParallelUnit<DualSerialModule, Queue>, &mut Self, &DualReport),
+        Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug + Send + Sync + Clone,
+    {
+        // println!("solve_step_callback_interface_loaded");
+        // Search, this part is unchanged
+        let mut dual_report = dual_module_ptr.report();
+
+        while !dual_report.is_unbounded() {
+            callback(interface, &dual_module_ptr.read_recursive(), self, &dual_report);
+            match dual_report.get_valid_growth() {
+                Some(length) => dual_module_ptr.grow(length),
+                None => {
+                    self.resolve(dual_report, interface, dual_module_ptr.write().deref_mut());
+                }
+            }
+            dual_report = dual_module_ptr.report();
+        }
+
+        // from here, all states should be syncronized
+        let mut start = true;
+
+        // starting with unbounded state here: All edges and nodes are not growing as of now
+        // Tune
+        // let mut dual_module = dual_module_ptr.write();
+        while self.has_more_plugins() {
+            if start {
+                start = false;
+                dual_module_ptr.write().deref_mut().advance_mode();
+            }
+            self.update_sorted_clusters_aff(dual_module_ptr.write().deref_mut());
+            let cluster_affs = self.get_sorted_clusters_aff();
+
+            for cluster_affinity in cluster_affs.into_iter() {
+                let cluster_ptr = cluster_affinity.cluster_ptr;
+                let mut dual_node_deltas = BTreeMap::new();
+                let (mut resolved, optimizer_result) =
+                    self.resolve_cluster_tune(&cluster_ptr, interface, dual_module_ptr.write().deref_mut(), &mut dual_node_deltas);
+
+                let mut obstacles = dual_module_ptr.write().deref_mut().get_obstacles_tune(optimizer_result, dual_node_deltas);
+
+                // for cycle resolution
+                let mut order: VecDeque<BTreeSet<Obstacle>> = VecDeque::with_capacity(MAX_HISTORY); // fifo order of the obstacles sets seen
+                let mut current_sequences: Vec<(usize, BTreeSet<Obstacle>)> = Vec::new(); // the indexes that are currently being processed
+
+                '_resolving: while !resolved {
+                    let (_obstacles, _resolved) = self.resolve_tune(obstacles.clone(), interface, dual_module_ptr.write().deref_mut());
+
+                    // cycle resolution
+                    let drained: Vec<(usize, BTreeSet<Obstacle>)> = std::mem::take(&mut current_sequences);
+                    for (idx, start) in drained.into_iter() {
+                        if _obstacles.eq(&start) {
+                            dual_module_ptr.write().deref_mut().end_tuning();
+                            break '_resolving;
+                        }
+                        if _obstacles.eq(order
+                            .get(MAX_HISTORY - idx - 1)
+                            .unwrap_or(order.get(order.len() - idx - 1).unwrap()))
+                        {
+                            current_sequences.push((idx + 1, start));
+                        }
+                    }
+
+                    order.push_back(_obstacles.clone());
+                    if order.len() > MAX_HISTORY {
+                        order.pop_front();
+                        current_sequences = current_sequences
+                            .into_iter()
+                            .filter_map(|(x, start)| if x >= MAX_HISTORY { None } else { Some((x + 1, start)) })
+                            .collect();
+                    }
+
+                    for (idx, c) in order.iter().enumerate() {
+                        if c.eq(&_obstacles) {
+                            current_sequences.push((idx, c.clone()));
+                        }
+                    }
+
+                    if _resolved {
+                        dual_module_ptr.write().deref_mut().end_tuning();
+                        break;
+                    }
+
+                    obstacles = _obstacles;
+                    resolved = _resolved;
+                }
+            }
+        }
+    }
+
 }
 
 impl MWPSVisualizer for PrimalModuleSerial {
@@ -1187,8 +1383,8 @@ pub mod tests {
         primal_module.plugins = Arc::new(plugins);
         // primal_module.config = serde_json::from_value(json!({"timeout":1})).unwrap();
         // try to work on a simple syndrome
-        let decoding_graph = DecodingHyperGraph::new_defects(model_graph, defect_vertices.clone());
-        let interface_ptr = DualModuleInterfacePtr::new(decoding_graph.model_graph.clone());
+        let decoding_graph = DecodingHyperGraph::new_defects(model_graph.clone(), defect_vertices.clone());
+        let interface_ptr = DualModuleInterfacePtr::new(model_graph.clone());
         primal_module.solve_visualizer(
             &interface_ptr,
             decoding_graph.syndrome_pattern.clone(),

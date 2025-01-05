@@ -554,6 +554,8 @@ pub trait DualModuleImpl {
     fn get_vertex_num(&self) -> usize;
 
     fn get_edge_num(&self) -> usize;
+
+    // fn get_unit(&self, unit_index: usize) -> DualModuleParallelUnitPtr<SerialModule, Queue>;
 }
 
 #[derive(PartialEq, Eq, Debug, Clone, PartialOrd, Ord)]

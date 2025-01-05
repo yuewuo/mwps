@@ -2282,6 +2282,24 @@ pub mod tests {
         );
     }
 
+    /// now, we test the serial version of the above test case to see whether the lower and upper bound of the weight range match
+    #[test]
+    fn dual_module_parallel_basic_test_serial_5() {
+        // cargo test dual_module_parallel_basic_test_serial_5 -- --nocapture
+        let visualize_filename = "dual_module_parallel_basic_test_serial_5.json".to_string();
+        let code = CodeCapacityPlanarCode::new(7, 0.1);
+        let defect_vertices = vec![16, 19, 28];
+
+        use crate::primal_module_serial::tests::primal_module_serial_basic_standard_syndrome;
+        primal_module_serial_basic_standard_syndrome(
+            code,
+            visualize_filename,
+            defect_vertices,
+            Rational::from(8.788898309344878),
+            vec![],
+        );
+    }
+
 
     /// test for time partition
     #[allow(clippy::unnecessary_cast)]
@@ -2440,17 +2458,17 @@ pub mod tests {
     }
 
     #[test]
-    fn dual_module_parallel_circuit_level_noise_qec_playground_1_serial() {
-        // cargo test dual_module_parallel_circuit_level_noise_qec_playground_1_serial -- --nocapture
+    fn dual_module_parallel_circuit_level_noise_qec_playground_serial_1() {
+        // cargo test dual_module_parallel_circuit_level_noise_qec_playground_serial_1 -- --nocapture
         let config = json!({
             "code_type": qecp::code_builder::CodeType::RotatedPlanarCode,
             "nm": 8,
         });
         
-        let code = QECPlaygroundCode::new(3, 0.1, config);
+        let code = QECPlaygroundCode::new(3, 0.001, config);
         let defect_vertices = vec![3, 10, 18, 19, 31, 35, 43];
 
-        let visualize_filename = "dual_module_parallel_circuit_level_noise_qec_playground_1_serial.json".to_string();
+        let visualize_filename = "dual_module_parallel_circuit_level_noise_qec_playground_serial_1.json".to_string();
         use crate::primal_module_serial::tests::primal_module_serial_basic_standard_syndrome;
         primal_module_serial_basic_standard_syndrome(
             code,
@@ -2469,7 +2487,7 @@ pub mod tests {
             "code_type": qecp::code_builder::CodeType::RotatedPlanarCode
         });
         
-        let mut code = QECPlaygroundCode::new(7, 0.005, config);
+        let mut code = QECPlaygroundCode::new(7, 0.001, config);
         let defect_vertices = code.generate_random_errors(132).0.defect_vertices;
 
         let visualize_filename = "dual_module_parallel_circuit_level_noise_qec_playground_2.json".to_string();
@@ -2477,7 +2495,7 @@ pub mod tests {
             code,
             visualize_filename,
             defect_vertices.clone(),
-            Rational::from(60.58902296576552),
+            Rational::from(19.412934685147327),
             vec![],
             4,
         );
