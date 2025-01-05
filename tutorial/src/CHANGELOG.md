@@ -37,3 +37,7 @@ fixed potential bug of unsafe clear (not clearing `edge.grow_rate` before)
 ## 0.2.2
 
 exposed `hyperion_exposed` variable in visualization tool so that user can programmatically control the UI
+
+## 0.2.3
+
+support direct numpy array as input

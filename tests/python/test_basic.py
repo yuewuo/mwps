@@ -1,5 +1,6 @@
 from common import *
 import fusion_blossom as fb
+import numpy as np
 
 
 def prepare_hyperion_solver() -> mwpf.SolverSerialJointSingleHair:
@@ -50,3 +51,9 @@ def test_initializer_uniform_weight():
     initializer.uniform_weights(weight=1)
     for edge in initializer.weighted_edges:
         assert edge.weight.float() == 1
+
+
+def test_numpy_array_parse():
+    # pytest -s tests/python/test_basic.py::test_numpy_array_parse
+    syndrome = np.array([1, 2, 4], dtype="int32")
+    mwpf.SyndromePattern(syndrome)
