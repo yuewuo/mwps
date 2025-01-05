@@ -2038,6 +2038,7 @@ pub mod tests {
         let end_time = std::time::Instant::now();
         let resolve_time = begin_time - end_time;
         println!("resolve time: {:?}", resolve_time);
+        println!("subgraph: {:?}", subgraph.subgraph);
         if let Some(visualizer) = visualizer.as_mut() {
             visualizer
                 .snapshot_combined(

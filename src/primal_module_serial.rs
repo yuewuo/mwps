@@ -364,11 +364,15 @@ impl PrimalModuleImpl for PrimalModuleSerial {
         }
         // update the matrix with new tight edges
         let cluster = &mut *cluster;
+        // println!("before");
+        // cluster.matrix.printstd();
         for edge_ptr in cluster.edges.iter() {
             cluster
                 .matrix
                 .update_edge_tightness(edge_ptr.downgrade(), dual_module.is_edge_tight(edge_ptr.clone()));
         }
+        // println!("after");
+        // cluster.matrix.printstd();
 
         // find an executable relaxer from the plugin manager
         let relaxer = {
@@ -731,9 +735,12 @@ impl PrimalModuleSerial {
     ) {
         // cluster_1 will become the union of cluster_1 and cluster_2
         // and cluster_2 will be outdated
-        let node_index_1 = dual_node_ptr_1.read_recursive().index;
-        let node_index_2 = dual_node_ptr_2.read_recursive().index;
-        if node_index_1 == node_index_2 {
+        // let node_index_1 = dual_node_ptr_1.read_recursive().index;
+        // let node_index_2 = dual_node_ptr_2.read_recursive().index;
+        // if node_index_1 == node_index_2 {
+        //     return; // already the same node
+        // }
+        if dual_node_ptr_1.eq(dual_node_ptr_2) {
             return; // already the same node
         }
         // let primal_node_1 = self.nodes[node_index_1 as usize].read_recursive();
@@ -877,13 +884,15 @@ impl PrimalModuleSerial {
         interface_ptr: &DualModuleInterfacePtr,
         dual_module: &mut impl DualModuleImpl,
     ) -> bool {
+        // println!("resolve core");
         debug_assert!(!dual_report.is_unbounded() && dual_report.get_valid_growth().is_none());
         let mut active_clusters = BTreeSet::<PrimalClusterPtr>::new();
         let interface = interface_ptr.read_recursive();
-        let decoding_graph = &interface.decoding_graph;
+        // let decoding_graph = &interface.decoding_graph;
         while let Some(obstacle) = dual_report.pop() {
             match obstacle {
                 Obstacle::Conflict { edge_ptr } => {
+                    // println!("conflict edge: {:?}", edge_ptr.read_recursive().edge_index);
                     // union all the dual nodes in the edge index and create new dual node by adding this edge to `internal_edges`
                     let dual_nodes = dual_module.get_edge_nodes(edge_ptr.clone());
                     debug_assert!(
@@ -915,6 +924,7 @@ impl PrimalModuleSerial {
                         }
                     }
                     cluster.edges.insert(edge_ptr.clone());
+                    // println!("cluster.edges: {:?}", cluster.edges);
                     // add to active cluster so that it's processed later
                     // println!("clusters in active clusters: {:?}", cluster.cluster_index);
                     active_clusters.insert(cluster_ptr.clone());
@@ -1170,39 +1180,6 @@ impl PrimalModuleSerial {
     /*
         For parallel implementation.
      */
-
-    // fn visualizer_callback_ptr<DualSerialModule: DualModuleImpl + Send + Sync + MWPSVisualizer, Queue>(
-    //     visualizer: &mut Visualizer,
-    // ) -> impl FnMut(&DualModuleInterfacePtr, &DualModuleParallelUnit<DualSerialModule, Queue>, &mut Self, &DualReport)
-    // where
-    //     Self: MWPSVisualizer + Sized,
-    //     Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug + Send + Sync + Clone,
-    // {
-    //     |interface: &DualModuleInterfacePtr, dual_module: &DualModuleParallelUnit<DualSerialModule, Queue>, primal_module: &mut Self, dual_report: &DualReport| {
-    //         if cfg!(debug_assertions) {
-    //             // println!("dual_report: {:?}", dual_report);
-    //             // dual_module.debug_print();
-    //         }
-    //         if dual_report.is_unbounded() {
-    //             visualizer
-    //                 .snapshot_combined("unbounded grow".to_string(), vec![interface, dual_module, primal_module])
-    //                 .unwrap();
-    //         } else if let Some(length) = dual_report.get_valid_growth() {
-    //             visualizer
-    //                 .snapshot_combined(format!("grow {length}"), vec![interface, dual_module, primal_module])
-    //                 .unwrap();
-    //         } else {
-    //             let first_conflict = format!("{:?}", dual_report.peek().unwrap());
-    //             visualizer
-    //                 .snapshot_combined(
-    //                     format!("resolve {first_conflict}"),
-    //                     vec![interface, dual_module, primal_module],
-    //                 )
-    //                 .unwrap();
-    //         };
-    //     }
-    // }
-
     // for parallel 
     pub fn solve_step_callback_ptr<DualSerialModule: DualModuleImpl + Send + Sync, Queue, F>(
         &mut self,
@@ -1215,43 +1192,10 @@ impl PrimalModuleSerial {
         Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug + Send + Sync + Clone,
     {
         // let mut dual_module = dual_module_ptr.write();
-        // interface.load_ptr(syndrome_pattern, dual_module_ptr);
         interface.load(syndrome_pattern, dual_module_ptr.write().deref_mut());
         self.load(interface, dual_module_ptr.write().deref_mut());
-        // drop(dual_module);
         self.solve_step_callback_interface_loaded_ptr(interface, dual_module_ptr, callback);
     }
-
-    // pub fn solve_visualizer_ptr<DualSerialModule: DualModuleImpl + Send + Sync + MWPSVisualizer, Queue, F>(
-    //     &mut self,
-    //     interface: &DualModuleInterfacePtr,
-    //     syndrome_pattern: Arc<SyndromePattern>,
-    //     dual_module_ptr: &mut DualModuleParallelUnitPtr<DualSerialModule, Queue>,
-    //     visualizer: Option<&mut Visualizer>,
-    // ) where
-    //     Self: MWPSVisualizer + Sized,
-    //     Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug + Send + Sync + Clone,
-    // {
-    //     if let Some(visualizer) = visualizer {
-    //         let callback = Self::visualizer_callback_ptr(visualizer);
-    //         interface.load(syndrome_pattern, dual_module_ptr.write().deref_mut());
-    //         self.load(interface, dual_module_ptr.write().deref_mut());
-    //         self.solve_step_callback_interface_loaded_ptr(interface, dual_module_ptr, callback);
-    //         visualizer
-    //             .snapshot_combined("solved".to_string(), vec![interface, dual_module_ptr.write().deref_mut(), self])
-    //             .unwrap();
-    //     } else {
-    //         interface.load(syndrome_pattern, dual_module_ptr.write().deref_mut());
-    //         self.load(interface, dual_module_ptr.write().deref_mut());
-    //         self.solve_step_callback_interface_loaded_ptr(interface, dual_module_ptr, |_, _, _, _| {});
-    //     }
-    //     // // let mut dual_module = dual_module_ptr.write();
-    //     // // interface.load_ptr(syndrome_pattern, dual_module_ptr);
-    //     // interface.load(syndrome_pattern, dual_module_ptr.write().deref_mut());
-    //     // self.load(interface, dual_module_ptr.write().deref_mut());
-    //     // // drop(dual_module);
-    //     // self.solve_step_callback_interface_loaded_ptr(interface, dual_module_ptr, callback);
-    // }
 
     pub fn solve_step_callback_interface_loaded_ptr<DualSerialModule: DualModuleImpl + Send + Sync, Queue, F>(
         &mut self,
@@ -1266,8 +1210,10 @@ impl PrimalModuleSerial {
         // Search, this part is unchanged
         let mut dual_report = dual_module_ptr.report();
 
+        // println!("first dual report: {:?}", dual_report);
         while !dual_report.is_unbounded() {
             callback(interface, &dual_module_ptr.read_recursive(), self, &dual_report);
+            // println!("after callback");
             match dual_report.get_valid_growth() {
                 Some(length) => dual_module_ptr.grow(length),
                 None => {
@@ -1275,7 +1221,9 @@ impl PrimalModuleSerial {
                 }
             }
             dual_report = dual_module_ptr.report();
+            // println!("dual report: {:?}", dual_report);
         }
+        // println!("dual report is unbounded");
 
         // from here, all states should be syncronized
         let mut start = true;
