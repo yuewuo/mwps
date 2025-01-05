@@ -66,7 +66,7 @@ const edge_states = computed(() => {
                     .multiplyScalar(1 - ratio)
                     .add(end_position.clone().multiplyScalar(ratio))
             }
-            const edge_branch_segmented_data = edge_branch_segments.value[i]
+            const edge_branch_segmented_data = edge_branch_segments.value[i]!
             const grown_end = edge_branch_segmented_data.grown_end[j]
             const grown_center = edge_branch_segmented_data.grown_center[j]
             const segments_center = edge_branch_segmented_data.contributor_center[j]
@@ -346,18 +346,21 @@ interface EdgeBranchSegments {
 
 const edge_branch_segments = computed(() => {
     const snapshot = config.value.snapshot
-    let edge_branch_segments: Array<EdgeBranchSegments> = []
+    let edge_branch_segments: Array<EdgeBranchSegments | null> = []
     for (let edge_index = 0; edge_index < snapshot.edges.length; ++edge_index) {
         edge_branch_segments.push(calculate_edge_branch_segmented(edge_index))
     }
     return edge_branch_segments
 })
 
-function calculate_edge_branch_segmented(edge_index: number): EdgeBranchSegments {
+function calculate_edge_branch_segmented(edge_index: number): EdgeBranchSegments | null {
     const snapshot = config.value.snapshot
     // calculate the list of contributing dual variables
     let dual_indices = []
     let edge = snapshot.edges[edge_index]
+    if (edge == null) {
+        return null
+    }
     if (snapshot.dual_nodes != null) {
         // check the non-zero contributing dual variables
         for (let node_index of edge_to_dual_indices.value[edge_index]) {

@@ -88,7 +88,7 @@ export interface WeightRange {
 
 export interface Snapshot {
     dual_nodes?: DualNode[]
-    edges: Edge[]
+    edges: (Edge | null)[]
     interface: Interface
     vertices: Vertex[]
     subgraph?: Subgraph
@@ -119,6 +119,7 @@ export function fix_visualizer_data (visualizer: VisualizerData) {
         }
         if (snapshot.edges != undefined) {
             for (const edge of snapshot.edges) {
+                if (edge == undefined) continue
                 if (edge.gn != undefined) edge.gn = parse_rust_bigint(edge.gn)
                 if (edge.gd != undefined) edge.gd = parse_rust_bigint(edge.gd)
                 if (edge.un != undefined) edge.un = parse_rust_bigint(edge.un)
@@ -254,6 +255,7 @@ export function compute_vertex_to_dual_indices (snapshot: Snapshot): Array<Array
 export function compute_vertex_incident_edges (snapshot: Snapshot): Array<Array<number>> {
     const incident_edges: Array<Array<number>> = Array.from({ length: snapshot.vertices.length }, () => [])
     for (const [edge_index, edge] of snapshot.edges.entries()) {
+        if (edge == null) continue
         for (const vertex_index of edge.v) {
             incident_edges[vertex_index].push(edge_index)
         }
