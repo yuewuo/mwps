@@ -20,6 +20,9 @@ use rand::{thread_rng, Rng, SeedableRng};
 use serde::Serialize;
 use serde_variant::to_variant_name;
 use std::env;
+use crate::num_traits::Zero;
+use crate::dual_module_pq::{Vertex, Edge, VertexPtr, VertexWeak, EdgePtr, EdgeWeak};
+use crate::pointers::UnsafePtr;
 
 const TEST_EACH_ROUNDS: usize = 100;
 
@@ -170,6 +173,22 @@ pub enum ExampleCodeType {
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum, Serialize, Debug)]
+pub enum PartitionStrategy {
+    /// no partition
+    None,
+    /// partition a planar code into top half and bottom half
+    CodeCapacityPlanarCodeVerticalPartitionHalf,
+    /// partition a planar code into 4 pieces: top left and right, bottom left and right
+    CodeCapacityPlanarCodeVerticalPartitionFour,
+    /// partition a repetition code into left and right half
+    CodeCapacityRepetitionCodePartitionHalf,
+    /// partition a phenomenological (or circuit-level) planar code with time axis
+    PhenomenologicalPlanarCodeTimePartition,
+    /// partition a phenomenological (or circuit-level) rotated code with time axis
+    PhenomenologicalRotatedCodeTimePartition,
+}
+
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum, Serialize, Debug)]
 #[serde(rename_all = "kebab-case")]
 pub enum SolverType {
     /// the solver from Union-Find decoder
@@ -180,6 +199,12 @@ pub enum SolverType {
     JointSingleHair,
     /// log error into a file for later fetch
     ErrorPatternLogger,
+    // /// parallel primal and parallel dual, Union-Find decoder
+    // ParallelUnionFind,
+    // /// parallel primal and parallel dual, single-hair decoder
+    // ParallelSingleHair,
+    // /// parallel primal and parallel dual, joint single-hair solver
+    // ParallelJointSingleHair,
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum, Serialize, Debug)]
@@ -246,46 +271,87 @@ impl TypedValueParser for SerdeJsonParser {
     }
 }
 
-// The MatrixSpeedClass is commented out because we are now passing pointers to maxtrices instead of numbers
-// impl MatrixSpeedClass {
-//     pub fn run(&self, parameters: MatrixSpeedParameters, samples: Vec<Vec<(Vec<usize>, bool)>>) {
-//         match *self {
-//             MatrixSpeedClass::EchelonTailTight => {
-//                 let mut matrix = Echelon::<Tail<Tight<BasicMatrix>>>::new();
-//                 for edge_index in 0..parameters.width {
-//                     matrix.add_tight_variable(edge_index);
-//                 }
-//                 Self::run_on_matrix_interface(&matrix, samples)
-//             }
-//             MatrixSpeedClass::EchelonTight => {
-//                 let mut matrix = Echelon::<Tight<BasicMatrix>>::new();
-//                 for edge_index in 0..parameters.width {
-//                     matrix.add_tight_variable(edge_index);
-//                 }
-//                 Self::run_on_matrix_interface(&matrix, samples)
-//             }
-//             MatrixSpeedClass::Echelon => {
-//                 let mut matrix = Echelon::<BasicMatrix>::new();
-//                 for edge_index in 0..parameters.width {
-//                     matrix.add_variable(edge_index);
-//                 }
-//                 Self::run_on_matrix_interface(&matrix, samples)
-//             }
-//         }
-//     }
+impl MatrixSpeedClass {
+    pub fn run(&self, parameters: MatrixSpeedParameters, samples: Vec<Vec<(Vec<usize>, bool)>>) {
+        let (vertices, edges) = Self::initialize_vertex_edges_for_matrix_testing((0..parameters.height).collect(), (0..parameters.width).collect());
+        let vertices_weak: Vec<_> = vertices.into_iter().map(|v| v.downgrade()).collect();
+        let edges_weak: Vec<_> = edges.into_iter().map(|e| e.downgrade()).collect();
+        
+        match *self {
+            MatrixSpeedClass::EchelonTailTight => {
+                let mut matrix = Echelon::<Tail<Tight<BasicMatrix>>>::new();
+                for edge_weak in edges_weak.iter() {
+                    matrix.add_tight_variable(edge_weak.clone());
+                }
+                Self::run_on_matrix_interface(&matrix, samples, &vertices_weak, &edges_weak);
+            }
+            MatrixSpeedClass::EchelonTight => {
+                let mut matrix = Echelon::<Tight<BasicMatrix>>::new();
+                for edge_weak in edges_weak.iter() {
+                    matrix.add_tight_variable(edge_weak.clone());
+                }
+                Self::run_on_matrix_interface(&matrix, samples, &vertices_weak, &edges_weak)
+            }
+            MatrixSpeedClass::Echelon => {
+                let mut matrix = Echelon::<BasicMatrix>::new();
+                for edge_weak in edges_weak.iter() {
+                    matrix.add_variable(edge_weak.clone());
+                }
+                Self::run_on_matrix_interface(&matrix, samples, &vertices_weak, &edges_weak)
+            }
+        }
+    }
 
-//     pub fn run_on_matrix_interface<M: MatrixView + Clone>(matrix: &M, samples: Vec<Vec<(Vec<usize>, bool)>>) {
-//         for parity_checks in samples.iter() {
-//             let mut matrix = matrix.clone();
-//             for (vertex_index, (incident_edges, parity)) in parity_checks.iter().enumerate() {
-//                 matrix.add_constraint(vertex_index, incident_edges, *parity);
-//             }
-//             // for a MatrixView, visiting the columns and rows is sufficient to update its internal state
-//             matrix.columns();
-//             matrix.rows();
-//         }
-//     }
-// }
+    pub fn run_on_matrix_interface<M: MatrixView + Clone>(matrix: &M, samples: Vec<Vec<(Vec<usize>, bool)>>, vertices: &Vec<VertexWeak>, edges: &Vec<EdgeWeak>) {
+        for parity_checks in samples.iter() {
+            let mut matrix = matrix.clone();
+            for (vertex_index, (incident_edges, parity)) in parity_checks.iter().enumerate() {
+                let incident_edges_weak: Vec<EdgeWeak> = incident_edges.iter().map(|&i| edges[i].clone()).collect();
+                matrix.add_constraint(vertices[vertex_index].clone(), &incident_edges_weak, *parity);
+            }
+            // for a MatrixView, visiting the columns and rows is sufficient to update its internal state
+            matrix.columns();
+            matrix.rows();
+        }
+    }
+
+    fn initialize_vertex_edges_for_matrix_testing(
+        vertex_indices: Vec<VertexIndex>,
+        edge_indices: Vec<EdgeIndex>,
+    ) -> (Vec<VertexPtr>, Vec<EdgePtr>) {
+        // create edges
+        let edges: Vec<EdgePtr> = edge_indices.into_iter()
+            .map(|edge_index| {
+                EdgePtr::new_value(Edge {
+                    edge_index: edge_index,
+                    weight: Rational::zero(),
+                    dual_nodes: vec![],
+                    vertices: vec![],
+                    last_updated_time: Rational::zero(),
+                    growth_at_last_updated_time: Rational::zero(),
+                    grow_rate: Rational::zero(),
+                    unit_index: Some(0), // dummy value
+                    connected_to_boundary_vertex: false, // dummy value
+                    #[cfg(feature = "incr_lp")]
+                    cluster_weights: hashbrown::HashMap::new(),
+                })
+            }).collect();
+
+        // create vertices 
+        let vertices: Vec<VertexPtr> = vertex_indices.into_iter()
+            .map(|vertex_index| {
+                VertexPtr::new_value(Vertex {
+                    vertex_index,
+                    is_defect: false,
+                    edges: vec![],
+                    mirrored_vertices: vec![], // dummy vlaue
+                })
+            })
+            .collect();
+        
+        (vertices, edges)
+    }
+}
 
 impl Cli {
     pub fn run(self) {
@@ -523,7 +589,7 @@ impl Cli {
                     samples.push(parity_checks);
                 }
                 // call the matrix operation
-                // matrix_type.run(parameters, samples);
+                matrix_type.run(parameters, samples);
             }
             Commands::Test { command } => match command {
                 TestCommands::Common => {
