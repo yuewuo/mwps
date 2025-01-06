@@ -25,6 +25,7 @@ use num_traits::{One, Zero};
 use std::collections::BTreeSet;
 
 use crate::dual_module_pq::{EdgeWeak, VertexWeak, VertexPtr};
+use crate::pointers::UnsafePtr;
 
 
 pub type VarIndex = usize;

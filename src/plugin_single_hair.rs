@@ -4,6 +4,7 @@
 //!
 //! A plugin must implement Clone trait, because it will be cloned multiple times for each cluster
 //!
+#![cfg_attr(feature="unsafe_pointer", allow(dropping_references))]
 
 use crate::decoding_hypergraph::*;
 use crate::dual_module::*;
@@ -18,6 +19,7 @@ use std::collections::BTreeSet;
 use std::sync::Arc;
 
 use crate::dual_module_pq::{EdgePtr, VertexPtr};
+use crate::pointers::UnsafePtr;
 
 #[derive(Debug, Clone, Default)]
 pub struct PluginSingleHair {}

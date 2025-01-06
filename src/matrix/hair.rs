@@ -10,6 +10,7 @@ use prettytable::*;
 use std::collections::*;
 
 use crate::dual_module_pq::{EdgeWeak, VertexWeak, VertexPtr};
+use crate::pointers::UnsafePtr;
 
 
 pub struct HairView<'a, M: MatrixTail + MatrixEchelon> {

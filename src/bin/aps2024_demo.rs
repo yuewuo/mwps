@@ -16,6 +16,7 @@ use num_traits::{FromPrimitive, Zero};
 use pbr::ProgressBar;
 use std::sync::Arc;
 use sugar::*;
+use mwpf::pointers::UnsafePtr;
 
 fn debug_demo() {
     for is_example in [true, false] {

@@ -3,6 +3,7 @@
 //! This module includes some common usage of primal and dual modules to solve MWPF problems.
 //! Note that you can call different primal and dual modules, even interchangeably, by following the examples in this file
 //!
+#![allow(warnings)]
 
 use crate::cluster::*;
 use crate::dual_module::*;
@@ -25,6 +26,7 @@ use std::fs::File;
 use std::io::prelude::*;
 use std::io::BufWriter;
 use std::sync::Arc;
+use crate::pointers::UnsafePtr;
 
 cfg_if::cfg_if! {
     if #[cfg(feature="python_binding")] {
@@ -357,7 +359,7 @@ impl SolverSerialPlugins {
             }
         }
         // construct the parity matrix
-        let interface = self.interface_ptr.read();
+        let interface = self.interface_ptr.read_recursive();
         for vertex_ptr in cluster.vertices.iter() {
             let vertex_weak = vertex_ptr.downgrade();
             let vertex = vertex_ptr.read_recursive();

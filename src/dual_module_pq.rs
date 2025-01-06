@@ -4,6 +4,7 @@
 //!
 //! Only debug tests are failing, which aligns with the dual_module_serial behavior
 //!
+#![cfg_attr(feature="unsafe_pointer", allow(dropping_references))]
 
 use crate::num_traits::{FromPrimitive, ToPrimitive, Zero};
 use crate::pointers::*;
@@ -28,6 +29,7 @@ use num_traits::Signed;
 use parking_lot::{lock_api::RwLockWriteGuard, RawRwLock};
 use pheap::PairingHeap;
 use priority_queue::PriorityQueue;
+use crate::pointers::UnsafePtr;
 
 /* Helper structs for events/obstacles during growing */
 #[derive(Debug, Clone)]
@@ -261,7 +263,7 @@ where
     obstacle_queue: Queue,
     /// the global time of this dual module
     ///     Note: Wrap-around edge case is not currently considered
-    global_time: ArcRwLock<Rational>,
+    global_time: ArcManualSafeLock<Rational>,
 
     /// the current mode of the dual module
     mode: DualModuleMode,
@@ -294,8 +296,9 @@ where
     Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug + Clone,
 {
     /// helper function to bring an edge update to speed with current time if needed
-    fn update_edge_if_necessary(&self, edge: &mut RwLockWriteGuard<RawRwLock, Edge>) {
+    fn update_edge_if_necessary(&self, edge_ptr: &EdgePtr) {
         let global_time = self.global_time.read_recursive();
+        let mut edge = edge_ptr.write();
         if global_time.eq(&edge.last_updated_time) {
             // the edge is not behind
             return;
@@ -319,11 +322,13 @@ where
         //     edge.growth_at_last_updated_time <= edge.weight,
         //     "growth larger than weight: check if events are 1) inserted and 2) handled correctly",
         // );
+        drop(edge);
     }
 
     /// helper function to bring a dual node update to speed with current time if needed
-    fn update_dual_node_if_necessary(&mut self, node: &mut RwLockWriteGuard<RawRwLock, DualNode>) {
+    fn update_dual_node_if_necessary(&mut self, node_ptr: &DualNodePtr) {
         let global_time = self.global_time.read_recursive();
+        let mut node = node_ptr.write();
         if global_time.eq(&node.last_updated_time) {
             // the edge is not behind
             return;
@@ -341,20 +346,19 @@ where
             !node.get_dual_variable().is_negative(),
             "negative dual variable: check if events are 1) inserted and 2) handled correctly"
         );
+        drop(node);
     }
 
     /// debugging function
     #[allow(dead_code)]
     fn debug_update_all(&mut self, dual_node_ptrs: &[DualNodePtr]) {
         // updating all edges
-        for edge in self.edges.iter() {
-            let mut edge = edge.write();
-            self.update_edge_if_necessary(&mut edge);
+        for edge_ptr in self.edges.iter() {
+            self.update_edge_if_necessary(edge_ptr);
         }
         // updating all dual nodes
         for dual_node_ptr in dual_node_ptrs.iter() {
-            let mut dual_node = dual_node_ptr.write();
-            self.update_dual_node_if_necessary(&mut dual_node);
+            self.update_dual_node_if_necessary(dual_node_ptr);
         }
     }
 
@@ -478,7 +482,7 @@ where
             vertices,
             edges,
             obstacle_queue: Queue::default(),
-            global_time: ArcRwLock::new_value(Rational::zero()),
+            global_time: ArcManualSafeLock::new_value(Rational::zero()),
             mode: DualModuleMode::default(),
             tuning_start_time: None,
             total_tuning_time: None,
@@ -552,10 +556,10 @@ where
         }
 
         for edge_ptr in dual_node.invalid_subgraph.hair.iter() {
-            let mut edge = edge_ptr.write();
 
             // should make sure the edge is up-to-speed before making its variables change
-            self.update_edge_if_necessary(&mut edge);
+            self.update_edge_if_necessary(edge_ptr);
+            let mut edge = edge_ptr.write();
 
             edge.grow_rate += &dual_node.grow_rate;
             edge.dual_nodes
@@ -587,9 +591,10 @@ where
 
     #[allow(clippy::unnecessary_cast)]
     fn set_grow_rate(&mut self, dual_node_ptr: &DualNodePtr, grow_rate: Rational) {
+
+        self.update_dual_node_if_necessary(dual_node_ptr);
         let mut dual_node = dual_node_ptr.write();
 
-        self.update_dual_node_if_necessary(&mut dual_node);
 
         // it is okay to use global_time now, as this must be up-to-speed
         let global_time = self.global_time.read_recursive().clone();
@@ -606,8 +611,8 @@ where
 
         // don't reacquire the read guard
         for edge_ptr in dual_node.invalid_subgraph.hair.iter() {
+            self.update_edge_if_necessary(edge_ptr);
             let mut edge = edge_ptr.write();
-            self.update_edge_if_necessary(&mut edge);
 
             edge.grow_rate += &grow_rate_diff;
             if edge.grow_rate.is_positive() {
@@ -792,7 +797,7 @@ where
                     );
 
                     drop(node);
-                    let mut node: RwLockWriteGuard<RawRwLock, DualNode> = _dual_node_ptr.ptr.write();
+                    let mut node = _dual_node_ptr.ptr.write();
 
                     let dual_variable = node.get_dual_variable();
                     node.set_dual_variable(dual_variable);

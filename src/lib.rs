@@ -1,3 +1,8 @@
+#![cfg_attr(feature = "unsafe_pointer", feature(get_mut_unchecked))]
+#![cfg_attr(feature = "unsafe_pointer", allow(unused_mut))]
+#![allow(warnings)]
+#![allow(unused)]
+
 extern crate serde;
 #[macro_use]
 extern crate serde_json;
@@ -26,6 +31,8 @@ extern crate urlencoding;
 extern crate wasm_bindgen;
 
 extern crate rayon;
+extern crate weak_table;
+
 
 pub mod cli;
 pub mod cluster;

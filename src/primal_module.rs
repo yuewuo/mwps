@@ -2,6 +2,7 @@
 //!
 //! Generics for primal modules, defining the necessary interfaces for a primal module
 //!
+#![cfg_attr(feature="unsafe_pointer", allow(dropping_references))]
 
 use std::collections::VecDeque;
 use std::collections::{BTreeMap, BTreeSet};
@@ -221,12 +222,12 @@ pub trait PrimalModuleImpl {
         }
     }
 
-    fn subgraph(&mut self, interface: &DualModuleInterfacePtr, dual_module: &mut impl DualModuleImpl) -> OutputSubgraph;
+    fn subgraph(&mut self, interface: &DualModuleInterfacePtr, dual_module: &(impl DualModuleImpl + Send + Sync)) -> OutputSubgraph;
 
     fn subgraph_range(
         &mut self,
         interface: &DualModuleInterfacePtr,
-        dual_module: &mut impl DualModuleImpl,
+        dual_module: &mut (impl DualModuleImpl + Send + Sync),
     ) -> (OutputSubgraph, WeightRange) {
         let output_subgraph = self.subgraph(interface, dual_module);
         let internal_subgraph = OutputSubgraph::get_internal_subgraph(&output_subgraph);

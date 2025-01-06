@@ -1,3 +1,6 @@
+#![allow(warnings)]
+#![allow(unused)]
+
 extern crate clap;
 
 use crate::clap::Parser;

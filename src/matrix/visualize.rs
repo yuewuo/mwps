@@ -11,6 +11,7 @@ use super::interface::*;
 use crate::util::*;
 use prettytable::format::TableFormat;
 use prettytable::*;
+use crate::pointers::UnsafePtr;
 
 #[derive(Clone)]
 pub struct VizTable {

@@ -39,7 +39,7 @@ debug = true
 
 [features]
 # to enable a feature, use `--features xxx`
-default = ["f64_weight", "qecp_integrate", "embed_visualizer", "progress_bar"]
+default = ["f64_weight", "qecp_integrate", "embed_visualizer", "progress_bar", "unsafe_pointer"]
 f64_weight = ["float_lp"] # use f64 instead of BigRational as weight type
 rational_weight = ["slp"]
 python_binding = ["pyo3"] # bind to Python
@@ -102,6 +102,8 @@ bp = { path = "src/bp" }
 rayon = "1.10.0"
 petgraph = { version = "0.6.0", features = ["serde-1"] }
 core_affinity = "0.8.1"
+weak-table = "0.3.2"
+
 
 
 [dev-dependencies]

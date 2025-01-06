@@ -1,5 +1,8 @@
 /// Parallel Implementation of Dual Module PQ
 
+
+#[cfg_attr(feature="unsafe_pointer", allow(dropping_references))]
+
 use super::dual_module_pq::*;
 use crate::{add_shared_methods, dual_module::*};
 use super::pointers::*;
@@ -1657,14 +1660,14 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
     }
 
 
-    fn bfs_report(&self, group_max_update_length: &mut DualReport) {
+    fn bfs_report(&self, dual_report: &mut DualReport) {
         let mut dual_module_unit = self.write();
         if dual_module_unit.enable_parallel_execution {
-            let serial_module_group_max_update_length = dual_module_unit.serial_module.report();
+            let serial_module_dual_report = dual_module_unit.serial_module.report();
             // println!("serial_module group max_update length: {:?}", serial_module_group_max_update_length);
             drop(dual_module_unit);
             let dual_module_unit = self.read_recursive();
-            group_max_update_length.extend(serial_module_group_max_update_length);
+            dual_report.extend(serial_module_dual_report);
 
             // implement a breadth first search to grow all connected (fused) neighbors 
             let queue = Arc::new(Mutex::new(VecDeque::new()));
@@ -1679,7 +1682,7 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
             drop(queue_lock);
             drop(dual_module_unit);
 
-            let local_group_max_update_length = Arc::new(Mutex::new(DualReport::new()));
+            let local_dual_report = Arc::new(Mutex::new(DualReport::new()));
             while let Some(node) = {
                 let mut queue_lock = queue.lock().unwrap();
                 queue_lock.pop_front()
@@ -1695,9 +1698,8 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
 
                     if !visited_lock.contains(&neighbor) {
                         if *neighbor.upgrade_force().read_recursive().serial_module.unit_active.read_recursive() {
-                            let serial_module_group_max_update_length = neighbor.upgrade_force().write().serial_module.report();
-                            // group_max_update_length.extend(serial_module_group_max_update_length);
-                            local_group_max_update_length.lock().unwrap().extend(serial_module_group_max_update_length);
+                            let serial_module_dual_report = neighbor.upgrade_force().write().serial_module.report();
+                            local_dual_report.lock().unwrap().extend(serial_module_dual_report);
                             queue_lock.push_back(neighbor.clone());
                         }
                         
@@ -1708,8 +1710,8 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
             }
 
             
-            let final_local_group_max_update_length = local_group_max_update_length.lock().unwrap();
-            group_max_update_length.extend(final_local_group_max_update_length.clone());
+            let final_local_dual_report = local_dual_report.lock().unwrap();
+            dual_report.extend(final_local_dual_report.clone());
         } else {
             // implementation with sequential iteration of neighbors
             // early terminate if no active dual nodes anywhere in the descendant
@@ -1717,12 +1719,12 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
             // println!("bfs_compute_max_update_length");
             
         
-            let serial_module_group_max_update_length = dual_module_unit.serial_module.report();
+            let serial_module_dual_report = dual_module_unit.serial_module.report();
             // println!("serial_module group max_update length: {:?}", serial_module_group_max_update_length);
             drop(dual_module_unit);
             let dual_module_unit = self.read_recursive();
 
-            group_max_update_length.extend(serial_module_group_max_update_length);
+            dual_report.extend(serial_module_dual_report);
 
             // we need to find the maximum update length of all connected (fused) units
             // so we run a bfs, we could potentially use rayon to optimize it
@@ -1741,9 +1743,9 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
                 let temp = frontier.pop_front().unwrap();
                 // println!("frontier len: {:?}", frontier.len());
                 if *temp.upgrade_force().read_recursive().serial_module.unit_active.read_recursive() {
-                    let serial_module_group_max_update_length = temp.upgrade_force().write().serial_module.report();
+                    let serial_module_dual_report = temp.upgrade_force().write().serial_module.report();
                     // println!("temp serial_module_group_max_update_length: {:?}", serial_module_group_max_update_length);
-                    group_max_update_length.extend(serial_module_group_max_update_length);
+                    dual_report.extend(serial_module_dual_report);
                     visited.insert(temp.clone());
                     for neighbor in temp.upgrade_force().read_recursive().adjacent_parallel_units.iter() {       
                         // println!("hihi");
@@ -1780,12 +1782,9 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
             let unit = unit_ptr.read_recursive();
             let value_2 = unit.snapshot(abbrev);
             // println!("value in unit {}: {}", unit.unit_index, value_2);
-            // snapshot_fix_missing_fields(&mut value_2, abbrev);
             // let value = value.as_object_mut().expect("snapshot must be an object");
             // let value_2 = value_2.as_object_mut().expect("snapshot must be an object");
-            // snapshot_copy_remaining_fields(value, value_2);
             snapshot_combine_values(&mut value, value_2, abbrev);
-            // snapshot_append_values(&mut value, value_2, abbrev);
             // println!("\n\n");
             // println!("after combine: {}", value);
         }
@@ -1798,7 +1797,6 @@ impl<SerialModule: DualModuleImpl + MWPSVisualizer + Send + Sync, Queue> MWPSVis
 where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug + Send + Sync + Clone,
 {
     fn snapshot(&self, abbrev: bool) -> serde_json::Value {
-        // incomplete, tentative
         // println!("snapshot unit index {}", self.unit_index);
         self.serial_module.snapshot(abbrev)
     }
@@ -2012,7 +2010,7 @@ pub mod tests {
         defect_vertices: Vec<VertexIndex>,
         final_dual: Weight,
         plugins: PluginVec,
-        mut dual_module: impl DualModuleImpl + MWPSVisualizer,
+        mut dual_module: impl DualModuleImpl + MWPSVisualizer + Send + Sync,
         model_graph: Arc<crate::model_hypergraph::ModelHyperGraph>,
         mut visualizer: Option<Visualizer>,
     ) -> (

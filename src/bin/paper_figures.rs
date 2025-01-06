@@ -11,6 +11,7 @@ use num_traits::FromPrimitive;
 use std::collections::BTreeSet;
 use std::sync::Arc;
 use sugar::*;
+use mwpf::pointers::UnsafePtr;
 
 fn hyperedge_example() {
     let visualize_filename = "paper_hyperedge_example.json".to_string();

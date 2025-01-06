@@ -1,0 +1,18 @@
+unit test: primal_module_parallel_circuit_level_noise_qec_playground_2
+on MacBook Air, Apple M2, 8-core CPU, 8GB-memory (M-series Macs do not support Hyper-Threading)
+Note: I did not really speacify `timeout` here. So perhaps that's what caused the fluctuation in the resolve time
+Question/To-be-investigated: use data parallelism techniques inside each serial unit, will this increase or decrease performance?
+
+                    ARC_pointers     unsafe_pointer                                                     unsafe_pointer(for_loop)
+serial              116.051417ms     105.300417ms
+2-core(split-4)                      108.460792ms
+2-core(split-2)                      68.950167ms
+3-core(split-4)                      56.544458ms
+4-core(split-4)      71.006959ms     49.95225ms         
+5-core(split-4)                      57.16975ms
+6-core(split-4)                      58.851334ms
+8-core(split-8)                      51.1085ms
+3-core(split-3)                      60.036583ms
+3-core(split-3, w/o print)           62.062208ms                                                        44.858125ms
+4-core(split-4, w/o print)           38.930125ms/40.798666ms/40.984459ms/52.91975ms/51.7205ms           59.234167ms/38.461375ms/40.251542ms/94.73175ms/36.394709ms/35.105958ms/46.176292ms
+5-core(split-5, w/o print)           50.592333ms/101.778208ms/46.0205ms    

@@ -5,7 +5,7 @@ use derivative::Derivative;
 use std::collections::BTreeSet;
 
 use crate::dual_module_pq::{EdgeWeak, VertexWeak, VertexPtr};
-
+use crate::pointers::UnsafePtr;
 
 #[derive(Clone, Derivative)]
 #[derivative(Default(new = "true"))]

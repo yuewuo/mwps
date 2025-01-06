@@ -4,6 +4,7 @@
 //! This plugin will always be appended to the end of the plugin sequence to make
 //! sure there is a feasible MINLP solution.
 //!
+#![cfg_attr(feature="unsafe_pointer", allow(dropping_references))]
 
 use crate::decoding_hypergraph::*;
 use crate::dual_module::*;

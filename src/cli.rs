@@ -1,3 +1,5 @@
+#![allow(warnings)]
+
 use crate::example_codes::*;
 use crate::matrix::*;
 use crate::mwpf_solver::*;

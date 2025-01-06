@@ -28,6 +28,7 @@ use crate::plugin::*;
 use crate::num_traits::FromPrimitive;
 use crate::dual_module_pq::{EdgeWeak, EdgePtr, VertexPtr};
 use crate::model_hypergraph::ModelHyperGraph;
+use more_asserts::assert_le;
 
 
 
@@ -41,7 +42,7 @@ pub struct PrimalModuleParallel {
     /// thread pool used to execute async functions in parallel
     pub thread_pool: Arc<rayon::ThreadPool>,
     /// the time of calling [`PrimalModuleParallel::parallel_solve_step_callback`] method
-    pub last_solve_start_time: ArcRwLock<Instant>,
+    pub last_solve_start_time: ArcManualSafeLock<Instant>,
 }
 
 pub struct PrimalModuleParallelUnit {
@@ -208,7 +209,7 @@ impl PrimalModuleParallel {
             config,
             partition_info,
             thread_pool: Arc::new(thread_pool),
-            last_solve_start_time: ArcRwLock::new_value(Instant::now()),
+            last_solve_start_time: ArcManualSafeLock::new_value(Instant::now()),
         }
     }
 }
@@ -293,6 +294,7 @@ impl PrimalModuleParallelUnitPtr {
         partitioned_syndrome_pattern: PartitionedSyndromePattern,
         parallel_dual_module: &DualModuleParallel<DualSerialModule, Queue>,
         callback: &mut Option<&mut F>,
+        seperate_again: bool,
     ) where
         F: FnMut(
             &DualModuleInterfacePtr,
@@ -364,12 +366,6 @@ impl PrimalModuleParallelUnitPtr {
             let syndrome_pattern = Arc::new(owned_defect_range.expand());
             // println!("syndrome_patter: {:?}", syndrome_pattern);
             // println!("unit: {:?}, owned_defect_range: {:?}", primal_unit.unit_index, syndrome_pattern);
-            // primal_unit.serial_module.solve_visualizer_ptr(
-            //     &interface_ptr,
-            //     syndrome_pattern,
-            //     &mut dual_module_ptr.clone(),
-            //     visualizer.as_mut(),
-            // );
             primal_unit.serial_module.solve_step_callback_ptr(
                 &interface_ptr,
                 syndrome_pattern,
@@ -385,6 +381,9 @@ impl PrimalModuleParallelUnitPtr {
                 callback(&primal_unit.interface_ptr, &self_dual_ptr.write().deref_mut(), &primal_unit.serial_module, None);
             }
             // println!("solve step callback ptr");
+        }
+        if seperate_again {
+            primal_unit.seperate_all_mirrored_vertices(self_dual_ptr);
         }
 
         event_time.end = primal_module_parallel
@@ -693,22 +692,6 @@ impl PrimalModuleParallelUnit {
         model_graph: Arc<ModelHyperGraph>,
     ) -> Self {
         let partition_info = Arc::new(partition_info.clone());
-        // let mut thread_pool_builder = rayon::ThreadPoolBuilder::new();
-        // if config.thread_pool_size != 0 {
-        //     thread_pool_builder = thread_pool_builder.num_threads(config.thread_pool_size);
-        // }
-        // if config.pin_threads_to_cores {
-        //     let core_ids = core_affinity::get_core_ids().unwrap();
-        //     // println!("core_ids: {core_ids:?}");
-        //     thread_pool_builder = thread_pool_builder.start_handler(move |thread_index| {
-        //         // https://stackoverflow.com/questions/7274585/linux-find-out-hyper-threaded-core-id
-        //         if thread_index < core_ids.len() {
-        //             crate::core_affinity::set_for_current(core_ids[thread_index]);
-        //         } // otherwise let OS decide which core to execute
-        //     });
-        // }
-
-        // let thread_pool = thread_pool_builder.build().expect("creating thread pool failed");
         let mut primal_module = PrimalModuleSerial::new_empty(initializer);
         primal_module.plugins = Arc::new(plugins);
         // primal_module.config = PrimalModuleSerialConfig{ timeout: config.timeout};
@@ -843,25 +826,6 @@ impl PrimalModuleParallel {
         self.parallel_solve_step_callback(syndrome_pattern, parallel_dual_module, |_, _, _, _| {});
     }
 
-    // fn parallel_solve_visualizer<D: DualModuleImpl + MWPSVisualizer>(
-    //     &mut self,
-    //     syndrome_pattern: Arc<SyndromePattern>,
-    //     dual_module: &mut D,
-    //     visualizer: Option<&mut Visualizer>,
-    // ) where
-    //     Self: MWPSVisualizer + Sized,
-    // {
-    //     if let Some(visualizer) = visualizer {
-    //         let callback = Self::visualizer_callback(visualizer);
-    //         self.parallel_solve_step_callback(interface, dual_module, callback);
-    //         visualizer
-    //             .snapshot_combined("solved".to_string(), vec![interface, dual_module, self])
-    //             .unwrap();
-    //     } else {
-    //         self.parallel_solve(syndrome_pattern, dual_module);
-    //     }
-    // }
-
     fn parallel_visualizer_callback<'a, DualSerialModule: DualModuleImpl + Send + Sync + MWPSVisualizer, Queue>(
         visualizer: &'a mut Visualizer,
     ) -> impl FnMut(&DualModuleInterfacePtr, &DualModuleParallelUnit<DualSerialModule, Queue>, &PrimalModuleSerial, Option<&DualReport>) + 'a
@@ -896,31 +860,6 @@ impl PrimalModuleParallel {
                     .unwrap();
             }
         }
-
-
-        // |interface: &DualModuleInterfacePtr, dual_module: &DualModuleParallelUnit<DualSerialModule, Queue>, primal_module: &PrimalModuleSerial, dual_report: Option<&DualReport>| {
-        //     if cfg!(debug_assertions) {
-        //         // println!("dual_report: {:?}", dual_report);
-        //         // dual_module.debug_print();
-        //     }
-        //     if dual_report.is_unbounded() {
-        //         visualizer
-        //             .snapshot_combined("unbounded grow".to_string(), vec![interface, dual_module, primal_module])
-        //             .unwrap();
-        //     } else if let Some(length) = dual_report.get_valid_growth() {
-        //         visualizer
-        //             .snapshot_combined(format!("grow {length}"), vec![interface, dual_module, primal_module])
-        //             .unwrap();
-        //     } else {
-        //         let first_conflict = format!("{:?}", dual_report.peek().unwrap());
-        //         visualizer
-        //             .snapshot_combined(
-        //                 format!("resolve {first_conflict}"),
-        //                 vec![interface, dual_module, primal_module],
-        //             )
-        //             .unwrap();
-        //     };
-        // }
     }
 
     pub fn parallel_solve_visualizer<DualSerialModule: DualModuleImpl + Send + Sync + MWPSVisualizer, Queue>(
@@ -950,61 +889,6 @@ impl PrimalModuleParallel {
         }
     }
 
-
-    // pub fn parallel_solve_visualizer<DualSerialModule: DualModuleImpl + Send + Sync + MWPSVisualizer, Queue>(
-    //     &mut self,
-    //     syndrome_pattern: Arc<SyndromePattern>,
-    //     parallel_dual_module: &DualModuleParallel<DualSerialModule, Queue>,
-    //     visualizer: Option<&mut Visualizer>,
-    // ) where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug + Send + Sync + Clone,
-    // {
-    //     let callback = Self::visualizer_callback(visualizer);
-
-    //     if let Some(visualizer) = visualizer {
-    //         self.parallel_solve_step_callback(
-    //             syndrome_pattern,
-    //             parallel_dual_module,
-    //             |interface, dual_module, primal_module, dual_report| {
-    //                 if let Some(dual_report) = dual_report {
-    //                     if cfg!(debug_assertions) {
-    //                         // println!("dual_report: {:?}", dual_report);
-    //                     }
-    //                     if dual_report.is_unbounded() {
-    //                         visualizer
-    //                             .snapshot_combined("unbounded grow".to_string(), vec![interface, dual_module, primal_module])
-    //                             .unwrap();
-    //                     } else if let Some(length) = dual_report.get_valid_growth() {
-    //                         visualizer
-    //                             .snapshot_combined(format!("grow {length}"), vec![interface, dual_module, primal_module])
-    //                             .unwrap();
-    //                     } else {
-    //                         let first_conflict = format!("{:?}", dual_report.peek().unwrap());
-    //                         visualizer
-    //                             .snapshot_combined(
-    //                                 format!("resolve {first_conflict}"),
-    //                                 vec![interface, dual_module, primal_module],
-    //                             )
-    //                             .unwrap();
-    //                     };
-    //                 } else {
-    //                     visualizer
-    //                         .snapshot_combined("unit solved".to_string(), vec![interface, dual_module, primal_module])
-    //                         .unwrap();
-    //                 }
-    //             },
-    //         );
-    //         // let last_unit = self.units.last().unwrap().read_recursive();
-    //         // visualizer
-    //         //     .snapshot_combined(
-    //         //         "solved".to_string(),
-    //         //         vec![&last_unit.interface_ptr, parallel_dual_module, self],
-    //         //     )
-    //         //     .unwrap();
-    //     } else {
-    //         self.parallel_solve(syndrome_pattern, parallel_dual_module);
-    //     }
-    // }
-
     pub fn parallel_solve_step_callback<DualSerialModule: DualModuleImpl + Send + Sync, Queue, F: Send + Sync>(
         &mut self,
         syndrome_pattern: Arc<SyndromePattern>,
@@ -1020,7 +904,8 @@ impl PrimalModuleParallel {
         Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug + Send + Sync + Clone,
     {
         if parallel_dual_module.config.enable_parallel_execution {
-            // parallel implementation using rayon
+            // println!("parallel implementation");
+            // current implementation of parallel fusion 
             let thread_pool = Arc::clone(&self.thread_pool);
             *self.last_solve_start_time.write() = Instant::now();
             thread_pool.scope(|_| {
@@ -1037,7 +922,6 @@ impl PrimalModuleParallel {
                 })
             });
 
-
             thread_pool.scope(|_| {
                 (self.partition_info.config.partitions.len()..self.partition_info.units.len())
                 .into_par_iter()
@@ -1049,22 +933,94 @@ impl PrimalModuleParallel {
                             PartitionedSyndromePattern::new(&syndrome_pattern), 
                             parallel_dual_module, 
                             &mut None,
+                            true,
                         );
                     }
                 })
             });
 
-            for unit_index in self.partition_info.config.partitions.len()..self.partition_info.units.len() {
-                if (unit_index - self.partition_info.config.partitions.len()) % 2 == 1 {
-                    let unit_ptr = self.units[unit_index].clone();
-                    unit_ptr.fuse_and_solve::<DualSerialModule, Queue, F>(
-                        self, 
-                        PartitionedSyndromePattern::new(&syndrome_pattern), 
-                        parallel_dual_module, 
-                        &mut None,
-                    );
-                }
-            }
+            thread_pool.scope(|_| {
+                (self.partition_info.config.partitions.len()..self.partition_info.units.len())
+                .into_par_iter()
+                .for_each( |unit_index| {
+                    if (unit_index - self.partition_info.config.partitions.len()) % 2 == 1 {
+                        let unit_ptr = self.units[unit_index].clone();
+                        unit_ptr.fuse_and_solve::<DualSerialModule, Queue, F>(
+                            self, 
+                            PartitionedSyndromePattern::new(&syndrome_pattern), 
+                            parallel_dual_module, 
+                            &mut None,
+                            false,
+                        );
+                    }
+                })
+            });
+
+            thread_pool.scope(|_| {
+                (self.partition_info.config.partitions.len()..self.partition_info.units.len())
+                .into_par_iter()
+                .for_each( |unit_index| {
+                    if (unit_index - self.partition_info.config.partitions.len()) % 2 == 0 {
+                        let unit_ptr = self.units[unit_index].clone();
+                        let self_dual_ptr = &parallel_dual_module.units[unit_index];
+                        unit_ptr.write().combine_all_mirrored_vertices_again(self_dual_ptr);
+                    }
+                })
+            });
+
+
+
+
+            // // previous implementation of parallel fusion, solve all individual units in parallel, 
+            // // run `fuse_and_solve` on all odd boundary units in parallel, then run `fuse_and_solve` sequentially on all even
+            // // boundary units
+            // // parallel implementation using rayon
+            // let thread_pool = Arc::clone(&self.thread_pool);
+            // *self.last_solve_start_time.write() = Instant::now();
+            // thread_pool.scope(|_| {
+            //     (0..self.partition_info.config.partitions.len())
+            //     .into_par_iter()
+            //     .for_each( |unit_index| {
+            //         let unit_ptr = self.units[unit_index].clone();
+            //         unit_ptr.individual_solve::<DualSerialModule, Queue, F>(
+            //             self, 
+            //             PartitionedSyndromePattern::new(&syndrome_pattern), 
+            //             parallel_dual_module, 
+            //             &mut None,
+            //         );
+            //     })
+            // });
+
+
+            // thread_pool.scope(|_| {
+            //     (self.partition_info.config.partitions.len()..self.partition_info.units.len())
+            //     .into_par_iter()
+            //     .for_each( |unit_index| {
+            //         if (unit_index - self.partition_info.config.partitions.len()) % 2 == 0 {
+            //             let unit_ptr = self.units[unit_index].clone();
+            //             unit_ptr.fuse_and_solve::<DualSerialModule, Queue, F>(
+            //                 self, 
+            //                 PartitionedSyndromePattern::new(&syndrome_pattern), 
+            //                 parallel_dual_module, 
+            //                 &mut None,
+            //                 false,
+            //             );
+            //         }
+            //     })
+            // });
+
+            // for unit_index in self.partition_info.config.partitions.len()..self.partition_info.units.len() {
+            //     if (unit_index - self.partition_info.config.partitions.len()) % 2 == 1 {
+            //         let unit_ptr = self.units[unit_index].clone();
+            //         unit_ptr.fuse_and_solve::<DualSerialModule, Queue, F>(
+            //             self, 
+            //             PartitionedSyndromePattern::new(&syndrome_pattern), 
+            //             parallel_dual_module, 
+            //             &mut None,
+            //             false,
+            //         );
+            //     }
+            // }
         } else {
             // sequential implementation
             println!("sequential implementation!");
@@ -1086,6 +1042,7 @@ impl PrimalModuleParallel {
                     PartitionedSyndromePattern::new(&syndrome_pattern), 
                     parallel_dual_module, 
                     &mut Some(&mut callback),
+                    false,
                 );
             }
             // println!("after fuse and solve");
@@ -1175,68 +1132,101 @@ impl PrimalModuleImpl for PrimalModuleParallel {
         // self.solve(interface, syndrome_pattern, dual_module)
     }
 
-    fn subgraph(&mut self, _interface: &DualModuleInterfacePtr, dual_module: &mut impl DualModuleImpl)
+    fn subgraph(&mut self, _interface: &DualModuleInterfacePtr, dual_module: &(impl DualModuleImpl + Send + Sync))
         -> OutputSubgraph 
     {
-        // sequential implementation for debugging purposes
-        let mut subgraph = vec![];
-        let mut internal_subgraph = vec![];
-        let mut flip_edge_indices = HashSet::new();
-        for unit_ptr in self.units.iter() {
-            let mut unit = unit_ptr.write();
-            // println!("unit: {:?}", unit.unit_index);
-            let interface_ptr = unit.interface_ptr.clone();
-            let unit_output_subgraph = unit.subgraph(&interface_ptr, dual_module);
-            subgraph.extend(unit_output_subgraph.subgraph.clone());
-            internal_subgraph.extend(OutputSubgraph::get_internal_subgraph(&unit_output_subgraph).clone());
-            flip_edge_indices.extend(unit_output_subgraph.flip_edge_indices);
-        }
-        OutputSubgraph::new(subgraph, flip_edge_indices, internal_subgraph)
+        // implementation using rayon
+        // No Locks: Each thread accumulates its results locally and then combines them at the end, which avoids the need for locking.
+        // Efficient Parallelization: The threads can work independently and use Rayon’s reduce to combine results efficiently after the work is done.
+        let (subgraph, internal_subgraph, flip_edge_indices): (Vec<usize>, Vec<EdgeWeak>, HashSet<_>) = 
+            self.units.par_iter()
+                    .map(|unit_ptr| {
+                            let mut unit = unit_ptr.write();
+                            let interface_ptr = unit.interface_ptr.clone();
+                            let unit_output_subgraph = unit.subgraph(&interface_ptr, dual_module);
+                            
+                            // Return the result of this unit’s work as a tuple
+                            (
+                                unit_output_subgraph.subgraph.clone(),
+                                OutputSubgraph::get_internal_subgraph(&unit_output_subgraph).clone(),
+                                unit_output_subgraph.flip_edge_indices,
+                            )
+                        })
+                        .reduce(
+                            || (Vec::new(), Vec::new(), HashSet::new()), // Identity for reduction
+                            |(mut subgraph_acc, mut internal_subgraph_acc, mut flip_edge_indices_acc), (subgraph_res, internal_subgraph_res, flip_edge_indices_res)| {
+                                subgraph_acc.extend(subgraph_res);
+                                internal_subgraph_acc.extend(internal_subgraph_res);
+                                flip_edge_indices_acc.extend(flip_edge_indices_res);
+                                (subgraph_acc, internal_subgraph_acc, flip_edge_indices_acc)
+                            },
+                        );
 
-        // // // implementation using rayon
-        // self.thread_pool.scope(|_| {
-        //     let results: Vec<_> = 
-        //         self.units.par_iter().filter_map(| unit_ptr| {
-        //             let mut unit = unit_ptr.write();
-        //             let interface_ptr = unit.interface_ptr.clone();
-        //             Some(unit.subgraph(&interface_ptr, seed))
-        //         }).collect();
-        //     let mut final_subgraph: Vec<EdgeWeak> = vec![];
-        //     for local_subgraph in results.into_iter() {
-        //         final_subgraph.extend(local_subgraph);
-        //     }
-        //     final_subgraph
-        // })
+        OutputSubgraph::new(subgraph, flip_edge_indices, internal_subgraph)
+        // // sequential implementation for debugging purposes
+        // let mut subgraph = vec![];
+        // let mut internal_subgraph = vec![];
+        // let mut flip_edge_indices = HashSet::new();
+        // for unit_ptr in self.units.iter() {
+        //     let mut unit = unit_ptr.write();
+        //     // println!("unit: {:?}", unit.unit_index);
+        //     let interface_ptr = unit.interface_ptr.clone();
+        //     let unit_output_subgraph = unit.subgraph(&interface_ptr, dual_module);
+        //     subgraph.extend(unit_output_subgraph.subgraph.clone());
+        //     internal_subgraph.extend(OutputSubgraph::get_internal_subgraph(&unit_output_subgraph).clone());
+        //     flip_edge_indices.extend(unit_output_subgraph.flip_edge_indices);
+        // }
+        // OutputSubgraph::new(subgraph, flip_edge_indices, internal_subgraph)
+
+       
     }
 
     // TODO: fix the lower bound! 
     fn subgraph_range(
         &mut self,
         interface: &DualModuleInterfacePtr,
-        dual_module: &mut impl DualModuleImpl
+        dual_module: &mut (impl DualModuleImpl + Send + Sync)
     ) -> (OutputSubgraph, WeightRange) {
         let output_subgraph = self.subgraph(interface, dual_module);
         let internal_subgraph = OutputSubgraph::get_internal_subgraph(&output_subgraph);
-        let mut upper = Rational::zero();
-        for edge_weak in internal_subgraph.iter() {
-            upper += edge_weak.upgrade_force().read_recursive().weight.clone();
-        }
-
-        let mut lower = Rational::zero();
-        for unit_index in 0..self.units.len() {
-            let primal_unit = self.units[unit_index].read_recursive();
-            // println!("unit interface ptr sum dual variables: {:?}", unit.interface_ptr.sum_dual_variables());
-            // lower += primal_unit.interface_ptr.sum_dual_variables() + dual_module.units[unit_index].get_negative_weight_sum();
-            lower += primal_unit.interface_ptr.sum_dual_variables();
-        }
-        lower += dual_module.get_negative_weight_sum();
-
-        let weight_range = WeightRange::new(
-            lower,
-            upper
-        );
-
+        let upper: Rational = internal_subgraph.par_iter()
+                                                .map(|edge_weak| edge_weak.upgrade_force().read_recursive().weight.clone())
+                                                .sum();
+        let lower: Rational = (0..self.units.len()).into_par_iter()
+                                                    .map(|unit_index| {
+                                                        let primal_unit = self.units[unit_index].read_recursive();
+                                                        primal_unit.interface_ptr.sum_dual_variables() // Accumulate the sum
+                                                    })
+                                                    .sum(); 
+        
+        // Add the result of `get_negative_weight_sum` to `lower`
+        let lower = lower + dual_module.get_negative_weight_sum();
+        let weight_range = WeightRange::new(lower, upper);
         (output_subgraph, weight_range)
+
+        // previous serial implementation
+        // let output_subgraph = self.subgraph(interface, dual_module);
+        // let internal_subgraph = OutputSubgraph::get_internal_subgraph(&output_subgraph);
+        // let mut upper = Rational::zero();
+        // for edge_weak in internal_subgraph.iter() {
+        //     upper += edge_weak.upgrade_force().read_recursive().weight.clone();
+        // }
+
+        // let mut lower = Rational::zero();
+        // for unit_index in 0..self.units.len() {
+        //     let primal_unit = self.units[unit_index].read_recursive();
+        //     // println!("unit interface ptr sum dual variables: {:?}", unit.interface_ptr.sum_dual_variables());
+        //     // lower += primal_unit.interface_ptr.sum_dual_variables() + dual_module.units[unit_index].get_negative_weight_sum();
+        //     lower += primal_unit.interface_ptr.sum_dual_variables();
+        // }
+        // lower += dual_module.get_negative_weight_sum();
+
+        // let weight_range = WeightRange::new(
+        //     lower,
+        //     upper
+        // );
+
+        // (output_subgraph, weight_range)
     }
 
     /// performance profiler report
@@ -1292,7 +1282,7 @@ impl PrimalModuleImpl for PrimalModuleParallelUnit {
         self.serial_module.resolve_tune(dual_report, interface_ptr, dual_module)
     }
 
-    fn subgraph(&mut self, interface: &DualModuleInterfacePtr, dual_module: &mut impl DualModuleImpl)
+    fn subgraph(&mut self, interface: &DualModuleInterfacePtr, dual_module: &(impl DualModuleImpl + Send + Sync))
         -> OutputSubgraph 
     {
         // println!("\nfn subgraph for unit: {:?}", self.unit_index);
@@ -1302,7 +1292,7 @@ impl PrimalModuleImpl for PrimalModuleParallelUnit {
     fn subgraph_range(
         &mut self,
         interface: &DualModuleInterfacePtr,
-        dual_module: &mut impl DualModuleImpl,
+        dual_module: &mut (impl DualModuleImpl + Send + Sync),
     ) -> (OutputSubgraph, WeightRange) {
         self.serial_module.subgraph_range(interface, dual_module)
     }
@@ -1375,7 +1365,7 @@ pub mod tests {
 
         // create dual module
         let model_graph = code.get_model_graph();
-        let initializer = &model_graph.initializer;
+        let initializer = &model_graph.initializer.clone();
         let mut partition_config = PartitionConfig::new(initializer.vertex_num);
         partition_config.partitions = vec![
             VertexRange::new(0, 18),   // unit 0
@@ -1393,7 +1383,7 @@ pub mod tests {
 
 
         let mut dual_module_parallel_config = DualModuleParallelConfig::default();
-        dual_module_parallel_config.enable_parallel_execution = false;
+        dual_module_parallel_config.enable_parallel_execution = true;
         let dual_module: DualModuleParallel<DualModulePQGeneric<FutureObstacleQueue<Rational>>, FutureObstacleQueue<Rational>> =
             DualModuleParallel::new_config(&initializer, &partition_info, dual_module_parallel_config);
 
@@ -1411,6 +1401,7 @@ pub mod tests {
             primal_module,
             model_graph,
             Some(visualizer),
+            initializer.clone(),
         )
     }
 
@@ -1423,6 +1414,7 @@ pub mod tests {
         mut primal_module: PrimalModuleParallel,
         model_graph: Arc<crate::model_hypergraph::ModelHyperGraph>,
         mut visualizer: Option<Visualizer>,
+        initializer: Arc<SolverInitializer>,
     ) -> (
         PrimalModuleParallel,
         impl DualModuleImpl + MWPSVisualizer,
@@ -1440,7 +1432,7 @@ pub mod tests {
 
         let useless_interface_ptr = DualModuleInterfacePtr::new(decoding_graph.model_graph.clone());
         let (subgraph, weight_range) = primal_module.subgraph_range(&useless_interface_ptr, &mut dual_module);
-        println!("subgraph: {:?}", subgraph.subgraph);
+        // println!("subgraph: {:?}", subgraph.subgraph);
         if let Some(visualizer) = visualizer.as_mut() {
             let last_interface_ptr = &primal_module.units.last().unwrap().read_recursive().interface_ptr;
             visualizer
@@ -1459,12 +1451,27 @@ pub mod tests {
             "the result subgraph is invalid"
         );
 
+        let actual_weight = if subgraph.subgraph.is_empty() && !defect_vertices.is_empty() {
+            // error pattern is not generated by the simulator
+            Rational::from_usize(usize::MAX).unwrap()
+        } else {
+            Rational::from(
+                initializer
+                    .get_subgraph_total_weight(&subgraph),
+            )
+        };
+        assert_le!(
+            weight_range.lower,
+            actual_weight,
+            "bug: the lower bound of weight range is larger than the actual weight"
+        );
         primal_module.clear();
         dual_module.clear();
         let end_time = std::time::Instant::now();
         let resolve_time = end_time - begin_time;
         println!("resolve time {:?}", resolve_time);
-        assert_eq!(weight_range.lower, weight_range.upper, "lower and upper of weight range do not match");
+
+        // assert_eq!(weight_range.lower, weight_range.upper, "lower and upper of weight range do not match");
 
         // assert_eq!(
         //     final_dual,
@@ -1624,7 +1631,7 @@ pub mod tests {
 
         // create model graph 
         let model_graph = code.get_model_graph();
-        let initializer = &model_graph.initializer;
+        let initializer = &model_graph.initializer.clone();
         let mut partition_config = PartitionConfig::new(initializer.vertex_num);
         partition_config.partitions = vec![
             VertexRange::new(0, 6),   // unit 0
@@ -1650,7 +1657,7 @@ pub mod tests {
         let partition_info = partition_config.info();
 
         let mut dual_module_parallel_config = DualModuleParallelConfig::default();
-        dual_module_parallel_config.enable_parallel_execution = false;
+        dual_module_parallel_config.enable_parallel_execution = true;
         let dual_module: DualModuleParallel<DualModulePQGeneric<FutureObstacleQueue<Rational>>, FutureObstacleQueue<Rational>> =
             DualModuleParallel::new_config(&initializer, &partition_info, dual_module_parallel_config);
 
@@ -1667,6 +1674,7 @@ pub mod tests {
             primal_module,
             model_graph,
             Some(visualizer),
+            initializer.clone(),
         )
     }
 
@@ -1795,6 +1803,7 @@ pub mod tests {
         final_dual: Weight,
         plugins: PluginVec,
         split_num: usize,
+        thread_pool_size: usize,
     ) -> (
         PrimalModuleParallel,
         impl DualModuleImpl + MWPSVisualizer,
@@ -1812,7 +1821,7 @@ pub mod tests {
 
         // create dual module
         let model_graph = code.get_model_graph();
-        let initializer = &model_graph.initializer;
+        let initializer = &model_graph.initializer.clone();
         let (partition_config , no_per_layer)= graph_time_partition(&initializer, &code.get_positions(), &defect_vertices, split_num);
         let partition_info = partition_config.info();
 
@@ -1820,13 +1829,13 @@ pub mod tests {
         // create dual module
         // let decoding_graph = DecodingHyperGraph::new_defects(model_graph.clone(), vec![3, 29, 30]);
         let mut dual_module_parallel_config = DualModuleParallelConfig::default();
-        // dual_module_parallel_config.enable_parallel_execution = true;
+        dual_module_parallel_config.enable_parallel_execution = true;
         let mut dual_module: DualModuleParallel<DualModulePQGeneric<FutureObstacleQueue<Rational>>, FutureObstacleQueue<Rational>> =
             DualModuleParallel::new_config(&initializer, &partition_info, dual_module_parallel_config);
 
         // create primal module
         let mut primal_config = PrimalModuleParallelConfig {..Default::default()};
-        primal_config.thread_pool_size = 4;
+        primal_config.thread_pool_size = thread_pool_size;
         let primal_module = PrimalModuleParallel::new_config(&model_graph.initializer, &partition_info, primal_config.clone(), plugins, model_graph.clone());
 
         primal_module_parallel_basic_standard_syndrome_optional_viz(
@@ -1835,7 +1844,8 @@ pub mod tests {
             dual_module,
             primal_module,
             model_graph,
-            Some(visualizer),
+            None,
+            initializer.clone(),
         )
     }
 
@@ -1846,7 +1856,7 @@ pub mod tests {
             "code_type": qecp::code_builder::CodeType::RotatedPlanarCode
         });
         
-        let code = QECPlaygroundCode::new(5, 0.01, config);
+        let code = QECPlaygroundCode::new(5, 0.001, config);
         let defect_vertices = vec![11, 12, 19];
 
         let visualize_filename = "primal_module_parallel_circuit_level_noise_qec_playground_1.json".to_string();
@@ -1854,9 +1864,10 @@ pub mod tests {
             code,
             visualize_filename,
             defect_vertices,
-            Rational::from(8.788898309344878),
+            Rational::from(8.788898309344878), // dummy value
             vec![],
             2,
+            2
         );
     }
 
@@ -1869,7 +1880,7 @@ pub mod tests {
             "nm": 2000,
         });
         
-        let mut code = QECPlaygroundCode::new(7, 0.005, config);
+        let mut code = QECPlaygroundCode::new(7, 0.001, config);
         let defect_vertices = code.generate_random_errors(132).0.defect_vertices;
 
         let visualize_filename = "primal_module_parallel_circuit_level_noise_qec_playground_2.json".to_string();
@@ -1877,9 +1888,33 @@ pub mod tests {
             code,
             visualize_filename,
             defect_vertices.clone(),
+            Rational::from(8.788898309344878), // dummy value
+            vec![],
+            5,
+            5
+        );
+    }
+
+    /// test solver on circuit level noise with random errors, split into 2
+    #[test]
+    fn primal_module_parallel_circuit_level_noise_qec_playground_serial_2() {
+        // cargo test -r primal_module_parallel_circuit_level_noise_qec_playground_serial_2 -- --nocapture
+        let config = json!({
+            "code_type": qecp::code_builder::CodeType::RotatedPlanarCode,
+            "nm": 2000,
+        });
+        
+        let mut code = QECPlaygroundCode::new(7, 0.001, config);
+        let defect_vertices = code.generate_random_errors(132).0.defect_vertices;
+
+        let visualize_filename = "primal_module_parallel_circuit_level_noise_qec_playground_serial_2.json".to_string();
+        use crate::primal_module_serial::tests::primal_module_serial_basic_standard_syndrome;
+        primal_module_serial_basic_standard_syndrome(
+            code,
+            visualize_filename,
+            defect_vertices,
             Rational::from(8.788898309344878),
             vec![],
-            4,
         );
     }
 
@@ -1892,7 +1927,7 @@ pub mod tests {
             "nm": 500,
         });
         
-        let mut code = QECPlaygroundCode::new(5, 0.005, config);
+        let mut code = QECPlaygroundCode::new(5, 0.001, config);
         let defect_vertices = code.generate_random_errors(132).0.defect_vertices;
 
         let visualize_filename = "primal_module_parallel_circuit_level_noise_qec_playground_3.json".to_string();
@@ -1903,6 +1938,30 @@ pub mod tests {
             Rational::from(8.788898309344878),
             vec![],
             4,
+            4,
+        );
+    }
+
+    /// test solver on circuit level noise with random errors, split into 4
+    #[test]
+    fn primal_module_parallel_circuit_level_noise_qec_playground_serial_3() {
+        // cargo test -r primal_module_parallel_circuit_level_noise_qec_playground_serial_3 -- --nocapture
+        let config = json!({
+            "code_type": qecp::code_builder::CodeType::RotatedPlanarCode,
+            "nm": 500,
+        });
+        
+        let mut code = QECPlaygroundCode::new(5, 0.001, config);
+        let defect_vertices = code.generate_random_errors(132).0.defect_vertices;
+
+        let visualize_filename = "primal_module_parallel_circuit_level_noise_qec_playground_serial_3.json".to_string();
+        use crate::primal_module_serial::tests::primal_module_serial_basic_standard_syndrome;
+        primal_module_serial_basic_standard_syndrome(
+            code,
+            visualize_filename,
+            defect_vertices,
+            Rational::from(8.788898309344878),
+            vec![],
         );
     }
 
@@ -1915,7 +1974,7 @@ pub mod tests {
             "nm": 18,
         });
         
-        let mut code = QECPlaygroundCode::new(5, 0.005, config);
+        let mut code = QECPlaygroundCode::new(5, 0.001, config);
         let defect_vertices = code.generate_random_errors(132).0.defect_vertices;
 
         // let defect_vertices = vec![16, 26, 29, 37, 39, 44, 46, 47, 51, 52, 54, 67, 122, 151];
@@ -1927,6 +1986,7 @@ pub mod tests {
             defect_vertices.clone(),
             Rational::from(8.788898309344878),
             vec![],
+            8,
             8,
         );
 

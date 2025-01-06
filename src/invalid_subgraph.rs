@@ -10,6 +10,7 @@ use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
 use crate::dual_module_pq::{EdgePtr, VertexPtr};
+use crate::pointers::UnsafePtr;
 use crate::dual_module::DualModuleImpl;
 
 /// an invalid subgraph $S = (V_S, E_S)$, also store the hair $\delta(S)$

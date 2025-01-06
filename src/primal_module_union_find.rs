@@ -162,7 +162,7 @@ impl PrimalModuleImpl for PrimalModuleUnionFind {
     fn subgraph(
         &mut self,
         interface_ptr: &DualModuleInterfacePtr,
-        _dual_module: &mut impl DualModuleImpl,
+        _dual_module: &impl DualModuleImpl,
     ) -> OutputSubgraph {
         let mut valid_clusters = BTreeSet::new();
         let mut internal_subgraph = vec![];
@@ -216,7 +216,7 @@ pub mod tests {
         mut code: impl ExampleCode,
         defect_vertices: Vec<VertexIndex>,
         final_dual: Weight,
-        mut dual_module: impl DualModuleImpl + MWPSVisualizer,
+        mut dual_module: impl DualModuleImpl + MWPSVisualizer + Send + Sync,
         model_graph: Arc<crate::model_hypergraph::ModelHyperGraph>,
         mut visualizer: Option<Visualizer>,
     ) -> (

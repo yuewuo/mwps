@@ -18,6 +18,7 @@ use std::fs::File;
 use std::io::prelude::*;
 use std::time::Instant;
 use crate::dual_module_pq::EdgeWeak;
+use crate::pointers::UnsafePtr;
 
 use hashbrown::{HashSet, HashMap};
 use petgraph::{Undirected, Graph};
@@ -47,7 +48,13 @@ cfg_if::cfg_if! {
 pub type Weight = Rational;
 pub type EdgeIndex = usize;
 pub type VertexIndex = usize;
-pub type KnownSafeRefCell<T> = std::cell::RefCell<T>;
+cfg_if::cfg_if! {
+    if #[cfg(feature="unsafe_pointer")] {
+        pub type KnownSafeRefCell<T> = std::cell::UnsafeCell<T>; 
+    } else {
+        pub type KnownSafeRefCell<T> = std::cell::RefCell<T>;
+    }
+}
 
 pub type NodeIndex = VertexIndex;
 pub type DefectIndex = VertexIndex;
@@ -191,11 +198,20 @@ impl SolverInitializer {
 
     #[allow(clippy::unnecessary_cast)]
     pub fn get_subgraph_total_weight(&self, subgraph: &OutputSubgraph) -> Weight {
-        let mut weight = Weight::zero();
-        for &edge_index in subgraph.iter() {
-            weight += self.weighted_edges[edge_index as usize].weight.clone();
+        let internal_subgraph = OutputSubgraph::get_internal_subgraph(&subgraph);
+        if internal_subgraph.is_empty() {
+            let mut weight = Weight::zero();
+            for &edge_index in subgraph.iter() {
+                weight += self.weighted_edges[edge_index as usize].weight.clone();
+            }
+            return weight;
+        } else {
+            let mut weight = Weight::zero();
+            for edge_weak in internal_subgraph.iter() {
+                weight += edge_weak.upgrade_force().read_recursive().weight.clone();
+            }
+            return weight;
         }
-        weight
     }
 
     #[allow(clippy::unnecessary_cast)]
