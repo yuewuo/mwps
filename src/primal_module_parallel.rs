@@ -118,6 +118,10 @@ pub struct PrimalModuleParallelConfig {
     /// timeout for each unit solving process
     #[serde(default = "primal_module_parallel_default_configs::timeout")]
     pub timeout: f64,
+    /// cluster size limit in tuning phase, possibly based on the code-distance
+    ///     note: this is not monitored in the searching phase because we need to ensure at least one valid solution is generated
+    #[serde(default = "primal_serial_default_configs::cluster_node_limit")]
+    pub cluster_node_limit: usize,
 }
 
 impl Default for PrimalModuleParallelConfig {
@@ -136,6 +140,9 @@ pub mod primal_module_parallel_default_configs {
     } // pin threads to cores to achieve most stable results
     pub fn timeout() -> f64 {
         (10 * 60) as f64
+    }
+    pub fn cluster_node_limit() -> usize {
+        usize::MAX
     }
 }
 
@@ -174,7 +181,7 @@ impl PrimalModuleParallel {
                     // println!("unit_index: {unit_index}");
                     let mut primal_module = PrimalModuleSerial::new_empty(initializer);
                     primal_module.plugins = plugins_ptr.clone();
-                    // primal_module.config = PrimalModuleSerialConfig{ timeout: config.timeout};
+                    primal_module.config = PrimalModuleSerialConfig{ timeout: config.timeout, cluster_node_limit: config.cluster_node_limit,};
                     let interface_ptr = DualModuleInterfacePtr::new(model_graph.clone());
 
                     PrimalModuleParallelUnitPtr::new_value(PrimalModuleParallelUnit {
