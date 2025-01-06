@@ -666,15 +666,30 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
     }
 
     /// get the total tuning time. For DualModuleParallel, it does not have a `mode` per se. 
-    /// Thus, this function is not implemented.
+    /// Hence, we just simply sum up the `total_tuning_time` of all units
     fn get_total_tuning_time(&self) -> Option<f64> {
-        unimplemented!()
+        let mut total = f64::zero();
+        for unit_ptr in self.units.iter() {
+            match unit_ptr.read_recursive().get_total_tuning_time() {
+                Some(tuning_time) => {total += tuning_time;},
+                None => continue,
+            }
+        }
+        if total.is_zero() {
+            None
+        } else {
+            Some(total)
+        }
     }
 
-    /// Reset: clear the tuning time. For DualModuleParallel, it does not have a `mode` per se. 
-    /// Thus, this function is not implemented.
+    /// Reset: clear the tuning time. We clear the tuning time of all individual units
     fn clear_tuning_time(&mut self) {
-        unimplemented!()
+        self.thread_pool.scope(|_| {
+            self.units.par_iter().for_each(|unit_ptr| {
+                let mut unit = unit_ptr.write();
+                unit.clear_tuning_time(); // to be implemented in DualModuleParallelUnit
+            });
+        })
     }
 
     /// CHECK!! "add_dual_node", but in tuning phase, don't modify the pq or the grow rates
@@ -829,7 +844,11 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
     }
 
     fn get_flip_vertices(&self) -> HashSet<VertexIndex> {
-        unimplemented!()
+        let mut flip_vertices = HashSet::new();
+        for unit in self.units.iter() {
+            flip_vertices.extend(unit.read_recursive().get_flip_vertices());
+        }
+        flip_vertices
     }
 
     /// exist for testing purposes
@@ -989,12 +1008,12 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
 
     /// get the total tuning time
     fn get_total_tuning_time(&self) -> Option<f64> {
-        panic!("this module doesn't work with tuning")
+        self.serial_module.get_total_tuning_time()
     }
 
     /// Reset: clear the tuning time
     fn clear_tuning_time(&mut self) {
-        panic!("this module doesn't work with tuning")
+        self.serial_module.clear_tuning_time();
     }
 
     /// "add_dual_node", but in tuning phase, don't modify the pq or the grow rates
@@ -1076,7 +1095,7 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
     );
 
     fn adjust_weights_for_negative_edges(&mut self) {
-        unimplemented!()
+        self.serial_module.adjust_weights_for_negative_edges();
     }
 
     /// update weights of dual_module;
@@ -1094,7 +1113,7 @@ where Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug 
     }
 
     fn get_flip_vertices(&self) -> HashSet<VertexIndex> {
-        unimplemented!()
+        self.serial_module.get_flip_vertices()
     }
 
 

@@ -23,6 +23,10 @@ use std::env;
 use crate::num_traits::Zero;
 use crate::dual_module_pq::{Vertex, Edge, VertexPtr, VertexWeak, EdgePtr, EdgeWeak};
 use crate::pointers::UnsafePtr;
+use std::usize::MAX;
+use std::collections::BTreeSet;
+
+
 
 const TEST_EACH_ROUNDS: usize = 100;
 
@@ -123,6 +127,10 @@ pub struct BenchmarkParameters {
     use_bp: bool,
     #[clap(long, action)]
     bp_application_ratio: Option<f64>,
+    #[clap(long, value_enum, default_value_t = PartitionStrategy::None)]
+    partition_strategy: PartitionStrategy,
+    #[clap(long, default_value_t = 0)]
+    split_num: usize,
 }
 
 #[derive(Subcommand, Clone, Debug)]
@@ -199,12 +207,12 @@ pub enum SolverType {
     JointSingleHair,
     /// log error into a file for later fetch
     ErrorPatternLogger,
-    // /// parallel primal and parallel dual, Union-Find decoder
-    // ParallelUnionFind,
-    // /// parallel primal and parallel dual, single-hair decoder
-    // ParallelSingleHair,
-    // /// parallel primal and parallel dual, joint single-hair solver
-    // ParallelJointSingleHair,
+    /// parallel primal and parallel dual, Union-Find decoder
+    ParallelUnionFind,
+    /// parallel primal and parallel dual, single-hair decoder
+    ParallelSingleHair,
+    /// parallel primal and parallel dual, joint single-hair solver
+    ParallelJointSingleHair,
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum, Serialize, Debug)]
@@ -353,6 +361,86 @@ impl MatrixSpeedClass {
     }
 }
 
+
+/// test for time partition
+#[allow(clippy::unnecessary_cast)]
+pub fn graph_time_partition(initializer: &SolverInitializer, positions: &Vec<VisualizePosition>, split_num: usize) -> PartitionConfig  {
+    assert!(positions.len() > 0, "positive number of positions");
+    let mut partition_config = PartitionConfig::new(initializer.vertex_num);
+    let mut last_t = positions[0].t;
+    let mut t_list: Vec<f64> = vec![];
+    t_list.push(last_t);
+    for position in positions {
+        assert!(position.t >= last_t, "t not monotonically increasing, vertex reordering must be performed before calling this");
+        if position.t != last_t {
+            t_list.push(position.t);
+        }
+        last_t = position.t;
+    }
+
+    // pick the t value in the middle to split it
+    let mut t_split_vec: Vec<f64> = vec![0.0; split_num - 1];
+    for i in 0..(split_num - 1) {
+        let index: usize = t_list.len()/split_num * (i + 1);
+        t_split_vec[i] = t_list[index];
+    }
+    // find the vertices indices
+    let mut split_start_index_vec = vec![MAX; split_num - 1];
+    let mut split_end_index_vec = vec![MAX; split_num - 1];
+    let mut start_index = 0;
+    let mut end_index = 0;
+    for (vertex_index, position) in positions.iter().enumerate() {
+        if start_index < split_num - 1 {
+            if split_start_index_vec[start_index] == MAX && position.t == t_split_vec[start_index] {
+                split_start_index_vec[start_index] = vertex_index;
+                if start_index != 0 {
+                    end_index += 1;
+                }
+                start_index += 1;
+            }
+        }
+        
+        if end_index < split_num - 1 {
+            if position.t == t_split_vec[end_index] {
+                split_end_index_vec[end_index] = vertex_index + 1;
+                // end_index += 1;
+            }
+        }
+    }
+
+    assert!(split_start_index_vec.iter().all(|&x| x != MAX), "Some elements in split_start_index_vec are equal to MAX");
+    
+    // partitions are found
+    let mut graph_nodes = vec![];
+    let mut partitions_vec = vec![];
+    for i in 0..split_num  {
+        if i == 0 {
+            partitions_vec.push(VertexRange::new(0, split_start_index_vec[0]));
+        } else if i == split_num - 1 {
+            partitions_vec.push(VertexRange::new(split_end_index_vec[i - 1], positions.len()));
+        } else {
+            partitions_vec.push(VertexRange::new(split_end_index_vec[i - 1], split_start_index_vec[i]));
+        }
+
+        if i < split_num - 1 {
+            partition_config.fusions.push((i, i+1));
+        }
+        
+        let a = partition_config.dag_partition_units.add_node(());
+        graph_nodes.push(a.clone());
+    }
+    partition_config.partitions = partitions_vec;
+
+    for i in 0..split_num {
+        if i < split_num - 1 {
+            partition_config.dag_partition_units.add_edge(graph_nodes[i], graph_nodes[i+1], false);
+        }
+    }
+    // partition_config.defect_vertices = BTreeSet::from_iter(defect_vertices.clone()); // this can be set outside of this function
+
+    partition_config
+}
+
 impl Cli {
     pub fn run(self) {
         match self.command {
@@ -383,6 +471,8 @@ impl Cli {
                 single_seed,
                 use_bp,
                 bp_application_ratio,
+                partition_strategy,
+                split_num,
             }) => {
                 // whether to disable progress bar, useful when running jobs in background
                 #[cfg(feature = "progress_bar")]
@@ -412,8 +502,13 @@ impl Cli {
                 }
                 // create initializer and solver
                 let initializer = code.get_initializer();
-                let mut solver = solver_type.build(&initializer, &*code, solver_config.clone());
+                let mut partition_config = PartitionConfig::new(initializer.vertex_num);
+                let mut partition_info = partition_config.info();
+                if split_num > 0 {
+                    partition_config = graph_time_partition(&initializer, &code.get_positions(), split_num);
+                } 
                 let mut result_verifier = verifier.build(&initializer);
+
                 // prepare progress bar display
                 #[cfg(feature = "progress_bar")]
                 let mut pb = if !disable_progress_bar {
@@ -430,6 +525,15 @@ impl Cli {
                 // single seed mode, intended only execute a single failing round
                 if let Some(seed) = single_seed {
                     let (syndrome_pattern, error_pattern) = code.generate_random_errors(seed);
+                    if split_num > 0 {
+                        // partition_config = graph_time_partition(&initializer, &code.get_positions(), split_num);
+                        partition_config.defect_vertices = BTreeSet::from_iter(syndrome_pattern.defect_vertices.clone());
+                        partition_info = partition_config.info();
+                    } 
+    
+                    // println!("defect_vertices initial: {:?}", partition_info.config.defect_vertices);
+                    let mut solver = solver_type.build(&initializer, &*code, solver_config.clone(), &partition_info);
+                    // let mut result_verifier = verifier.build(&initializer);
 
                     if use_bp {
                         let mut syndrome_array = vec![0; code.vertex_num()];
@@ -490,6 +594,14 @@ impl Cli {
                     pb.as_mut().map(|pb| pb.set(round));
                     seed = if use_deterministic_seed { round } else { rng.next_u64() };
                     let (syndrome_pattern, error_pattern) = code.generate_random_errors(seed);
+
+                    if split_num > 0 {
+                        // partition_config = graph_time_partition(&initializer, &code.get_positions(), &syndrome_pattern.defect_vertices, split_num);
+                        partition_config.defect_vertices = BTreeSet::from_iter(syndrome_pattern.defect_vertices.clone());
+                        partition_info = partition_config.info();
+                    } 
+
+                    let mut solver = solver_type.build(&initializer, &*code, solver_config.clone(), &partition_info);
 
                     if use_bp {
                         let mut syndrome_array = vec![0; code.vertex_num()];
@@ -589,7 +701,7 @@ impl Cli {
                     samples.push(parity_checks);
                 }
                 // call the matrix operation
-                matrix_type.run(parameters, samples);
+                // matrix_type.run(parameters, samples);
             }
             Commands::Test { command } => match command {
                 TestCommands::Common => {
@@ -713,12 +825,16 @@ impl SolverType {
         initializer: &SolverInitializer,
         code: &dyn ExampleCode,
         solver_config: serde_json::Value,
+        partition_info: &PartitionInfo,
     ) -> Box<dyn SolverTrait> {
         match self {
             Self::UnionFind => Box::new(SolverSerialUnionFind::new(initializer, solver_config)),
             Self::SingleHair => Box::new(SolverSerialSingleHair::new(initializer, solver_config)),
             Self::JointSingleHair => Box::new(SolverSerialJointSingleHair::new(initializer, solver_config)),
             Self::ErrorPatternLogger => Box::new(SolverErrorPatternLogger::new(initializer, code, solver_config)),
+            Self::ParallelUnionFind => Box::new(SolverParallelUnionFind::new(initializer, partition_info, solver_config)),
+            Self::ParallelSingleHair => Box::new(SolverParallelSingleHair::new(initializer, partition_info, solver_config)),
+            Self::ParallelJointSingleHair => Box::new(SolverParallelJointSingleHair::new(initializer, partition_info, solver_config)),
         }
     }
 }

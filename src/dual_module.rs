@@ -679,7 +679,7 @@ impl DualModuleInterfacePtr {
     }
 
     pub fn load(&self, syndrome_pattern: Arc<SyndromePattern>, dual_module_impl: &mut impl DualModuleImpl) {
-        self.write().decoding_graph.set_syndrome(syndrome_pattern.clone());
+        // self.write().decoding_graph.set_syndrome(syndrome_pattern.clone()); // if we do not comment this out, somehow, the defect vertices will be that of all units
         for vertex_idx in syndrome_pattern.defect_vertices.iter() {
             self.create_defect_node(*vertex_idx, dual_module_impl);
         }
@@ -709,7 +709,7 @@ impl DualModuleInterfacePtr {
     /// make it private; use `load` instead
     fn create_defect_node(&self, vertex_idx: VertexIndex, dual_module: &mut impl DualModuleImpl) -> DualNodePtr {
         let mut interface = self.write();
-        let vertex_ptr = dual_module.get_vertex_ptr(vertex_idx);
+        let vertex_ptr = dual_module.get_vertex_ptr(vertex_idx); // this is okay because create_defect_node is only called upon local defect vertices, so we won't access index out of range
         vertex_ptr.write().is_defect = true;
         let mut vertices = BTreeSet::new();
         vertices.insert(vertex_ptr);

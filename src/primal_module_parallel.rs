@@ -248,19 +248,15 @@ impl PrimalModuleParallelUnitPtr {
         let partition_unit_info = &primal_unit.partition_info.units[unit_index];
         let owned_defect_range = partitioned_syndrome_pattern.partition(partition_unit_info);
         let interface_ptr = primal_unit.interface_ptr.clone();
-
+        // println!("owned_defect range: {:?}", owned_defect_range);
+        // println!("total units: {:?}", parallel_dual_module.units.len());
        // solve the individual unit first 
        if !primal_unit.is_solved {
             // we solve the individual unit first
             let syndrome_pattern = Arc::new(owned_defect_range.expand());
             // let syndrome_pattern = Arc::new(SyndromePattern::new(dual_module_ptr.read_recursive().serial_module.all_defect_vertices.clone(), vec![]));
             // println!("defect vertices in unit: {:?} are {:?}", unit_index, syndrome_pattern.defect_vertices);
-            // primal_unit.serial_module.solve_visualizer_ptr(
-            //     &interface_ptr,
-            //     syndrome_pattern,
-            //     &mut dual_module_ptr.clone(),
-            //     visualizer.as_mut(),
-            // );
+
             primal_unit.serial_module.solve_step_callback_ptr(
                 &interface_ptr,
                 syndrome_pattern,
@@ -1023,7 +1019,7 @@ impl PrimalModuleParallel {
             // }
         } else {
             // sequential implementation
-            println!("sequential implementation!");
+            // println!("sequential implementation!");
             for unit_index in 0..self.partition_info.config.partitions.len(){
                 let unit_ptr = self.units[unit_index].clone();
                 unit_ptr.individual_solve::<DualSerialModule, Queue, F>(
