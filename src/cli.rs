@@ -506,6 +506,7 @@ impl Cli {
                 let mut partition_info = partition_config.info();
                 if split_num > 0 {
                     partition_config = graph_time_partition(&initializer, &code.get_positions(), split_num);
+                    partition_info = partition_config.info();
                 } 
                 let mut result_verifier = verifier.build(&initializer);
 
@@ -532,7 +533,7 @@ impl Cli {
                     } 
     
                     // println!("defect_vertices initial: {:?}", partition_info.config.defect_vertices);
-                    let mut solver = solver_type.build(&initializer, &*code, solver_config.clone(), &partition_info);
+                    let mut solver = solver_type.build(&initializer, &*code, solver_config.clone(), Some(&partition_info));
                     // let mut result_verifier = verifier.build(&initializer);
 
                     if use_bp {
@@ -582,7 +583,7 @@ impl Cli {
                     return;
                 }
 
-                let mut benchmark_profiler = BenchmarkProfiler::new(noisy_measurements, benchmark_profiler_output);
+                let mut benchmark_profiler = BenchmarkProfiler::new(noisy_measurements, benchmark_profiler_output, &partition_info);
                 thread_rng().gen::<u64>();
                 let mut seed = match apply_deterministic_seed {
                     Some(seed) => seed,
@@ -601,7 +602,7 @@ impl Cli {
                         partition_info = partition_config.info();
                     } 
 
-                    let mut solver = solver_type.build(&initializer, &*code, solver_config.clone(), &partition_info);
+                    let mut solver = solver_type.build(&initializer, &*code, solver_config.clone(), Some(&partition_info));
 
                     if use_bp {
                         let mut syndrome_array = vec![0; code.vertex_num()];
@@ -825,16 +826,16 @@ impl SolverType {
         initializer: &SolverInitializer,
         code: &dyn ExampleCode,
         solver_config: serde_json::Value,
-        partition_info: &PartitionInfo,
+        partition_info: Option<&PartitionInfo>,
     ) -> Box<dyn SolverTrait> {
         match self {
             Self::UnionFind => Box::new(SolverSerialUnionFind::new(initializer, solver_config)),
             Self::SingleHair => Box::new(SolverSerialSingleHair::new(initializer, solver_config)),
             Self::JointSingleHair => Box::new(SolverSerialJointSingleHair::new(initializer, solver_config)),
             Self::ErrorPatternLogger => Box::new(SolverErrorPatternLogger::new(initializer, code, solver_config)),
-            Self::ParallelUnionFind => Box::new(SolverParallelUnionFind::new(initializer, partition_info, solver_config)),
-            Self::ParallelSingleHair => Box::new(SolverParallelSingleHair::new(initializer, partition_info, solver_config)),
-            Self::ParallelJointSingleHair => Box::new(SolverParallelJointSingleHair::new(initializer, partition_info, solver_config)),
+            Self::ParallelUnionFind => Box::new(SolverParallelUnionFind::new(initializer, partition_info.unwrap(), solver_config)),
+            Self::ParallelSingleHair => Box::new(SolverParallelSingleHair::new(initializer, partition_info.unwrap(), solver_config)),
+            Self::ParallelJointSingleHair => Box::new(SolverParallelJointSingleHair::new(initializer, partition_info.unwrap(), solver_config)),
         }
     }
 }

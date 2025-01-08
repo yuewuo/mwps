@@ -14,7 +14,7 @@ use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyFloat, PyList};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
-use std::fs::File;
+use std::fs::{File, create_dir_all};
 use std::io::prelude::*;
 use std::time::Instant;
 use crate::dual_module_pq::EdgeWeak;
@@ -713,9 +713,16 @@ pub struct BenchmarkProfiler {
 }
 
 impl BenchmarkProfiler {
-    pub fn new(noisy_measurements: VertexNum, detail_log_file: Option<String>) -> Self {
+    pub fn new(noisy_measurements: VertexNum, detail_log_file: Option<String>, partition_info: &PartitionInfo) -> Self {
         let benchmark_profiler_output = detail_log_file.map(|filename| {
+            let parent_dir = std::path::Path::new(&filename).parent();
+            if let Some(dir) = parent_dir {
+                create_dir_all(dir).unwrap(); // Ensure all parent directories exist
+            }
             let mut file = File::create(filename).unwrap();
+            file.write_all(serde_json::to_string(&partition_info.config).unwrap().as_bytes())
+                .unwrap();
+            file.write_all(b"\n").unwrap();
             file.write_all(
                 serde_json::to_string(&json!({
                     "noisy_measurements": noisy_measurements,

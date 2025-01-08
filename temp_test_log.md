@@ -69,8 +69,26 @@ prints to stderr, did not wait for this to finish.
 also prints to stderr, did not wait for this to finish.
 
 
-# NEXT STEP: Adapt Partition Profile visualizer + Fix the bug in 5-core (likely threads trying to access the same address?)
+# Adapt Partition Profile visualizer 
+We adapted the partition profile visualizer from Fusion Blossom to visualize the execution windows of base partitions and fusion operations on multiple threads. We first need to generate the partition profile as follows:
 
+```sh
+cargo run --bin mwpf -r  benchmark 7 0.001 --code-type qec-playground-code --code-config '{"code_type": "RotatedPlanarCode", "nm": 500}' --solver-type parallel-union-find --split-num 4 --solver-config '{"dual": {"enable_parallel_execution": true},"primal": {"thread_pool_size": 4, "pin_threads_to_cores": true, "timeout": 1, "cluster_node_limit": 40}}' --use-deterministic-seed --benchmark-profiler-output visualize/data/7-500-0.001-rotated-planar/core-4-split-4.profile
+```
+Note that we need to save the `.profile` files in the `/visualize/data` directory. 
 
+Next, we need to start a local server by running 
 
+```sh
+cd visualize
+python3 server.py
+``` 
+
+Now, we can open the visualizer at the following address: 
+```sh
+http://localhost:8088/partition-profile.html?filename=7-500-0.001-rotated-planar/core-4-split-4.profile
+```
+Note that the actual server port number needs to match that in `server.py`. The `filename` needs to be under the `visualize/data` directory.
+
+# Fix the bug in 5-core (likely threads trying to access the same address?)
 

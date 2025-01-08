@@ -1418,7 +1418,7 @@ pub mod tests {
             plugins,
             DualModulePQ::new_empty(&model_graph.initializer),
             model_graph.clone(),
-            None,
+            Some(visualizer),
             model_graph.initializer.clone(),
         )
     }
