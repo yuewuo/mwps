@@ -40,4 +40,8 @@ exposed `hyperion_exposed` variable in visualization tool so that user can progr
 
 ## 0.2.3
 
-support direct numpy array as input
+- support direct numpy array as input
+
+## 0.2.4
+
+- support hover and select on the index group
