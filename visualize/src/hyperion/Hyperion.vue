@@ -3,7 +3,7 @@ import { onMounted, ref, computed, provide, watchEffect, onBeforeUnmount, useTem
 import { OrthographicCamera, Scene, AmbientLight } from 'troisjs'
 // import { Renderer } from 'troisjs' // use individual renderer for each instance
 import Renderer from '@/misc/SharedRenderer.vue' // optimization: share a single WebGL renderer across all the instances
-import { type VisualizerData, RuntimeData, ConfigProps, renderer_params } from './hyperion'
+import { type VisualizerData, RuntimeData, ConfigProps, renderer_params, clickable_of } from './hyperion'
 import { Config } from './config_pane'
 import { Info } from './info_pane'
 import Vertices from './Vertices.vue'
@@ -223,9 +223,9 @@ function onMouseChange(event: MouseEvent, is_click: boolean = true) {
         if (!intersect.object.visible) continue // don't select invisible object
         // swap back to the original material
         if (is_click) {
-            config.value.data.selected = intersect
+            config.value.data.selected = clickable_of(intersect)
         } else {
-            config.value.data.hovered = intersect
+            config.value.data.hovered = clickable_of(intersect)
         }
         return
     }
