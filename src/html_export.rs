@@ -21,6 +21,7 @@ lazy_static! {
 }
 
 const WINDOW_HYPERION_VISUAL: &str = concat!("window.hyperion_visual_", env!("MWPF_BUILD_RS_TIMESTAMP"));
+const HYPERION_VISUAL_ID: &str = concat!("hyperion_visual_compressed_js_caller_", env!("MWPF_BUILD_RS_TIMESTAMP"));
 
 #[cfg(feature = "embed_visualizer")]
 lazy_static! {
@@ -36,8 +37,10 @@ lazy_static! {
         let decoded_index = library_body
             .find(decoded_flag)
             .unwrap_or_else(|| panic!("begin flag {} not found in content", decoded_flag));
-        let inserted_code =
-            format!(";module_code = module_code.replaceAll('window.hyperion_visual', '{WINDOW_HYPERION_VISUAL}');");
+        let inserted_code = format!(
+            ";module_code = module_code.replaceAll('window.hyperion_visual', '{WINDOW_HYPERION_VISUAL}')
+                .replaceAll('hyperion_visual_compressed_js_caller', '{HYPERION_VISUAL_ID}');"
+        );
         format!(
             "{}{}{}",
             &library_body[0..decoded_index],
@@ -138,7 +141,7 @@ impl HTMLExport {
         *HYPERION_VISUAL_JUPYTER_LOADED.lock().unwrap() = true;
         let script_body = Self::get_library_body().unwrap();
         let script_block = format!(
-            r#"<div><span style="color: white; font-size: 8px; padding: 4px; background-color: rgba(36, 110, 36); border-radius: 4px;">MWPF visualization library embedded ({}kB)</span></div><script type="module" id='hyperion_visual_compressed_js_caller'>
+            r#"<div><span style="color: white; font-size: 8px; padding: 4px; background-color: rgba(36, 110, 36); border-radius: 4px;">MWPF visualization library embedded ({}kB)</span></div><script type="module" id='{HYPERION_VISUAL_ID}'>
 /* HYPERION_VISUAL_MODULE_CODE_BEGIN */
 {script_body}
 /* HYPERION_VISUAL_MODULE_CODE_END */
