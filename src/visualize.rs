@@ -531,7 +531,7 @@ impl Visualizer {
     }
 
     #[staticmethod]
-    #[pyo3(name = "embed", signature = (force=false))]
+    #[pyo3(name = "embed", signature = (force=true))]
     pub fn embed_py(force: bool) {
         if force || !HTMLExport::library_injected() {
             HTMLExport::force_inject_library();
