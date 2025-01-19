@@ -27,12 +27,18 @@ const config = ref(new Config(new RuntimeData(props.visualizer), props.config))
 const info = ref(new Info(config as any))
 provide('config', config) // prop drilling to all children components
 
-// update the icon of the web page if full screen is enabled
+// update the icon of the web page if full screen is enabled, and also customize save
 if (config.value.config_prop.full_screen) {
     const link = document.createElement('link')
     link.rel = 'icon'
     link.href = 'data:image/svg+xml;base64,' + btoa(iconString)
     document.head.appendChild(link)
+    document.addEventListener('keydown', function (event) {
+        if (isSaving(event)) {
+            config.value.download_html()
+            event.preventDefault()
+        }
+    })
 }
 
 const container = useTemplateRef('container_ref')
@@ -155,7 +161,16 @@ onBeforeUnmount(() => {
     config.value.pane?.dispose()
 })
 
+function isSaving(event: KeyboardEvent): boolean {
+    return (event.ctrlKey && event.key === 's') || (event.metaKey && event.key === 's')
+}
+
 function onKeyDown(event: KeyboardEvent) {
+    if (!config.value.config_prop.full_screen && isSaving(event)) {
+        config.value.download_html()
+        event.preventDefault()
+        return
+    }
     if (!event.metaKey && !config.value.user_is_typing) {
         if (event.key == 't' || event.key == 'T') {
             config.value.camera.set_position('Top')
