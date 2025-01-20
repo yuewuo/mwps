@@ -278,6 +278,10 @@ impl ColumnInfo {
     fn __str__(&self) -> String {
         self.__repr__()
     }
+    #[pyo3(name = "is_dependent")]
+    fn py_is_dependent(&self) -> bool {
+        self.row != RowIndex::MAX
+    }
 }
 
 impl ColumnInfo {

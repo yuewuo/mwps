@@ -1,6 +1,6 @@
 [package]
 name = "mwpf"
-version = "0.2.4"
+version = "0.2.5"
 authors = ["Yue Wu <wuyue16pku@gmail.com>"]
 edition = "2021"
 license = "MIT"
@@ -55,7 +55,7 @@ embed_visualizer = [
 loose_sanity_check = [] # do not panic when check fails
 
 [dependencies]
-pyo3 = { version = "0.22.6", features = [
+pyo3 = { version = "0.23.4", features = [
     "extension-module",
     "multiple-pymethods",
     "abi3-py37",

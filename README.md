@@ -14,8 +14,22 @@ Please wait for our paper for more discussion of the speed v.s. accuracy.
 ## Installation
 
 ```sh
-pip install MWPF
+pip install -U MWPF
 ```
+
+MWPF now supports [stim](https://github.com/quantumlib/Stim) simulation. You may experience high logical error rate due to some [adaptor bugs](https://github.com/quantumlib/Stim/pull/873) prior to [sinter](https://pypi.org/project/sinter) version 1.15, so instead of using the `mw_parity_factor` decoder in `sinter`, you may want to manually import the latest MWPF decoder from the `mwpf>=0.2.5` package.
+
+```python
+from mwpf import SinterMWPFDecoder
+
+sinter.collect(
+    tasks=...,
+    num_workers=1,
+    decoders=["mwpf"],
+    custom_decoders={"mwpf": SinterMWPFDecoder(cluster_node_limit=50)},
+)
+```
+
 
 ## Background
 
@@ -119,11 +133,11 @@ When trading off accuracy and decoding time, we provide a timeout parameter for 
 
 ```python
 config = {
-    "primal": {
-        "timeout": 3.0,  # 3 second timeout for each cluster
-    },
-    "growing_strategy": "SingleCluster",  # growing from each defect one by one
-    # "growing_strategy": "MultipleClusters",  # every defect starts to grow at the same time
+    "cluster_node_limit":  50,  # how many dual variables are allowed in each cluster before falling back to UF decoder,
+                                # by default infinite but setting it to 50 works for circuit-level surface code d=7
+                                # for millisecond decoding. I would recommend use this option alone (without timeout) to
+                                # tune between decoding speed and accuracy.
+    "timeout": 3.0,  # 3 second timeout for each cluster, by default infinite (preferred)
 }
 hyperion = SolverSerialJointSingleHair(initializer, config)
 ```

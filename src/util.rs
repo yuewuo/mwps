@@ -782,21 +782,21 @@ impl BenchmarkProfilerEntry {
 pub fn json_to_pyobject_locked(value: serde_json::Value, py: Python) -> PyObject {
     match value {
         serde_json::Value::Null => py.None(),
-        serde_json::Value::Bool(value) => value.to_object(py),
+        serde_json::Value::Bool(value) => value.into_pyobject(py).unwrap().to_owned().into(),
         serde_json::Value::Number(value) => {
             if value.is_i64() {
-                value.as_i64().to_object(py)
+                value.as_i64().into_pyobject(py).unwrap().to_owned().into()
             } else {
-                value.as_f64().to_object(py)
+                value.as_f64().into_pyobject(py).unwrap().to_owned().into()
             }
         }
-        serde_json::Value::String(value) => value.to_object(py),
+        serde_json::Value::String(value) => value.into_pyobject(py).unwrap().to_owned().into(),
         serde_json::Value::Array(array) => {
             let elements: Vec<PyObject> = array.into_iter().map(|value| json_to_pyobject_locked(value, py)).collect();
-            PyList::new_bound(py, elements).into()
+            PyList::new(py, elements).unwrap().into()
         }
         serde_json::Value::Object(map) => {
-            let pydict = PyDict::new_bound(py);
+            let pydict = PyDict::new(py);
             for (key, value) in map.into_iter() {
                 let pyobject = json_to_pyobject_locked(value, py);
                 pydict.set_item(key, pyobject).unwrap();

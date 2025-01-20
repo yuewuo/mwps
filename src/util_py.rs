@@ -7,6 +7,7 @@ use crate::util::*;
 use crate::visualize::*;
 use num_traits::FromPrimitive;
 use pyo3::basic::CompareOp;
+use pyo3::ffi::c_str;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyFloat, PyInt, PyList, PySet};
 use std::collections::BTreeSet;
@@ -77,11 +78,11 @@ impl PyRational {
     }
     #[getter]
     fn numer(&self) -> PyObject {
-        Python::with_gil(|py| self.0.numer().to_object(py))
+        Python::with_gil(|py| self.0.numer().into_pyobject(py).unwrap().to_owned().into())
     }
     #[getter]
     fn denom(&self) -> PyObject {
-        Python::with_gil(|py| self.0.denom().to_object(py))
+        Python::with_gil(|py| self.0.denom().into_pyobject(py).unwrap().to_owned().into())
     }
     fn float(&self) -> f64 {
         self.0.to_f64().unwrap()
@@ -280,7 +281,7 @@ pub fn py_into_btree_set<'py, T: Ord + Clone + FromPyObject<'py>>(value: &Bound<
     } else {
         // last resort: try convert the object into a python list
         let result: PyResult<()> = (|| {
-            let builtins = PyModule::import_bound(value.py(), "builtins")?;
+            let builtins = PyModule::import(value.py(), "builtins")?;
             let any = builtins.getattr("list")?.call1((value,))?;
             let any_list: &Bound<PyList> = any.downcast()?;
             for element in any_list.iter() {
@@ -862,5 +863,19 @@ pub(crate) fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<RowInfo>()?;
     m.add_class::<PyWeightRange>()?;
     m.add_class::<PyCluster>()?;
+
+    // import sinter_decoders.py
+    let sinter_decoders_code = c_str!(include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/sinter_decoders.py")));
+    let sinter_decoders_module = PyModule::from_code(
+        m.py(),
+        sinter_decoders_code,
+        c_str!("sinter_decoders"),
+        c_str!("sinter_decoders"),
+    )?;
+    m.add_submodule(&sinter_decoders_module)?;
+    for public_name in ["SinterMWPFDecoder", "SinterHUFDecoder", "SinterSingleHairDecoder"] {
+        let sinter_decoder = sinter_decoders_module.getattr(public_name)?;
+        m.add(public_name, sinter_decoder)?;
+    }
     Ok(())
 }
