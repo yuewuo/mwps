@@ -45,3 +45,9 @@ exposed `hyperion_exposed` variable in visualization tool so that user can progr
 ## 0.2.4
 
 - support hover and select on the index group
+
+## 0.2.5
+
+- support saving html with ctrl-S or cmd-S in GUI
+- update readme to include all the parameters
+- support sinter decoder inside mwpf

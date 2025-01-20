@@ -14,8 +14,21 @@ Please wait for our paper for more discussion of the speed v.s. accuracy.
 ## Installation
 
 ```sh
-pip install MWPF
+pip install -U MWPF
 ```
+
+MWPF now supports [stim](https://github.com/quantumlib/Stim) simulation. You may experience high logical error rate due to some [adaptor bugs](https://github.com/quantumlib/Stim/pull/873) prior to [sinter](https://pypi.org/project/sinter) version 1.15, so instead of using the `mw_parity_factor` decoder in `sinter`, you may want to manually import the latest MWPF decoder from the `mwpf>=0.2.5` package.
+
+```python
+from mwpf import SinterMWPFDecoder
+
+sinter.collect(
+    tasks=...,
+    decoders=["mwpf"],
+    custom_decoders={"mwpf": SinterMWPFDecoder(cluster_node_limit=50)},
+)
+```
+
 
 ## Background
 
