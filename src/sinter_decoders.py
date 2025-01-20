@@ -1,17 +1,132 @@
 import math
 import pathlib
-from typing import Callable, List, Tuple, Any, Optional, TYPE_CHECKING
+from typing import Callable, List, Tuple, Any, Optional, TYPE_CHECKING, Union
 import mwpf
+from dataclasses import dataclass
 
 if TYPE_CHECKING:
     import stim
     import numpy as np
 
+available_decoders = [
+    "Solver",  # the solver with the highest accuracy, but may change across different versions
+    "SolverSerialJointSingleHair",
+    "SolverSerialSingleHair",
+    "SolverSerialUnionFind",
+]
+
+default_cluster_node_limit: int = 50
+
+
+@dataclass
+class SinterMWPFDecoder:
+    """
+    Use MWPF to predict observables from detection events.
+
+    Args:
+        decoder_type: decoder class used to construct the MWPF decoder.  in the Rust implementation, all of them inherits from the class of `SolverSerialPlugins` but just provide different plugins for optimizing the primal and/or dual solutions. For example, `SolverSerialUnionFind` is the most basic solver without any plugin: it only grows the clusters until the first valid solution appears; some more optimized solvers uses one or more plugins to further optimize the solution, which requires longer decoding time.
+
+        cluster_node_limit (alias: c): The maximum number of nodes in a cluster, used to tune the performance of the decoder. The default value is 50.
+    """
+
+    decoder_type: str = "SolverSerialJointSingleHair"
+    cluster_node_limit: Optional[int] = None
+    c: Optional[int] = None  # alias of `cluster_node_limit`, will override it
+    timeout: Optional[float] = None
+
+    @property
+    def _cluster_node_limit(self) -> int:
+        if self.cluster_node_limit is not None:
+            assert self.c is None, "Cannot set both `cluster_node_limit` and `c`."
+            return self.cluster_node_limit
+        elif self.c is not None:
+            assert (
+                self.cluster_node_limit is None
+            ), "Cannot set both `cluster_node_limit` and `c`."
+            return self.c
+        return default_cluster_node_limit
+
+    def compile_decoder_for_dem(
+        self,
+        *,
+        dem: "stim.DetectorErrorModel",
+    ) -> "MwpfCompiledDecoder":
+        solver, fault_masks = detector_error_model_to_mwpf_solver_and_fault_masks(
+            dem,
+            decoder_type=self.decoder_type,
+            cluster_node_limit=self._cluster_node_limit,
+        )
+        return MwpfCompiledDecoder(
+            solver,
+            fault_masks,
+            dem.num_detectors,
+            dem.num_observables,
+        )
+
+    def decode_via_files(
+        self,
+        *,
+        num_shots: int,
+        num_dets: int,
+        num_obs: int,
+        dem_path: pathlib.Path,
+        dets_b8_in_path: pathlib.Path,
+        obs_predictions_b8_out_path: pathlib.Path,
+        tmp_dir: pathlib.Path,
+    ) -> None:
+        import stim
+        import numpy as np
+
+        error_model = stim.DetectorErrorModel.from_file(dem_path)
+        solver, fault_masks = detector_error_model_to_mwpf_solver_and_fault_masks(
+            error_model,
+            decoder_type=self.decoder_type,
+            cluster_node_limit=self._cluster_node_limit,
+        )
+        num_det_bytes = math.ceil(num_dets / 8)
+        with open(dets_b8_in_path, "rb") as dets_in_f:
+            with open(obs_predictions_b8_out_path, "wb") as obs_out_f:
+                for _ in range(num_shots):
+                    dets_bit_packed = np.fromfile(
+                        dets_in_f, dtype=np.uint8, count=num_det_bytes
+                    )
+                    if dets_bit_packed.shape != (num_det_bytes,):
+                        raise IOError("Missing dets data.")
+                    dets_sparse = np.flatnonzero(
+                        np.unpackbits(
+                            dets_bit_packed, count=num_dets, bitorder="little"
+                        )
+                    )
+                    syndrome = mwpf.SyndromePattern(defect_vertices=dets_sparse)
+                    if solver is None:
+                        prediction = 0
+                    else:
+                        solver.solve(syndrome)
+                        prediction = int(
+                            np.bitwise_xor.reduce(fault_masks[solver.subgraph()])
+                        )
+                        solver.clear()
+                    obs_out_f.write(
+                        prediction.to_bytes((num_obs + 7) // 8, byteorder="little")
+                    )
+
+
+@dataclass
+class SinterHUFDecoder(SinterMWPFDecoder):
+    decoder_type: str = "SolverSerialUnionFind"
+    cluster_node_limit: int = 0
+
+
+@dataclass
+class SinterSingleHairDecoder(SinterMWPFDecoder):
+    decoder_type: str = "SolverSerialSingleHair"
+    cluster_node_limit: int = 0
+
 
 class MwpfCompiledDecoder:
     def __init__(
         self,
-        solver: "mwpf.SolverSerialJointSingleHair",
+        solver: Union["mwpf.SolverSerialJointSingleHair", Any],
         fault_masks: "np.ndarray",
         num_dets: int,
         num_obs: int,
@@ -57,93 +172,6 @@ class MwpfCompiledDecoder:
                 bitorder="little",
             )
         return predictions
-
-
-class SinterMWPFDecoder:
-    """Use MWPF to predict observables from detection events."""
-
-    def __init__(
-        self,
-        decoder_cls: Any = None,  # decoder class used to construct the MWPF decoder.
-        # in the Rust implementation, all of them inherits from the class of `SolverSerialPlugins`
-        # but just provide different plugins for optimizing the primal and/or dual solutions.
-        # For example, `SolverSerialUnionFind` is the most basic solver without any plugin: it only
-        # grows the clusters until the first valid solution appears; some more optimized solvers uses
-        # one or more plugins to further optimize the solution, which requires longer decoding time.
-        cluster_node_limit: int = 50,  # The maximum number of nodes in a cluster,
-    ):
-        self.decoder_cls = decoder_cls
-        self.cluster_node_limit = cluster_node_limit
-        super().__init__()
-
-    def compile_decoder_for_dem(
-        self,
-        *,
-        dem: "stim.DetectorErrorModel",
-    ) -> MwpfCompiledDecoder:
-        solver, fault_masks = detector_error_model_to_mwpf_solver_and_fault_masks(
-            dem,
-            decoder_cls=self.decoder_cls,
-            cluster_node_limit=self.cluster_node_limit,
-        )
-        return MwpfCompiledDecoder(
-            solver,
-            fault_masks,
-            dem.num_detectors,
-            dem.num_observables,
-        )
-
-    def decode_via_files(
-        self,
-        *,
-        num_shots: int,
-        num_dets: int,
-        num_obs: int,
-        dem_path: pathlib.Path,
-        dets_b8_in_path: pathlib.Path,
-        obs_predictions_b8_out_path: pathlib.Path,
-        tmp_dir: pathlib.Path,
-    ) -> None:
-        import stim
-        import numpy as np
-
-        error_model = stim.DetectorErrorModel.from_file(dem_path)
-        solver, fault_masks = detector_error_model_to_mwpf_solver_and_fault_masks(
-            error_model,
-            decoder_cls=self.decoder_cls,
-            cluster_node_limit=self.cluster_node_limit,
-        )
-        num_det_bytes = math.ceil(num_dets / 8)
-        with open(dets_b8_in_path, "rb") as dets_in_f:
-            with open(obs_predictions_b8_out_path, "wb") as obs_out_f:
-                for _ in range(num_shots):
-                    dets_bit_packed = np.fromfile(
-                        dets_in_f, dtype=np.uint8, count=num_det_bytes
-                    )
-                    if dets_bit_packed.shape != (num_det_bytes,):
-                        raise IOError("Missing dets data.")
-                    dets_sparse = np.flatnonzero(
-                        np.unpackbits(
-                            dets_bit_packed, count=num_dets, bitorder="little"
-                        )
-                    )
-                    syndrome = mwpf.SyndromePattern(defect_vertices=dets_sparse)
-                    if solver is None:
-                        prediction = 0
-                    else:
-                        solver.solve(syndrome)
-                        prediction = int(
-                            np.bitwise_xor.reduce(fault_masks[solver.subgraph()])
-                        )
-                        solver.clear()
-                    obs_out_f.write(
-                        prediction.to_bytes((num_obs + 7) // 8, byteorder="little")
-                    )
-
-
-class SinterHUFDecoder(SinterMWPFDecoder):
-    def __init__(self):
-        super().__init__(decoder_cls="SolverSerialUnionFind", cluster_node_limit=0)
 
 
 def iter_flatten_model(
@@ -223,7 +251,7 @@ def deduplicate_hyperedges(
 
 def detector_error_model_to_mwpf_solver_and_fault_masks(
     model: "stim.DetectorErrorModel",
-    decoder_cls: Any = None,
+    decoder_type: Any = None,
     cluster_node_limit: int = 50,
 ) -> Tuple[Optional["mwpf.SolverSerialJointSingleHair"], "np.ndarray"]:
     """Convert a stim error model into a NetworkX graph."""
@@ -277,11 +305,13 @@ def detector_error_model_to_mwpf_solver_and_fault_masks(
         rescaled_edges,  # Weighted edges.
     )
 
-    if decoder_cls is None:
+    if decoder_type is None:
         # default to the solver with highest accuracy
-        decoder_cls = mwpf.SolverSerialJointSingleHair
-    elif decoder_cls == "SolverSerialUnionFind":
-        decoder_cls = mwpf.SolverSerialUnionFind
+        decoder_cls = mwpf.Solver
+    elif isinstance(decoder_type, str):
+        decoder_cls = getattr(mwpf, decoder_type)
+    else:
+        decoder_cls = decoder_cls
     return (
         (
             decoder_cls(initializer, config={"cluster_node_limit": cluster_node_limit})
