@@ -26,6 +26,9 @@ test: clean-env
 	cargo test --no-default-features --features rational_weight,embed_visualizer,qecp_integrate,progress_bar
 	cargo test -r --no-default-features --features rational_weight,embed_visualizer,qecp_integrate,progress_bar
 
+ci_rust_test:
+	cargo test --release
+	cargo test -r --no-default-features --features rational_weight,embed_visualizer,qecp_integrate,progress_bar
 
 build: clean-env
 	cargo build

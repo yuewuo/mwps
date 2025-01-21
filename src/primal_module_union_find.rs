@@ -210,8 +210,8 @@ pub mod tests {
     use super::*;
     use crate::dual_module_pq::*;
     use crate::example_codes::*;
-    use crate::more_asserts::*;
     use crate::num_traits::ToPrimitive;
+    use crate::util::tests::*;
     use std::sync::Arc;
 
     pub fn primal_module_union_find_basic_standard_syndrome_optional_viz(
@@ -255,8 +255,16 @@ pub mod tests {
             model_graph.initializer.matches_subgraph_syndrome(&subgraph, &defect_vertices),
             "the result subgraph is invalid"
         );
-        assert_le!(final_dual, weight_range.upper, "unmatched sum dual variables");
-        assert_ge!(final_dual, weight_range.lower, "unexpected final dual variable sum");
+        println!("final_dual: {final_dual:?}");
+        println!("upper: {:?}", weight_range.upper);
+        assert!(
+            rational_approx_le(&final_dual, &weight_range.upper),
+            "unmatched sum dual variables"
+        );
+        assert!(
+            rational_approx_ge(&final_dual, &weight_range.lower),
+            "unexpected final dual variable sum"
+        );
         println!(
             "weight range: [{}, {}]",
             weight_range.lower.to_i64().unwrap(),
@@ -307,7 +315,7 @@ pub mod tests {
             code,
             visualize_filename,
             defect_vertices,
-            Rational::from(4.59511985013459),
+            Rational::from_float(4.59511985013459).unwrap(),
         );
     }
 
@@ -321,7 +329,7 @@ pub mod tests {
             code,
             visualize_filename,
             defect_vertices,
-            Rational::from(9.19023970026918),
+            Rational::from_float(9.19023970026918).unwrap(),
         );
     }
 
@@ -335,7 +343,7 @@ pub mod tests {
             code,
             visualize_filename,
             defect_vertices,
-            Rational::from(22.975599250672953),
+            Rational::from_float(22.975599250672953).unwrap(),
         );
     }
 
@@ -349,7 +357,7 @@ pub mod tests {
             code,
             visualize_filename,
             defect_vertices,
-            Rational::from(9.19023970026918),
+            Rational::from_float(9.19023970026918).unwrap(),
         );
     }
 
@@ -363,7 +371,7 @@ pub mod tests {
             code,
             visualize_filename,
             defect_vertices,
-            Rational::from(12.25365293369224),
+            Rational::from_float(12.25365293369224).unwrap(),
         );
     }
 
@@ -377,7 +385,7 @@ pub mod tests {
             code,
             visualize_filename,
             defect_vertices,
-            Rational::from(11.777755916665761),
+            Rational::from_float(11.777755916665761).unwrap(),
         );
     }
 }

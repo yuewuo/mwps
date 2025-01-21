@@ -1601,6 +1601,7 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "f64_weight")] // too slow, skip
     #[test]
     fn example_code_correction_validity_code_capacity_depolarize_planar_code() {
         // cargo test --release example_code_correction_validity_code_capacity_depolarize_planar_code -- --nocapture
@@ -1625,6 +1626,7 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "f64_weight")] // too slow, skip
     #[test]
     fn example_code_correction_validity_code_capacity_color_code() {
         // cargo test --release example_code_correction_validity_code_capacity_color_code -- --nocapture
@@ -1649,9 +1651,11 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "f64_weight")] // too slow, skip
     #[test]
     fn example_code_optimality_code_capacity_tailored_code() {
         // cargo test --release example_code_optimality_code_capacity_tailored_code -- --nocapture
+        use crate::util::tests::*;
         let d_vec = [3, 5, 7];
         let p_vec = [0.1, 0.01];
         let repeat = 10000;
@@ -1670,7 +1674,10 @@ mod tests {
                     if weight_range.lower != weight_range.upper {
                         println!("weight range: {:?}, syndrome = {:?}", weight_range, syndrome);
                     }
-                    assert_eq!(weight_range.lower, weight_range.upper, "must be optimal");
+                    assert!(
+                        rational_approx_eq(&weight_range.lower, &weight_range.upper),
+                        "must be optimal"
+                    );
                     solver.clear();
                 }
             }

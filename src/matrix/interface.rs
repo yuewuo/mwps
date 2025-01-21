@@ -422,7 +422,7 @@ pub mod tests {
                 if let Some(weight) = self.weights.get(&edge_index) {
                     weight.clone()
                 } else {
-                    Rational::from(1.)
+                    Rational::from_float(1.).unwrap()
                 }
             })
         }
@@ -454,11 +454,21 @@ pub mod tests {
         }
         matrix.printstd();
         assert_eq!(matrix.get_solution(), Some(vec![0, 1, 2, 3, 4]));
-        let weights = TestEdgeWeights::new(&[(3, Rational::from(10.)), (9, Rational::from(10.))]);
+        let weights = TestEdgeWeights::new(&[
+            (3, Rational::from_float(10.).unwrap()),
+            (9, Rational::from_float(10.).unwrap()),
+        ]);
         assert_eq!(weights.get_solution_local_minimum(&mut matrix), Some(vec![5, 7, 8]));
-        let weights = TestEdgeWeights::new(&[(7, Rational::from(10.)), (9, Rational::from(10.))]);
+        let weights = TestEdgeWeights::new(&[
+            (7, Rational::from_float(10.).unwrap()),
+            (9, Rational::from_float(10.).unwrap()),
+        ]);
         assert_eq!(weights.get_solution_local_minimum(&mut matrix), Some(vec![3, 4, 8]));
-        let weights = TestEdgeWeights::new(&[(3, Rational::from(10.)), (4, Rational::from(10.)), (7, Rational::from(10.))]);
+        let weights = TestEdgeWeights::new(&[
+            (3, Rational::from_float(10.).unwrap()),
+            (4, Rational::from_float(10.).unwrap()),
+            (7, Rational::from_float(10.).unwrap()),
+        ]);
         assert_eq!(weights.get_solution_local_minimum(&mut matrix), Some(vec![5, 6, 9]));
     }
 
@@ -466,7 +476,7 @@ pub mod tests {
     fn matrix_interface_echelon_no_solution() {
         // cargo test matrix_interface_echelon_no_solution -- --nocapture
         let mut matrix = Echelon::<Tail<BasicMatrix>>::new();
-        let parity_checks = vec![(vec![0, 1], false), (vec![0, 1], true)];
+        let parity_checks = [(vec![0, 1], false), (vec![0, 1], true)];
         for (vertex_index, (incident_edges, parity)) in parity_checks.iter().enumerate() {
             matrix.add_constraint(vertex_index, incident_edges, *parity);
         }
