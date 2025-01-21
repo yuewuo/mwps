@@ -31,6 +31,12 @@ impl OrderedFloat {
     pub fn is_number(&self) -> bool {
         self.0.is_finite()
     }
+    pub fn from_float(value: f64) -> Option<Self> {
+        Some(Self::new(value))
+    }
+    pub fn abs(&self) -> Self {
+        Self::new(self.0.abs())
+    }
 }
 
 // Implement num_traits

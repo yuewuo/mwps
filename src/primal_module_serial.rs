@@ -1136,6 +1136,7 @@ pub mod tests {
     use super::*;
     use crate::plugin_single_hair::PluginSingleHair;
     use crate::plugin_union_find::PluginUnionFind;
+    use crate::util::tests::*;
 
     #[allow(clippy::too_many_arguments)]
     pub fn primal_module_serial_basic_standard_syndrome_optional_viz(
@@ -1182,8 +1183,14 @@ pub mod tests {
                 .matches_subgraph_syndrome(&subgraph, &defect_vertices),
             "the result subgraph is invalid"
         );
-        assert_eq!(final_dual, weight_range.upper, "unmatched sum dual variables");
-        assert_eq!(final_dual, weight_range.lower, "unexpected final dual variable sum");
+        assert!(
+            rational_approx_eq(&final_dual, &weight_range.upper),
+            "unmatched sum dual variables"
+        );
+        assert!(
+            rational_approx_eq(&final_dual, &weight_range.lower),
+            "unexpected final dual variable sum"
+        );
         (interface_ptr, primal_module, dual_module)
     }
 
@@ -1229,7 +1236,7 @@ pub mod tests {
             code,
             visualize_filename,
             defect_vertices,
-            Rational::from(4.59511985013459),
+            Rational::from_float(4.59511985013459).unwrap(),
             vec![],
         );
     }
@@ -1244,7 +1251,7 @@ pub mod tests {
             code,
             visualize_filename,
             defect_vertices,
-            Rational::from(9.19023970026918),
+            Rational::from_float(9.19023970026918).unwrap(),
             vec![],
         );
     }
@@ -1259,7 +1266,7 @@ pub mod tests {
             code,
             visualize_filename,
             defect_vertices,
-            Rational::from(22.97559925067295),
+            Rational::from_float(22.97559925067295).unwrap(),
             vec![],
         );
     }
@@ -1274,7 +1281,7 @@ pub mod tests {
             code,
             visualize_filename,
             defect_vertices,
-            Rational::from(22.97559925067295),
+            Rational::from_float(22.97559925067295).unwrap(),
             vec![
                 PluginUnionFind::entry(),
                 PluginSingleHair::entry_with_strategy(RepeatStrategy::Once),
@@ -1295,7 +1302,7 @@ pub mod tests {
             code,
             visualize_filename,
             defect_vertices,
-            Rational::from(4.), // fixme: ???
+            Rational::from_float(4.).unwrap(), // fixme: ???
             vec![],
         );
     }
@@ -1310,7 +1317,7 @@ pub mod tests {
             code,
             visualize_filename,
             defect_vertices,
-            Rational::from(18.38047940053836),
+            Rational::from_float(18.38047940053836).unwrap(),
             vec![
                 PluginUnionFind::entry(),
                 PluginSingleHair::entry_with_strategy(RepeatStrategy::Once),
@@ -1328,7 +1335,7 @@ pub mod tests {
             code,
             visualize_filename,
             defect_vertices,
-            Rational::from(18.38047940053836),
+            Rational::from_float(18.38047940053836).unwrap(),
             vec![],
         );
     }
@@ -1343,7 +1350,7 @@ pub mod tests {
             code,
             visualize_filename,
             defect_vertices,
-            Rational::from(55.14143820161507),
+            Rational::from_float(55.14143820161507).unwrap(),
             vec![
                 PluginUnionFind::entry(),
                 PluginSingleHair::entry_with_strategy(RepeatStrategy::Once),
@@ -1361,7 +1368,7 @@ pub mod tests {
             code,
             visualize_filename,
             defect_vertices,
-            Rational::from(6.591673732008658),
+            Rational::from_float(6.591673732008658).unwrap(),
             vec![
                 PluginUnionFind::entry(),
                 PluginSingleHair::entry_with_strategy(RepeatStrategy::Once),

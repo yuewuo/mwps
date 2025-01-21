@@ -109,7 +109,7 @@ pub mod tests {
             code,
             visualize_filename,
             defect_vertices,
-            Rational::from(18.38047940053836),
+            Rational::from_float(18.38047940053836).unwrap(),
             vec![
                 PluginUnionFind::entry(),
                 PluginSingleHair::entry_with_strategy(RepeatStrategy::Once),
@@ -129,7 +129,7 @@ pub mod tests {
             code,
             visualize_filename,
             defect_vertices,
-            Rational::from(27.57071910080754),
+            Rational::from_float(27.57071910080754).unwrap(),
             vec![
                 PluginUnionFind::entry(),
                 PluginSingleHair::entry_with_strategy(RepeatStrategy::Once),
@@ -149,7 +149,7 @@ pub mod tests {
             code,
             visualize_filename,
             defect_vertices,
-            Rational::from(8.788898309344878),
+            Rational::from_float(8.788898309344878).unwrap(),
             vec![
                 PluginUnionFind::entry(),
                 PluginSingleHair::entry_with_strategy(RepeatStrategy::Once),
@@ -169,7 +169,7 @@ pub mod tests {
             code,
             visualize_filename,
             defect_vertices,
-            Rational::from(8.788898309344878),
+            Rational::from_float(8.788898309344878).unwrap(),
             vec![
                 PluginUnionFind::entry(),
                 PluginSingleHair::entry_with_strategy(RepeatStrategy::Once),
@@ -189,7 +189,7 @@ pub mod tests {
             code,
             visualize_filename,
             defect_vertices,
-            Rational::from(6.591673732008658),
+            Rational::from_float(6.591673732008658).unwrap(),
             vec![
                 PluginUnionFind::entry(),
                 PluginSingleHair::entry_with_strategy(RepeatStrategy::Once),
@@ -210,7 +210,7 @@ pub mod tests {
             code,
             visualize_filename,
             defect_vertices,
-            Rational::from(6.591673732008658),
+            Rational::from_float(6.591673732008658).unwrap(),
             vec![
                 PluginUnionFind::entry(),
                 PluginSingleHair::entry_with_strategy(RepeatStrategy::Once),
@@ -231,7 +231,7 @@ pub mod tests {
             code,
             visualize_filename,
             defect_vertices,
-            Rational::from(23.025850929840455),
+            Rational::from_float(23.025850929840455).unwrap(),
             vec![
                 PluginUnionFind::entry(),
                 PluginSingleHair::entry_with_strategy(RepeatStrategy::Multiple {
@@ -253,7 +253,7 @@ pub mod tests {
             code,
             visualize_filename,
             defect_vertices,
-            Rational::from(46.05170185968091),
+            Rational::from_float(46.05170185968091).unwrap(),
             vec![
                 PluginUnionFind::entry(),
                 PluginSingleHair::entry_with_strategy(RepeatStrategy::Multiple {

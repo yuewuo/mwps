@@ -13,8 +13,7 @@ jobs: # Workflow credit to https://github.com/samuelcolvin/rtoml/blob/main/.gith
   build_wheels:
     name: Build wheels py3.${{ matrix.python-version }} on ${{ matrix.os }} (${{ matrix.build-feature }})
     strategy:
-      fail-fast: true
-      # fail-fast: false
+      fail-fast: false
       matrix:
         os:
           - ubuntu
@@ -65,11 +64,6 @@ jobs: # Workflow credit to https://github.com/samuelcolvin/rtoml/blob/main/.gith
 
       - name: Install Python dependencies
         run: python -m pip install -U setuptools wheel twine cibuildwheel pytest maturin fusion_blossom==0.2.10 numpy stim sinter
-
-      - name: run Rust test
-        run: cargo test --release
-        env:
-          SKIP_FRONTEND_BUILD: '1'
 
       - name: apply patch to build different packages
         if: matrix.build-feature != 'default'
@@ -129,3 +123,43 @@ jobs: # Workflow credit to https://github.com/samuelcolvin/rtoml/blob/main/.gith
       - uses: actions/upload-artifact@v3
         with:
           path: wheelhouse/*.whl
+
+  rust_tests:
+    name: Run Rust tests on ${{ matrix.os }} (${{ matrix.build-feature }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu
+          # - macos
+          - windows
+        python-version:
+          - '8'
+    runs-on: ${{ format('{0}-latest', matrix.os) }}
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - uses: actions/setup-python@v3
+
+      - name: Install LLVM and Clang (Windows)
+        if: matrix.os == 'windows'
+        uses: KyleMayes/install-llvm-action@v1
+        with:
+          version: "11.0"
+
+      - name: Set LIBCLANG_PATH (Windows)
+        if: matrix.os == 'windows'
+        run: echo "LIBCLANG_PATH=${{ env.LLVM_PATH }}/lib" >> "$GITHUB_ENV"
+
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: nightly-2024-11-03
+          override: true
+
+      - name: run Rust test
+        run: make ci_rust_test
+        env:
+          SKIP_FRONTEND_BUILD: '1'
