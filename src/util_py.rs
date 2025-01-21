@@ -873,7 +873,11 @@ pub(crate) fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
         c_str!("sinter_decoders"),
     )?;
     m.add_submodule(&sinter_decoders_module)?;
-    for public_name in ["SinterMWPFDecoder", "SinterHUFDecoder", "SinterSingleHairDecoder"] {
+    for public_name in [
+        "SinterMWPFDecoder",
+        "SinterHUFDecoder",
+        "SinterSingleHairDecoder",
+    ] {
         let sinter_decoder = sinter_decoders_module.getattr(public_name)?;
         m.add(public_name, sinter_decoder)?;
     }
