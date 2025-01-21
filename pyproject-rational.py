@@ -33,6 +33,16 @@ patches = [
             ("SinterMWPFDecoder", "SinterMWPFRationalDecoder", 1),
             ("SinterHUFDecoder", "SinterHUFRationalDecoder", 1),
             ("SinterSingleHairDecoder", "SinterSingleHairRationalDecoder", 1),
+            (
+                "mwpf/sinter_decoders.py",
+                "mwpf_rational/sinter_decoders.py",
+                1,
+            ),
+            (
+                "mwpf.sinter_decoders",
+                "mwpf_rational.sinter_decoders",
+                1,
+            ),
         ],
     ),
     (
@@ -44,6 +54,14 @@ patches = [
             ("SinterMWPFDecoder", "SinterMWPFRationalDecoder", 3),
             ("SinterHUFDecoder", "SinterHUFRationalDecoder", 1),
             ("SinterSingleHairDecoder", "SinterSingleHairRationalDecoder", 1),
+            ("MwpfCompiledDecoder", "MwpfRationalCompiledDecoder", 3),
+        ],
+    ),
+    (
+        "tests/python/test_sinter.py",
+        [
+            ("SinterMWPFDecoder", "SinterMWPFRationalDecoder", 2),
+            ("SinterHUFDecoder", "SinterHUFRationalDecoder", 1),
         ],
     ),
     (
