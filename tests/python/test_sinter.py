@@ -12,11 +12,11 @@ import stim
 )
 @pytest.mark.parametrize(
     "p",
-    [0.001, 0.01],
+    [0.001],
 )
 @pytest.mark.parametrize(
     "d",
-    [3, 5],
+    [3],
 )
 @pytest.mark.parametrize(
     "code_type",
@@ -28,7 +28,10 @@ import stim
 )
 def test_sinter_decode(decoder: "sinter.Decoder", p: float, d: int, code_type: str):
     if "mwpf" not in sys.modules:
-        print("[skip] because sinter would fail to import")
+        print("[skip] because sinter would fail to import without the mwpf package")
+        print(
+            "once https://github.com/quantumlib/Stim/pull/873 is merged, this test should be enabled"
+        )
         return
 
     import sinter

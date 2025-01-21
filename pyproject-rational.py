@@ -28,11 +28,40 @@ patches = [
         ],
     ),
     (
+        "src/util_py.rs",
+        [
+            ("SinterMWPFDecoder", "SinterMWPFRationalDecoder", 1),
+            ("SinterHUFDecoder", "SinterHUFRationalDecoder", 1),
+            ("SinterSingleHairDecoder", "SinterSingleHairRationalDecoder", 1),
+            (
+                "mwpf/sinter_decoders.py",
+                "mwpf_rational/sinter_decoders.py",
+                1,
+            ),
+            (
+                "mwpf.sinter_decoders",
+                "mwpf_rational.sinter_decoders",
+                1,
+            ),
+        ],
+    ),
+    (
         "src/sinter_decoders.py",
         [
             ("import mwpf\n", "import mwpf_rational\n", 1),
             ("mwpf.", "mwpf_rational.", 7),
             ("getattr(mwpf, decoder_type)", "getattr(mwpf_rational, decoder_type)", 1),
+            ("SinterMWPFDecoder", "SinterMWPFRationalDecoder", 3),
+            ("SinterHUFDecoder", "SinterHUFRationalDecoder", 1),
+            ("SinterSingleHairDecoder", "SinterSingleHairRationalDecoder", 1),
+            ("MwpfCompiledDecoder", "MwpfRationalCompiledDecoder", 3),
+        ],
+    ),
+    (
+        "tests/python/test_sinter.py",
+        [
+            ("SinterMWPFDecoder", "SinterMWPFRationalDecoder", 2),
+            ("SinterHUFDecoder", "SinterHUFRationalDecoder", 1),
         ],
     ),
     (
@@ -40,7 +69,12 @@ patches = [
         [
             ("pip install -U mwpf\n", "pip install -U mwpf_rational\n", 1),
             ('decoders=["mwpf"],', 'decoders=["mwpf_rational"],', 1),
-            ('"mwpf": SinterMWPFDecoder', '"mwpf_rational": SinterMWPFDecoder', 1),
+            (
+                '"mwpf": SinterMWPFDecoder',
+                '"mwpf_rational": SinterMWPFRationalDecoder',
+                1,
+            ),
+            ("import SinterMWPFDecoder", "import SinterMWPFRationalDecoder", 1),
             ("from mwpf import ", "from mwpf_rational import ", 2),
         ],
     ),
