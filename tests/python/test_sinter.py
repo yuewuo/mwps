@@ -1,5 +1,4 @@
 from common import *
-from mwpf import SinterMWPFDecoder, SinterHUFDecoder
 import stim
 import sinter
 
@@ -7,9 +6,9 @@ import sinter
 @pytest.mark.parametrize(
     "decoder",
     [
-        SinterMWPFDecoder(cluster_node_limit=50),
-        SinterHUFDecoder(),
-        SinterMWPFDecoder(cluster_node_limit=0),
+        mwpf.SinterMWPFDecoder(cluster_node_limit=50),
+        mwpf.SinterHUFDecoder(),
+        mwpf.SinterMWPFDecoder(cluster_node_limit=0),
     ],
 )
 @pytest.mark.parametrize(
