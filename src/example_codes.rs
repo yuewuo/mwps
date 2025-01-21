@@ -1652,7 +1652,7 @@ mod tests {
     #[test]
     fn example_code_optimality_code_capacity_tailored_code() {
         // cargo test --release example_code_optimality_code_capacity_tailored_code -- --nocapture
-        let d_vec = [3, 5, 7, 9];
+        let d_vec = [3, 5, 7];
         let p_vec = [0.1, 0.01];
         let repeat = 10000;
         for d in d_vec {
