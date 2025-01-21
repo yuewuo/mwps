@@ -27,6 +27,23 @@ patches = [
             ("f64_weight", "rational_weight", 2),
         ],
     ),
+    (
+        "src/sinter_decoders.py",
+        [
+            ("import mwpf\n", "import mwpf_rational\n", 1),
+            ("mwpf.", "mwpf_rational.", 7),
+            ("getattr(mwpf, decoder_type)", "getattr(mwpf_rational, decoder_type)", 1),
+        ],
+    ),
+    (
+        "README.md",
+        [
+            ("pip install -U mwpf\n", "pip install -U mwpf_rational\n", 1),
+            ('decoders=["mwpf"],', 'decoders=["mwpf_rational"],', 1),
+            ('"mwpf": SinterMWPFDecoder', '"mwpf_rational": SinterMWPFDecoder', 1),
+            ("from mwpf import ", "from mwpf_rational import ", 2),
+        ],
+    ),
 ]
 
 

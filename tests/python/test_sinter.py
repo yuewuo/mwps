@@ -1,6 +1,5 @@
 from common import *
 import stim
-import sinter
 
 
 @pytest.mark.parametrize(
@@ -27,7 +26,13 @@ import sinter
         "surface_code:rotated_memory_x",
     ],
 )
-def test_sinter_decode(decoder: sinter.Decoder, p: float, d: int, code_type: str):
+def test_sinter_decode(decoder: "sinter.Decoder", p: float, d: int, code_type: str):
+    if "mwpf" not in sys.modules:
+        print("[skip] because sinter would fail to import")
+        return
+
+    import sinter
+
     # pytest -s tests/python/test_sinter.py::test_sinter_decode
     circuit = stim.Circuit.generated(
         code_type,
