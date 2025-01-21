@@ -1,4 +1,4 @@
-import os, math, pytest
+import os, math, pytest, sys
 
 """ force import either mwpf or mwpf_rational """
 # import mwpf
