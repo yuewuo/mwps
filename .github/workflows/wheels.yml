@@ -13,7 +13,7 @@ jobs: # Workflow credit to https://github.com/samuelcolvin/rtoml/blob/main/.gith
   build_wheels:
     name: Build wheels py3.${{ matrix.python-version }} on ${{ matrix.os }} (${{ matrix.build-feature }})
     strategy:
-      fail-fast: false
+      fail-fast: true
       matrix:
         os:
           - ubuntu
@@ -125,9 +125,9 @@ jobs: # Workflow credit to https://github.com/samuelcolvin/rtoml/blob/main/.gith
           path: wheelhouse/*.whl
 
   rust_tests:
-    name: Run Rust tests on ${{ matrix.os }} (${{ matrix.build-feature }})
+    name: Run Rust tests on ${{ matrix.os }}
     strategy:
-      fail-fast: false
+      fail-fast: true
       matrix:
         os:
           - ubuntu
@@ -159,6 +159,15 @@ jobs: # Workflow credit to https://github.com/samuelcolvin/rtoml/blob/main/.gith
           toolchain: nightly-2024-11-03
           override: true
 
+      - name: Install NodeJs
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      
+      - name: Build Frontend
+        working-directory: ./visualize
+        run: npm install --include=dev && npm run build
+  
       - name: run Rust test
         run: make ci_rust_test
         env:
