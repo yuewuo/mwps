@@ -33,6 +33,7 @@ class SinterMWPFDecoder:
     cluster_node_limit: Optional[int] = None
     c: Optional[int] = None  # alias of `cluster_node_limit`, will override it
     timeout: Optional[float] = None
+    with_progress: bool = False
 
     @property
     def _cluster_node_limit(self) -> int:
@@ -86,7 +87,13 @@ class SinterMWPFDecoder:
         num_det_bytes = math.ceil(num_dets / 8)
         with open(dets_b8_in_path, "rb") as dets_in_f:
             with open(obs_predictions_b8_out_path, "wb") as obs_out_f:
+                if self.with_progress:
+                    from tqdm import tqdm
+
+                    pbar = tqdm(total=num_shots, desc="shots")
                 for _ in range(num_shots):
+                    if self.with_progress:
+                        pbar.update(1)
                     dets_bit_packed = np.fromfile(
                         dets_in_f, dtype=np.uint8, count=num_det_bytes
                     )

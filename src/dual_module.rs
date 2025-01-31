@@ -3,8 +3,6 @@
 //! Generics for dual modules
 //!
 
-use hashbrown::HashSet;
-
 use crate::decoding_hypergraph::*;
 use crate::derivative::Derivative;
 use crate::invalid_subgraph::*;
@@ -16,6 +14,7 @@ use crate::primal_module_serial::PrimalClusterPtr;
 use crate::relaxer_optimizer::OptimizerResult;
 use crate::util::*;
 use crate::visualize::*;
+use hashbrown::HashSet;
 #[cfg(feature = "python_binding")]
 use pyo3::prelude::*;
 
@@ -493,6 +492,14 @@ pub trait DualModuleImpl {
     ) -> Rational;
 
     fn get_edge_weight(&self, edge_index: EdgeIndex) -> Rational;
+
+    fn get_subgraph_weight(&self, subgraph: &Subgraph) -> Rational {
+        let mut weight = Rational::zero();
+        for &edge_index in subgraph {
+            weight += self.get_edge_weight(edge_index);
+        }
+        weight
+    }
 
     #[cfg(feature = "incr_lp")]
     fn update_edge_cluster_weights(&self, edge_index: EdgeIndex, cluster_index: NodeIndex, grow_rate: Rational);
