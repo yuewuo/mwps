@@ -99,6 +99,7 @@ pub struct PrimalModuleSerialConfig {
     pub cluster_node_limit: usize,
     /// by default, we will constantly trying to solve primal problem given the tight matrix from a plugin; however, one
     ///     might want to speed it up by disabling the feature and instead only solve primal problem once at the end
+    #[serde(default = "primal_serial_default_configs::only_solve_primal_once")]
     pub only_solve_primal_once: bool,
 }
 
@@ -108,6 +109,9 @@ pub mod primal_serial_default_configs {
     }
     pub fn cluster_node_limit() -> usize {
         usize::MAX
+    }
+    pub fn only_solve_primal_once() -> bool {
+        false
     }
 }
 
