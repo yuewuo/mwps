@@ -122,9 +122,7 @@ jobs: # Workflow credit to https://github.com/samuelcolvin/rtoml/blob/main/.gith
 
       - uses: actions/upload-artifact@v4
         with:
-          path: wheelhouse
-          pattern: *.whl
-          merge-multiple: true
+          path: wheelhouse/*.whl
 
   rust_tests:
     name: Run Rust tests on ${{ matrix.os }}
