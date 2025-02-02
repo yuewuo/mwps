@@ -2,7 +2,9 @@ use crate::cluster::*;
 use crate::dual_module::*;
 use crate::html_export::*;
 use crate::matrix::*;
-use crate::num_traits::{Signed, ToPrimitive};
+#[cfg(feature = "rational_weight")]
+use crate::num_traits::Signed;
+use crate::num_traits::ToPrimitive;
 use crate::util::*;
 use crate::visualize::*;
 use num_traits::FromPrimitive;

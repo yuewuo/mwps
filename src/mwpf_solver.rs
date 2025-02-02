@@ -72,19 +72,23 @@ macro_rules! bind_trait_to_python {
                 self.clear()
             }
             #[pyo3(name = "solve", signature = (syndrome_pattern, visualizer=None))] // in Python, `solve` and `solve_visualizer` is the same because it can take optional parameter
-            fn py_solve(&mut self, syndrome_pattern: SyndromePattern, visualizer: Option<&mut Visualizer>) {
-                self.solve_visualizer(syndrome_pattern, visualizer)
+            fn py_solve(&mut self, py: Python<'_>, syndrome_pattern: SyndromePattern, visualizer: Option<&mut Visualizer>) {
+                py.allow_threads(move || self.solve_visualizer(syndrome_pattern, visualizer));
             }
             #[pyo3(name = "subgraph_range", signature = (visualizer=None))] // in Python, `subgraph_range` and `subgraph_range_visualizer` is the same
-            fn py_subgraph_range(&mut self, visualizer: Option<&mut Visualizer>) -> (PySubgraph, PyWeightRange) {
-                let (subgraph, range) = self.subgraph_range_visualizer(visualizer);
+            fn py_subgraph_range(
+                &mut self,
+                py: Python<'_>,
+                visualizer: Option<&mut Visualizer>,
+            ) -> (PySubgraph, PyWeightRange) {
+                let (subgraph, range) = py.allow_threads(move || self.subgraph_range_visualizer(visualizer));
                 let mut complete_subgraph = subgraph.into_iter().collect::<Vec<EdgeIndex>>();
                 complete_subgraph.sort();
                 (complete_subgraph.into(), range.into())
             }
             #[pyo3(name = "subgraph", signature = (visualizer=None))]
-            fn py_subgraph(&mut self, visualizer: Option<&mut Visualizer>) -> Subgraph {
-                self.subgraph_range_visualizer(visualizer).0.into_iter().collect()
+            fn py_subgraph(&mut self, py: Python<'_>, visualizer: Option<&mut Visualizer>) -> Subgraph {
+                py.allow_threads(move || self.subgraph_range_visualizer(visualizer).0.into_iter().collect())
             }
             #[pyo3(name = "sum_dual_variables")]
             fn py_sum_dual_variables(&self) -> PyRational {
@@ -93,11 +97,12 @@ macro_rules! bind_trait_to_python {
             #[pyo3(name = "load_syndrome", signature = (syndrome_pattern, visualizer=None, skip_initial_duals=false))]
             pub fn py_load_syndrome(
                 &mut self,
+                py: Python<'_>,
                 syndrome_pattern: &SyndromePattern,
                 visualizer: Option<&mut Visualizer>,
                 skip_initial_duals: bool,
             ) {
-                self.0.load_syndrome(syndrome_pattern, visualizer, skip_initial_duals)
+                py.allow_threads(move || self.0.load_syndrome(syndrome_pattern, visualizer, skip_initial_duals))
             }
             #[pyo3(name = "get_node", signature = (node_index))]
             pub fn py_get_node(&mut self, node_index: NodeIndex) -> Option<PyDualNodePtr> {
@@ -161,21 +166,24 @@ macro_rules! bind_trait_to_python {
                 .into())
             }
             #[pyo3(name = "grow", signature = (length))]
-            fn py_grow(&mut self, length: PyRational) {
+            fn py_grow(&mut self, py: Python<'_>, length: PyRational) {
                 let length: Rational = length.into();
-                if let Some(max_valid_grow) = self.0.dual_module.compute_max_valid_grow() {
-                    assert!(
-                        length <= max_valid_grow,
-                        "growth overflow: attempting to grow {} but can only grow {} maximum",
-                        length,
-                        max_valid_grow
-                    );
-                };
-                self.0.dual_module.grow(length)
+                py.allow_threads(move || {
+                    if let Some(max_valid_grow) = self.0.dual_module.compute_max_valid_grow() {
+                        assert!(
+                            length <= max_valid_grow,
+                            "growth overflow: attempting to grow {} but can only grow {} maximum",
+                            length,
+                            max_valid_grow
+                        );
+                    };
+                    self.0.dual_module.grow(length);
+                });
             }
             #[pyo3(name = "snapshot", signature = (abbrev=true))]
-            fn py_snapshot(&mut self, abbrev: bool) -> PyObject {
-                json_to_pyobject(self.0.snapshot(abbrev))
+            fn py_snapshot(&mut self, py: Python<'_>, abbrev: bool) -> PyObject {
+                let value = py.allow_threads(move || self.0.snapshot(abbrev));
+                json_to_pyobject(value)
             }
             #[pyo3(name = "dual_report")]
             fn py_dual_report(&mut self) -> PyDualReport {

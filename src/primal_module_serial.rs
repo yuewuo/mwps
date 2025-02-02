@@ -97,6 +97,10 @@ pub struct PrimalModuleSerialConfig {
     ///     note: this is not monitored in the searching phase because we need to ensure at least one valid solution is generated
     #[serde(default = "primal_serial_default_configs::cluster_node_limit")]
     pub cluster_node_limit: usize,
+    /// by default, we will constantly trying to solve primal problem given the tight matrix from a plugin; however, one
+    ///     might want to speed it up by disabling the feature and instead only solve primal problem once at the end
+    #[serde(default = "primal_serial_default_configs::only_solve_primal_once")]
+    pub only_solve_primal_once: bool,
 }
 
 pub mod primal_serial_default_configs {
@@ -105,6 +109,9 @@ pub mod primal_serial_default_configs {
     }
     pub fn cluster_node_limit() -> usize {
         usize::MAX
+    }
+    pub fn only_solve_primal_once() -> bool {
+        false
     }
 }
 
@@ -425,6 +432,25 @@ impl PrimalModuleImpl for PrimalModuleSerial {
             plugin_manager.find_relaxer(decoding_graph, matrix, &positive_dual_variables)
         };
 
+        // Yue added 2025.1.31: also check for local minimum during the algorithm; otherwise when we increase
+        // the value of cluster_node_limit, the logical error rate may not decrease monotonically because
+        // more complicated dual solution does not necessarily mean better logical error rate. Rather, if we
+        // keep looking for smaller weighted solutions in the middle, the result is hopefully better.
+        if !self.config.only_solve_primal_once {
+            let weight_of = |edge_index: EdgeIndex| dual_module.get_edge_weight(edge_index);
+            if let Some(subgraph) = cluster.matrix.get_solution_local_minimum(weight_of) {
+                if let Some(original_subgraph) = &cluster.subgraph {
+                    let original_weight = dual_module.get_subgraph_weight(original_subgraph);
+                    let weight = dual_module.get_subgraph_weight(&subgraph);
+                    if weight < original_weight {
+                        cluster.subgraph = Some(subgraph);
+                    }
+                } else {
+                    cluster.subgraph = Some(subgraph);
+                }
+            }
+        }
+
         // if a relaxer is found, execute it and return
         if let Some(mut relaxer) = relaxer {
             #[cfg(feature = "float_lp")]
@@ -622,8 +648,10 @@ impl PrimalModuleImpl for PrimalModuleSerial {
         }
 
         // find a local minimum (hopefully a global minimum)
-        let weight_of = |edge_index: EdgeIndex| dual_module.get_edge_weight(edge_index);
-        cluster.subgraph = Some(cluster.matrix.get_solution_local_minimum(weight_of).expect("satisfiable"));
+        if self.config.only_solve_primal_once {
+            let weight_of = |edge_index: EdgeIndex| dual_module.get_edge_weight(edge_index);
+            cluster.subgraph = Some(cluster.matrix.get_solution_local_minimum(weight_of).expect("satisfiable"));
+        }
 
         (true, optimizer_result)
     }
