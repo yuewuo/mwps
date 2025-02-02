@@ -55,3 +55,4 @@ exposed `hyperion_exposed` variable in visualization tool so that user can progr
 ## 0.2.6
 
 - add feature of constantly trying to solve primal problem even though there are still relaxers; this is good for decoding accuracy while still maintain the same level of time
+- release GIL during the decoding process
