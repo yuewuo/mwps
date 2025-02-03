@@ -129,7 +129,7 @@ jobs: # Workflow credit to https://github.com/samuelcolvin/rtoml/blob/main/.gith
 
       - uses: actions/upload-artifact@v4
         with:
-          name: binary-${{ matrix.os }}-${{ matrix.build-feature }}
+          name: binary-${{ matrix.os }}
           path: wheelhouse/*.whl
 
   rust_tests:
