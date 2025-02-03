@@ -68,8 +68,8 @@ macro_rules! bind_trait_to_python {
         #[pymethods]
         impl $struct_name {
             #[pyo3(name = "clear")]
-            fn py_clear(&mut self) {
-                self.clear()
+            fn py_clear(&mut self, py: Python<'_>) {
+                py.allow_threads(move || self.clear())
             }
             #[pyo3(name = "solve", signature = (syndrome_pattern, visualizer=None))] // in Python, `solve` and `solve_visualizer` is the same because it can take optional parameter
             fn py_solve(&mut self, py: Python<'_>, syndrome_pattern: SyndromePattern, visualizer: Option<&mut Visualizer>) {
@@ -217,10 +217,12 @@ macro_rules! bind_trait_to_python {
             }
             /// a shortcut for creating a visualizer to display the current state of the solver
             #[pyo3(name = "show")]
-            fn py_show(&self, positions: Vec<VisualizePosition>) {
-                let mut visualizer = Visualizer::new(Some(String::new()), positions, true).unwrap();
-                visualizer.snapshot("show".to_string(), &self.0).unwrap();
-                visualizer.show_py(None, None);
+            fn py_show(&self, py: Python<'_>, positions: Vec<VisualizePosition>) {
+                py.allow_threads(move || {
+                    let mut visualizer = Visualizer::new(Some(String::new()), positions, true).unwrap();
+                    visualizer.snapshot("show".to_string(), &self.0).unwrap();
+                    visualizer.show_py(None, None);
+                });
             }
         }
         impl $struct_name {
@@ -510,9 +512,9 @@ impl SolverSerialUnionFind {
 impl SolverSerialUnionFind {
     #[new]
     #[pyo3(signature = (initializer, config=None))]
-    pub fn new_python(initializer: &SolverInitializer, config: Option<PyObject>) -> Self {
+    pub fn new_python(py: Python<'_>, initializer: &SolverInitializer, config: Option<PyObject>) -> Self {
         let config = config.map(|x| pyobject_to_json(x)).unwrap_or(json!({}));
-        Self::new(initializer, config)
+        py.allow_threads(move || Self::new(initializer, config))
     }
 }
 
@@ -543,9 +545,9 @@ impl SolverSerialSingleHair {
 impl SolverSerialSingleHair {
     #[new]
     #[pyo3(signature = (initializer, config=None))]
-    pub fn new_python(initializer: &SolverInitializer, config: Option<PyObject>) -> Self {
+    pub fn new_python(py: Python<'_>, initializer: &SolverInitializer, config: Option<PyObject>) -> Self {
         let config = config.map(|x| pyobject_to_json(x)).unwrap_or(json!({}));
-        Self::new(initializer, config)
+        py.allow_threads(move || Self::new(initializer, config))
     }
 }
 
@@ -579,9 +581,9 @@ impl SolverSerialJointSingleHair {
 impl SolverSerialJointSingleHair {
     #[new]
     #[pyo3(signature = (initializer, config=None))]
-    pub fn new_python(initializer: &SolverInitializer, config: Option<PyObject>) -> Self {
+    pub fn new_python(py: Python<'_>, initializer: &SolverInitializer, config: Option<PyObject>) -> Self {
         let config = config.map(|x| pyobject_to_json(x)).unwrap_or(json!({}));
-        Self::new(initializer, config)
+        py.allow_threads(move || Self::new(initializer, config))
     }
 }
 
