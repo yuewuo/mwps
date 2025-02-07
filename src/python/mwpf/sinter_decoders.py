@@ -41,7 +41,7 @@ class SinterMWPFDecoder:
     c: Optional[int] = None  # alias of `cluster_node_limit`, will override it
     timeout: Optional[float] = None
     with_progress: bool = False
-    panic_case: Optional[Tuple[SolverInitializer, SyndromePattern]] = None
+    panic_case: Optional[Tuple[SolverInitializer, dict, SyndromePattern]] = None
 
     @property
     def _cluster_node_limit(self) -> int:
@@ -124,7 +124,11 @@ class SinterMWPFDecoder:
                             )
                         except BaseException as e:
                             # record the panic information for debugging use: the panic cases are usually very rare
-                            self.panic_case = (solver.get_initializer(), syndrome)
+                            self.panic_case = (
+                                solver.get_initializer(),
+                                solver.config,
+                                syndrome,
+                            )
                             raise e  # throw the exception again
                         solver.clear()
                     obs_out_f.write(
