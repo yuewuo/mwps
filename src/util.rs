@@ -39,6 +39,21 @@ cfg_if::cfg_if! {
     }
 }
 
+cfg_if::cfg_if! {
+    if #[cfg(feature="python_binding")] {
+        pub use crate::python_signal_checker::PYTHON_SIGNAL_CHECKER;
+    } else  {
+        pub struct NoPythonSignalChecker();
+        pub static PYTHON_SIGNAL_CHECKER: NoPythonSignalChecker = NoPythonSignalChecker();
+        impl NoPythonSignalChecker {
+            #[inline]
+            pub fn check(&self) -> Result<(), ()> { Ok(()) }
+            #[inline]
+            pub fn skip_next(&self) {}
+        }
+    }
+}
+
 pub type Weight = Rational;
 pub type EdgeIndex = usize;
 pub type VertexIndex = usize;
@@ -159,6 +174,11 @@ impl SolverInitializer {
     #[pyo3(name = "to_json")]
     fn py_to_json(&self) -> String {
         serde_json::to_string(&self).unwrap()
+    }
+    #[staticmethod]
+    #[pyo3(name = "from_json")]
+    fn py_from_json(value: &Bound<PyAny>) -> Self {
+        serde_json::from_value(pyobject_to_json_locked(value)).unwrap()
     }
     fn __getnewargs_ex__(&self, py: Python<'_>) -> PyResult<Py<PyTuple>> {
         let kwargs = PyDict::new(py);
@@ -336,6 +356,11 @@ impl SyndromePattern {
     #[pyo3(name = "to_json")]
     fn py_to_json(&self) -> String {
         serde_json::to_string(&self).unwrap()
+    }
+    #[staticmethod]
+    #[pyo3(name = "from_json")]
+    fn py_from_json(value: &Bound<PyAny>) -> Self {
+        serde_json::from_value(pyobject_to_json_locked(value)).unwrap()
     }
     fn __getnewargs_ex__(&self, py: Python<'_>) -> PyResult<Py<PyTuple>> {
         let kwargs = PyDict::new(py);

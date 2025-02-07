@@ -135,10 +135,13 @@ pub trait PrimalModuleImpl {
     ) where
         F: FnMut(&DualModuleInterfacePtr, &mut D, &mut Self, &DualReport),
     {
+        // do not trigger on Python keyboard interrupt until 100ms later
+        PYTHON_SIGNAL_CHECKER.skip_next();
         // Search, this part is unchanged
         let mut dual_report = dual_module.report();
 
         while !dual_report.is_unbounded() {
+            PYTHON_SIGNAL_CHECKER.check().unwrap();
             callback(interface, dual_module, self, &dual_report);
             match dual_report.get_valid_growth() {
                 Some(length) => dual_module.grow(length),
@@ -155,6 +158,7 @@ pub trait PrimalModuleImpl {
         // starting with unbounded state here: All edges and nodes are not growing as of now
         // Tune
         while self.has_more_plugins() {
+            PYTHON_SIGNAL_CHECKER.check().unwrap();
             if start {
                 start = false;
                 dual_module.advance_mode();
@@ -175,6 +179,7 @@ pub trait PrimalModuleImpl {
                 let mut current_sequences: Vec<(usize, BTreeSet<Obstacle>)> = Vec::new(); // the indexes that are currently being processed
 
                 '_resolving: while !resolved {
+                    PYTHON_SIGNAL_CHECKER.check().unwrap();
                     let (_obstacles, _resolved) = self.resolve_tune(obstacles.clone(), interface, dual_module);
 
                     // cycle resolution
