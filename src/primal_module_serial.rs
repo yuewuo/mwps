@@ -87,6 +87,7 @@ pub enum Unionable {
     Cannot,
 }
 
+#[cfg_attr(feature = "python_binding", pyclass(module = "mwpf", get_all, set_all))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PrimalModuleSerialConfig {
@@ -108,7 +109,7 @@ pub mod primal_serial_default_configs {
         f64::MAX
     }
     pub fn cluster_node_limit() -> usize {
-        usize::MAX
+        (2 << 53) - 1 // maximum integer that can be stored in JSON number without loss
     }
     pub fn only_solve_primal_once() -> bool {
         false
@@ -266,27 +267,19 @@ impl PrimalModuleImpl for PrimalModuleSerial {
             if cluster.nodes.is_empty() {
                 continue;
             }
-
-            // note: use `std::panic::catch_unwind` as necessary
             subgraph.extend(
                 cluster
                     .subgraph
                     .clone()
-                    .unwrap_or_else(|| panic!("bug occurs: cluster should be solved, but the subgraph is not yet generated || the cluster is {:?}", cluster.cluster_index))
+                    .unwrap_or_else(|| {
+                        panic!(
+                            "cluster {:?} is unsolvable: V_S = {:?}, E_S = {:?}",
+                            cluster.cluster_index, cluster.vertices, cluster.edges
+                        )
+                    })
                     .iter(),
             );
         }
-
-        // let mut subgraph_set = subgraph.into_iter().collect::<hashbrown::HashSet<EdgeIndex>>();
-        // for to_flip in _dual_module.get_negative_edges().iter() {
-        //     if subgraph_set.contains(to_flip) {
-        //         subgraph_set.remove(to_flip);
-        //     } else {
-        //         subgraph_set.insert(*to_flip);
-        //     }
-        // }
-        // OutputSubgraph::new(subgraph_set.into_iter().collect(), Default::default())
-
         OutputSubgraph::new(subgraph, _dual_module.get_negative_edges())
     }
 

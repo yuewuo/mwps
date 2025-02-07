@@ -239,7 +239,7 @@ pub trait MatrixEchelon: MatrixView {
 
 #[derive(Clone, Debug, Derivative)]
 #[derivative(Default(new = "true"))]
-#[cfg_attr(feature = "python_binding", pyclass(get_all, set_all))]
+#[cfg_attr(feature = "python_binding", pyclass(module = "mwpf", get_all, set_all))]
 pub struct EchelonInfo {
     /// whether it's a satisfiable matrix, only valid when `is_echelon_form` is true
     pub satisfiable: bool,
@@ -264,7 +264,7 @@ impl EchelonInfo {
 
 #[derive(Clone, Copy, Derivative, PartialEq, Eq)]
 #[derivative(Default(new = "true"))]
-#[cfg_attr(feature = "python_binding", pyclass(get_all, set_all))]
+#[cfg_attr(feature = "python_binding", pyclass(module = "mwpf", get_all, set_all))]
 pub struct ColumnInfo {
     pub row: RowIndex,
 }
@@ -312,7 +312,7 @@ impl std::fmt::Debug for ColumnInfo {
 
 #[derive(Clone, Copy, Derivative, PartialEq, Eq)]
 #[derivative(Default(new = "true"))]
-#[cfg_attr(feature = "python_binding", pyclass(get_all, set_all))]
+#[cfg_attr(feature = "python_binding", pyclass(module = "mwpf", get_all, set_all))]
 pub struct RowInfo {
     pub column: ColumnIndex,
 }

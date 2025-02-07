@@ -50,7 +50,7 @@ lazy_static! {
     };
 }
 
-#[cfg_attr(feature = "python_binding", pyclass)]
+#[cfg_attr(feature = "python_binding", pyclass(module = "mwpf"))]
 pub struct HTMLExport {}
 
 impl HTMLExport {

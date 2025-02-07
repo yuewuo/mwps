@@ -41,7 +41,7 @@ class SinterMWPFDecoder:
     c: Optional[int] = None  # alias of `cluster_node_limit`, will override it
     timeout: Optional[float] = None
     with_progress: bool = False
-    panic_case: Optional[Any] = None
+    panic_case: Optional[Tuple[SolverInitializer, SyndromePattern]] = None
 
     @property
     def _cluster_node_limit(self) -> int:
@@ -118,12 +118,13 @@ class SinterMWPFDecoder:
                     else:
                         try:
                             solver.solve(syndrome)
+                            subgraph = solver.subgraph()
                             prediction = int(
-                                np.bitwise_xor.reduce(fault_masks[solver.subgraph()])
+                                np.bitwise_xor.reduce(fault_masks[subgraph])
                             )
                         except BaseException as e:
                             # record the panic information for debugging use: the panic cases are usually very rare
-
+                            self.panic_case = (solver.get_initializer(), syndrome)
                             raise e  # throw the exception again
                         solver.clear()
                     obs_out_f.write(

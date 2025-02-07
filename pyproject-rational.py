@@ -29,24 +29,6 @@ patches = [
         ],
     ),
     (
-        "src/util_py.rs",
-        [
-            ("SinterMWPFDecoder", "SinterMWPFRationalDecoder", 1),
-            ("SinterHUFDecoder", "SinterHUFRationalDecoder", 1),
-            ("SinterSingleHairDecoder", "SinterSingleHairRationalDecoder", 1),
-            (
-                "mwpf/sinter_decoders.py",
-                "mwpf_rational/sinter_decoders.py",
-                1,
-            ),
-            (
-                "mwpf.sinter_decoders",
-                "mwpf_rational.sinter_decoders",
-                1,
-            ),
-        ],
-    ),
-    (
         "src/python/mwpf/sinter_decoders.py",
         [
             ("import mwpf\n", "import mwpf_rational\n", 1),
@@ -86,6 +68,43 @@ patches = [
             ("import SinterMWPFDecoder", "import SinterMWPFRationalDecoder", 1),
             ("from mwpf import ", "from mwpf_rational import ", 2),
         ],
+    ),
+    ####### module name patches #######
+    (
+        "src/dual_module.rs",
+        [('pyclass(module = "mwpf"', 'pyclass(module = "mwpf_rational"', 2)],
+    ),
+    (
+        "src/example_codes.rs",
+        [('pyclass(module = "mwpf"', 'pyclass(module = "mwpf_rational"', 9)],
+    ),
+    (
+        "src/html_export.rs",
+        [('pyclass(module = "mwpf"', 'pyclass(module = "mwpf_rational"', 1)],
+    ),
+    (
+        "src/mwpf_solver.rs",
+        [('pyclass(module = "mwpf"', 'pyclass(module = "mwpf_rational"', 4)],
+    ),
+    (
+        "src/util_py.rs",
+        [('pyclass(module = "mwpf"', 'pyclass(module = "mwpf_rational"', 12)],
+    ),
+    (
+        "src/util.rs",
+        [('pyclass(module = "mwpf"', 'pyclass(module = "mwpf_rational"', 3)],
+    ),
+    (
+        "src/visualize.rs",
+        [('pyclass(module = "mwpf"', 'pyclass(module = "mwpf_rational"', 2)],
+    ),
+    (
+        "src/matrix/interface.rs",
+        [('pyclass(module = "mwpf"', 'pyclass(module = "mwpf_rational"', 3)],
+    ),
+    (
+        "src/matrix/row.rs",
+        [('pyclass(module = "mwpf"', 'pyclass(module = "mwpf_rational"', 1)],
     ),
 ]
 

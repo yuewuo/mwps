@@ -9,9 +9,8 @@ use crate::util::*;
 use crate::visualize::*;
 use num_traits::FromPrimitive;
 use pyo3::basic::CompareOp;
-use pyo3::ffi::c_str;
 use pyo3::prelude::*;
-use pyo3::types::{PyDict, PyFloat, PyInt, PyList, PySet};
+use pyo3::types::{PyDict, PyFloat, PyInt, PyList, PySet, PyTuple};
 use std::collections::BTreeSet;
 use std::hash::DefaultHasher;
 use std::hash::{Hash, Hasher};
@@ -34,7 +33,7 @@ macro_rules! bind_trait_simple_wrapper {
 
 #[derive(Clone)]
 #[repr(transparent)]
-#[pyclass(name = "Rational")]
+#[pyclass(module = "mwpf", name = "Rational")]
 pub struct PyRational(pub Rational);
 bind_trait_simple_wrapper!(Rational, PyRational);
 
@@ -131,6 +130,13 @@ impl PyRational {
         self.0.hash(&mut hasher);
         hasher.finish()
     }
+    fn __getnewargs_ex__(&self, py: Python<'_>) -> PyResult<Py<PyTuple>> {
+        let kwargs = PyDict::new(py);
+        kwargs.set_item("numerator", self.numer())?;
+        kwargs.set_item("denominator", self.denom())?;
+        let args = PyTuple::empty(py);
+        Ok((args, kwargs).into_pyobject(py)?.unbind())
+    }
 }
 
 impl std::fmt::Debug for PyRational {
@@ -141,7 +147,7 @@ impl std::fmt::Debug for PyRational {
 
 #[derive(Clone, PartialEq, Eq)]
 #[repr(transparent)]
-#[pyclass(name = "DualNodePtr")]
+#[pyclass(module = "mwpf", name = "DualNodePtr")]
 pub struct PyDualNodePtr(pub DualNodePtr);
 bind_trait_simple_wrapper!(DualNodePtr, PyDualNodePtr);
 
@@ -207,7 +213,7 @@ impl PyDualNodePtr {
 }
 
 #[derive(Clone, Debug)]
-#[pyclass(name = "Obstacle")]
+#[pyclass(module = "mwpf", name = "Obstacle")]
 pub enum PyObstacle {
     Conflict { edge_index: EdgeIndex },
     ShrinkToZero { dual_node_ptr: PyDualNodePtr },
@@ -235,7 +241,7 @@ impl PyObstacle {
 }
 
 #[derive(Clone, Debug)]
-#[pyclass(name = "DualReport")]
+#[pyclass(module = "mwpf", name = "DualReport")]
 pub enum PyDualReport {
     Unbounded(),
     ValidGrow(PyRational),
@@ -304,7 +310,7 @@ pub fn py_into_btree_set<'py, T: Ord + Clone + FromPyObject<'py>>(value: &Bound<
 
 #[derive(Clone, Debug)]
 #[repr(transparent)]
-#[pyclass(name = "Subgraph")]
+#[pyclass(module = "mwpf", name = "Subgraph")]
 pub struct PySubgraph(pub Subgraph);
 bind_trait_simple_wrapper!(Subgraph, PySubgraph);
 
@@ -316,9 +322,15 @@ impl PySubgraph {
         };
         Py::new(slf.py(), iter)
     }
+    fn __getnewargs_ex__(&self, py: Python<'_>) -> PyResult<Py<PyTuple>> {
+        let kwargs = PyDict::new(py);
+        kwargs.set_item("edges", self.0.clone())?;
+        let args = PyTuple::empty(py);
+        Ok((args, kwargs).into_pyobject(py)?.unbind())
+    }
 }
 
-#[pyclass]
+#[pyclass(module = "mwpf")]
 struct PySubgraphIter {
     inner: std::vec::IntoIter<EdgeIndex>,
 }
@@ -523,7 +535,7 @@ macro_rules! bind_trait_matrix_echelon {
 type EchelonMatrix = Echelon<Tail<Tight<BasicMatrix>>>;
 
 #[derive(Clone)]
-#[pyclass(name = "EchelonMatrix")]
+#[pyclass(module = "mwpf", name = "EchelonMatrix")]
 pub struct PyEchelonMatrix(pub EchelonMatrix);
 bind_trait_simple_wrapper!(EchelonMatrix, PyEchelonMatrix);
 bind_trait_matrix_basic!(PyEchelonMatrix);
@@ -577,7 +589,7 @@ type TailMatrix = Tail<Tight<BasicMatrix>>;
 
 /// TailMatrix is a matrix that allows reordering part of the columns to the end.
 #[derive(Clone)]
-#[pyclass(name = "TailMatrix")]
+#[pyclass(module = "mwpf", name = "TailMatrix")]
 pub struct PyTailMatrix(pub TailMatrix);
 bind_trait_simple_wrapper!(TailMatrix, PyTailMatrix);
 bind_trait_matrix_basic!(PyTailMatrix);
@@ -642,7 +654,7 @@ type TightMatrix = Tight<BasicMatrix>;
 
 /// TightMatrix is a matrix that hides some of the edges that are not tight while still keeping track of them when doing row operations.
 #[derive(Clone)]
-#[pyclass(name = "TightMatrix")]
+#[pyclass(module = "mwpf", name = "TightMatrix")]
 pub struct PyTightMatrix(pub TightMatrix);
 bind_trait_simple_wrapper!(TightMatrix, PyTightMatrix);
 bind_trait_matrix_basic!(PyTightMatrix);
@@ -694,7 +706,7 @@ impl PyTightMatrix {
 
 /// BasicMatrix is a matrix that provides the basic functionality
 #[derive(Clone)]
-#[pyclass(name = "BasicMatrix")]
+#[pyclass(module = "mwpf", name = "BasicMatrix")]
 pub struct PyBasicMatrix(pub BasicMatrix);
 bind_trait_simple_wrapper!(BasicMatrix, PyBasicMatrix);
 bind_trait_matrix_basic!(PyBasicMatrix);
@@ -741,7 +753,7 @@ impl PyBasicMatrix {
 }
 
 #[derive(Clone, Debug)]
-#[pyclass(name = "WeightRange")]
+#[pyclass(module = "mwpf", name = "WeightRange")]
 pub struct PyWeightRange(pub WeightRange);
 bind_trait_simple_wrapper!(WeightRange, PyWeightRange);
 
@@ -779,7 +791,7 @@ impl PyWeightRange {
 
 #[derive(Clone)]
 #[repr(transparent)]
-#[pyclass(name = "Cluster")]
+#[pyclass(module = "mwpf", name = "Cluster")]
 pub struct PyCluster(pub Cluster);
 bind_trait_simple_wrapper!(Cluster, PyCluster);
 
@@ -865,19 +877,5 @@ pub(crate) fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<RowInfo>()?;
     m.add_class::<PyWeightRange>()?;
     m.add_class::<PyCluster>()?;
-
-    // // import sinter_decoders.py
-    // let sinter_decoders_code = c_str!(include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/sinter_decoders.py")));
-    // let sinter_decoders_module = PyModule::from_code(
-    //     m.py(),
-    //     sinter_decoders_code,
-    //     c_str!("mwpf/sinter_decoders.py"),
-    //     c_str!("mwpf.sinter_decoders"), // must name the module properly
-    // )?;
-    // m.add_submodule(&sinter_decoders_module)?;
-    // for public_name in ["SinterMWPFDecoder", "SinterHUFDecoder", "SinterSingleHairDecoder"] {
-    //     let sinter_decoder = sinter_decoders_module.getattr(public_name)?;
-    //     m.add(public_name, sinter_decoder)?;
-    // }
     Ok(())
 }
