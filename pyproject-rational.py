@@ -1,4 +1,5 @@
 import sys
+import os
 
 patches = [
     (
@@ -46,15 +47,23 @@ patches = [
         ],
     ),
     (
-        "src/sinter_decoders.py",
+        "src/python/mwpf/sinter_decoders.py",
         [
             ("import mwpf\n", "import mwpf_rational\n", 1),
-            ("mwpf.", "mwpf_rational.", 7),
+            ("from mwpf import", "from mwpf_rational import", 1),
             ("getattr(mwpf, decoder_type)", "getattr(mwpf_rational, decoder_type)", 1),
             ("SinterMWPFDecoder", "SinterMWPFRationalDecoder", 3),
             ("SinterHUFDecoder", "SinterHUFRationalDecoder", 1),
             ("SinterSingleHairDecoder", "SinterSingleHairRationalDecoder", 1),
             ("MwpfCompiledDecoder", "MwpfRationalCompiledDecoder", 3),
+        ],
+    ),
+    (
+        "src/python/mwpf/__init__.py",
+        [
+            ("from .mwpf import *", "from .mwpf_rational import *", 1),
+            ("mwpf.", "mwpf_rational.", 2),
+            ("mwpf,", "mwpf_rational,", 1),
         ],
     ),
     (
@@ -82,7 +91,7 @@ patches = [
 
 
 # patch is strict
-def patch(dry):
+def patch(dry: bool):
     for filename, replacements in patches:
         with open(filename, "r") as f:
             content = f.read()
@@ -110,10 +119,15 @@ def patch(dry):
         if not dry:
             with open(filename, "w") as f:
                 f.write(content)
+    if not dry:
+        # up to here, all files has been checked and updated, rename the src/python/mwpf folder
+        os.rename("src/python/mwpf", "src/python/mwpf_rational")
 
 
 # revert is best-practice
 def revert():
+    # first change the folder back
+    os.rename("src/python/mwpf_rational", "src/python/mwpf")
     for filename, replacements in patches:
         with open(filename, "r") as f:
             content = f.read()

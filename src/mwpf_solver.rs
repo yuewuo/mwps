@@ -224,6 +224,16 @@ macro_rules! bind_trait_to_python {
                     visualizer.show_py(None, None);
                 });
             }
+            #[pyo3(name = "get_initializer")]
+            fn py_get_initializer(&self) -> SolverInitializer {
+                self.0.model_graph.initializer.as_ref().clone()
+            }
+            // fn __getstate__(&self) -> PyResult<SolverInitializer> {
+            //     let state = json!({
+            //         "config": self.0.config,
+            //         "initializer": self.py_get_initializer(),
+            //     });
+            // }
         }
         impl $struct_name {
             pub fn py_construct_invalid_subgraph(
@@ -274,6 +284,7 @@ pub struct SolverSerialPlugins {
     primal_module: PrimalModuleSerial,
     interface_ptr: DualModuleInterfacePtr,
     model_graph: Arc<ModelHyperGraph>,
+    config: SolverSerialPluginsConfig,
 }
 
 impl MWPSVisualizer for SolverSerialPlugins {
@@ -298,6 +309,7 @@ impl SolverSerialPlugins {
             primal_module,
             interface_ptr: DualModuleInterfacePtr::new(model_graph.clone()),
             model_graph,
+            config,
         }
     }
 

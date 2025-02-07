@@ -866,18 +866,18 @@ pub(crate) fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyWeightRange>()?;
     m.add_class::<PyCluster>()?;
 
-    // import sinter_decoders.py
-    let sinter_decoders_code = c_str!(include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/sinter_decoders.py")));
-    let sinter_decoders_module = PyModule::from_code(
-        m.py(),
-        sinter_decoders_code,
-        c_str!("mwpf/sinter_decoders.py"),
-        c_str!("mwpf.sinter_decoders"), // must name the module properly
-    )?;
-    m.add_submodule(&sinter_decoders_module)?;
-    for public_name in ["SinterMWPFDecoder", "SinterHUFDecoder", "SinterSingleHairDecoder"] {
-        let sinter_decoder = sinter_decoders_module.getattr(public_name)?;
-        m.add(public_name, sinter_decoder)?;
-    }
+    // // import sinter_decoders.py
+    // let sinter_decoders_code = c_str!(include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/sinter_decoders.py")));
+    // let sinter_decoders_module = PyModule::from_code(
+    //     m.py(),
+    //     sinter_decoders_code,
+    //     c_str!("mwpf/sinter_decoders.py"),
+    //     c_str!("mwpf.sinter_decoders"), // must name the module properly
+    // )?;
+    // m.add_submodule(&sinter_decoders_module)?;
+    // for public_name in ["SinterMWPFDecoder", "SinterHUFDecoder", "SinterSingleHairDecoder"] {
+    //     let sinter_decoder = sinter_decoders_module.getattr(public_name)?;
+    //     m.add(public_name, sinter_decoder)?;
+    // }
     Ok(())
 }
