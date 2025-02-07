@@ -13,9 +13,6 @@ categories = ["science"]
 exclude = ["tutorial/*", "benchmark/*", "visualize/data/persist/*", ".github/*"]
 default-run = "mwpf"
 
-[package.metadata.maturin]
-python-source = "src/python"
-
 # see https://doc.rust-lang.org/1.39.0/cargo/reference/manifest.html#the-documentation-field-optional
 [badges]
 maintenance = { status = "actively-developed" }

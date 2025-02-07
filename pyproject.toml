@@ -40,3 +40,4 @@ features = [
 ]
 bindings = "pyo3"
 cargo-extra-args = "--no-default-features --features python_binding,f64_weight,embed_visualizer,qecp_integrate,loose_sanity_check"
+python-source = "src/python"
