@@ -10,6 +10,8 @@ from mwpf import (
     Solver,
 )
 from dataclasses import dataclass
+import pickle
+import json
 
 if TYPE_CHECKING:
     import stim
@@ -123,17 +125,29 @@ class SinterMWPFDecoder:
                                 np.bitwise_xor.reduce(fault_masks[subgraph])
                             )
                         except BaseException as e:
-                            # record the panic information for debugging use: the panic cases are usually very rare
-                            self.panic_case = (
-                                solver.get_initializer(),
-                                solver.config,
-                                syndrome,
-                            )
-                            raise e  # throw the exception again
+                            raise ValueError(panic_text_of(solver, syndrome)) from e
                         solver.clear()
                     obs_out_f.write(
                         prediction.to_bytes((num_obs + 7) // 8, byteorder="little")
                     )
+
+
+def panic_text_of(solver, syndrome) -> str:
+    initializer = solver.get_initializer()
+    config = solver.config
+    syndrome
+    panic_text = f"""
+######## MWPF Sinter Decoder Panic ######## 
+solver_initializer: dict = json.loads('{initializer.to_json()}')
+config: dict = json.loads('{json.dumps(config)}')
+syndrome: dict = json.loads('{syndrome.to_json()}')
+######## PICKLE DATA ######## 
+solver_initializer: SolverInitializer = pickle.loads({pickle.dumps(initializer)})
+config: dict = pickle.loads({pickle.dumps(config)})
+syndrome: SyndromePattern = pickle.loads({pickle.dumps(syndrome)})
+######## End Panic Information ######## 
+"""
+    return panic_text
 
 
 @dataclass
@@ -184,10 +198,12 @@ class MwpfCompiledDecoder:
             if self.solver is None:
                 prediction = 0
             else:
-                self.solver.solve(syndrome)
-                prediction = int(
-                    np.bitwise_xor.reduce(self.fault_masks[self.solver.subgraph()])
-                )
+                try:
+                    self.solver.solve(syndrome)
+                    subgraph = self.solver.subgraph()
+                    prediction = int(np.bitwise_xor.reduce(self.fault_masks[subgraph]))
+                except BaseException as e:
+                    raise ValueError(panic_text_of(self.solver, syndrome)) from e
                 self.solver.clear()
             predictions[shot] = np.packbits(
                 np.array(

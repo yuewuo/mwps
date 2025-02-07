@@ -1,5 +1,5 @@
 from common import *
-import pickle
+import traceback
 
 
 def test_basic_panic():
@@ -13,14 +13,18 @@ def test_basic_panic():
     visualizer = mwpf.Visualizer(
         positions=[mwpf.VisualizePosition(0, 0, 0), mwpf.VisualizePosition(1, 0, 0)]
     )
-    solver.solve(mwpf.SyndromePattern([0]), visualizer)  # unsolvable, and should panic
+    syndrome = mwpf.SyndromePattern([0])
+    solver.solve(syndrome, visualizer)  # unsolvable, and should panic
 
     visualizer.save_html(
         os.path.join(os.path.dirname(__file__), f"test_basic_panic.html")
     )
     try:
-        solver.subgraph()
-    except BaseException as panic:
-        print(panic)
+        try:
+            solver.subgraph()
+        except BaseException as panic:
+            raise ValueError(mwpf.panic_text_of(solver, syndrome)) from panic
+    except BaseException:
+        print(traceback.format_exc())
     else:
         assert False, "panic expected"

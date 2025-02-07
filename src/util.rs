@@ -156,6 +156,10 @@ impl SolverInitializer {
         value.uniform_weights(weight.map(|x| PyRational::from(x).0).unwrap_or_else(|| Rational::one()));
         slf
     }
+    #[pyo3(name = "to_json")]
+    fn py_to_json(&self) -> String {
+        serde_json::to_string(&self).unwrap()
+    }
     fn __getnewargs_ex__(&self, py: Python<'_>) -> PyResult<Py<PyTuple>> {
         let kwargs = PyDict::new(py);
         kwargs.set_item("vertex_num", self.vertex_num)?;
@@ -328,6 +332,10 @@ impl SyndromePattern {
     #[pyo3(name="snapshot", signature = (abbrev=true))]
     fn py_snapshot(&mut self, abbrev: bool) -> PyObject {
         json_to_pyobject(self.snapshot(abbrev))
+    }
+    #[pyo3(name = "to_json")]
+    fn py_to_json(&self) -> String {
+        serde_json::to_string(&self).unwrap()
     }
     fn __getnewargs_ex__(&self, py: Python<'_>) -> PyResult<Py<PyTuple>> {
         let kwargs = PyDict::new(py);
