@@ -2,7 +2,16 @@ import math
 import pathlib
 from typing import Callable, List, Tuple, Any, Optional, TYPE_CHECKING, Union
 import mwpf
+from mwpf import (
+    SyndromePattern,
+    SolverSerialJointSingleHair,
+    HyperEdge,
+    SolverInitializer,
+    Solver,
+)
 from dataclasses import dataclass
+import pickle
+import json
 
 if TYPE_CHECKING:
     import stim
@@ -34,6 +43,7 @@ class SinterMWPFDecoder:
     c: Optional[int] = None  # alias of `cluster_node_limit`, will override it
     timeout: Optional[float] = None
     with_progress: bool = False
+    panic_case: Optional[Tuple[SolverInitializer, dict, SyndromePattern]] = None
 
     @property
     def _cluster_node_limit(self) -> int:
@@ -104,18 +114,40 @@ class SinterMWPFDecoder:
                             dets_bit_packed, count=num_dets, bitorder="little"
                         )
                     )
-                    syndrome = mwpf.SyndromePattern(defect_vertices=dets_sparse)
+                    syndrome = SyndromePattern(defect_vertices=dets_sparse)
                     if solver is None:
                         prediction = 0
                     else:
-                        solver.solve(syndrome)
-                        prediction = int(
-                            np.bitwise_xor.reduce(fault_masks[solver.subgraph()])
-                        )
+                        try:
+                            solver.solve(syndrome)
+                            subgraph = solver.subgraph()
+                            prediction = int(
+                                np.bitwise_xor.reduce(fault_masks[subgraph])
+                            )
+                        except BaseException as e:
+                            raise ValueError(panic_text_of(solver, syndrome)) from e
                         solver.clear()
                     obs_out_f.write(
                         prediction.to_bytes((num_obs + 7) // 8, byteorder="little")
                     )
+
+
+def panic_text_of(solver, syndrome) -> str:
+    initializer = solver.get_initializer()
+    config = solver.config
+    syndrome
+    panic_text = f"""
+######## MWPF Sinter Decoder Panic ######## 
+solver_initializer: dict = json.loads('{initializer.to_json()}')
+config: dict = json.loads('{json.dumps(config)}')
+syndrome: dict = json.loads('{syndrome.to_json()}')
+######## PICKLE DATA ######## 
+solver_initializer: SolverInitializer = pickle.loads({pickle.dumps(initializer)})
+config: dict = pickle.loads({pickle.dumps(config)})
+syndrome: SyndromePattern = pickle.loads({pickle.dumps(syndrome)})
+######## End Panic Information ######## 
+"""
+    return panic_text
 
 
 @dataclass
@@ -133,7 +165,7 @@ class SinterSingleHairDecoder(SinterMWPFDecoder):
 class MwpfCompiledDecoder:
     def __init__(
         self,
-        solver: Union["mwpf.SolverSerialJointSingleHair", Any],
+        solver: Union["SolverSerialJointSingleHair", Any],
         fault_masks: "np.ndarray",
         num_dets: int,
         num_obs: int,
@@ -162,14 +194,16 @@ class MwpfCompiledDecoder:
                     bitorder="little",
                 )
             )
-            syndrome = mwpf.SyndromePattern(defect_vertices=dets_sparse)
+            syndrome = SyndromePattern(defect_vertices=dets_sparse)
             if self.solver is None:
                 prediction = 0
             else:
-                self.solver.solve(syndrome)
-                prediction = int(
-                    np.bitwise_xor.reduce(self.fault_masks[self.solver.subgraph()])
-                )
+                try:
+                    self.solver.solve(syndrome)
+                    subgraph = self.solver.subgraph()
+                    prediction = int(np.bitwise_xor.reduce(self.fault_masks[subgraph]))
+                except BaseException as e:
+                    raise ValueError(panic_text_of(self.solver, syndrome)) from e
                 self.solver.clear()
             predictions[shot] = np.packbits(
                 np.array(
@@ -260,7 +294,7 @@ def detector_error_model_to_mwpf_solver_and_fault_masks(
     model: "stim.DetectorErrorModel",
     decoder_type: Any = None,
     cluster_node_limit: int = 50,
-) -> Tuple[Optional["mwpf.SolverSerialJointSingleHair"], "np.ndarray"]:
+) -> Tuple[Optional["SolverSerialJointSingleHair"], "np.ndarray"]:
     """Convert a stim error model into a NetworkX graph."""
     import numpy as np
 
@@ -303,18 +337,18 @@ def detector_error_model_to_mwpf_solver_and_fault_masks(
 
     max_weight = max(1e-4, max((w for _, w, _ in hyperedges), default=1))
     rescaled_edges = [
-        mwpf.HyperEdge(v, round(w * 2**10 / max_weight) * 2) for v, w, _ in hyperedges
+        HyperEdge(v, round(w * 2**10 / max_weight) * 2) for v, w, _ in hyperedges
     ]
     fault_masks = np.array([e[2] for e in hyperedges], dtype=np.uint64)
 
-    initializer = mwpf.SolverInitializer(
+    initializer = SolverInitializer(
         num_detectors,  # Total number of nodes.
         rescaled_edges,  # Weighted edges.
     )
 
     if decoder_type is None:
         # default to the solver with highest accuracy
-        decoder_cls = mwpf.Solver
+        decoder_cls = Solver
     elif isinstance(decoder_type, str):
         decoder_cls = getattr(mwpf, decoder_type)
     else:

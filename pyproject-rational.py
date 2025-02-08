@@ -1,4 +1,5 @@
 import sys
+import os
 
 patches = [
     (
@@ -28,33 +29,23 @@ patches = [
         ],
     ),
     (
-        "src/util_py.rs",
-        [
-            ("SinterMWPFDecoder", "SinterMWPFRationalDecoder", 1),
-            ("SinterHUFDecoder", "SinterHUFRationalDecoder", 1),
-            ("SinterSingleHairDecoder", "SinterSingleHairRationalDecoder", 1),
-            (
-                "mwpf/sinter_decoders.py",
-                "mwpf_rational/sinter_decoders.py",
-                1,
-            ),
-            (
-                "mwpf.sinter_decoders",
-                "mwpf_rational.sinter_decoders",
-                1,
-            ),
-        ],
-    ),
-    (
-        "src/sinter_decoders.py",
+        "src/python/mwpf/sinter_decoders.py",
         [
             ("import mwpf\n", "import mwpf_rational\n", 1),
-            ("mwpf.", "mwpf_rational.", 7),
+            ("from mwpf import", "from mwpf_rational import", 1),
             ("getattr(mwpf, decoder_type)", "getattr(mwpf_rational, decoder_type)", 1),
             ("SinterMWPFDecoder", "SinterMWPFRationalDecoder", 3),
             ("SinterHUFDecoder", "SinterHUFRationalDecoder", 1),
             ("SinterSingleHairDecoder", "SinterSingleHairRationalDecoder", 1),
             ("MwpfCompiledDecoder", "MwpfRationalCompiledDecoder", 3),
+        ],
+    ),
+    (
+        "src/python/mwpf/__init__.py",
+        [
+            ("from .mwpf import *", "from .mwpf_rational import *", 1),
+            ("mwpf.", "mwpf_rational.", 2),
+            ("mwpf,", "mwpf_rational,", 1),
         ],
     ),
     (
@@ -78,11 +69,48 @@ patches = [
             ("from mwpf import ", "from mwpf_rational import ", 2),
         ],
     ),
+    ####### module name patches #######
+    (
+        "src/dual_module.rs",
+        [('pyclass(module = "mwpf"', 'pyclass(module = "mwpf_rational"', 2)],
+    ),
+    (
+        "src/example_codes.rs",
+        [('pyclass(module = "mwpf"', 'pyclass(module = "mwpf_rational"', 9)],
+    ),
+    (
+        "src/html_export.rs",
+        [('pyclass(module = "mwpf"', 'pyclass(module = "mwpf_rational"', 1)],
+    ),
+    (
+        "src/mwpf_solver.rs",
+        [('pyclass(module = "mwpf"', 'pyclass(module = "mwpf_rational"', 4)],
+    ),
+    (
+        "src/util_py.rs",
+        [('pyclass(module = "mwpf"', 'pyclass(module = "mwpf_rational"', 12)],
+    ),
+    (
+        "src/util.rs",
+        [('pyclass(module = "mwpf"', 'pyclass(module = "mwpf_rational"', 3)],
+    ),
+    (
+        "src/visualize.rs",
+        [('pyclass(module = "mwpf"', 'pyclass(module = "mwpf_rational"', 2)],
+    ),
+    (
+        "src/matrix/interface.rs",
+        [('pyclass(module = "mwpf"', 'pyclass(module = "mwpf_rational"', 3)],
+    ),
+    (
+        "src/matrix/row.rs",
+        [('pyclass(module = "mwpf"', 'pyclass(module = "mwpf_rational"', 1)],
+    ),
 ]
 
 
 # patch is strict
-def patch(dry):
+def patch(dry: bool):
     for filename, replacements in patches:
         with open(filename, "r") as f:
             content = f.read()
@@ -110,10 +138,15 @@ def patch(dry):
         if not dry:
             with open(filename, "w") as f:
                 f.write(content)
+    if not dry:
+        # up to here, all files has been checked and updated, rename the src/python/mwpf folder
+        os.rename("src/python/mwpf", "src/python/mwpf_rational")
 
 
 # revert is best-practice
 def revert():
+    # first change the folder back
+    os.rename("src/python/mwpf_rational", "src/python/mwpf")
     for filename, replacements in patches:
         with open(filename, "r") as f:
             content = f.read()

@@ -1,6 +1,6 @@
 [package]
 name = "mwpf"
-version = "0.2.6"
+version = "0.2.7"
 authors = ["Yue Wu <wuyue16pku@gmail.com>"]
 edition = "2021"
 license = "MIT"
@@ -12,9 +12,6 @@ keywords = ["QEC", "quantum-computing", "error-correction", "visualization"]
 categories = ["science"]
 exclude = ["tutorial/*", "benchmark/*", "visualize/data/persist/*", ".github/*"]
 default-run = "mwpf"
-
-[package.metadata.maturin]
-python-source = "src/python"
 
 # see https://doc.rust-lang.org/1.39.0/cargo/reference/manifest.html#the-documentation-field-optional
 [badges]
@@ -98,6 +95,7 @@ tempfile = "3.14.0"
 flate2 = "1.0.34"
 base64 = "0.22.1"
 bp = { path = "src/bp" }
+thread-priority = "1.2.0"
 
 [dev-dependencies]
 test-case = "3.1.0"

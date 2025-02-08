@@ -8,7 +8,8 @@ import os, math, pytest, sys
 if "mwpf" not in globals():
     try:
         import mwpf
-    except ImportError:
+    except ImportError as e:
+        print(e)
         print("mwpf package not available, use mwpf_rational instead")
         import mwpf_rational as mwpf
 

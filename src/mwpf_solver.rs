@@ -31,6 +31,7 @@ cfg_if::cfg_if! {
         use crate::invalid_subgraph::*;
         use crate::util_py::*;
         use pyo3::prelude::*;
+        use pyo3::types::{PyTuple, PyDict};
     }
 }
 
@@ -224,6 +225,21 @@ macro_rules! bind_trait_to_python {
                     visualizer.show_py(None, None);
                 });
             }
+            #[pyo3(name = "get_initializer")]
+            fn py_get_initializer(&self) -> SolverInitializer {
+                self.0.model_graph.initializer.as_ref().clone()
+            }
+            fn __getnewargs_ex__(&self, py: Python<'_>) -> PyResult<Py<PyTuple>> {
+                let kwargs = PyDict::new(py);
+                kwargs.set_item("initializer", self.py_get_initializer())?;
+                kwargs.set_item("config", json_to_pyobject(json!(self.0.config.clone())))?;
+                let args = PyTuple::empty(py);
+                Ok((args, kwargs).into_pyobject(py)?.unbind())
+            }
+            #[getter]
+            fn get_config(&self) -> PyObject {
+                json_to_pyobject(json!(self.0.config.clone()))
+            }
         }
         impl $struct_name {
             pub fn py_construct_invalid_subgraph(
@@ -274,6 +290,7 @@ pub struct SolverSerialPlugins {
     primal_module: PrimalModuleSerial,
     interface_ptr: DualModuleInterfacePtr,
     model_graph: Arc<ModelHyperGraph>,
+    pub config: SolverSerialPluginsConfig,
 }
 
 impl MWPSVisualizer for SolverSerialPlugins {
@@ -298,6 +315,7 @@ impl SolverSerialPlugins {
             primal_module,
             interface_ptr: DualModuleInterfacePtr::new(model_graph.clone()),
             model_graph,
+            config,
         }
     }
 
@@ -498,7 +516,7 @@ macro_rules! bind_solver_trait {
     };
 }
 
-#[cfg_attr(feature = "python_binding", pyclass)]
+#[cfg_attr(feature = "python_binding", pyclass(module = "mwpf"))]
 pub struct SolverSerialUnionFind(SolverSerialPlugins);
 
 impl SolverSerialUnionFind {
@@ -524,7 +542,7 @@ bind_solver_trait!(SolverSerialUnionFind);
 bind_trait_to_python!(SolverSerialUnionFind);
 inherit_solver_plugin_methods!(SolverSerialUnionFind);
 
-#[cfg_attr(feature = "python_binding", pyclass)]
+#[cfg_attr(feature = "python_binding", pyclass(module = "mwpf"))]
 pub struct SolverSerialSingleHair(SolverSerialPlugins);
 
 impl SolverSerialSingleHair {
@@ -557,7 +575,7 @@ bind_solver_trait!(SolverSerialSingleHair);
 bind_trait_to_python!(SolverSerialSingleHair);
 inherit_solver_plugin_methods!(SolverSerialSingleHair);
 
-#[cfg_attr(feature = "python_binding", pyclass)]
+#[cfg_attr(feature = "python_binding", pyclass(module = "mwpf"))]
 pub struct SolverSerialJointSingleHair(SolverSerialPlugins);
 
 impl SolverSerialJointSingleHair {
@@ -593,7 +611,7 @@ bind_solver_trait!(SolverSerialJointSingleHair);
 bind_trait_to_python!(SolverSerialJointSingleHair);
 inherit_solver_plugin_methods!(SolverSerialJointSingleHair);
 
-#[cfg_attr(feature = "python_binding", pyclass)]
+#[cfg_attr(feature = "python_binding", pyclass(module = "mwpf"))]
 pub struct SolverErrorPatternLogger {
     file: BufWriter<File>,
 }

@@ -11,7 +11,7 @@ use num_traits::Zero;
 #[cfg(feature = "python_binding")]
 use pyo3::prelude::*;
 #[cfg(feature = "python_binding")]
-use pyo3::types::{PyDict, PyFloat, PyList};
+use pyo3::types::{PyDict, PyFloat, PyList, PyTuple};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use std::fs::File;
@@ -39,6 +39,21 @@ cfg_if::cfg_if! {
     }
 }
 
+cfg_if::cfg_if! {
+    if #[cfg(feature="python_binding")] {
+        pub use crate::python_signal_checker::PYTHON_SIGNAL_CHECKER;
+    } else  {
+        pub struct NoPythonSignalChecker();
+        pub static PYTHON_SIGNAL_CHECKER: NoPythonSignalChecker = NoPythonSignalChecker();
+        impl NoPythonSignalChecker {
+            #[inline]
+            pub fn check(&self) -> Result<(), ()> { Ok(()) }
+            #[inline]
+            pub fn skip_next(&self) {}
+        }
+    }
+}
+
 pub type Weight = Rational;
 pub type EdgeIndex = usize;
 pub type VertexIndex = usize;
@@ -51,7 +66,7 @@ pub type VertexNum = VertexIndex;
 pub type NodeNum = VertexIndex;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "python_binding", pyclass)]
+#[cfg_attr(feature = "python_binding", pyclass(module = "mwpf"))]
 pub struct HyperEdge {
     /// the vertices incident to the hyperedge
     pub vertices: Vec<VertexIndex>,
@@ -93,9 +108,16 @@ impl HyperEdge {
     fn set_weight(&mut self, weight: &Bound<PyAny>) {
         self.weight = PyRational::from(weight).0;
     }
+    fn __getnewargs_ex__(&self, py: Python<'_>) -> PyResult<Py<PyTuple>> {
+        let kwargs = PyDict::new(py);
+        kwargs.set_item("vertices", self.vertices.clone())?;
+        kwargs.set_item("weight", self.get_weight())?;
+        let args = PyTuple::empty(py);
+        Ok((args, kwargs).into_pyobject(py)?.unbind())
+    }
 }
 
-#[cfg_attr(feature = "python_binding", pyclass(get_all, set_all))]
+#[cfg_attr(feature = "python_binding", pyclass(module = "mwpf", get_all, set_all))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SolverInitializer {
     /// the number of vertices
@@ -148,6 +170,22 @@ impl SolverInitializer {
         use crate::num_traits::One;
         value.uniform_weights(weight.map(|x| PyRational::from(x).0).unwrap_or_else(|| Rational::one()));
         slf
+    }
+    #[pyo3(name = "to_json")]
+    fn py_to_json(&self) -> String {
+        serde_json::to_string(&self).unwrap()
+    }
+    #[staticmethod]
+    #[pyo3(name = "from_json")]
+    fn py_from_json(value: &Bound<PyAny>) -> Self {
+        serde_json::from_value(pyobject_to_json_locked(value)).unwrap()
+    }
+    fn __getnewargs_ex__(&self, py: Python<'_>) -> PyResult<Py<PyTuple>> {
+        let kwargs = PyDict::new(py);
+        kwargs.set_item("vertex_num", self.vertex_num)?;
+        kwargs.set_item("weighted_edges", self.weighted_edges.clone())?;
+        let args = PyTuple::empty(py);
+        Ok((args, kwargs).into_pyobject(py)?.unbind())
     }
 }
 
@@ -246,7 +284,7 @@ impl MWPSVisualizer for SolverInitializer {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "python_binding", pyclass(get_all, set_all))]
+#[cfg_attr(feature = "python_binding", pyclass(module = "mwpf", get_all, set_all))]
 pub struct SyndromePattern {
     /// the vertices corresponding to defect measurements
     pub defect_vertices: Vec<VertexIndex>,
@@ -314,6 +352,22 @@ impl SyndromePattern {
     #[pyo3(name="snapshot", signature = (abbrev=true))]
     fn py_snapshot(&mut self, abbrev: bool) -> PyObject {
         json_to_pyobject(self.snapshot(abbrev))
+    }
+    #[pyo3(name = "to_json")]
+    fn py_to_json(&self) -> String {
+        serde_json::to_string(&self).unwrap()
+    }
+    #[staticmethod]
+    #[pyo3(name = "from_json")]
+    fn py_from_json(value: &Bound<PyAny>) -> Self {
+        serde_json::from_value(pyobject_to_json_locked(value)).unwrap()
+    }
+    fn __getnewargs_ex__(&self, py: Python<'_>) -> PyResult<Py<PyTuple>> {
+        let kwargs = PyDict::new(py);
+        kwargs.set_item("defect_vertices", self.defect_vertices.clone())?;
+        kwargs.set_item("erasures", self.erasures.clone())?;
+        let args = PyTuple::empty(py);
+        Ok((args, kwargs).into_pyobject(py)?.unbind())
     }
 }
 

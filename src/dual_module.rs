@@ -24,7 +24,7 @@ use std::sync::Arc;
 
 // this is not effectively doing much right now due to the My (Leo's) desire for ultra performance (inlining function > branches)
 #[derive(Default, Debug, PartialEq, Eq)]
-#[cfg_attr(feature = "python_binding", pyclass(eq, eq_int))]
+#[cfg_attr(feature = "python_binding", pyclass(module = "mwpf", eq, eq_int))]
 pub enum DualModuleMode {
     /// Mode 1
     #[default]
@@ -156,7 +156,7 @@ impl std::fmt::Debug for DualNodeWeak {
 /// dual nodes, once created, will never be deconstructed until the next run
 #[derive(Derivative)]
 #[derivative(Debug)]
-#[cfg_attr(feature = "python_binding", pyclass)]
+#[cfg_attr(feature = "python_binding", pyclass(module = "mwpf"))]
 pub struct DualModuleInterface {
     /// all the dual node that can be used to control a concrete dual module implementation
     // #[cfg_attr(feature = "python_binding", pyo3(get))]

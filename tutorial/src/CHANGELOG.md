@@ -56,3 +56,10 @@ exposed `hyperion_exposed` variable in visualization tool so that user can progr
 
 - add feature of constantly trying to solve primal problem even though there are still relaxers; this is good for decoding accuracy while still maintain the same level of time
 - release GIL during the decoding process
+
+## 0.2.7 - 2025-02-07
+
+- restructure mixed Rust and Python project so that user can edit Python code without recompile
+- catch Exception in the decoding loop and record the failing case for debugging purpose
+- make the decoder and several related things picklable, for people to exactly reproduce certain failing cases
+- detect KeyboardInterrupt such that user can interrupt the decoding process in the middle

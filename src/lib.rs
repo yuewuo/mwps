@@ -43,6 +43,8 @@ pub mod pointers;
 pub mod primal_module;
 pub mod primal_module_serial;
 pub mod primal_module_union_find;
+#[cfg(feature = "python_binding")]
+pub mod python_signal_checker;
 pub mod relaxer;
 pub mod relaxer_forest;
 pub mod relaxer_optimizer;

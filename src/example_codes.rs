@@ -28,7 +28,7 @@ use std::sync::Arc;
 /// Vertex corresponds to a stabilizer measurement bit
 #[derive(Derivative, Clone)]
 #[derivative(Debug)]
-#[cfg_attr(feature = "python_binding", pyclass(get_all, set_all))]
+#[cfg_attr(feature = "python_binding", pyclass(module = "mwpf", get_all, set_all))]
 pub struct CodeVertex {
     /// position helps to visualize
     pub position: VisualizePosition,
@@ -49,7 +49,7 @@ impl CodeVertex {
 /// Edge flips the measurement result of two vertices
 #[derive(Derivative, Clone)]
 #[derivative(Debug)]
-#[cfg_attr(feature = "python_binding", pyclass)]
+#[cfg_attr(feature = "python_binding", pyclass(module = "mwpf"))]
 pub struct CodeEdge {
     /// the two vertices incident to this edge; in quantum LDPC codes this should be only a handful of vertices
     pub vertices: Vec<VertexIndex>,
@@ -584,7 +584,7 @@ where
 
 /// perfect quantum repetition code
 #[derive(Clone, Debug)]
-#[cfg_attr(feature = "python_binding", pyclass(get_all, set_all))]
+#[cfg_attr(feature = "python_binding", pyclass(module = "mwpf", get_all, set_all))]
 pub struct CodeCapacityRepetitionCode {
     /// vertices in the code
     pub vertices: Vec<CodeVertex>,
@@ -661,7 +661,7 @@ impl CodeCapacityRepetitionCode {
 /// code capacity noise model is a single measurement round with perfect stabilizer measurements;
 /// e.g. this is the decoding graph of a CSS surface code (standard one, not rotated one) with X-type stabilizers
 #[derive(Clone, Debug)]
-#[cfg_attr(feature = "python_binding", pyclass(get_all, set_all))]
+#[cfg_attr(feature = "python_binding", pyclass(module = "mwpf", get_all, set_all))]
 pub struct CodeCapacityPlanarCode {
     /// vertices in the code
     pub vertices: Vec<CodeVertex>,
@@ -750,7 +750,7 @@ impl CodeCapacityPlanarCode {
 /// e.g. this is the decoding graph of a CSS surface code (standard one, not rotated one) with both stabilizers and
 /// depolarizing noise model (X, Y, Z)
 #[derive(Clone, Debug)]
-#[cfg_attr(feature = "python_binding", pyclass(get_all, set_all))]
+#[cfg_attr(feature = "python_binding", pyclass(module = "mwpf", get_all, set_all))]
 pub struct CodeCapacityDepolarizePlanarCode {
     /// vertices in the code
     pub vertices: Vec<CodeVertex>,
@@ -892,7 +892,7 @@ impl CodeCapacityDepolarizePlanarCode {
 /// e.g. this is the decoding hypergraph of a rotated tailored surface code that have all the stabilizers and including degree-4 hyperedges;
 /// the noise is biased to Z errors, with X and Y-typed stabilizers
 #[derive(Clone, Debug)]
-#[cfg_attr(feature = "python_binding", pyclass(get_all, set_all))]
+#[cfg_attr(feature = "python_binding", pyclass(module = "mwpf", get_all, set_all))]
 pub struct CodeCapacityTailoredCode {
     /// vertices in the code
     pub vertices: Vec<CodeVertex>,
@@ -1027,7 +1027,7 @@ impl CodeCapacityTailoredCode {
 /// e.g. this is the decoding hypergraph of a color code that have all only the Z stabilizers
 /// (because X and Z have the same location, for simplicity and better visual)
 #[derive(Clone, Debug)]
-#[cfg_attr(feature = "python_binding", pyclass(get_all, set_all))]
+#[cfg_attr(feature = "python_binding", pyclass(module = "mwpf", get_all, set_all))]
 pub struct CodeCapacityColorCode {
     /// vertices in the code
     pub vertices: Vec<CodeVertex>,
@@ -1137,7 +1137,7 @@ impl CodeCapacityColorCode {
 
 /// example code with QEC-Playground as simulator
 #[cfg(feature = "qecp_integrate")]
-#[cfg_attr(feature = "python_binding", pyclass)]
+#[cfg_attr(feature = "python_binding", pyclass(module = "mwpf"))]
 #[derive(Debug, Clone)]
 pub struct QECPlaygroundCode {
     simulator: qecp::simulator::Simulator,
@@ -1395,7 +1395,7 @@ pub mod hyperion_default_configs {
 /// the point is to avoid bad cache performance, because generating random error requires iterating over a large memory space,
 /// invalidating all cache. also, this can reduce the time of decoding by prepare the data before hand and could be shared between
 /// different partition configurations
-#[cfg_attr(feature = "python_binding", pyclass(get_all, set_all))]
+#[cfg_attr(feature = "python_binding", pyclass(module = "mwpf", get_all, set_all))]
 pub struct ErrorPatternReader {
     /// vertices in the code
     pub vertices: Vec<CodeVertex>,
