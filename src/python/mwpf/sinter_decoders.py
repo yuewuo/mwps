@@ -14,6 +14,7 @@ import pickle
 import json
 import traceback
 from enum import Enum
+import random
 
 if TYPE_CHECKING:
     import stim
@@ -91,6 +92,7 @@ class SinterMWPFDecoder:
             dem.num_detectors,
             dem.num_observables,
             panic_action=self.panic_action,
+            panic_cases=self.panic_cases,  # record all the panic information to the same place
         )
 
     def decode_via_files(
@@ -155,7 +157,7 @@ class SinterMWPFDecoder:
                             if self.panic_action == PanicAction.RAISE:
                                 raise ValueError(panic_text_of(solver, syndrome)) from e
                             elif self.panic_action == PanicAction.CATCH:
-                                prediction = 0
+                                prediction = random.getrandbits(num_obs)
                         solver.clear()
                     obs_out_f.write(
                         prediction.to_bytes((num_obs + 7) // 8, byteorder="little")
@@ -200,13 +202,14 @@ class MwpfCompiledDecoder:
         num_dets: int,
         num_obs: int,
         panic_action: PanicAction = PanicAction.CATCH,
+        panic_cases: Optional[list[DecoderPanic]] = None,
     ):
         self.solver = solver
         self.fault_masks = fault_masks
         self.num_dets = num_dets
         self.num_obs = num_obs
-        self.panic_cases: list[DecoderPanic] = []
         self.panic_action = panic_action
+        self.panic_cases = [] if panic_cases is None else panic_cases
 
     def decode_shots_bit_packed(
         self,
@@ -247,7 +250,7 @@ class MwpfCompiledDecoder:
                     if self.panic_action == PanicAction.RAISE:
                         raise ValueError(panic_text_of(self.solver, syndrome)) from e
                     elif self.panic_action == PanicAction.CATCH:
-                        prediction = 0
+                        prediction = random.getrandbits(self.num_obs)
                 self.solver.clear()
             predictions[shot] = np.packbits(
                 np.array(
