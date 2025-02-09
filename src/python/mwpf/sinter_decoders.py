@@ -60,7 +60,7 @@ class SinterMWPFDecoder:
     with_progress: bool = False
 
     # record panic data and controls whether the raise the panic or simply record them
-    panic_action: PanicAction = PanicAction.RAISE
+    panic_action: PanicAction = PanicAction.CATCH
     panic_cases: list[DecoderPanic] = field(default_factory=list)
 
     @property
@@ -199,7 +199,7 @@ class MwpfCompiledDecoder:
         fault_masks: "np.ndarray",
         num_dets: int,
         num_obs: int,
-        panic_action: PanicAction = PanicAction.RAISE,
+        panic_action: PanicAction = PanicAction.CATCH,
     ):
         self.solver = solver
         self.fault_masks = fault_masks
