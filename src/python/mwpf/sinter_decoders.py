@@ -9,9 +9,11 @@ from mwpf import (
     SolverInitializer,
     Solver,
 )
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import pickle
 import json
+import traceback
+from enum import Enum
 
 if TYPE_CHECKING:
     import stim
@@ -25,6 +27,19 @@ available_decoders = [
 ]
 
 default_cluster_node_limit: int = 50
+
+
+@dataclass
+class DecoderPanic:
+    initializer: SolverInitializer
+    config: dict
+    syndrome: SyndromePattern
+    panic_message: str
+
+
+class PanicAction(Enum):
+    RAISE = 1  # raise the panic with proper message to help debugging
+    CATCH = 2  # proceed with normal decoding and return all-0 result
 
 
 @dataclass
@@ -43,7 +58,10 @@ class SinterMWPFDecoder:
     c: Optional[int] = None  # alias of `cluster_node_limit`, will override it
     timeout: Optional[float] = None
     with_progress: bool = False
-    panic_case: Optional[Tuple[SolverInitializer, dict, SyndromePattern]] = None
+
+    # record panic data and controls whether the raise the panic or simply record them
+    panic_action: PanicAction = PanicAction.RAISE
+    panic_cases: list[DecoderPanic] = field(default_factory=list)
 
     @property
     def _cluster_node_limit(self) -> int:
@@ -72,6 +90,7 @@ class SinterMWPFDecoder:
             fault_masks,
             dem.num_detectors,
             dem.num_observables,
+            panic_action=self.panic_action,
         )
 
     def decode_via_files(
@@ -125,7 +144,18 @@ class SinterMWPFDecoder:
                                 np.bitwise_xor.reduce(fault_masks[subgraph])
                             )
                         except BaseException as e:
-                            raise ValueError(panic_text_of(solver, syndrome)) from e
+                            self.panic_cases.append(
+                                DecoderPanic(
+                                    initializer=solver.get_initializer(),
+                                    config=solver.config,
+                                    syndrome=syndrome,
+                                    panic_message=traceback.format_exc(),
+                                )
+                            )
+                            if self.panic_action == PanicAction.RAISE:
+                                raise ValueError(panic_text_of(solver, syndrome)) from e
+                            elif self.panic_action == PanicAction.CATCH:
+                                prediction = 0
                         solver.clear()
                     obs_out_f.write(
                         prediction.to_bytes((num_obs + 7) // 8, byteorder="little")
@@ -169,11 +199,14 @@ class MwpfCompiledDecoder:
         fault_masks: "np.ndarray",
         num_dets: int,
         num_obs: int,
+        panic_action: PanicAction = PanicAction.RAISE,
     ):
         self.solver = solver
         self.fault_masks = fault_masks
         self.num_dets = num_dets
         self.num_obs = num_obs
+        self.panic_cases: list[DecoderPanic] = []
+        self.panic_action = panic_action
 
     def decode_shots_bit_packed(
         self,
@@ -203,7 +236,18 @@ class MwpfCompiledDecoder:
                     subgraph = self.solver.subgraph()
                     prediction = int(np.bitwise_xor.reduce(self.fault_masks[subgraph]))
                 except BaseException as e:
-                    raise ValueError(panic_text_of(self.solver, syndrome)) from e
+                    self.panic_cases.append(
+                        DecoderPanic(
+                            initializer=self.solver.get_initializer(),
+                            config=self.solver.config,
+                            syndrome=syndrome,
+                            panic_message=traceback.format_exc(),
+                        )
+                    )
+                    if self.panic_action == PanicAction.RAISE:
+                        raise ValueError(panic_text_of(self.solver, syndrome)) from e
+                    elif self.panic_action == PanicAction.CATCH:
+                        prediction = 0
                 self.solver.clear()
             predictions[shot] = np.packbits(
                 np.array(
