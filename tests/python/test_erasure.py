@@ -65,7 +65,7 @@ def test_override_weights_decoding():
     print((bound.lower, bound.upper))
     assert subgraph == [0, 1]
     assert bound.lower == bound.upper
-    assert bound.upper == 40
+    assert bound.upper.approx_eq(40)
     # set to negative weight
     solver.solve(
         mwpf.SyndromePattern(

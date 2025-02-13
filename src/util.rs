@@ -1079,6 +1079,29 @@ pub(crate) fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     Ok(())
 }
 
+pub fn rational_approx_eq(a: &Rational, b: &Rational) -> bool {
+    #[cfg(feature = "rational_weight")]
+    use crate::num_traits::Signed;
+    if a == b {
+        return true;
+    }
+    (a - b).abs() / b < Rational::from_float(1e-6).unwrap()
+}
+
+pub fn rational_approx_le(a: &Rational, b: &Rational) -> bool {
+    if a < b {
+        return true;
+    }
+    (b - a) / b < Rational::from_float(1e-6).unwrap()
+}
+
+pub fn rational_approx_ge(a: &Rational, b: &Rational) -> bool {
+    if a > b {
+        return true;
+    }
+    (b - a) / b < Rational::from_float(1e-6).unwrap()
+}
+
 #[cfg(test)]
 pub mod tests {
     use crate::example_codes::ExampleCode;
@@ -1087,29 +1110,6 @@ pub mod tests {
     use hashbrown::HashSet;
     use num_bigint::BigInt;
     use std::str::FromStr;
-
-    pub fn rational_approx_eq(a: &Rational, b: &Rational) -> bool {
-        #[cfg(feature = "rational_weight")]
-        use crate::num_traits::Signed;
-        if a == b {
-            return true;
-        }
-        (a - b).abs() / b < Rational::from_float(1e-6).unwrap()
-    }
-
-    pub fn rational_approx_le(a: &Rational, b: &Rational) -> bool {
-        if a < b {
-            return true;
-        }
-        (b - a) / b < Rational::from_float(1e-6).unwrap()
-    }
-
-    pub fn rational_approx_ge(a: &Rational, b: &Rational) -> bool {
-        if a > b {
-            return true;
-        }
-        (b - a) / b < Rational::from_float(1e-6).unwrap()
-    }
 
     #[test]
     fn util_py_json_bigint() {

@@ -1161,7 +1161,6 @@ pub mod tests {
     use super::*;
     use crate::plugin_single_hair::PluginSingleHair;
     use crate::plugin_union_find::PluginUnionFind;
-    use crate::util::tests::*;
 
     #[allow(clippy::too_many_arguments)]
     pub fn primal_module_serial_basic_standard_syndrome_optional_viz(

@@ -216,7 +216,6 @@ pub mod tests {
     use crate::dual_module_pq::*;
     use crate::example_codes::*;
     use crate::num_traits::ToPrimitive;
-    use crate::util::tests::*;
     use std::sync::Arc;
 
     pub fn primal_module_union_find_basic_standard_syndrome_optional_viz(

@@ -96,17 +96,21 @@ impl PyRational {
     fn __abs__(&self) -> Self {
         self.0.abs().into()
     }
-    fn __mul__(&self, other: &Self) -> Self {
-        (self.0.clone() * other.0.clone()).into()
+    fn __mul__(&self, other: &Bound<PyAny>) -> Self {
+        let other = PyRational::from(other);
+        (self.0.clone() * other.0).into()
     }
-    fn __truediv__(&self, other: &Self) -> Self {
-        (self.0.clone() / other.0.clone()).into()
+    fn __truediv__(&self, other: &Bound<PyAny>) -> Self {
+        let other = PyRational::from(other);
+        (self.0.clone() / other.0).into()
     }
-    fn __add__(&self, other: &Self) -> Self {
-        (self.0.clone() + other.0.clone()).into()
+    fn __add__(&self, other: &Bound<PyAny>) -> Self {
+        let other = PyRational::from(other);
+        (self.0.clone() + other.0).into()
     }
-    fn __sub__(&self, other: &Self) -> Self {
-        (self.0.clone() - other.0.clone()).into()
+    fn __sub__(&self, other: &Bound<PyAny>) -> Self {
+        let other = PyRational::from(other);
+        (self.0.clone() - other.0).into()
     }
     fn __neg__(&self) -> Self {
         (-self.0.clone()).into()
@@ -137,6 +141,18 @@ impl PyRational {
         kwargs.set_item("denominator", self.denom())?;
         let args = PyTuple::empty(py);
         Ok((args, kwargs).into_pyobject(py)?.unbind())
+    }
+    fn approx_eq(&self, other: &Bound<PyAny>) -> bool {
+        let other = PyRational::from(other);
+        rational_approx_eq(&self.0, &other.0)
+    }
+    fn approx_le(&self, other: &Bound<PyAny>) -> bool {
+        let other = PyRational::from(other);
+        rational_approx_le(&self.0, &other.0)
+    }
+    fn approx_ge(&self, other: &Bound<PyAny>) -> bool {
+        let other = PyRational::from(other);
+        rational_approx_ge(&self.0, &other.0)
     }
 }
 
