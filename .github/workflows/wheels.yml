@@ -3,7 +3,7 @@ name: Build Python Binding
 on:
   push:
     branches:
-      - ci-build
+      - '**'
     tags:
       - '**'
   # pull_request: {}

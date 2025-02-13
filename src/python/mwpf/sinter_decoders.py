@@ -408,13 +408,38 @@ def detector_error_model_to_mwpf_solver_and_fault_masks(
     )
 
 
-from qec_lego_bench.misc.sinter_decoder_helper import SinterDecoderHelper
-
-print(SinterDecoderHelper)
-
-
 @dataclass
 class SinterDevMWPFDecoder:
+    """
+    Use MWPF to predict observables from detection events.
+
+    Args:
+        decoder_type: decoder class used to construct the MWPF decoder.  in the Rust implementation, all of them inherits from the class of `SolverSerialPlugins` but just provide different plugins for optimizing the primal and/or dual solutions. For example, `SolverSerialUnionFind` is the most basic solver without any plugin: it only grows the clusters until the first valid solution appears; some more optimized solvers uses one or more plugins to further optimize the solution, which requires longer decoding time.
+
+        cluster_node_limit (alias: c): The maximum number of nodes in a cluster, used to tune the performance of the decoder. The default value is 50.
+    """
+
+    decoder_type: str = "SolverSerialJointSingleHair"
+    cluster_node_limit: Optional[int] = None
+    c: Optional[int] = None  # alias of `cluster_node_limit`, will override it
+    timeout: Optional[float] = None
+    with_progress: bool = False
+
+    # record panic data and controls whether the raise the panic or simply record them
+    panic_action: PanicAction = PanicAction.CATCH
+    panic_cases: list[DecoderPanic] = field(default_factory=list)
+
+    @property
+    def _cluster_node_limit(self) -> int:
+        if self.cluster_node_limit is not None:
+            assert self.c is None, "Cannot set both `cluster_node_limit` and `c`."
+            return self.cluster_node_limit
+        elif self.c is not None:
+            assert (
+                self.cluster_node_limit is None
+            ), "Cannot set both `cluster_node_limit` and `c`."
+            return self.c
+        return default_cluster_node_limit
 
     def compile_decoder_for_dem(
         self,
@@ -457,6 +482,7 @@ class MwpfDevCompiledDecoder:
             shape=(num_shots, (self.num_obs + 7) // 8), dtype=np.uint8
         )
         for shot in range(num_shots):
+            print("shot:", bit_packed_detection_event_data[shot])
             dets_sparse = np.flatnonzero(
                 np.unpackbits(
                     bit_packed_detection_event_data[shot],
@@ -464,6 +490,7 @@ class MwpfDevCompiledDecoder:
                     bitorder="little",
                 )
             )
+            print(dets_sparse)
             syndrome = SyndromePattern(defect_vertices=dets_sparse)
             if self.solver is None:
                 prediction = 0
