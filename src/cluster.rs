@@ -20,6 +20,12 @@ pub struct Cluster {
     pub parity_matrix: Tight<BasicMatrix>,
 }
 
+impl Default for Cluster {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Cluster {
     /// Create a new cluster
     pub fn new() -> Self {
@@ -65,6 +71,7 @@ pub mod tests {
     use crate::mwpf_solver::*;
     use crate::visualize::*;
     use num_traits::One;
+    use std::sync::Arc;
     use sugar::btreeset;
 
     fn cluster_test_common(
@@ -79,7 +86,7 @@ pub mod tests {
         let mut visualizer = Visualizer::new(Some(visualizer_path.clone()), code.get_positions(), true).unwrap();
         let mut initializer = code.get_initializer();
         initializer.uniform_weights(Rational::one());
-        let mut solver = SolverSerialJointSingleHair::new(&initializer, json!({}));
+        let mut solver = SolverSerialJointSingleHair::new(&Arc::new(initializer), json!({}));
         solver.solve_visualizer(syndrome, Some(&mut visualizer));
         if cfg!(feature = "embed_visualizer") {
             let html = visualizer.generate_html(json!({}));

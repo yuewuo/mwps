@@ -58,6 +58,7 @@ cfg_if::cfg_if! {
 pub type Weight = Rational;
 pub type EdgeIndex = usize;
 pub type VertexIndex = usize;
+pub type HeraldIndex = usize;
 pub type KnownSafeRefCell<T> = std::cell::RefCell<T>;
 
 pub type NodeIndex = VertexIndex;
@@ -128,7 +129,7 @@ pub struct SolverInitializer {
     /// conditional edge sets; when the heralded detector is one, this specified edges will update
     /// their weight as if these additional errors could be happening (see `compose_weight` function).
     /// note that in case rational number is used, this method only guarantees f64 accuracy
-    pub heralded_edge_sets: Vec<Vec<(EdgeIndex, Weight)>>,
+    pub heralded_weighted_edges: Vec<Vec<(EdgeIndex, Weight)>>,
 }
 
 pub fn exclusive_weight_sum(w1: Weight, w2: Weight) -> Weight {
@@ -150,7 +151,7 @@ impl SolverInitializer {
         Self {
             vertex_num,
             weighted_edges,
-            heralded_edge_sets: vec![],
+            heralded_weighted_edges: vec![],
         }
     }
 }
@@ -326,13 +327,19 @@ pub struct SyndromePattern {
     pub defect_vertices: Vec<VertexIndex>,
     /// the edges that experience erasures, i.e. known errors
     pub erasures: Vec<EdgeIndex>,
+    /// the heralded weighted edges index
+    pub heralds: Vec<HeraldIndex>,
 }
 
 impl SyndromePattern {
     pub fn new(defect_vertices: Vec<VertexIndex>, erasures: Vec<EdgeIndex>) -> Self {
+        Self::new_with_heralds(defect_vertices, erasures, vec![])
+    }
+    pub fn new_with_heralds(defect_vertices: Vec<VertexIndex>, erasures: Vec<EdgeIndex>, heralds: Vec<HeraldIndex>) -> Self {
         Self {
             defect_vertices,
             erasures,
+            heralds,
         }
     }
 }

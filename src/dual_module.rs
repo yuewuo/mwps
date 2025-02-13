@@ -254,7 +254,7 @@ pub enum DualReport {
 /// common trait that must be implemented for each implementation of dual module
 pub trait DualModuleImpl {
     /// create a new dual module with empty syndrome
-    fn new_empty(initializer: &SolverInitializer) -> Self;
+    fn new_empty(initializer: &Arc<SolverInitializer>) -> Self;
 
     /// clear all growth and existing dual nodes, prepared for the next decoding
     fn clear(&mut self);

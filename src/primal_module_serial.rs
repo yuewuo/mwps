@@ -152,7 +152,7 @@ pub type PrimalClusterPtr = ArcRwLock<PrimalCluster>;
 pub type PrimalClusterWeak = WeakRwLock<PrimalCluster>;
 
 impl PrimalModuleImpl for PrimalModuleSerial {
-    fn new_empty(_initializer: &SolverInitializer) -> Self {
+    fn new_empty(_initializer: &Arc<SolverInitializer>) -> Self {
         Self {
             nodes: vec![],
             clusters: vec![],

@@ -18,6 +18,7 @@ use rand::{thread_rng, Rng, SeedableRng};
 use serde::Serialize;
 use serde_variant::to_variant_name;
 use std::env;
+use std::sync::Arc;
 
 const TEST_EACH_ROUNDS: usize = 100;
 
@@ -342,7 +343,7 @@ impl Cli {
                     code.set_erasure_probability(pe);
                 }
                 // create initializer and solver
-                let initializer = code.get_initializer();
+                let initializer = Arc::new(code.get_initializer());
                 let mut solver = solver_type.build(&initializer, &*code, solver_config.clone());
                 let mut result_verifier = verifier.build(&initializer);
                 // prepare progress bar display
@@ -641,7 +642,7 @@ impl ExampleCodeType {
 impl SolverType {
     pub fn build(
         &self,
-        initializer: &SolverInitializer,
+        initializer: &Arc<SolverInitializer>,
         code: &dyn ExampleCode,
         solver_config: serde_json::Value,
     ) -> Box<dyn SolverTrait> {

@@ -17,6 +17,7 @@ use crate::union_find::*;
 use crate::util::*;
 use crate::visualize::*;
 use std::collections::BTreeSet;
+use std::sync::Arc;
 
 #[derive(Derivative)]
 #[derivative(Debug)]
@@ -64,7 +65,7 @@ impl UnionNodeTrait for PrimalModuleUnionFindNode {
 }
 
 impl PrimalModuleImpl for PrimalModuleUnionFind {
-    fn new_empty(_initializer: &SolverInitializer) -> Self {
+    fn new_empty(_initializer: &Arc<SolverInitializer>) -> Self {
         Self {
             union_find: UnionFind::new(0),
         }

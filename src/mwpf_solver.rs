@@ -303,8 +303,8 @@ impl MWPSVisualizer for SolverSerialPlugins {
 }
 
 impl SolverSerialPlugins {
-    pub fn new(initializer: &SolverInitializer, plugins: Arc<Vec<PluginEntry>>, config: serde_json::Value) -> Self {
-        let model_graph = Arc::new(ModelHyperGraph::new(Arc::new(initializer.clone())));
+    pub fn new(initializer: &Arc<SolverInitializer>, plugins: Arc<Vec<PluginEntry>>, config: serde_json::Value) -> Self {
+        let model_graph = Arc::new(ModelHyperGraph::new(initializer.clone()));
         let mut primal_module = PrimalModuleSerial::new_empty(initializer); // question: why does this need initializer?
         let config: SolverSerialPluginsConfig = serde_json::from_value(config).unwrap();
         primal_module.plugins = plugins;
@@ -522,7 +522,7 @@ macro_rules! bind_solver_trait {
 pub struct SolverSerialUnionFind(SolverSerialPlugins);
 
 impl SolverSerialUnionFind {
-    pub fn new(initializer: &SolverInitializer, config: serde_json::Value) -> Self {
+    pub fn new(initializer: &Arc<SolverInitializer>, config: serde_json::Value) -> Self {
         Self(SolverSerialPlugins::new(initializer, Arc::new(vec![]), config))
     }
 }
@@ -548,7 +548,7 @@ inherit_solver_plugin_methods!(SolverSerialUnionFind);
 pub struct SolverSerialSingleHair(SolverSerialPlugins);
 
 impl SolverSerialSingleHair {
-    pub fn new(initializer: &SolverInitializer, config: serde_json::Value) -> Self {
+    pub fn new(initializer: &Arc<SolverInitializer>, config: serde_json::Value) -> Self {
         Self(SolverSerialPlugins::new(
             initializer,
             Arc::new(vec![
@@ -581,7 +581,7 @@ inherit_solver_plugin_methods!(SolverSerialSingleHair);
 pub struct SolverSerialJointSingleHair(SolverSerialPlugins);
 
 impl SolverSerialJointSingleHair {
-    pub fn new(initializer: &SolverInitializer, config: serde_json::Value) -> Self {
+    pub fn new(initializer: &Arc<SolverInitializer>, config: serde_json::Value) -> Self {
         Self(SolverSerialPlugins::new(
             initializer,
             Arc::new(vec![

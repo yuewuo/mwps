@@ -16,6 +16,7 @@ use crate::{add_shared_methods, dual_module::*};
 use std::{
     cmp::{Ordering, Reverse},
     collections::{BTreeSet, BinaryHeap},
+    sync::Arc,
     time::Instant,
 };
 
@@ -263,7 +264,8 @@ where
     negative_edges: HashSet<EdgeIndex>,
     flip_vertices: HashSet<VertexIndex>,
 
-    // counteract the weight updates
+    // remember the initializer for original weights and heralded weighted edges
+    initializer: Arc<SolverInitializer>,
     original_weights: Vec<Rational>,
 }
 
@@ -396,7 +398,7 @@ where
 {
     /// initialize the dual module, which is supposed to be reused for multiple decoding tasks with the same structure
     #[allow(clippy::unnecessary_cast)]
-    fn new_empty(initializer: &SolverInitializer) -> Self {
+    fn new_empty(initializer: &Arc<SolverInitializer>) -> Self {
         #[cfg(not(feature = "loose_sanity_check"))]
         initializer.sanity_check().unwrap();
 
@@ -457,6 +459,7 @@ where
             negative_edges: Default::default(),
             flip_vertices: Default::default(),
             original_weights,
+            initializer: initializer.clone(),
         }
     }
 

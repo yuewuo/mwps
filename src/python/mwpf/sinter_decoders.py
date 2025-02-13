@@ -158,7 +158,6 @@ class SinterMWPFDecoder:
                                 raise ValueError(panic_text_of(solver, syndrome)) from e
                             elif self.panic_action == PanicAction.CATCH:
                                 prediction = random.getrandbits(num_obs)
-                        solver.clear()
                     obs_out_f.write(
                         prediction.to_bytes((num_obs + 7) // 8, byteorder="little")
                     )
@@ -251,7 +250,6 @@ class MwpfCompiledDecoder:
                         raise ValueError(panic_text_of(self.solver, syndrome)) from e
                     elif self.panic_action == PanicAction.CATCH:
                         prediction = random.getrandbits(self.num_obs)
-                self.solver.clear()
             predictions[shot] = np.packbits(
                 np.array(
                     list(np.binary_repr(prediction, width=self.num_obs))[::-1],
@@ -408,3 +406,90 @@ def detector_error_model_to_mwpf_solver_and_fault_masks(
         ),
         fault_masks,
     )
+
+
+from qec_lego_bench.misc.sinter_decoder_helper import SinterDecoderHelper
+
+print(SinterDecoderHelper)
+
+
+@dataclass
+class SinterDevMWPFDecoder:
+
+    def compile_decoder_for_dem(
+        self,
+        *,
+        dem: "stim.DetectorErrorModel",
+    ) -> "MwpfDevCompiledDecoder":
+        solver, fault_masks = detector_error_model_to_mwpf_solver_and_fault_masks(
+            dem,
+            decoder_type=self.decoder_type,
+            cluster_node_limit=self._cluster_node_limit,
+        )
+        return MwpfDevCompiledDecoder(
+            solver,
+            fault_masks,
+            dem.num_detectors,
+            dem.num_observables,
+            panic_action=self.panic_action,
+            panic_cases=self.panic_cases,  # record all the panic information to the same place
+        )
+
+
+@dataclass
+class MwpfDevCompiledDecoder:
+    solver: Any
+    fault_masks: "np.ndarray"
+    num_dets: int
+    num_obs: int
+    panic_action: PanicAction = PanicAction.CATCH
+    panic_cases: list[DecoderPanic] = field(default_factory=list)
+
+    def decode_shots_bit_packed(
+        self,
+        *,
+        bit_packed_detection_event_data: "np.ndarray",
+    ) -> "np.ndarray":
+        import numpy as np
+
+        num_shots = bit_packed_detection_event_data.shape[0]
+        predictions = np.zeros(
+            shape=(num_shots, (self.num_obs + 7) // 8), dtype=np.uint8
+        )
+        for shot in range(num_shots):
+            dets_sparse = np.flatnonzero(
+                np.unpackbits(
+                    bit_packed_detection_event_data[shot],
+                    count=self.num_dets,
+                    bitorder="little",
+                )
+            )
+            syndrome = SyndromePattern(defect_vertices=dets_sparse)
+            if self.solver is None:
+                prediction = 0
+            else:
+                try:
+                    self.solver.solve(syndrome)
+                    subgraph = self.solver.subgraph()
+                    prediction = int(np.bitwise_xor.reduce(self.fault_masks[subgraph]))
+                except BaseException as e:
+                    self.panic_cases.append(
+                        DecoderPanic(
+                            initializer=self.solver.get_initializer(),
+                            config=self.solver.config,
+                            syndrome=syndrome,
+                            panic_message=traceback.format_exc(),
+                        )
+                    )
+                    if self.panic_action == PanicAction.RAISE:
+                        raise ValueError(panic_text_of(self.solver, syndrome)) from e
+                    elif self.panic_action == PanicAction.CATCH:
+                        prediction = random.getrandbits(self.num_obs)
+            predictions[shot] = np.packbits(
+                np.array(
+                    list(np.binary_repr(prediction, width=self.num_obs))[::-1],
+                    dtype=np.uint8,
+                ),
+                bitorder="little",
+            )
+        return predictions

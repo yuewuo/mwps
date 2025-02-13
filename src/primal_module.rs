@@ -22,7 +22,7 @@ const MAX_HISTORY: usize = 10;
 /// common trait that must be implemented for each implementation of primal module
 pub trait PrimalModuleImpl {
     /// create a primal module given the dual module
-    fn new_empty(solver_initializer: &SolverInitializer) -> Self;
+    fn new_empty(solver_initializer: &Arc<SolverInitializer>) -> Self;
 
     /// clear all states; however this method is not necessarily called when load a new decoding problem, so you need to call it yourself
     fn clear(&mut self);
