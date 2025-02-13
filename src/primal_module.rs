@@ -9,7 +9,6 @@ use std::sync::Arc;
 
 use crate::dual_module::*;
 use crate::ordered_float::OrderedFloat;
-use crate::pointers::*;
 use crate::primal_module_serial::ClusterAffinity;
 use crate::relaxer_optimizer::OptimizerResult;
 use crate::util::*;
@@ -112,12 +111,30 @@ pub trait PrimalModuleImpl {
         &mut self,
         syndrome_pattern: Arc<SyndromePattern>,
         dual_module: &mut D,
+        initializer: &Arc<SolverInitializer>,
     ) -> Arc<SyndromePattern> {
         // update weights given the syndrome pattern
         if let Some((weights, ratio)) = syndrome_pattern.override_weights.as_ref() {
+            println!("override weights: {:?}, ratio: {:?}", weights, ratio);
             dual_module.update_weights(weights.clone(), ratio.clone());
         } else {
-            // TODO: use heralds and then erasures
+            let mut weight_updates: BTreeMap<EdgeIndex, Weight> = BTreeMap::new();
+            for &herald_index in syndrome_pattern.heralds.iter() {
+                for (edge_index, weight) in initializer.heralds[herald_index].iter() {
+                    let value = weight_updates.remove(edge_index);
+                    let original_weight = value
+                        .as_ref()
+                        .unwrap_or_else(|| &initializer.weighted_edges[*edge_index].weight);
+                    let mixed_weight = exclusive_weight_sum(original_weight, weight);
+                    println!("original weight: {original_weight}, weight: {weight}, mixed_weight: {mixed_weight}");
+                    weight_updates.insert(*edge_index, mixed_weight);
+                }
+            }
+            for &edge_index in syndrome_pattern.erasures.iter() {
+                use crate::num_traits::Zero;
+                weight_updates.insert(edge_index, Weight::zero());
+            }
+            dual_module.set_weights(weight_updates);
         }
 
         // after all the edge weights are set, adjust the negative weights and find the flipped vertices
@@ -153,9 +170,6 @@ pub trait PrimalModuleImpl {
     ) where
         Self: MWPSVisualizer + Sized,
     {
-        if !syndrome_pattern.erasures.is_empty() {
-            unimplemented!();
-        }
         // then call the solver to
         if let Some(visualizer) = visualizer {
             let callback = Self::visualizer_callback(visualizer);
@@ -277,14 +291,7 @@ pub trait PrimalModuleImpl {
         let output_subgraph = self.subgraph(interface, dual_module);
         let weight_range = WeightRange::new(
             interface.sum_dual_variables() + dual_module.get_negative_weight_sum(),
-            Rational::from(
-                interface
-                    .read_recursive()
-                    .decoding_graph
-                    .model_graph
-                    .initializer
-                    .get_subgraph_total_weight(&output_subgraph),
-            ),
+            dual_module.get_subgraph_weight(&output_subgraph.subgraph) + dual_module.get_negative_weight_sum(),
         );
         (output_subgraph, weight_range)
     }

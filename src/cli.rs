@@ -731,7 +731,10 @@ impl ResultVerifier for VerifierActualError {
         visualizer: Option<&mut Visualizer>,
         seed: u64,
     ) {
-        if !syndrome_pattern.erasures.is_empty() {
+        if !syndrome_pattern.erasures.is_empty()
+            || !syndrome_pattern.heralds.is_empty()
+            || syndrome_pattern.override_weights.is_some()
+        {
             unimplemented!()
         }
         let actual_weight = if error_pattern.is_empty() && !syndrome_pattern.defect_vertices.is_empty() {

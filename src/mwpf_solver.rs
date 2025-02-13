@@ -309,7 +309,6 @@ impl SolverSerialPlugins {
         let config: SolverSerialPluginsConfig = serde_json::from_value(config).unwrap();
         primal_module.plugins = plugins;
         primal_module.config = config.primal.as_ref().unwrap_or(&config.flatten_primal).clone();
-
         Self {
             dual_module: DualModulePQ::new_empty(initializer),
             primal_module,
@@ -412,9 +411,11 @@ impl SolverTrait for SolverSerialPlugins {
         }
         self.syndrome_loaded = true;
 
-        let syndrome_pattern = self
-            .primal_module
-            .weight_preprocessing(Arc::new(syndrome_pattern), &mut self.dual_module);
+        let syndrome_pattern = self.primal_module.weight_preprocessing(
+            Arc::new(syndrome_pattern),
+            &mut self.dual_module,
+            &self.model_graph.initializer,
+        );
         self.primal_module.solve_visualizer(
             &self.interface_ptr,
             syndrome_pattern.clone(),

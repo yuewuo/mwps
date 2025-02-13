@@ -928,9 +928,9 @@ where
     }
 
     fn set_weights(&mut self, new_weights: BTreeMap<EdgeIndex, Weight>) {
-        for (edge_index, new_weight) in new_weights.iter() {
-            let mut edge = self.edges[*edge_index].write();
-            edge.weight = new_weight.clone();
+        for (edge_index, new_weight) in new_weights.into_iter() {
+            let mut edge = self.edges[edge_index].write();
+            edge.weight = new_weight;
         }
     }
 

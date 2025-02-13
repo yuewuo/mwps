@@ -489,12 +489,12 @@ pub trait DualModuleImpl {
         &self,
         edge_index: EdgeIndex,
         participating_dual_variables: &hashbrown::HashSet<usize>,
-    ) -> Rational;
+    ) -> Weight;
 
-    fn get_edge_weight(&self, edge_index: EdgeIndex) -> Rational;
+    fn get_edge_weight(&self, edge_index: EdgeIndex) -> Weight;
 
-    fn get_subgraph_weight(&self, subgraph: &Subgraph) -> Rational {
-        let mut weight = Rational::zero();
+    fn get_subgraph_weight(&self, subgraph: &Subgraph) -> Weight {
+        let mut weight = Weight::zero();
         for &edge_index in subgraph {
             weight += self.get_edge_weight(edge_index);
         }

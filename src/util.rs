@@ -129,10 +129,10 @@ pub struct SolverInitializer {
     /// conditional edge sets; when the heralded detector is one, this specified edges will update
     /// their weight as if these additional errors could be happening (see `compose_weight` function).
     /// note that in case rational number is used, this method only guarantees f64 accuracy
-    pub heralded_weighted_edges: Vec<Vec<(EdgeIndex, Weight)>>,
+    pub heralds: Vec<Vec<(EdgeIndex, Weight)>>,
 }
 
-pub fn exclusive_weight_sum(w1: Weight, w2: Weight) -> Weight {
+pub fn exclusive_weight_sum(w1: &Weight, w2: &Weight) -> Weight {
     // w1 = log( (1-p1) / p1 ), weight_2 = log( (1-p2) / p2 )
     // p1 = 1 / (1 + exp(w1)), p2 = 1 / (1 + exp(w2))
     // p' = p1 (1 - p2) + p2 (1 - p1) = (exp(w1) + exp(w2)) / [ (1 + exp(w1)) (1 + exp(w2)) ]
@@ -148,10 +148,17 @@ pub fn exclusive_weight_sum(w1: Weight, w2: Weight) -> Weight {
 
 impl SolverInitializer {
     pub fn new(vertex_num: VertexNum, weighted_edges: Vec<HyperEdge>) -> Self {
+        Self::new_with_heralds(vertex_num, weighted_edges, vec![])
+    }
+    pub fn new_with_heralds(
+        vertex_num: VertexNum,
+        weighted_edges: Vec<HyperEdge>,
+        heralds: Vec<Vec<(EdgeIndex, Weight)>>,
+    ) -> Self {
         Self {
             vertex_num,
             weighted_edges,
-            heralded_weighted_edges: vec![],
+            heralds,
         }
     }
 }
@@ -160,8 +167,25 @@ impl SolverInitializer {
 #[pymethods]
 impl SolverInitializer {
     #[new]
-    fn py_new(vertex_num: VertexNum, weighted_edges: Vec<HyperEdge>) -> Self {
-        Self::new(vertex_num, weighted_edges)
+    #[pyo3(signature = (vertex_num, weighted_edges, heralds=None))]
+    fn py_new(
+        py: Python<'_>,
+        vertex_num: VertexNum,
+        weighted_edges: Vec<HyperEdge>,
+        heralds: Option<&Bound<PyList>>,
+    ) -> PyResult<Self> {
+        let mut heralds_vec = vec![];
+        if let Some(heralds) = heralds {
+            for herald in heralds.iter() {
+                heralds_vec.push(
+                    py_into_btree_map::<EdgeIndex, Py<PyAny>>(&herald)?
+                        .into_iter()
+                        .map(|(k, v)| -> (EdgeIndex, Weight) { (k, PyRational::from(v.bind(py)).into()) })
+                        .collect(),
+                );
+            }
+        }
+        Ok(Self::new_with_heralds(vertex_num, weighted_edges, heralds_vec))
     }
     fn __repr__(&self) -> String {
         format!("{:?}", self)
@@ -181,6 +205,26 @@ impl SolverInitializer {
     #[setter]
     fn set_weighted_edges(&mut self, weighted_edges: Vec<HyperEdge>) {
         self.weighted_edges = weighted_edges;
+    }
+    #[getter]
+    fn get_heralds(&self) -> Vec<std::collections::BTreeMap<EdgeIndex, PyRational>> {
+        self.heralds
+            .iter()
+            .map(|x| x.iter().map(|(k, v)| (*k, v.clone().into())).collect())
+            .collect()
+    }
+    #[setter]
+    fn set_heralds(&mut self, py: Python<'_>, heralds: &Bound<PyList>) -> PyResult<()> {
+        self.heralds = vec![];
+        for herald in heralds.iter() {
+            self.heralds.push(
+                py_into_btree_map::<EdgeIndex, Py<PyAny>>(&herald)?
+                    .into_iter()
+                    .map(|(k, v)| -> (EdgeIndex, Weight) { (k, PyRational::from(v.bind(py)).into()) })
+                    .collect(),
+            );
+        }
+        Ok(())
     }
     #[pyo3(name = "snapshot", signature = (abbrev=true))]
     fn py_snapshot(&mut self, abbrev: bool) -> PyObject {
@@ -395,8 +439,8 @@ impl SyndromePattern {
         defect_vertices: Option<&Bound<PyAny>>,
         erasures: Option<&Bound<PyAny>>,
         heralds: Option<&Bound<PyAny>>,
-        override_weights: Option<Vec<PyRational>>,
-        override_ratio: Option<PyRational>,
+        override_weights: Option<&Bound<PyList>>,
+        override_ratio: Option<&Bound<PyAny>>,
     ) -> PyResult<Self> {
         use crate::util_py::py_into_btree_set;
         let defect_vertices: Vec<VertexIndex> = if let Some(defect_vertices) = defect_vertices {
@@ -410,11 +454,11 @@ impl SyndromePattern {
                 "do not set erasures or heralds when override weights are provided"
             );
             let ratio = override_ratio
-                .map(|x| x.0)
+                .map(|x| PyRational::from(x).into())
                 .unwrap_or_else(|| Rational::from_f64(1.0).unwrap());
             Ok(Self::new_with_override_weights(
                 defect_vertices,
-                override_weights.into_iter().map(|x| x.0).collect(),
+                override_weights.iter().map(|x| PyRational::from(&x).into()).collect(),
                 ratio,
             ))
         } else {
@@ -1242,24 +1286,18 @@ pub mod tests {
         use crate::num_traits::One;
         let one = Weight::one();
         let zero = Weight::zero();
-        assert!(rational_approx_eq(&exclusive_weight_sum(one.clone(), zero.clone()), &zero));
-        assert!(rational_approx_eq(&exclusive_weight_sum(zero.clone(), one.clone()), &zero));
-        assert!(rational_approx_eq(&exclusive_weight_sum(zero.clone(), zero.clone()), &zero));
+        assert!(rational_approx_eq(&exclusive_weight_sum(&one, &zero), &zero));
+        assert!(rational_approx_eq(&exclusive_weight_sum(&zero, &one), &zero));
+        assert!(rational_approx_eq(&exclusive_weight_sum(&zero, &zero), &zero));
         assert!(rational_approx_eq(
-            &exclusive_weight_sum(one.clone(), one.clone()),
+            &exclusive_weight_sum(&one, &one),
             &Weight::from_f64(0.4337808304830274).unwrap()
         ));
         let million = Weight::from_f64(1e6).unwrap();
+        assert!(rational_approx_eq(&exclusive_weight_sum(&million, &zero), &zero));
+        assert!(rational_approx_eq(&exclusive_weight_sum(&zero, &million), &zero));
         assert!(rational_approx_eq(
-            &exclusive_weight_sum(million.clone(), zero.clone()),
-            &zero
-        ));
-        assert!(rational_approx_eq(
-            &exclusive_weight_sum(zero.clone(), million.clone()),
-            &zero
-        ));
-        assert!(rational_approx_eq(
-            &exclusive_weight_sum(million.clone(), million.clone()),
+            &exclusive_weight_sum(&million, &million),
             &Weight::from_f64(1e6 - (2f64).ln()).unwrap()
         ));
     }
