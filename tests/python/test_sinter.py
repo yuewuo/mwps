@@ -60,15 +60,6 @@ def test_sinter_decode(decoder: sinter.Decoder, p: float, d: int, code_type: str
     )
 
 
-# @pytest.mark.parametrize(
-#     "decoder",
-#     [
-#         mwpf.SinterMWPFDecoder(cluster_node_limit=50),
-#         mwpf.SinterHUFDecoder(),
-#         mwpf.SinterMWPFDecoder(cluster_node_limit=0),
-#     ],
-# )
-# def test_sinter_heralded_error(decoder: sinter.Decoder):
 def test_sinter_heralded_error():
     circuit = stim.Circuit(
         """\
