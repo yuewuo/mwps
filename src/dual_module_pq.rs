@@ -15,7 +15,7 @@ use crate::{add_shared_methods, dual_module::*};
 
 use std::{
     cmp::{Ordering, Reverse},
-    collections::{BTreeSet, BinaryHeap},
+    collections::{BTreeMap, BTreeSet, BinaryHeap},
     sync::Arc,
     time::Instant,
 };
@@ -265,8 +265,7 @@ where
     flip_vertices: HashSet<VertexIndex>,
 
     // remember the initializer for original weights and heralded weighted edges
-    initializer: Arc<SolverInitializer>,
-    original_weights: Vec<Rational>,
+    pub initializer: Arc<SolverInitializer>,
 }
 
 impl<Queue> DualModulePQGeneric<Queue>
@@ -419,7 +418,6 @@ where
             .collect();
         // set edges
         let mut edges = Vec::<EdgePtr>::new();
-        let mut original_weights = Vec::<Rational>::with_capacity(initializer.weighted_edges.len());
         for hyperedge in initializer.weighted_edges.iter() {
             let edge = Edge {
                 edge_index: edges.len() as EdgeIndex,
@@ -436,8 +434,6 @@ where
                 #[cfg(feature = "incr_lp")]
                 cluster_weights: hashbrown::HashMap::new(),
             };
-
-            original_weights.push(edge.weight.clone());
 
             let edge_ptr = EdgePtr::new_value(edge);
 
@@ -458,7 +454,6 @@ where
             negative_weight_sum: Default::default(),
             negative_edges: Default::default(),
             flip_vertices: Default::default(),
-            original_weights,
             initializer: initializer.clone(),
         }
     }
@@ -467,11 +462,15 @@ where
     fn clear(&mut self) {
         // todo: try parallel clearing, if a core supports hyper-threading then this may benefit
         self.vertices.iter().for_each(|p| p.write().clear());
-        self.edges.iter().zip(&self.original_weights).for_each(|(p, og_weight)| {
-            let mut p_write = p.write();
-            p_write.clear();
-            p_write.weight = og_weight.clone(); // note: not resetting weight was also performing quite well...
-        });
+
+        self.edges
+            .iter()
+            .zip(self.initializer.weighted_edges.iter().map(|x| &x.weight))
+            .for_each(|(p, og_weight)| {
+                let mut p_write = p.write();
+                p_write.clear();
+                p_write.weight = og_weight.clone();
+            });
 
         self.obstacle_queue.clear();
         self.global_time.write().set_zero();
@@ -926,6 +925,13 @@ where
             );
 
             edge.weight = new_weight;
+        }
+    }
+
+    fn set_weights(&mut self, new_weights: BTreeMap<EdgeIndex, Weight>) {
+        for (edge_index, new_weight) in new_weights.iter() {
+            let mut edge = self.edges[*edge_index].write();
+            edge.weight = new_weight.clone();
         }
     }
 

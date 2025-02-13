@@ -291,6 +291,7 @@ pub struct SolverSerialPlugins {
     interface_ptr: DualModuleInterfacePtr,
     model_graph: Arc<ModelHyperGraph>,
     pub config: SolverSerialPluginsConfig,
+    syndrome_loaded: bool,
 }
 
 impl MWPSVisualizer for SolverSerialPlugins {
@@ -316,6 +317,7 @@ impl SolverSerialPlugins {
             interface_ptr: DualModuleInterfacePtr::new(model_graph.clone()),
             model_graph,
             config,
+            syndrome_loaded: false,
         }
     }
 
@@ -326,7 +328,11 @@ impl SolverSerialPlugins {
         visualizer: Option<&mut Visualizer>,
         skip_initial_duals: bool,
     ) {
-        self.clear(); // always clear before loading new syndrome
+        if !self.syndrome_loaded {
+            self.clear(); // automatic clear before loading new syndrome in case user forgets to call `clear`
+        }
+        self.syndrome_loaded = true;
+
         if !skip_initial_duals {
             self.interface_ptr
                 .load(Arc::new(syndrome_pattern.clone()), &mut self.dual_module);
@@ -399,9 +405,14 @@ impl SolverTrait for SolverSerialPlugins {
         self.primal_module.clear();
         self.dual_module.clear();
         self.interface_ptr.clear();
+        self.syndrome_loaded = false;
     }
     fn solve_visualizer(&mut self, mut syndrome_pattern: SyndromePattern, visualizer: Option<&mut Visualizer>) {
-        self.clear(); // always clear before loading new syndrome
+        if !self.syndrome_loaded {
+            self.clear(); // automatic clear before loading new syndrome in case user forgets to call `clear`
+        }
+        self.syndrome_loaded = true;
+
         self.dual_module.adjust_weights_for_negative_edges();
 
         let moved_out_vec = std::mem::take(&mut syndrome_pattern.defect_vertices);
