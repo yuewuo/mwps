@@ -28,6 +28,7 @@ classifiers = [
     'Topic :: Software Development :: Libraries :: Python Modules',
     'Topic :: Internet',
 ]
+dependencies = ["frozendict", "frozenlist"]
 
 [tool.maturin]
 no-default-features = true

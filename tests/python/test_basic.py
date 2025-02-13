@@ -57,3 +57,20 @@ def test_numpy_array_parse():
     # pytest -s tests/python/test_basic.py::test_numpy_array_parse
     syndrome = np.array([1, 2, 4], dtype="int32")
     mwpf.SyndromePattern(syndrome)
+
+
+def test_non_connected_graphs():
+    vertex_num = 6
+    weighted_edges = [mwpf.HyperEdge([1, 2, 3], 60)]
+    initializer = mwpf.SolverInitializer(vertex_num, weighted_edges)
+    solver = mwpf.Solver(initializer)
+    print(solver.get_initializer())
+    solver.solve(mwpf.SyndromePattern([1, 2, 3]))
+    subgraph = solver.subgraph()
+    print(subgraph)
+    assert subgraph == [0]
+    solver.clear()
+    solver.solve(mwpf.SyndromePattern([]))
+    subgraph = solver.subgraph()
+    print(subgraph)
+    assert subgraph == []

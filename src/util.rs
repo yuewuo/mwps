@@ -7,6 +7,7 @@ use crate::rand_xoshiro::rand_core::RngCore;
 #[cfg(feature = "python_binding")]
 use crate::util_py::*;
 use crate::visualize::*;
+use lnexp::LnExp;
 use num_traits::Zero;
 #[cfg(feature = "python_binding")]
 use pyo3::prelude::*;
@@ -117,13 +118,31 @@ impl HyperEdge {
     }
 }
 
-#[cfg_attr(feature = "python_binding", pyclass(module = "mwpf", get_all, set_all))]
+#[cfg_attr(feature = "python_binding", pyclass(module = "mwpf"))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SolverInitializer {
     /// the number of vertices
     pub vertex_num: VertexNum,
     /// weighted edges, where vertex indices are within the range [0, vertex_num)
     pub weighted_edges: Vec<HyperEdge>,
+    /// conditional edge sets; when the heralded detector is one, this specified edges will update
+    /// their weight as if these additional errors could be happening (see `compose_weight` function).
+    /// note that in case rational number is used, this method only guarantees f64 accuracy
+    pub heralded_edge_sets: Vec<Vec<(EdgeIndex, Weight)>>,
+}
+
+pub fn exclusive_weight_sum(w1: Weight, w2: Weight) -> Weight {
+    // w1 = log( (1-p1) / p1 ), weight_2 = log( (1-p2) / p2 )
+    // p1 = 1 / (1 + exp(w1)), p2 = 1 / (1 + exp(w2))
+    // p' = p1 (1 - p2) + p2 (1 - p1) = (exp(w1) + exp(w2)) / [ (1 + exp(w1)) (1 + exp(w2)) ]
+    // 1 - p' = (1 + exp(w1) exp(w2)) / [ (1 + exp(w1)) (1 + exp(w2)) ]
+    // w' = log ( (1-p') / p' ) = log((1 + exp(w1) exp(w2)) / (exp(w1) + exp(w2)))
+    //    = log(1 + exp(w1) exp(w2)) - log(exp(w1) + exp(w2))
+    //    = log(1 + exp(w1+w2)) - w2 - log(1 + exp(w1-w2))
+    let (w1, w2) = (w1.to_f64().unwrap(), w2.to_f64().unwrap());
+    let (w1, w2) = (w1.max(w2), w1.min(w2)); // make sure w1 >= w2
+    let w = (w1 + w2).ln_1p_exp() - w2 - (w1 - w2).ln_1p_exp();
+    Weight::from_f64(w).unwrap()
 }
 
 impl SolverInitializer {
@@ -131,6 +150,7 @@ impl SolverInitializer {
         Self {
             vertex_num,
             weighted_edges,
+            heralded_edge_sets: vec![],
         }
     }
 }
@@ -144,6 +164,22 @@ impl SolverInitializer {
     }
     fn __repr__(&self) -> String {
         format!("{:?}", self)
+    }
+    #[getter]
+    fn get_vertex_num(&self) -> VertexNum {
+        self.vertex_num
+    }
+    #[setter]
+    fn set_vertex_num(&mut self, vertex_num: VertexNum) {
+        self.vertex_num = vertex_num;
+    }
+    #[getter]
+    fn get_weighted_edges(&self) -> Vec<HyperEdge> {
+        self.weighted_edges.clone()
+    }
+    #[setter]
+    fn set_weighted_edges(&mut self, weighted_edges: Vec<HyperEdge>) {
+        self.weighted_edges = weighted_edges;
     }
     #[pyo3(name = "snapshot", signature = (abbrev=true))]
     fn py_snapshot(&mut self, abbrev: bool) -> PyObject {
@@ -1109,5 +1145,34 @@ pub mod tests {
         for HyperEdge { weight, .. } in initializer.weighted_edges.iter() {
             assert_eq!(weight, &Rational::one());
         }
+    }
+
+    #[test]
+    fn test_exclusive_weight_sum() {
+        // cargo test test_exclusive_weight_sum -- --nocapture
+        // cargo test test_exclusive_weight_sum --no-default-features --features rational_weight -- --nocapture
+        use crate::num_traits::One;
+        let one = Weight::one();
+        let zero = Weight::zero();
+        assert!(rational_approx_eq(&exclusive_weight_sum(one.clone(), zero.clone()), &zero));
+        assert!(rational_approx_eq(&exclusive_weight_sum(zero.clone(), one.clone()), &zero));
+        assert!(rational_approx_eq(&exclusive_weight_sum(zero.clone(), zero.clone()), &zero));
+        assert!(rational_approx_eq(
+            &exclusive_weight_sum(one.clone(), one.clone()),
+            &Weight::from_f64(0.4337808304830274).unwrap()
+        ));
+        let million = Weight::from_f64(1e6).unwrap();
+        assert!(rational_approx_eq(
+            &exclusive_weight_sum(million.clone(), zero.clone()),
+            &zero
+        ));
+        assert!(rational_approx_eq(
+            &exclusive_weight_sum(zero.clone(), million.clone()),
+            &zero
+        ));
+        assert!(rational_approx_eq(
+            &exclusive_weight_sum(million.clone(), million.clone()),
+            &Weight::from_f64(1e6 - (2f64).ln()).unwrap()
+        ));
     }
 }

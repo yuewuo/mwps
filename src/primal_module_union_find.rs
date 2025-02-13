@@ -82,17 +82,21 @@ impl PrimalModuleImpl for PrimalModuleUnionFind {
             let node = node_ptr.read_recursive();
             debug_assert!(
                 node.invalid_subgraph.edges.is_empty(),
-                "must load a fresh dual module interface, found a complex node"
+                "must load a fresh dual module interface, found a complex node; did you forget to call solver.clear()?"
             );
             debug_assert!(
                 node.invalid_subgraph.vertices.len() == 1,
-                "must load a fresh dual module interface, found invalid defect node"
+                "must load a fresh dual module interface, found invalid defect node; did you forget to call solver.clear()?"
             );
             debug_assert_eq!(
                 node.index, index,
-                "must load a fresh dual module interface, found index out of order"
+                "must load a fresh dual module interface, found index out of order; did you forget to call solver.clear()?"
             );
-            assert_eq!(node.index as usize, self.union_find.size(), "must load defect nodes in order");
+            assert_eq!(
+                node.index as usize,
+                self.union_find.size(),
+                "must load defect nodes in order, did you forget to call solver.clear()?"
+            );
             self.union_find.insert(PrimalModuleUnionFindNode {
                 internal_edges: BTreeSet::new(),
                 node_index: node.index,

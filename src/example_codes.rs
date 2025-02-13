@@ -312,10 +312,7 @@ pub trait ExampleCode {
         for edge in edges.iter() {
             weighted_edges.push(HyperEdge::new(edge.vertices.clone(), edge.weight.clone()));
         }
-        SolverInitializer {
-            vertex_num,
-            weighted_edges,
-        }
+        SolverInitializer::new(vertex_num, weighted_edges)
     }
 
     fn get_model_graph(&self) -> Arc<ModelHyperGraph> {

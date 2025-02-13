@@ -326,6 +326,7 @@ impl SolverSerialPlugins {
         visualizer: Option<&mut Visualizer>,
         skip_initial_duals: bool,
     ) {
+        self.clear(); // always clear before loading new syndrome
         if !skip_initial_duals {
             self.interface_ptr
                 .load(Arc::new(syndrome_pattern.clone()), &mut self.dual_module);
@@ -400,6 +401,7 @@ impl SolverTrait for SolverSerialPlugins {
         self.interface_ptr.clear();
     }
     fn solve_visualizer(&mut self, mut syndrome_pattern: SyndromePattern, visualizer: Option<&mut Visualizer>) {
+        self.clear(); // always clear before loading new syndrome
         self.dual_module.adjust_weights_for_negative_edges();
 
         let moved_out_vec = std::mem::take(&mut syndrome_pattern.defect_vertices);
