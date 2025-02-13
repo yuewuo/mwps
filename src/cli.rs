@@ -382,7 +382,7 @@ impl Cli {
                             .map(|v| Weight::from_f64(v).unwrap())
                             .collect();
 
-                        solver.update_weights(llrs, bp_application_ratio.unwrap_or(0.5));
+                        solver.update_weights(llrs, Weight::from_f64(bp_application_ratio.unwrap_or(0.5)).unwrap());
                     }
 
                     if print_syndrome_pattern {
@@ -442,7 +442,7 @@ impl Cli {
                             .map(|v| Weight::from_f64(v).unwrap())
                             .collect();
 
-                        solver.update_weights(llrs, bp_application_ratio.unwrap_or(0.5));
+                        solver.update_weights(llrs, Weight::from_f64(bp_application_ratio.unwrap_or(0.5)).unwrap());
                     }
 
                     if print_syndrome_pattern {

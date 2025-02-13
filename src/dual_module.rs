@@ -521,7 +521,7 @@ pub trait DualModuleImpl {
 
     /// update weights of dual_module;
     /// the weight of the dual module is set to be `old_weight + mix_ratio * (new_weight - old_weight)`
-    fn update_weights(&mut self, _new_weights: Vec<Weight>, _mix_ratio: f64) {
+    fn update_weights(&mut self, _new_weights: Vec<Weight>, _mix_ratio: Weight) {
         unimplemented!()
     }
 

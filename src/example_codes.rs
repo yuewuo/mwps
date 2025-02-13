@@ -406,7 +406,7 @@ pub trait ExampleCode {
 
     /// get current syndrome
     fn get_syndrome(&self) -> SyndromePattern {
-        SyndromePattern::new(self.get_defect_vertices(), self.get_erasures())
+        SyndromePattern::new_erasure(self.get_defect_vertices(), self.get_erasures())
     }
 
     /// apply an error by flipping the vertices incident to it

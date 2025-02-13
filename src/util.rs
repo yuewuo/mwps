@@ -321,7 +321,7 @@ impl MWPSVisualizer for SolverInitializer {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "python_binding", pyclass(module = "mwpf", get_all, set_all))]
+#[cfg_attr(feature = "python_binding", pyclass(module = "mwpf"))]
 pub struct SyndromePattern {
     /// the vertices corresponding to defect measurements
     pub defect_vertices: Vec<VertexIndex>,
@@ -329,27 +329,43 @@ pub struct SyndromePattern {
     pub erasures: Vec<EdgeIndex>,
     /// the heralded weighted edges index
     pub heralds: Vec<HeraldIndex>,
+    /// a set of new weights that are mixed with existing weights; this will override
+    /// the weight changes of erasures and heralds
+    pub override_weights: Option<(Vec<Weight>, Weight)>,
 }
 
 impl SyndromePattern {
-    pub fn new(defect_vertices: Vec<VertexIndex>, erasures: Vec<EdgeIndex>) -> Self {
-        Self::new_with_heralds(defect_vertices, erasures, vec![])
-    }
-    pub fn new_with_heralds(defect_vertices: Vec<VertexIndex>, erasures: Vec<EdgeIndex>, heralds: Vec<HeraldIndex>) -> Self {
+    pub fn new_with_erasure_heralds(
+        defect_vertices: Vec<VertexIndex>,
+        erasures: Vec<EdgeIndex>,
+        heralds: Vec<HeraldIndex>,
+    ) -> Self {
         Self {
             defect_vertices,
             erasures,
             heralds,
+            override_weights: None,
         }
     }
-}
-
-impl SyndromePattern {
+    pub fn new_with_override_weights(defect_vertices: Vec<VertexIndex>, weights: Vec<Weight>, ratio: Weight) -> Self {
+        Self {
+            defect_vertices,
+            erasures: vec![],
+            heralds: vec![],
+            override_weights: Some((weights, ratio)),
+        }
+    }
     pub fn new_vertices(defect_vertices: Vec<VertexIndex>) -> Self {
-        Self::new(defect_vertices, vec![])
+        Self::new_erasure(defect_vertices, vec![])
+    }
+    pub fn new_erasure(defect_vertices: Vec<VertexIndex>, erasures: Vec<EdgeIndex>) -> Self {
+        Self::new_with_erasure_heralds(defect_vertices, erasures, vec![])
+    }
+    pub fn new_heralds(defect_vertices: Vec<VertexIndex>, heralds: Vec<HeraldIndex>) -> Self {
+        Self::new_with_erasure_heralds(defect_vertices, vec![], heralds)
     }
     pub fn new_empty() -> Self {
-        Self::new(vec![], vec![])
+        Self::new_vertices(vec![])
     }
 }
 
@@ -374,23 +390,88 @@ impl MWPSVisualizer for SyndromePattern {
 #[pymethods]
 impl SyndromePattern {
     #[new]
-    #[pyo3(signature = (defect_vertices=None, erasures=None))]
-    fn py_new(defect_vertices: Option<&Bound<PyAny>>, erasures: Option<&Bound<PyAny>>) -> PyResult<Self> {
+    #[pyo3(signature = (defect_vertices=None, erasures=None, heralds=None, override_weights=None, override_ratio=None))]
+    fn py_new(
+        defect_vertices: Option<&Bound<PyAny>>,
+        erasures: Option<&Bound<PyAny>>,
+        heralds: Option<&Bound<PyAny>>,
+        override_weights: Option<Vec<PyRational>>,
+        override_ratio: Option<PyRational>,
+    ) -> PyResult<Self> {
         use crate::util_py::py_into_btree_set;
         let defect_vertices: Vec<VertexIndex> = if let Some(defect_vertices) = defect_vertices {
             py_into_btree_set(defect_vertices)?.into_iter().collect()
         } else {
             vec![]
         };
-        let erasures: Vec<EdgeIndex> = if let Some(erasures) = erasures {
-            py_into_btree_set(erasures)?.into_iter().collect()
+        if let Some(override_weights) = override_weights {
+            assert!(
+                erasures.is_none() && heralds.is_none(),
+                "do not set erasures or heralds when override weights are provided"
+            );
+            let ratio = override_ratio
+                .map(|x| x.0)
+                .unwrap_or_else(|| Rational::from_f64(1.0).unwrap());
+            Ok(Self::new_with_override_weights(
+                defect_vertices,
+                override_weights.into_iter().map(|x| x.0).collect(),
+                ratio,
+            ))
         } else {
-            vec![]
-        };
-        Ok(Self::new(defect_vertices, erasures))
+            let erasures: Vec<EdgeIndex> = if let Some(erasures) = erasures {
+                py_into_btree_set(erasures)?.into_iter().collect()
+            } else {
+                vec![]
+            };
+            let heralds: Vec<HeraldIndex> = if let Some(heralds) = heralds {
+                py_into_btree_set(heralds)?.into_iter().collect()
+            } else {
+                vec![]
+            };
+            Ok(Self::new_with_erasure_heralds(defect_vertices, erasures, heralds))
+        }
     }
     fn __repr__(&self) -> String {
         format!("{:?}", self)
+    }
+    #[getter]
+    fn get_defect_vertices(&self) -> Vec<VertexIndex> {
+        self.defect_vertices.clone()
+    }
+    #[setter]
+    fn set_defect_vertices(&mut self, defect_vertices: Vec<VertexIndex>) {
+        self.defect_vertices = defect_vertices;
+    }
+    #[getter]
+    fn get_erasures(&self) -> Vec<EdgeIndex> {
+        self.erasures.clone()
+    }
+    #[setter]
+    fn set_erasures(&mut self, erasures: Vec<EdgeIndex>) {
+        self.erasures = erasures;
+    }
+    #[getter]
+    fn get_heralds(&self) -> Vec<HeraldIndex> {
+        self.heralds.clone()
+    }
+    #[setter]
+    fn set_heralds(&mut self, heralds: Vec<HeraldIndex>) {
+        self.heralds = heralds;
+    }
+    #[getter]
+    fn get_override_weights(&self) -> Option<(Vec<PyRational>, PyRational)> {
+        if let Some((weights, ratio)) = self.override_weights.as_ref() {
+            return Some((weights.iter().map(|x| x.clone().into()).collect(), ratio.clone().into()));
+        }
+        None
+    }
+    #[setter]
+    fn set_override_weights(&mut self, override_weights: Option<(Vec<PyRational>, PyRational)>) {
+        if let Some((weights, ratio)) = override_weights {
+            self.override_weights = Some((weights.iter().map(|x| x.0.clone()).collect(), ratio.0.clone()));
+        } else {
+            self.override_weights = None;
+        }
     }
     #[pyo3(name="snapshot", signature = (abbrev=true))]
     fn py_snapshot(&mut self, abbrev: bool) -> PyObject {

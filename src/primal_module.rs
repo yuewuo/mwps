@@ -14,6 +14,7 @@ use crate::primal_module_serial::ClusterAffinity;
 use crate::relaxer_optimizer::OptimizerResult;
 use crate::util::*;
 use crate::visualize::*;
+use hashbrown::HashSet;
 
 pub type Affinity = OrderedFloat;
 
@@ -105,6 +106,44 @@ pub trait PrimalModuleImpl {
         }
     }
 
+    /// update the weights given the syndrome pattern; return a new syndrome pattern
+    /// that has some of the vertices flipped due to negative weights
+    fn weight_preprocessing<D: DualModuleImpl + MWPSVisualizer>(
+        &mut self,
+        syndrome_pattern: Arc<SyndromePattern>,
+        dual_module: &mut D,
+    ) -> Arc<SyndromePattern> {
+        // update weights given the syndrome pattern
+        if let Some((weights, ratio)) = syndrome_pattern.override_weights.as_ref() {
+            dual_module.update_weights(weights.clone(), ratio.clone());
+        } else {
+            // TODO: use heralds and then erasures
+        }
+
+        // after all the edge weights are set, adjust the negative weights and find the flipped vertices
+        dual_module.adjust_weights_for_negative_edges();
+        let flip_vertices = dual_module.get_flip_vertices();
+        if flip_vertices.is_empty() {
+            // we don't need to modify the syndrome pattern
+            return syndrome_pattern;
+        }
+
+        // otherwise modify the syndrome
+        let mut moved_out_set = syndrome_pattern
+            .defect_vertices
+            .iter()
+            .cloned()
+            .collect::<HashSet<VertexIndex>>();
+        for to_flip in flip_vertices.iter() {
+            if moved_out_set.contains(to_flip) {
+                moved_out_set.remove(to_flip);
+            } else {
+                moved_out_set.insert(*to_flip);
+            }
+        }
+        Arc::new(SyndromePattern::new_vertices(moved_out_set.into_iter().collect()))
+    }
+
     fn solve_visualizer<D: DualModuleImpl + MWPSVisualizer>(
         &mut self,
         interface: &DualModuleInterfacePtr,
@@ -114,6 +153,10 @@ pub trait PrimalModuleImpl {
     ) where
         Self: MWPSVisualizer + Sized,
     {
+        if !syndrome_pattern.erasures.is_empty() {
+            unimplemented!();
+        }
+        // then call the solver to
         if let Some(visualizer) = visualizer {
             let callback = Self::visualizer_callback(visualizer);
             interface.load(syndrome_pattern, dual_module);

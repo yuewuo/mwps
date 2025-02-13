@@ -5,7 +5,7 @@
 //! Only debug tests are failing, which aligns with the dual_module_serial behavior
 //!
 
-use crate::num_traits::{FromPrimitive, ToPrimitive, Zero};
+use crate::num_traits::{ToPrimitive, Zero};
 use crate::pointers::*;
 use crate::primal_module::Affinity;
 use crate::primal_module_serial::PrimalClusterPtr;
@@ -915,14 +915,13 @@ where
         }
     }
 
-    fn update_weights(&mut self, new_weights: Vec<Weight>, mix_ratio: f64) {
+    fn update_weights(&mut self, new_weights: Vec<Weight>, mix_ratio: Weight) {
         for (edge, new_weight) in self.edges.iter().zip(new_weights.iter()) {
             let mut edge = edge.write();
 
             let current_edge_weight = edge.weight.clone();
-            let new_weight = Weight::from(
-                current_edge_weight.clone() + Rational::from_f64(mix_ratio).unwrap() * (new_weight - current_edge_weight),
-            );
+            let new_weight =
+                Weight::from(current_edge_weight.clone() + mix_ratio.clone() * (new_weight - current_edge_weight));
 
             edge.weight = new_weight;
         }
