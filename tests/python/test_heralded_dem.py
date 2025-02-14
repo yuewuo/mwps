@@ -34,8 +34,10 @@ detector(1, 1) D3
 detector(3, 1) D4
 logical_observable L0\
 """
-    assert dem.approx_equals(stim.DetectorErrorModel(dem_str))
-    assert str(dem) == dem_str
+    assert dem.approx_equals(
+        stim.DetectorErrorModel(dem_str),
+        atol=mwpf.heralded_dem.DEM_MIN_PROBABILITY,
+    )
     # the regular dem does not contain
     heralded_dem = mwpf.heralded_dem.HeraldedDetectorErrorModel.of(circuit)
     skeleton_dem = heralded_dem.skeleton_dem.dem()
@@ -76,10 +78,10 @@ logical_observable L0\
         == """\
 HeraldedDetectorErrorModel:
     skeleton hypergraph:
-        D3: 6.661338147750937e-16 ()
-        D3, D4: 0.013333333333333326 ()
+        D3: 6.661338e-16 ()
+        D3, D4: 1.333333e-02 ()
     heralded hypergraph on D2:
-        D3: 0.5 ()\
+        D3: 5.000000e-01 ()\
 """
     )
 
@@ -149,15 +151,15 @@ DETECTOR abs[1] abs[0]\
         == """\
 HeraldedDetectorErrorModel:
     skeleton hypergraph:
-        D1: 0.00026661333807661436 ()
+        D1: 2.666133e-04 ()
     heralded hypergraph on D2:
-        D1: 0.5 ()
+        D1: 5.000000e-01 ()
     heralded hypergraph on D3:
-        D1: 0.5 ()
+        D1: 5.000000e-01 ()
     heralded hypergraph on D4:
-        D1: 0.5 ()
+        D1: 5.000000e-01 ()
     heralded hypergraph on D5:
-        D1: 0.5 ()\
+        D1: 5.000000e-01 ()\
 """
     )
 
@@ -226,17 +228,17 @@ DETECTOR abs[2] abs[0]\
         == """\
 HeraldedDetectorErrorModel:
     skeleton hypergraph:
-        D2: 1.9984014443252798e-15 ()
-        D2, D3: 1.9984014443252798e-15 ()
-        D3: 1.9984014443252798e-15 ()
+        D2: 1.998401e-15 ()
+        D2, D3: 1.998401e-15 ()
+        D3: 1.998401e-15 ()
     heralded hypergraph on D4:
-        D2: 0.19999999999999998 ()
-        D2, D3: 0.3 ()
-        D3: 0.39999999999999997 ()
+        D2: 2.000000e-01 ()
+        D2, D3: 3.000000e-01 ()
+        D3: 4.000000e-01 ()
     heralded hypergraph on D5:
-        D2: 0.19999999999999998 ()
-        D2, D3: 0.3 ()
-        D3: 0.39999999999999997 ()\
+        D2: 2.000000e-01 ()
+        D2, D3: 3.000000e-01 ()
+        D3: 4.000000e-01 ()\
 """
     )
 

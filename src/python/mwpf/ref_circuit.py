@@ -169,7 +169,7 @@ class RefCircuit:
                 name=instruction.name,
                 targets=tuple(ref_targets),
                 gate_args=tuple(instruction.gate_args_copy()),
-                tag=tag_of(instruction),
+                **extra_instruction_params(instruction),
             )
             instructions.append(ref_instruction)
             # add the measurement to the measurement list
@@ -305,7 +305,7 @@ class RefCircuit:
                     name=instruction.name,
                     targets=relative_targets,
                     gate_args=instruction.gate_args,
-                    tag=tag_of(instruction),
+                    **extra_instruction_params(instruction),
                 )
             )
         return tuple(stim_instructions)
@@ -412,7 +412,7 @@ class RefCircuit:
                     for target in instruction.targets
                 ),
                 gate_args=instruction.gate_args,
-                tag=tag_of(instruction),
+                **extra_instruction_params(instruction),
             )
             for bias in range(instruction.num_measurements):
                 reference_rec = RefRec(
@@ -712,8 +712,12 @@ def weight_to_probability(weight: float) -> float:
     return 1 / (1 + np.exp(weight))
 
 
-def tag_of(instruction: Any) -> str:
-    # known error: 'stim._stim_sse2.CircuitInstruction' object has no attribute 'tag'
-    if hasattr(instruction, "tag"):
-        return instruction.tag
-    return ""
+# tag is introduced in stim 1.15
+HAS_TAG = hasattr(stim.CircuitInstruction, "tag")
+
+
+def extra_instruction_params(instruction: Any) -> dict[str, Any]:
+    params: dict[str, Any] = {}
+    if HAS_TAG:
+        params["tag"] = instruction.tag
+    return params
