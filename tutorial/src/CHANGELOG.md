@@ -64,8 +64,9 @@ exposed `hyperion_exposed` variable in visualization tool so that user can progr
 - make the decoder and several related things picklable, for people to exactly reproduce certain failing cases
 - detect KeyboardInterrupt such that user can interrupt the decoding process in the middle
 
-## 0.2.8 - 2025-02-13
+## 0.2.8 - 2025-02-14
 
 - add more weight manipulation
 - Python user don't have to call `solver.clear` anymore
 - new SinterDecoder that is capable of handling heralded errors
+- bump minimum Python version requirement to 3.10 (for typing support and to use the latest numpy)
