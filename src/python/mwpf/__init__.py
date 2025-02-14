@@ -3,6 +3,11 @@ from .mwpf import *
 
 __doc__ = mwpf.__doc__
 if hasattr(mwpf, "__all__"):
-    __all__ = mwpf.__all__
+    __all__ = mwpf.__all__  # type: ignore
 
-from .sinter_decoders import *
+try:
+    from .sinter_decoders import *
+    from . import heralded_dem
+    from . import ref_circuit
+except:
+    ...

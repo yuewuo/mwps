@@ -1,21 +1,24 @@
 import math
 import pathlib
-from typing import Callable, List, Tuple, Any, Optional, TYPE_CHECKING, Union
+from typing import Tuple, Any, Optional
 import mwpf
-from mwpf import (
+from mwpf import (  # type: ignore
     SyndromePattern,
-    SolverSerialJointSingleHair,
     HyperEdge,
     SolverInitializer,
     Solver,
 )
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import pickle
 import json
+import traceback
+from enum import Enum
+import random
+import numpy as np
+import stim
 
-if TYPE_CHECKING:
-    import stim
-    import numpy as np
+from .ref_circuit import *
+from .heralded_dem import *
 
 available_decoders = [
     "Solver",  # the solver with the highest accuracy, but may change across different versions
@@ -25,6 +28,19 @@ available_decoders = [
 ]
 
 default_cluster_node_limit: int = 50
+
+
+@dataclass
+class DecoderPanic:
+    initializer: SolverInitializer
+    config: dict
+    syndrome: SyndromePattern
+    panic_message: str
+
+
+class PanicAction(Enum):
+    RAISE = 1  # raise the panic with proper message to help debugging
+    CATCH = 2  # proceed with normal decoding and return all-0 result
 
 
 @dataclass
@@ -43,7 +59,13 @@ class SinterMWPFDecoder:
     c: Optional[int] = None  # alias of `cluster_node_limit`, will override it
     timeout: Optional[float] = None
     with_progress: bool = False
-    panic_case: Optional[Tuple[SolverInitializer, dict, SyndromePattern]] = None
+    circuit: Optional[stim.Circuit] = None  # RefCircuit is not picklable
+    # this parameter itself doesn't do anything to load the circuit but only check whether the circuit is indeed loaded
+    pass_circuit: bool = False
+
+    # record panic data and controls whether the raise the panic or simply record them
+    panic_action: PanicAction = PanicAction.CATCH
+    panic_cases: list[DecoderPanic] = field(default_factory=list)
 
     @property
     def _cluster_node_limit(self) -> int:
@@ -57,21 +79,49 @@ class SinterMWPFDecoder:
             return self.c
         return default_cluster_node_limit
 
+    @property
+    def config(self) -> dict[str, Any]:
+        return dict(cluster_node_limit=self._cluster_node_limit)
+
+    def with_circuit(self, circuit: stim.Circuit | None) -> "SinterMWPFDecoder":
+        if circuit is None:
+            self.circuit = None
+            return self
+        assert isinstance(circuit, stim.Circuit)
+        self.circuit = circuit.copy()
+        return self
+
     def compile_decoder_for_dem(
         self,
         *,
         dem: "stim.DetectorErrorModel",
     ) -> "MwpfCompiledDecoder":
-        solver, fault_masks = detector_error_model_to_mwpf_solver_and_fault_masks(
+        if self.pass_circuit:
+            assert (
+                self.circuit is not None
+            ), "The circuit is not loaded but the flag `pass_circuit` is True"
+
+        solver, predictor = construct_decoder_and_predictor(
             dem,
             decoder_type=self.decoder_type,
-            cluster_node_limit=self._cluster_node_limit,
+            config=self.config,
+            ref_circuit=(
+                RefCircuit.of(self.circuit) if self.circuit is not None else None
+            ),
         )
+        assert (
+            dem.num_detectors == predictor.num_detectors()
+        ), "Mismatched number of detectors, are you using the corresponding circuit of dem?"
+        assert (
+            dem.num_observables == predictor.num_observables()
+        ), "Mismatched number of observables, are you using the corresponding circuit of dem?"
         return MwpfCompiledDecoder(
             solver,
-            fault_masks,
+            predictor,
             dem.num_detectors,
             dem.num_observables,
+            panic_action=self.panic_action,
+            panic_cases=self.panic_cases,  # record all the panic information to the same place
         )
 
     def decode_via_files(
@@ -85,15 +135,23 @@ class SinterMWPFDecoder:
         obs_predictions_b8_out_path: pathlib.Path,
         tmp_dir: pathlib.Path,
     ) -> None:
-        import stim
-        import numpy as np
+        if self.pass_circuit:
+            assert (
+                self.circuit is not None
+            ), "The circuit is not loaded but the flag `pass_circuit` is True"
 
-        error_model = stim.DetectorErrorModel.from_file(dem_path)
-        solver, fault_masks = detector_error_model_to_mwpf_solver_and_fault_masks(
-            error_model,
+        dem = stim.DetectorErrorModel.from_file(dem_path)
+        solver, predictor = construct_decoder_and_predictor(
+            dem,
             decoder_type=self.decoder_type,
-            cluster_node_limit=self._cluster_node_limit,
+            config=self.config,
+            ref_circuit=(
+                RefCircuit.of(self.circuit) if self.circuit is not None else None
+            ),
         )
+        assert num_dets == predictor.num_detectors()
+        assert num_obs == predictor.num_observables()
+
         num_det_bytes = math.ceil(num_dets / 8)
         with open(dets_b8_in_path, "rb") as dets_in_f:
             with open(obs_predictions_b8_out_path, "wb") as obs_out_f:
@@ -109,27 +167,59 @@ class SinterMWPFDecoder:
                     )
                     if dets_bit_packed.shape != (num_det_bytes,):
                         raise IOError("Missing dets data.")
-                    dets_sparse = np.flatnonzero(
-                        np.unpackbits(
-                            dets_bit_packed, count=num_dets, bitorder="little"
-                        )
-                    )
-                    syndrome = SyndromePattern(defect_vertices=dets_sparse)
+                    syndrome = predictor.syndrome_of(dets_bit_packed)
                     if solver is None:
                         prediction = 0
                     else:
                         try:
                             solver.solve(syndrome)
                             subgraph = solver.subgraph()
-                            prediction = int(
-                                np.bitwise_xor.reduce(fault_masks[subgraph])
-                            )
+                            prediction = predictor.prediction_of(syndrome, subgraph)
                         except BaseException as e:
-                            raise ValueError(panic_text_of(solver, syndrome)) from e
-                        solver.clear()
+                            self.panic_cases.append(
+                                DecoderPanic(
+                                    initializer=solver.get_initializer(),
+                                    config=solver.config,
+                                    syndrome=syndrome,
+                                    panic_message=traceback.format_exc(),
+                                )
+                            )
+                            if self.panic_action == PanicAction.RAISE:
+                                raise ValueError(panic_text_of(solver, syndrome)) from e
+                            elif self.panic_action == PanicAction.CATCH:
+                                prediction = random.getrandbits(num_obs)
                     obs_out_f.write(
                         prediction.to_bytes((num_obs + 7) // 8, byteorder="little")
                     )
+
+
+def construct_decoder_and_predictor(
+    model: "stim.DetectorErrorModel",
+    decoder_type: Any,
+    config: dict[str, Any],
+    ref_circuit: Optional[RefCircuit] = None,
+) -> Tuple[Any, Predictor]:
+
+    if ref_circuit is not None:
+        heralded_dem = HeraldedDetectorErrorModel(ref_circuit=ref_circuit)
+        initializer = heralded_dem.initializer
+        predictor: Predictor = heralded_dem.predictor
+    else:
+        ref_dem = RefDetectorErrorModel.of(dem=model)
+        initializer = ref_dem.initializer
+        predictor = ref_dem.predictor
+
+    if decoder_type is None:
+        # default to the solver with highest accuracy
+        decoder_cls = Solver
+    elif isinstance(decoder_type, str):
+        decoder_cls = getattr(mwpf, decoder_type)
+    else:
+        decoder_cls = decoder_cls
+    return (
+        decoder_cls(initializer, config=config),
+        predictor,
+    )
 
 
 def panic_text_of(solver, syndrome) -> str:
@@ -142,9 +232,9 @@ solver_initializer: dict = json.loads('{initializer.to_json()}')
 config: dict = json.loads('{json.dumps(config)}')
 syndrome: dict = json.loads('{syndrome.to_json()}')
 ######## PICKLE DATA ######## 
-solver_initializer: SolverInitializer = pickle.loads({pickle.dumps(initializer)})
-config: dict = pickle.loads({pickle.dumps(config)})
-syndrome: SyndromePattern = pickle.loads({pickle.dumps(syndrome)})
+solver_initializer: SolverInitializer = pickle.loads({pickle.dumps(initializer)!r})
+config: dict = pickle.loads({pickle.dumps(config)!r})
+syndrome: SyndromePattern = pickle.loads({pickle.dumps(syndrome)!r})
 ######## End Panic Information ######## 
 """
     return panic_text
@@ -162,49 +252,46 @@ class SinterSingleHairDecoder(SinterMWPFDecoder):
     cluster_node_limit: int = 0
 
 
+@dataclass
 class MwpfCompiledDecoder:
-    def __init__(
-        self,
-        solver: Union["SolverSerialJointSingleHair", Any],
-        fault_masks: "np.ndarray",
-        num_dets: int,
-        num_obs: int,
-    ):
-        self.solver = solver
-        self.fault_masks = fault_masks
-        self.num_dets = num_dets
-        self.num_obs = num_obs
+    solver: Any
+    predictor: Predictor
+    num_dets: int
+    num_obs: int
+    panic_action: PanicAction = PanicAction.CATCH
+    panic_cases: list[DecoderPanic] = field(default_factory=list)
 
     def decode_shots_bit_packed(
         self,
         *,
         bit_packed_detection_event_data: "np.ndarray",
     ) -> "np.ndarray":
-        import numpy as np
-
         num_shots = bit_packed_detection_event_data.shape[0]
         predictions = np.zeros(
             shape=(num_shots, (self.num_obs + 7) // 8), dtype=np.uint8
         )
         for shot in range(num_shots):
-            dets_sparse = np.flatnonzero(
-                np.unpackbits(
-                    bit_packed_detection_event_data[shot],
-                    count=self.num_dets,
-                    bitorder="little",
-                )
-            )
-            syndrome = SyndromePattern(defect_vertices=dets_sparse)
+            syndrome = self.predictor.syndrome_of(bit_packed_detection_event_data[shot])
             if self.solver is None:
                 prediction = 0
             else:
                 try:
                     self.solver.solve(syndrome)
                     subgraph = self.solver.subgraph()
-                    prediction = int(np.bitwise_xor.reduce(self.fault_masks[subgraph]))
+                    prediction = self.predictor.prediction_of(syndrome, subgraph)
                 except BaseException as e:
-                    raise ValueError(panic_text_of(self.solver, syndrome)) from e
-                self.solver.clear()
+                    self.panic_cases.append(
+                        DecoderPanic(
+                            initializer=self.solver.get_initializer(),
+                            config=self.solver.config,
+                            syndrome=syndrome,
+                            panic_message=traceback.format_exc(),
+                        )
+                    )
+                    if self.panic_action == PanicAction.RAISE:
+                        raise ValueError(panic_text_of(self.solver, syndrome)) from e
+                    elif self.panic_action == PanicAction.CATCH:
+                        prediction = random.getrandbits(self.num_obs)
             predictions[shot] = np.packbits(
                 np.array(
                     list(np.binary_repr(prediction, width=self.num_obs))[::-1],
@@ -213,151 +300,3 @@ class MwpfCompiledDecoder:
                 bitorder="little",
             )
         return predictions
-
-
-def iter_flatten_model(
-    model: "stim.DetectorErrorModel",
-    handle_error: Callable[[float, List[int], List[int]], None],
-    handle_detector_coords: Callable[[int, "np.ndarray"], None],
-):
-    import numpy as np
-    import stim
-
-    det_offset = 0
-    coords_offset = np.zeros(100, dtype=np.float64)
-
-    def _helper(m: "stim.DetectorErrorModel", reps: int):
-
-        nonlocal det_offset
-        nonlocal coords_offset
-        for _ in range(reps):
-            for instruction in m:
-                if isinstance(instruction, stim.DemRepeatBlock):
-                    _helper(instruction.body_copy(), instruction.repeat_count)
-                elif isinstance(instruction, stim.DemInstruction):
-                    if instruction.type == "error":
-                        dets: set[int] = set()
-                        frames: set[int] = set()
-                        t: stim.DemTarget
-                        p = instruction.args_copy()[0]
-                        for t in instruction.targets_copy():
-                            if t.is_relative_detector_id():
-                                dets ^= {t.val + det_offset}
-                            elif t.is_logical_observable_id():
-                                frames ^= {t.val}
-                        handle_error(p, list(dets), list(frames))
-                    elif instruction.type == "shift_detectors":
-                        det_offset += instruction.targets_copy()[0]
-                        a = np.array(instruction.args_copy())
-                        coords_offset[: len(a)] += a
-                    elif instruction.type == "detector":
-                        a = np.array(instruction.args_copy())
-                        for t in instruction.targets_copy():
-                            handle_detector_coords(
-                                t.val + det_offset, a + coords_offset[: len(a)]
-                            )
-                    elif instruction.type == "logical_observable":
-                        pass
-                    else:
-                        raise NotImplementedError()
-                else:
-                    raise NotImplementedError()
-
-    _helper(model, 1)
-
-
-def deduplicate_hyperedges(
-    hyperedges: List[Tuple[List[int], float, int]]
-) -> List[Tuple[List[int], float, int]]:
-    indices: dict[frozenset[int], Tuple[int, float]] = dict()
-    result: List[Tuple[List[int], float, int]] = []
-    for dets, weight, mask in hyperedges:
-        dets_set = frozenset(dets)
-        if dets_set in indices:
-            idx, min_weight = indices[dets_set]
-            p1 = 1 / (1 + math.exp(weight))
-            p2 = 1 / (1 + math.exp(result[idx][1]))
-            p = p1 * (1 - p2) + p2 * (1 - p1)
-            # choosing the mask from the most likely error
-            new_mask = result[idx][2]
-            if weight < min_weight:
-                indices[dets_set] = (idx, weight)
-                new_mask = mask
-            result[idx] = (dets, math.log((1 - p) / p), new_mask)
-        else:
-            indices[dets_set] = (len(result), weight)
-            result.append((dets, weight, mask))
-    return result
-
-
-def detector_error_model_to_mwpf_solver_and_fault_masks(
-    model: "stim.DetectorErrorModel",
-    decoder_type: Any = None,
-    cluster_node_limit: int = 50,
-) -> Tuple[Optional["SolverSerialJointSingleHair"], "np.ndarray"]:
-    """Convert a stim error model into a NetworkX graph."""
-    import numpy as np
-
-    num_detectors = model.num_detectors
-    is_detector_connected = np.full(num_detectors, False, dtype=bool)
-    hyperedges: List[Tuple[List[int], float, int]] = []
-
-    def handle_error(p: float, dets: List[int], frame_changes: List[int]):
-        if p == 0:
-            return
-        if len(dets) == 0:
-            # No symptoms for this error.
-            # Code probably has distance 1.
-            # Accept it and keep going, though of course decoding will probably perform terribly.
-            return
-        if p > 0.5:
-            # mwpf doesn't support negative edge weights (yet, will be supported in the next version).
-            # approximate them as weight 0.
-            p = 0.5
-        weight = math.log((1 - p) / p)
-        mask = sum(1 << k for k in frame_changes)
-        is_detector_connected[dets] = True
-        hyperedges.append((dets, weight, mask))
-
-    def handle_detector_coords(detector: int, coords: "np.ndarray"):
-        pass
-
-    iter_flatten_model(
-        model,
-        handle_error=handle_error,
-        handle_detector_coords=handle_detector_coords,
-    )
-    # mwpf package panic on duplicate edges, thus we need to handle them here
-    hyperedges = deduplicate_hyperedges(hyperedges)
-
-    # fix the input by connecting an edge to all isolated vertices; will be supported in the next version
-    for idx in range(num_detectors):
-        if not is_detector_connected[idx]:
-            hyperedges.append(([idx], 0, 0))
-
-    max_weight = max(1e-4, max((w for _, w, _ in hyperedges), default=1))
-    rescaled_edges = [
-        HyperEdge(v, round(w * 2**10 / max_weight) * 2) for v, w, _ in hyperedges
-    ]
-    fault_masks = np.array([e[2] for e in hyperedges], dtype=np.uint64)
-
-    initializer = SolverInitializer(
-        num_detectors,  # Total number of nodes.
-        rescaled_edges,  # Weighted edges.
-    )
-
-    if decoder_type is None:
-        # default to the solver with highest accuracy
-        decoder_cls = Solver
-    elif isinstance(decoder_type, str):
-        decoder_cls = getattr(mwpf, decoder_type)
-    else:
-        decoder_cls = decoder_cls
-    return (
-        (
-            decoder_cls(initializer, config={"cluster_node_limit": cluster_node_limit})
-            if num_detectors > 0 and len(rescaled_edges) > 0
-            else None
-        ),
-        fault_masks,
-    )

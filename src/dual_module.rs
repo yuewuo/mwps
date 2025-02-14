@@ -254,7 +254,7 @@ pub enum DualReport {
 /// common trait that must be implemented for each implementation of dual module
 pub trait DualModuleImpl {
     /// create a new dual module with empty syndrome
-    fn new_empty(initializer: &SolverInitializer) -> Self;
+    fn new_empty(initializer: &Arc<SolverInitializer>) -> Self;
 
     /// clear all growth and existing dual nodes, prepared for the next decoding
     fn clear(&mut self);
@@ -489,12 +489,12 @@ pub trait DualModuleImpl {
         &self,
         edge_index: EdgeIndex,
         participating_dual_variables: &hashbrown::HashSet<usize>,
-    ) -> Rational;
+    ) -> Weight;
 
-    fn get_edge_weight(&self, edge_index: EdgeIndex) -> Rational;
+    fn get_edge_weight(&self, edge_index: EdgeIndex) -> Weight;
 
-    fn get_subgraph_weight(&self, subgraph: &Subgraph) -> Rational {
-        let mut weight = Rational::zero();
+    fn get_subgraph_weight(&self, subgraph: &Subgraph) -> Weight {
+        let mut weight = Weight::zero();
         for &edge_index in subgraph {
             weight += self.get_edge_weight(edge_index);
         }
@@ -521,7 +521,12 @@ pub trait DualModuleImpl {
 
     /// update weights of dual_module;
     /// the weight of the dual module is set to be `old_weight + mix_ratio * (new_weight - old_weight)`
-    fn update_weights(&mut self, _new_weights: Vec<Rational>, _mix_ratio: f64) {
+    fn update_weights(&mut self, _new_weights: Vec<Weight>, _mix_ratio: Weight) {
+        unimplemented!()
+    }
+
+    /// force set the weights given the indices and new weights
+    fn set_weights(&mut self, _new_weights: BTreeMap<EdgeIndex, Weight>) {
         unimplemented!()
     }
 

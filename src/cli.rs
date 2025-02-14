@@ -18,6 +18,7 @@ use rand::{thread_rng, Rng, SeedableRng};
 use serde::Serialize;
 use serde_variant::to_variant_name;
 use std::env;
+use std::sync::Arc;
 
 const TEST_EACH_ROUNDS: usize = 100;
 
@@ -342,7 +343,7 @@ impl Cli {
                     code.set_erasure_probability(pe);
                 }
                 // create initializer and solver
-                let initializer = code.get_initializer();
+                let initializer = Arc::new(code.get_initializer());
                 let mut solver = solver_type.build(&initializer, &*code, solver_config.clone());
                 let mut result_verifier = verifier.build(&initializer);
                 // prepare progress bar display
@@ -381,7 +382,7 @@ impl Cli {
                             .map(|v| Weight::from_f64(v).unwrap())
                             .collect();
 
-                        solver.update_weights(llrs, bp_application_ratio.unwrap_or(0.5));
+                        solver.update_weights(llrs, Weight::from_f64(bp_application_ratio.unwrap_or(0.5)).unwrap());
                     }
 
                     if print_syndrome_pattern {
@@ -441,7 +442,7 @@ impl Cli {
                             .map(|v| Weight::from_f64(v).unwrap())
                             .collect();
 
-                        solver.update_weights(llrs, bp_application_ratio.unwrap_or(0.5));
+                        solver.update_weights(llrs, Weight::from_f64(bp_application_ratio.unwrap_or(0.5)).unwrap());
                     }
 
                     if print_syndrome_pattern {
@@ -641,7 +642,7 @@ impl ExampleCodeType {
 impl SolverType {
     pub fn build(
         &self,
-        initializer: &SolverInitializer,
+        initializer: &Arc<SolverInitializer>,
         code: &dyn ExampleCode,
         solver_config: serde_json::Value,
     ) -> Box<dyn SolverTrait> {
@@ -730,7 +731,10 @@ impl ResultVerifier for VerifierActualError {
         visualizer: Option<&mut Visualizer>,
         seed: u64,
     ) {
-        if !syndrome_pattern.erasures.is_empty() {
+        if !syndrome_pattern.erasures.is_empty()
+            || !syndrome_pattern.heralds.is_empty()
+            || syndrome_pattern.override_weights.is_some()
+        {
             unimplemented!()
         }
         let actual_weight = if error_pattern.is_empty() && !syndrome_pattern.defect_vertices.is_empty() {

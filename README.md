@@ -17,17 +17,26 @@ Please wait for our paper for more discussion of the speed v.s. accuracy.
 pip install -U mwpf
 ```
 
-MWPF now supports [stim](https://github.com/quantumlib/Stim) simulation. You may experience high logical error rate due to some [adaptor bugs](https://github.com/quantumlib/Stim/pull/873) prior to [sinter](https://pypi.org/project/sinter) version 1.15, so instead of using the `mw_parity_factor` decoder in `sinter`, you may want to manually import the latest MWPF decoder from the `mwpf>=0.2.5` package.
+MWPF now supports [stim](https://github.com/quantumlib/Stim) simulation. You may experience high logical error rate due to some [adaptor bugs](https://github.com/quantumlib/Stim/pull/873) prior to [sinter](https://pypi.org/project/sinter) version 1.15, so instead of using the `mw_parity_factor` decoder in `sinter`, you may want to manually import the latest MWPF decoder from the `mwpf>=0.2.8` package.
+
+```sh
+pip install -U mwpf[stim]
+```
 
 ```python
 from mwpf import SinterMWPFDecoder
 
 sinter.collect(
-    tasks=...,
-    num_workers=1,
-    decoders=["mwpf"],
-    custom_decoders={"mwpf": SinterMWPFDecoder(cluster_node_limit=50)},
+    tasks = ...,
+    num_workers = 1,
+    decoders = ["mwpf"],
+    custom_decoders = { "mwpf": SinterMWPFDecoder(cluster_node_limit=50) },
 )
+
+# MWPF decoder now supports heralded error decoding in stim circuit!
+#   Since the sinter.Decoder interface only gives a DEM (Detector Error Model), which doesn't include heralded error
+#   information, you need to manually provide the circuit when constructing the decoder, like below
+custom_decoders = { "mwpf": SinterMWPFDecoder(cluster_node_limit=50).with_circuit(circuit) }
 ```
 
 

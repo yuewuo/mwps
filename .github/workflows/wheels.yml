@@ -3,7 +3,7 @@ name: Build Python Binding
 on:
   push:
     branches:
-      - ci-build
+      - '**'
     tags:
       - '**'
   # pull_request: {}
@@ -19,8 +19,8 @@ jobs: # Workflow credit to https://github.com/samuelcolvin/rtoml/blob/main/.gith
           - ubuntu
           # - macos
           - windows
-        python-version: # Yue 2022.10.9: I enabled abi3-py37 in pyo3, so everything built will be py37-abi3 which is compatible with py37+
-          - '8' # use python 3.8 to build because macos universal2 requires at least python 3.8; however the result will be py37-abi3
+        python-version: 
+          - '9' # py39-abi3 regardless of the version here
         include:
           - os: ubuntu
             platform: linux
@@ -94,7 +94,11 @@ jobs: # Workflow credit to https://github.com/samuelcolvin/rtoml/blob/main/.gith
           # manylinux2014 uses centOS 7 (yum install)
           # musllinux_1_2 uses Alpine Linux 3.19 (apk add)
           CIBW_BEFORE_BUILD_LINUX: >
-            if command -v apt > /dev/null; then apt install -y clang; elif command -v yum > /dev/null; then yum install -y llvm-toolset-7.0; elif command -v apk > /dev/null; then apk add clang17-libclang; fi &&
+            if command -v apt > /dev/null; then apt install -y clang; elif command -v yum > /dev/null;
+              then yum install -y llvm-toolset-7.0;
+            elif command -v apk > /dev/null;
+              then apk add clang17-libclang;
+            fi &&
             curl https://sh.rustup.rs -sSf | sh -s -- --default-toolchain=nightly-2024-11-03 --profile=minimal -y &&
             . "$HOME/.cargo/env" &&
             rustup show

@@ -34,10 +34,24 @@ patches = [
             ("import mwpf\n", "import mwpf_rational\n", 1),
             ("from mwpf import", "from mwpf_rational import", 1),
             ("getattr(mwpf, decoder_type)", "getattr(mwpf_rational, decoder_type)", 1),
-            ("SinterMWPFDecoder", "SinterMWPFRationalDecoder", 3),
+            ("SinterMWPFDecoder", "SinterMWPFRationalDecoder", 4),
             ("SinterHUFDecoder", "SinterHUFRationalDecoder", 1),
             ("SinterSingleHairDecoder", "SinterSingleHairRationalDecoder", 1),
             ("MwpfCompiledDecoder", "MwpfRationalCompiledDecoder", 3),
+        ],
+    ),
+    (
+        "src/python/mwpf/ref_circuit.py",
+        [
+            ("import mwpf\n", "import mwpf_rational\n", 1),
+            ("mwpf.", "mwpf_rational.", None),
+        ],
+    ),
+    (
+        "src/python/mwpf/heralded_dem.py",
+        [
+            ("import mwpf\n", "import mwpf_rational\n", 1),
+            ("mwpf.", "mwpf_rational.", None),
         ],
     ),
     (
@@ -51,62 +65,45 @@ patches = [
     (
         "tests/python/test_sinter.py",
         [
-            ("SinterMWPFDecoder", "SinterMWPFRationalDecoder", 2),
-            ("SinterHUFDecoder", "SinterHUFRationalDecoder", 1),
+            ("SinterMWPFDecoder", "SinterMWPFRationalDecoder", None),
+            ("SinterHUFDecoder", "SinterHUFRationalDecoder", None),
         ],
     ),
     (
         "README.md",
         [
             ("pip install -U mwpf\n", "pip install -U mwpf_rational\n", 1),
-            ('decoders=["mwpf"],', 'decoders=["mwpf_rational"],', 1),
+            ('decoders = ["mwpf"],', 'decoders = ["mwpf_rational"],', 1),
             (
                 '"mwpf": SinterMWPFDecoder',
                 '"mwpf_rational": SinterMWPFRationalDecoder',
-                1,
+                2,
             ),
             ("import SinterMWPFDecoder", "import SinterMWPFRationalDecoder", 1),
             ("from mwpf import ", "from mwpf_rational import ", 2),
         ],
     ),
-    ####### module name patches #######
-    (
-        "src/dual_module.rs",
-        [('pyclass(module = "mwpf"', 'pyclass(module = "mwpf_rational"', 2)],
-    ),
-    (
-        "src/example_codes.rs",
-        [('pyclass(module = "mwpf"', 'pyclass(module = "mwpf_rational"', 9)],
-    ),
-    (
-        "src/html_export.rs",
-        [('pyclass(module = "mwpf"', 'pyclass(module = "mwpf_rational"', 1)],
-    ),
-    (
-        "src/mwpf_solver.rs",
-        [('pyclass(module = "mwpf"', 'pyclass(module = "mwpf_rational"', 4)],
-    ),
-    (
-        "src/util_py.rs",
-        [('pyclass(module = "mwpf"', 'pyclass(module = "mwpf_rational"', 12)],
-    ),
-    (
-        "src/util.rs",
-        [('pyclass(module = "mwpf"', 'pyclass(module = "mwpf_rational"', 3)],
-    ),
-    (
-        "src/visualize.rs",
-        [('pyclass(module = "mwpf"', 'pyclass(module = "mwpf_rational"', 2)],
-    ),
-    (
-        "src/matrix/interface.rs",
-        [('pyclass(module = "mwpf"', 'pyclass(module = "mwpf_rational"', 3)],
-    ),
-    (
-        "src/matrix/row.rs",
-        [('pyclass(module = "mwpf"', 'pyclass(module = "mwpf_rational"', 1)],
-    ),
 ]
+
+####### module name patches #######
+pyclass_patch_files = [
+    "src/dual_module.rs",
+    "src/example_codes.rs",
+    "src/html_export.rs",
+    "src/mwpf_solver.rs",
+    "src/util_py.rs",
+    "src/util.rs",
+    "src/visualize.rs",
+    "src/matrix/interface.rs",
+    "src/matrix/row.rs",
+]
+for filename in pyclass_patch_files:
+    patches.append(
+        (
+            filename,
+            [('pyclass(module = "mwpf"', 'pyclass(module = "mwpf_rational"', None)],
+        ),
+    )
 
 
 # patch is strict
@@ -117,14 +114,14 @@ def patch(dry: bool):
         # check occurrences first
         for old, new, occurrence in replacements:
             assert (
-                content.count(old) == occurrence
+                occurrence is None or content.count(old) == occurrence
             ), f"count {filename} for '{old}': {content.count(old)} != {occurrence}"
             assert (
                 content.count(new) == 0
             ), f"count {filename} for '{new}': {content.count(new)} != 0"
         # during application of the replacements, also check occurrence
         for old, new, occurrence in replacements:
-            assert content.count(old) == occurrence
+            assert occurrence is None or content.count(old) == occurrence
             assert content.count(new) == 0
             old_content = content
             content = content.replace(old, new)
@@ -133,7 +130,7 @@ def patch(dry: bool):
             ), f"Patch failed for {filename}: {old} -> {new}"
         # check occurrences last
         for old, new, occurrence in replacements:
-            assert content.count(new) == occurrence
+            assert occurrence is None or content.count(new) == occurrence
             assert content.count(old) == 0
         if not dry:
             with open(filename, "w") as f:
@@ -152,7 +149,7 @@ def revert():
             content = f.read()
         for old, new, occurrence in replacements:
             count = content.count(new)
-            if count != occurrence:
+            if occurrence is not None and count != occurrence:
                 print(
                     f"[warning] reverting process counting error '{old}' '{new}' {occurrence} != {count}"
                 )

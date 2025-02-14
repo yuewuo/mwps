@@ -9,11 +9,11 @@ use std::sync::Arc;
 
 use crate::dual_module::*;
 use crate::ordered_float::OrderedFloat;
-use crate::pointers::*;
 use crate::primal_module_serial::ClusterAffinity;
 use crate::relaxer_optimizer::OptimizerResult;
 use crate::util::*;
 use crate::visualize::*;
+use hashbrown::HashSet;
 
 pub type Affinity = OrderedFloat;
 
@@ -22,7 +22,7 @@ const MAX_HISTORY: usize = 10;
 /// common trait that must be implemented for each implementation of primal module
 pub trait PrimalModuleImpl {
     /// create a primal module given the dual module
-    fn new_empty(solver_initializer: &SolverInitializer) -> Self;
+    fn new_empty(solver_initializer: &Arc<SolverInitializer>) -> Self;
 
     /// clear all states; however this method is not necessarily called when load a new decoding problem, so you need to call it yourself
     fn clear(&mut self);
@@ -105,6 +105,61 @@ pub trait PrimalModuleImpl {
         }
     }
 
+    /// update the weights given the syndrome pattern; return a new syndrome pattern
+    /// that has some of the vertices flipped due to negative weights
+    fn weight_preprocessing<D: DualModuleImpl + MWPSVisualizer>(
+        &mut self,
+        syndrome_pattern: Arc<SyndromePattern>,
+        dual_module: &mut D,
+        initializer: &Arc<SolverInitializer>,
+    ) -> Arc<SyndromePattern> {
+        // update weights given the syndrome pattern
+        if let Some((weights, ratio)) = syndrome_pattern.override_weights.as_ref() {
+            println!("override weights: {:?}, ratio: {:?}", weights, ratio);
+            dual_module.update_weights(weights.clone(), ratio.clone());
+        } else {
+            let mut weight_updates: BTreeMap<EdgeIndex, Weight> = BTreeMap::new();
+            for &herald_index in syndrome_pattern.heralds.iter() {
+                for (edge_index, weight) in initializer.heralds[herald_index].iter() {
+                    let value = weight_updates.remove(edge_index);
+                    let original_weight = value
+                        .as_ref()
+                        .unwrap_or_else(|| &initializer.weighted_edges[*edge_index].weight);
+                    let mixed_weight = exclusive_weight_sum(original_weight, weight);
+                    weight_updates.insert(*edge_index, mixed_weight);
+                }
+            }
+            for &edge_index in syndrome_pattern.erasures.iter() {
+                use crate::num_traits::Zero;
+                weight_updates.insert(edge_index, Weight::zero());
+            }
+            dual_module.set_weights(weight_updates);
+        }
+
+        // after all the edge weights are set, adjust the negative weights and find the flipped vertices
+        dual_module.adjust_weights_for_negative_edges();
+        let flip_vertices = dual_module.get_flip_vertices();
+        if flip_vertices.is_empty() {
+            // we don't need to modify the syndrome pattern
+            return syndrome_pattern;
+        }
+
+        // otherwise modify the syndrome
+        let mut moved_out_set = syndrome_pattern
+            .defect_vertices
+            .iter()
+            .cloned()
+            .collect::<HashSet<VertexIndex>>();
+        for to_flip in flip_vertices.iter() {
+            if moved_out_set.contains(to_flip) {
+                moved_out_set.remove(to_flip);
+            } else {
+                moved_out_set.insert(*to_flip);
+            }
+        }
+        Arc::new(SyndromePattern::new_vertices(moved_out_set.into_iter().collect()))
+    }
+
     fn solve_visualizer<D: DualModuleImpl + MWPSVisualizer>(
         &mut self,
         interface: &DualModuleInterfacePtr,
@@ -114,6 +169,7 @@ pub trait PrimalModuleImpl {
     ) where
         Self: MWPSVisualizer + Sized,
     {
+        // then call the solver to
         if let Some(visualizer) = visualizer {
             let callback = Self::visualizer_callback(visualizer);
             interface.load(syndrome_pattern, dual_module);
@@ -234,14 +290,7 @@ pub trait PrimalModuleImpl {
         let output_subgraph = self.subgraph(interface, dual_module);
         let weight_range = WeightRange::new(
             interface.sum_dual_variables() + dual_module.get_negative_weight_sum(),
-            Rational::from(
-                interface
-                    .read_recursive()
-                    .decoding_graph
-                    .model_graph
-                    .initializer
-                    .get_subgraph_total_weight(&output_subgraph),
-            ),
+            dual_module.get_subgraph_weight(&output_subgraph.subgraph) + dual_module.get_negative_weight_sum(),
         );
         (output_subgraph, weight_range)
     }

@@ -71,5 +71,5 @@ Since I'm using Mac for development already, I can run the following command to 
 ```sh
 rustup target add x86_64-apple-darwin  # only once
 
-CIBW_BUILD=cp38-* MACOSX_DEPLOYMENT_TARGET=10.12 CIBW_ARCHS_MACOS=universal2 python -m cibuildwheel --output-dir target
+CIBW_BUILD=cp39-* MACOSX_DEPLOYMENT_TARGET=10.12 CIBW_ARCHS_MACOS=universal2 python -m cibuildwheel --output-dir target
 ```

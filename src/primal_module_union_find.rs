@@ -17,6 +17,7 @@ use crate::union_find::*;
 use crate::util::*;
 use crate::visualize::*;
 use std::collections::BTreeSet;
+use std::sync::Arc;
 
 #[derive(Derivative)]
 #[derivative(Debug)]
@@ -64,7 +65,7 @@ impl UnionNodeTrait for PrimalModuleUnionFindNode {
 }
 
 impl PrimalModuleImpl for PrimalModuleUnionFind {
-    fn new_empty(_initializer: &SolverInitializer) -> Self {
+    fn new_empty(_initializer: &Arc<SolverInitializer>) -> Self {
         Self {
             union_find: UnionFind::new(0),
         }
@@ -82,17 +83,21 @@ impl PrimalModuleImpl for PrimalModuleUnionFind {
             let node = node_ptr.read_recursive();
             debug_assert!(
                 node.invalid_subgraph.edges.is_empty(),
-                "must load a fresh dual module interface, found a complex node"
+                "must load a fresh dual module interface, found a complex node; did you forget to call solver.clear()?"
             );
             debug_assert!(
                 node.invalid_subgraph.vertices.len() == 1,
-                "must load a fresh dual module interface, found invalid defect node"
+                "must load a fresh dual module interface, found invalid defect node; did you forget to call solver.clear()?"
             );
             debug_assert_eq!(
                 node.index, index,
-                "must load a fresh dual module interface, found index out of order"
+                "must load a fresh dual module interface, found index out of order; did you forget to call solver.clear()?"
             );
-            assert_eq!(node.index as usize, self.union_find.size(), "must load defect nodes in order");
+            assert_eq!(
+                node.index as usize,
+                self.union_find.size(),
+                "must load defect nodes in order, did you forget to call solver.clear()?"
+            );
             self.union_find.insert(PrimalModuleUnionFindNode {
                 internal_edges: BTreeSet::new(),
                 node_index: node.index,
@@ -211,7 +216,6 @@ pub mod tests {
     use crate::dual_module_pq::*;
     use crate::example_codes::*;
     use crate::num_traits::ToPrimitive;
-    use crate::util::tests::*;
     use std::sync::Arc;
 
     pub fn primal_module_union_find_basic_standard_syndrome_optional_viz(

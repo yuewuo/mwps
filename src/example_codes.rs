@@ -312,10 +312,7 @@ pub trait ExampleCode {
         for edge in edges.iter() {
             weighted_edges.push(HyperEdge::new(edge.vertices.clone(), edge.weight.clone()));
         }
-        SolverInitializer {
-            vertex_num,
-            weighted_edges,
-        }
+        SolverInitializer::new(vertex_num, weighted_edges)
     }
 
     fn get_model_graph(&self) -> Arc<ModelHyperGraph> {
@@ -409,7 +406,7 @@ pub trait ExampleCode {
 
     /// get current syndrome
     fn get_syndrome(&self) -> SyndromePattern {
-        SyndromePattern::new(self.get_defect_vertices(), self.get_erasures())
+        SyndromePattern::new_erasure(self.get_defect_vertices(), self.get_erasures())
     }
 
     /// apply an error by flipping the vertices incident to it
@@ -1588,7 +1585,7 @@ mod tests {
                 println!("d={d}, p={p}");
                 let mut code = CodeCapacityRepetitionCode::new(d, p);
                 code.sanity_check().unwrap();
-                let initializer = code.get_initializer();
+                let initializer = Arc::new(code.get_initializer());
                 let mut solver = SolverType::JointSingleHair.build(&initializer, &code, json!({ "cluster_node_limit": 50 }));
                 for _ in 0..repeat {
                     let (syndrome, _) = code.generate_random_errors(thread_rng().gen::<u64>());
@@ -1613,7 +1610,7 @@ mod tests {
                 println!("d={d}, p={p}");
                 let mut code = CodeCapacityDepolarizePlanarCode::new(d, p);
                 code.sanity_check().unwrap();
-                let initializer = code.get_initializer();
+                let initializer = Arc::new(code.get_initializer());
                 let mut solver = SolverType::JointSingleHair.build(&initializer, &code, json!({ "cluster_node_limit": 50 }));
                 for _ in 0..repeat {
                     let (syndrome, _) = code.generate_random_errors(thread_rng().gen::<u64>());
@@ -1638,7 +1635,7 @@ mod tests {
                 println!("d={d}, p={p}");
                 let mut code = CodeCapacityColorCode::new(d, p);
                 code.sanity_check().unwrap();
-                let initializer = code.get_initializer();
+                let initializer = Arc::new(code.get_initializer());
                 let mut solver = SolverType::JointSingleHair.build(&initializer, &code, json!({ "cluster_node_limit": 50 }));
                 for _ in 0..repeat {
                     let (syndrome, _) = code.generate_random_errors(thread_rng().gen::<u64>());
@@ -1655,7 +1652,6 @@ mod tests {
     #[test]
     fn example_code_optimality_code_capacity_tailored_code() {
         // cargo test --release example_code_optimality_code_capacity_tailored_code -- --nocapture
-        use crate::util::tests::*;
         let d_vec = [3, 5, 7];
         let p_vec = [0.1, 0.01];
         let repeat = 10000;
@@ -1664,7 +1660,7 @@ mod tests {
                 println!("d={d}, p={p}");
                 let mut code = CodeCapacityTailoredCode::new(d, 0., p);
                 code.sanity_check().unwrap();
-                let initializer = code.get_initializer();
+                let initializer = Arc::new(code.get_initializer());
                 let mut solver = SolverType::JointSingleHair.build(&initializer, &code, json!({})); // "cluster_node_limit": 50
                 for _ in 0..repeat {
                     let (syndrome, _) = code.generate_random_errors(thread_rng().gen::<u64>());

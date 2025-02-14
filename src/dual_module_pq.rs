@@ -5,7 +5,7 @@
 //! Only debug tests are failing, which aligns with the dual_module_serial behavior
 //!
 
-use crate::num_traits::{FromPrimitive, ToPrimitive, Zero};
+use crate::num_traits::{ToPrimitive, Zero};
 use crate::pointers::*;
 use crate::primal_module::Affinity;
 use crate::primal_module_serial::PrimalClusterPtr;
@@ -15,7 +15,8 @@ use crate::{add_shared_methods, dual_module::*};
 
 use std::{
     cmp::{Ordering, Reverse},
-    collections::{BTreeSet, BinaryHeap},
+    collections::{BTreeMap, BTreeSet, BinaryHeap},
+    sync::Arc,
     time::Instant,
 };
 
@@ -263,8 +264,8 @@ where
     negative_edges: HashSet<EdgeIndex>,
     flip_vertices: HashSet<VertexIndex>,
 
-    // counteract the weight updates
-    original_weights: Vec<Rational>,
+    // remember the initializer for original weights and heralded weighted edges
+    pub initializer: Arc<SolverInitializer>,
 }
 
 impl<Queue> DualModulePQGeneric<Queue>
@@ -396,14 +397,9 @@ where
 {
     /// initialize the dual module, which is supposed to be reused for multiple decoding tasks with the same structure
     #[allow(clippy::unnecessary_cast)]
-    fn new_empty(initializer: &SolverInitializer) -> Self {
+    fn new_empty(initializer: &Arc<SolverInitializer>) -> Self {
         #[cfg(not(feature = "loose_sanity_check"))]
         initializer.sanity_check().unwrap();
-
-        #[cfg(feature = "loose_sanity_check")]
-        if let Err(error_message) = initializer.sanity_check() {
-            eprintln!("[warning] {}", error_message);
-        }
 
         // create vertices
         let vertices: Vec<VertexPtr> = (0..initializer.vertex_num)
@@ -417,7 +413,6 @@ where
             .collect();
         // set edges
         let mut edges = Vec::<EdgePtr>::new();
-        let mut original_weights = Vec::<Rational>::with_capacity(initializer.weighted_edges.len());
         for hyperedge in initializer.weighted_edges.iter() {
             let edge = Edge {
                 edge_index: edges.len() as EdgeIndex,
@@ -434,8 +429,6 @@ where
                 #[cfg(feature = "incr_lp")]
                 cluster_weights: hashbrown::HashMap::new(),
             };
-
-            original_weights.push(edge.weight.clone());
 
             let edge_ptr = EdgePtr::new_value(edge);
 
@@ -456,7 +449,7 @@ where
             negative_weight_sum: Default::default(),
             negative_edges: Default::default(),
             flip_vertices: Default::default(),
-            original_weights,
+            initializer: initializer.clone(),
         }
     }
 
@@ -464,11 +457,15 @@ where
     fn clear(&mut self) {
         // todo: try parallel clearing, if a core supports hyper-threading then this may benefit
         self.vertices.iter().for_each(|p| p.write().clear());
-        self.edges.iter().zip(&self.original_weights).for_each(|(p, og_weight)| {
-            let mut p_write = p.write();
-            p_write.clear();
-            p_write.weight = og_weight.clone(); // note: not resetting weight was also performing quite well...
-        });
+
+        self.edges
+            .iter()
+            .zip(self.initializer.weighted_edges.iter().map(|x| &x.weight))
+            .for_each(|(p, og_weight)| {
+                let mut p_write = p.write();
+                p_write.clear();
+                p_write.weight = og_weight.clone();
+            });
 
         self.obstacle_queue.clear();
         self.global_time.write().set_zero();
@@ -913,15 +910,21 @@ where
         }
     }
 
-    fn update_weights(&mut self, new_weights: Vec<Weight>, mix_ratio: f64) {
+    fn update_weights(&mut self, new_weights: Vec<Weight>, mix_ratio: Weight) {
         for (edge, new_weight) in self.edges.iter().zip(new_weights.iter()) {
             let mut edge = edge.write();
 
             let current_edge_weight = edge.weight.clone();
-            let new_weight = Weight::from(
-                current_edge_weight.clone() + Rational::from_f64(mix_ratio).unwrap() * (new_weight - current_edge_weight),
-            );
+            let new_weight =
+                Weight::from(current_edge_weight.clone() + mix_ratio.clone() * (new_weight - current_edge_weight));
 
+            edge.weight = new_weight;
+        }
+    }
+
+    fn set_weights(&mut self, new_weights: BTreeMap<EdgeIndex, Weight>) {
+        for (edge_index, new_weight) in new_weights.into_iter() {
+            let mut edge = self.edges[edge_index].write();
             edge.weight = new_weight;
         }
     }

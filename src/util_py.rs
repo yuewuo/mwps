@@ -11,7 +11,8 @@ use num_traits::FromPrimitive;
 use pyo3::basic::CompareOp;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyFloat, PyInt, PyList, PySet, PyTuple};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
+use std::fmt::Debug;
 use std::hash::DefaultHasher;
 use std::hash::{Hash, Hasher};
 
@@ -95,17 +96,21 @@ impl PyRational {
     fn __abs__(&self) -> Self {
         self.0.abs().into()
     }
-    fn __mul__(&self, other: &Self) -> Self {
-        (self.0.clone() * other.0.clone()).into()
+    fn __mul__(&self, other: &Bound<PyAny>) -> Self {
+        let other = PyRational::from(other);
+        (self.0.clone() * other.0).into()
     }
-    fn __truediv__(&self, other: &Self) -> Self {
-        (self.0.clone() / other.0.clone()).into()
+    fn __truediv__(&self, other: &Bound<PyAny>) -> Self {
+        let other = PyRational::from(other);
+        (self.0.clone() / other.0).into()
     }
-    fn __add__(&self, other: &Self) -> Self {
-        (self.0.clone() + other.0.clone()).into()
+    fn __add__(&self, other: &Bound<PyAny>) -> Self {
+        let other = PyRational::from(other);
+        (self.0.clone() + other.0).into()
     }
-    fn __sub__(&self, other: &Self) -> Self {
-        (self.0.clone() - other.0.clone()).into()
+    fn __sub__(&self, other: &Bound<PyAny>) -> Self {
+        let other = PyRational::from(other);
+        (self.0.clone() - other.0).into()
     }
     fn __neg__(&self) -> Self {
         (-self.0.clone()).into()
@@ -136,6 +141,18 @@ impl PyRational {
         kwargs.set_item("denominator", self.denom())?;
         let args = PyTuple::empty(py);
         Ok((args, kwargs).into_pyobject(py)?.unbind())
+    }
+    fn approx_eq(&self, other: &Bound<PyAny>) -> bool {
+        let other = PyRational::from(other);
+        rational_approx_eq(&self.0, &other.0)
+    }
+    fn approx_le(&self, other: &Bound<PyAny>) -> bool {
+        let other = PyRational::from(other);
+        rational_approx_le(&self.0, &other.0)
+    }
+    fn approx_ge(&self, other: &Bound<PyAny>) -> bool {
+        let other = PyRational::from(other);
+        rational_approx_ge(&self.0, &other.0)
     }
 }
 
@@ -268,17 +285,18 @@ impl PyDualReport {
     }
 }
 
-pub fn py_into_btree_set<'py, T: Ord + Clone + FromPyObject<'py>>(value: &Bound<'py, PyAny>) -> PyResult<BTreeSet<T>> {
+/// Python code of `[a, b, c]` or `{a, b, c}` or `{}`
+pub fn py_into_btree_set<'py, T: Ord + FromPyObject<'py>>(value: &Bound<'py, PyAny>) -> PyResult<BTreeSet<T>> {
     let mut result = BTreeSet::<T>::new();
     if value.is_instance_of::<PyList>() {
         let list: &Bound<PyList> = value.downcast()?;
         for element in list.iter() {
-            result.insert(element.extract::<T>()?.clone());
+            result.insert(element.extract::<T>()?);
         }
     } else if value.is_instance_of::<PySet>() {
         let list: &Bound<PySet> = value.downcast()?;
         for element in list.iter() {
-            result.insert(element.extract::<T>()?.clone());
+            result.insert(element.extract::<T>()?);
         }
     } else if value.is_instance_of::<PyDict>() {
         let dict: &Bound<PyDict> = value.downcast()?;
@@ -293,7 +311,7 @@ pub fn py_into_btree_set<'py, T: Ord + Clone + FromPyObject<'py>>(value: &Bound<
             let any = builtins.getattr("list")?.call1((value,))?;
             let any_list: &Bound<PyList> = any.downcast()?;
             for element in any_list.iter() {
-                result.insert(element.extract::<T>()?.clone());
+                result.insert(element.extract::<T>()?);
             }
             Ok(())
         })();
@@ -301,6 +319,51 @@ pub fn py_into_btree_set<'py, T: Ord + Clone + FromPyObject<'py>>(value: &Bound<
             let type_name = value.get_type().name()?;
             unimplemented!(
                 "unsupported python type, should be set, list, (empty)dict, or anything that can be converted to a list; got {}",
+                type_name
+            )
+        }
+    }
+    Ok(result)
+}
+
+/// Python code of `[(k1, v1), (k2, v2)]` or `{ k1: v1, k2: v2 }` or `dict(k1=v1, k2=v2)`
+pub fn py_into_btree_map<'py, K: Ord + Debug + Clone + FromPyObject<'py>, T: FromPyObject<'py>>(
+    value: &Bound<'py, PyAny>,
+) -> PyResult<BTreeMap<K, T>> {
+    let mut result = BTreeMap::<K, T>::new();
+    if value.is_instance_of::<PyList>() {
+        let list: &Bound<PyList> = value.downcast()?;
+        for element in list.iter() {
+            let element: &Bound<PyTuple> = element.downcast()?;
+            assert!(element.len() == 2, "each tuple should contain two elements");
+            let key = element.get_item(0)?.extract::<K>()?;
+            let value = element.get_item(1)?.extract::<T>()?;
+            assert!(result.insert(key.clone(), value).is_none(), "duplicate key found: {:?}", key);
+        }
+    } else if value.is_instance_of::<PyDict>() {
+        let dict: &Bound<PyDict> = value.downcast()?;
+        for (key, value) in dict.iter() {
+            let key = key.extract::<K>()?;
+            let value = value.extract::<T>()?;
+            assert!(result.insert(key.clone(), value).is_none(), "duplicate key found: {:?}", key);
+        }
+    } else {
+        // last resort: try convert the object into a python dict
+        let result: PyResult<()> = (|| {
+            let builtins = PyModule::import(value.py(), "builtins")?;
+            let any = builtins.getattr("dict")?.call1((value,))?;
+            let any_dict: &Bound<PyDict> = any.downcast()?;
+            for (key, value) in any_dict.iter() {
+                let key = key.extract::<K>()?;
+                let value = value.extract::<T>()?;
+                assert!(result.insert(key.clone(), value).is_none(), "duplicate key found: {:?}", key);
+            }
+            Ok(())
+        })();
+        if result.is_err() {
+            let type_name = value.get_type().name()?;
+            unimplemented!(
+                "unsupported python type, should be list, dict, or anything that can be converted to a dict; got {}",
                 type_name
             )
         }
@@ -861,6 +924,12 @@ impl PyCluster {
 }
 
 #[pyfunction]
+#[pyo3(name = "exclusive_weight_sum")]
+pub fn py_exclusive_weight_sum(w1: &Bound<PyAny>, w2: &Bound<PyAny>) -> PyRational {
+    PyRational(exclusive_weight_sum(&PyRational::from(w1).0, &PyRational::from(w2).0))
+}
+
+#[pyfunction]
 pub(crate) fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyRational>()?;
     m.add_class::<PyDualNodePtr>()?;
@@ -877,5 +946,6 @@ pub(crate) fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<RowInfo>()?;
     m.add_class::<PyWeightRange>()?;
     m.add_class::<PyCluster>()?;
+    m.add_function(wrap_pyfunction!(py_exclusive_weight_sum, m)?)?;
     Ok(())
 }

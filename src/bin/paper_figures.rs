@@ -29,8 +29,8 @@ fn hyperedge_example() {
         code.vertices[i].position = VisualizePosition::new(-radius * angle.cos(), radius * angle.sin(), 0.);
     }
     // create dual module
-    let initializer = code.get_initializer();
-    let model_graph = Arc::new(ModelHyperGraph::new(Arc::new(initializer.clone())));
+    let initializer = Arc::new(code.get_initializer());
+    let model_graph = Arc::new(ModelHyperGraph::new(initializer.clone()));
     let mut dual_module = DualModulePQ::new_empty(&initializer);
     let interface_ptr = DualModuleInterfacePtr::new(model_graph.clone());
     // add syndrome

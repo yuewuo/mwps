@@ -18,7 +18,6 @@ use crate::primal_module_serial::*;
 use crate::util::*;
 use crate::visualize::*;
 use core::panic;
-use hashbrown::HashSet;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use std::fs::File;
@@ -59,7 +58,7 @@ pub trait SolverTrait {
     fn print_clusters(&self) {
         panic!();
     }
-    fn update_weights(&mut self, new_weights: Vec<Rational>, mix_ratio: f64);
+    fn update_weights(&mut self, new_weights: Vec<Weight>, mix_ratio: Weight);
     fn get_model_graph(&self) -> Arc<ModelHyperGraph>;
 }
 
@@ -291,6 +290,7 @@ pub struct SolverSerialPlugins {
     interface_ptr: DualModuleInterfacePtr,
     model_graph: Arc<ModelHyperGraph>,
     pub config: SolverSerialPluginsConfig,
+    syndrome_loaded: bool,
 }
 
 impl MWPSVisualizer for SolverSerialPlugins {
@@ -303,19 +303,19 @@ impl MWPSVisualizer for SolverSerialPlugins {
 }
 
 impl SolverSerialPlugins {
-    pub fn new(initializer: &SolverInitializer, plugins: Arc<Vec<PluginEntry>>, config: serde_json::Value) -> Self {
-        let model_graph = Arc::new(ModelHyperGraph::new(Arc::new(initializer.clone())));
+    pub fn new(initializer: &Arc<SolverInitializer>, plugins: Arc<Vec<PluginEntry>>, config: serde_json::Value) -> Self {
+        let model_graph = Arc::new(ModelHyperGraph::new(initializer.clone()));
         let mut primal_module = PrimalModuleSerial::new_empty(initializer); // question: why does this need initializer?
         let config: SolverSerialPluginsConfig = serde_json::from_value(config).unwrap();
         primal_module.plugins = plugins;
         primal_module.config = config.primal.as_ref().unwrap_or(&config.flatten_primal).clone();
-
         Self {
             dual_module: DualModulePQ::new_empty(initializer),
             primal_module,
             interface_ptr: DualModuleInterfacePtr::new(model_graph.clone()),
             model_graph,
             config,
+            syndrome_loaded: false,
         }
     }
 
@@ -326,6 +326,11 @@ impl SolverSerialPlugins {
         visualizer: Option<&mut Visualizer>,
         skip_initial_duals: bool,
     ) {
+        if self.syndrome_loaded {
+            self.clear(); // automatic clear before loading new syndrome in case user forgets to call `clear`
+        }
+        self.syndrome_loaded = true;
+
         if !skip_initial_duals {
             self.interface_ptr
                 .load(Arc::new(syndrome_pattern.clone()), &mut self.dual_module);
@@ -398,28 +403,19 @@ impl SolverTrait for SolverSerialPlugins {
         self.primal_module.clear();
         self.dual_module.clear();
         self.interface_ptr.clear();
+        self.syndrome_loaded = false;
     }
-    fn solve_visualizer(&mut self, mut syndrome_pattern: SyndromePattern, visualizer: Option<&mut Visualizer>) {
-        self.dual_module.adjust_weights_for_negative_edges();
-
-        let moved_out_vec = std::mem::take(&mut syndrome_pattern.defect_vertices);
-        let mut moved_out_set = moved_out_vec.into_iter().collect::<HashSet<VertexIndex>>();
-
-        for to_flip in self.dual_module.get_flip_vertices().iter() {
-            if moved_out_set.contains(to_flip) {
-                moved_out_set.remove(to_flip);
-            } else {
-                moved_out_set.insert(*to_flip);
-            }
+    fn solve_visualizer(&mut self, syndrome_pattern: SyndromePattern, visualizer: Option<&mut Visualizer>) {
+        if self.syndrome_loaded {
+            self.clear(); // automatic clear before loading new syndrome in case user forgets to call `clear`
         }
+        self.syndrome_loaded = true;
 
-        syndrome_pattern.defect_vertices = moved_out_set.into_iter().collect();
-
-        let syndrome_pattern = Arc::new(syndrome_pattern.clone());
-
-        if !syndrome_pattern.erasures.is_empty() {
-            unimplemented!();
-        }
+        let syndrome_pattern = self.primal_module.weight_preprocessing(
+            Arc::new(syndrome_pattern),
+            &mut self.dual_module,
+            &self.model_graph.initializer,
+        );
         self.primal_module.solve_visualizer(
             &self.interface_ptr,
             syndrome_pattern.clone(),
@@ -465,7 +461,7 @@ impl SolverTrait for SolverSerialPlugins {
     fn print_clusters(&self) {
         self.primal_module.print_clusters();
     }
-    fn update_weights(&mut self, new_weights: Vec<Rational>, mix_ratio: f64) {
+    fn update_weights(&mut self, new_weights: Vec<Weight>, mix_ratio: Weight) {
         self.dual_module.update_weights(new_weights, mix_ratio);
     }
     fn get_model_graph(&self) -> Arc<ModelHyperGraph> {
@@ -488,7 +484,7 @@ macro_rules! bind_solver_trait {
             fn subgraph_range_visualizer(&mut self, visualizer: Option<&mut Visualizer>) -> (OutputSubgraph, WeightRange) {
                 self.0.subgraph_range_visualizer(visualizer)
             }
-            fn sum_dual_variables(&self) -> Rational {
+            fn sum_dual_variables(&self) -> Weight {
                 self.0.sum_dual_variables()
             }
             fn generate_profiler_report(&self) -> serde_json::Value {
@@ -503,7 +499,7 @@ macro_rules! bind_solver_trait {
             fn print_clusters(&self) {
                 self.0.print_clusters()
             }
-            fn update_weights(&mut self, new_weights: Vec<Rational>, mix_ratio: f64) {
+            fn update_weights(&mut self, new_weights: Vec<Weight>, mix_ratio: Weight) {
                 self.0.update_weights(new_weights, mix_ratio)
             }
             fn get_model_graph(&self) -> Arc<ModelHyperGraph> {
@@ -520,7 +516,7 @@ macro_rules! bind_solver_trait {
 pub struct SolverSerialUnionFind(SolverSerialPlugins);
 
 impl SolverSerialUnionFind {
-    pub fn new(initializer: &SolverInitializer, config: serde_json::Value) -> Self {
+    pub fn new(initializer: &Arc<SolverInitializer>, config: serde_json::Value) -> Self {
         Self(SolverSerialPlugins::new(initializer, Arc::new(vec![]), config))
     }
 }
@@ -532,7 +528,7 @@ impl SolverSerialUnionFind {
     #[pyo3(signature = (initializer, config=None))]
     pub fn new_python(py: Python<'_>, initializer: &SolverInitializer, config: Option<PyObject>) -> Self {
         let config = config.map(|x| pyobject_to_json(x)).unwrap_or(json!({}));
-        py.allow_threads(move || Self::new(initializer, config))
+        py.allow_threads(move || Self::new(&Arc::new(initializer.clone()), config))
     }
 }
 
@@ -546,7 +542,7 @@ inherit_solver_plugin_methods!(SolverSerialUnionFind);
 pub struct SolverSerialSingleHair(SolverSerialPlugins);
 
 impl SolverSerialSingleHair {
-    pub fn new(initializer: &SolverInitializer, config: serde_json::Value) -> Self {
+    pub fn new(initializer: &Arc<SolverInitializer>, config: serde_json::Value) -> Self {
         Self(SolverSerialPlugins::new(
             initializer,
             Arc::new(vec![
@@ -565,7 +561,7 @@ impl SolverSerialSingleHair {
     #[pyo3(signature = (initializer, config=None))]
     pub fn new_python(py: Python<'_>, initializer: &SolverInitializer, config: Option<PyObject>) -> Self {
         let config = config.map(|x| pyobject_to_json(x)).unwrap_or(json!({}));
-        py.allow_threads(move || Self::new(initializer, config))
+        py.allow_threads(move || Self::new(&Arc::new(initializer.clone()), config))
     }
 }
 
@@ -579,7 +575,7 @@ inherit_solver_plugin_methods!(SolverSerialSingleHair);
 pub struct SolverSerialJointSingleHair(SolverSerialPlugins);
 
 impl SolverSerialJointSingleHair {
-    pub fn new(initializer: &SolverInitializer, config: serde_json::Value) -> Self {
+    pub fn new(initializer: &Arc<SolverInitializer>, config: serde_json::Value) -> Self {
         Self(SolverSerialPlugins::new(
             initializer,
             Arc::new(vec![
@@ -601,7 +597,7 @@ impl SolverSerialJointSingleHair {
     #[pyo3(signature = (initializer, config=None))]
     pub fn new_python(py: Python<'_>, initializer: &SolverInitializer, config: Option<PyObject>) -> Self {
         let config = config.map(|x| pyobject_to_json(x)).unwrap_or(json!({}));
-        py.allow_threads(move || Self::new(initializer, config))
+        py.allow_threads(move || Self::new(&Arc::new(initializer.clone()), config))
     }
 }
 
@@ -666,7 +662,7 @@ impl SolverTrait for SolverErrorPatternLogger {
     fn get_model_graph(&self) -> Arc<ModelHyperGraph> {
         panic!("error pattern logger do not actually solve the problem")
     }
-    fn update_weights(&mut self, _new_weights: Vec<Rational>, _mix_ratio: f64) {
+    fn update_weights(&mut self, _new_weights: Vec<Weight>, _mix_ratio: Weight) {
         panic!("error pattern logger do not actually solve the problem")
     }
 }
