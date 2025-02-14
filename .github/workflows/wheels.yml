@@ -30,9 +30,11 @@ jobs: # Workflow credit to https://github.com/samuelcolvin/rtoml/blob/main/.gith
     runs-on: ${{ format('{0}-latest', matrix.os) }}
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v3
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
 
       - name: Install LLVM and Clang (Windows)
         if: matrix.os == 'windows'
@@ -140,9 +142,7 @@ jobs: # Workflow credit to https://github.com/samuelcolvin/rtoml/blob/main/.gith
     runs-on: ${{ format('{0}-latest', matrix.os) }}
 
     steps:
-      - uses: actions/checkout@v3
-
-      - uses: actions/setup-python@v3
+      - uses: actions/checkout@v4
 
       - name: Install LLVM and Clang (Windows)
         if: matrix.os == 'windows'
