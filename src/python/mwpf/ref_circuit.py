@@ -82,6 +82,59 @@ class RefInstruction:
     def __hash__(self) -> int:
         return hash(id(self))
 
+    @staticmethod
+    def new_heralded_erase(
+        targets: tuple[stim.GateTarget | RefRec, ...], p: float
+    ) -> "RefInstruction":
+        instruction = RefInstruction(
+            name="HERALDED_ERASE",
+            targets=targets,
+            gate_args=(p,),
+        )
+        for bias, target in enumerate(targets):
+            assert isinstance(target, stim.GateTarget)
+            instruction.recs.append(
+                RefRec(
+                    instruction=instruction,
+                    bias=bias,
+                )
+            )
+        instruction.recs.freeze()  # do not allow further edit
+        return instruction
+
+    @staticmethod
+    def new_heralded_pauli_channel_1(
+        targets: tuple[stim.GateTarget | RefRec, ...],
+        pI: float = 0,
+        pX: float = 0,
+        pY: float = 0,
+        pZ: float = 0,
+    ) -> "RefInstruction":
+        instruction = RefInstruction(
+            name="HERALDED_PAULI_CHANNEL_1",
+            targets=targets,
+            gate_args=(pI, pX, pY, pZ),
+        )
+        for bias, target in enumerate(targets):
+            assert isinstance(target, stim.GateTarget)
+            instruction.recs.append(
+                RefRec(
+                    instruction=instruction,
+                    bias=bias,
+                )
+            )
+        instruction.recs.freeze()  # do not allow further edit
+        return instruction
+
+    @staticmethod
+    def new_detector(targets: tuple[stim.GateTarget | RefRec, ...]) -> "RefInstruction":
+        for target in targets:
+            assert isinstance(target, RefRec)
+        return RefInstruction(
+            name="DETECTOR",
+            targets=targets,
+        )
+
 
 RefDetector: TypeAlias = RefInstruction
 

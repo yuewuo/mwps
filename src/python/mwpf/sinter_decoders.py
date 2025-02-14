@@ -59,7 +59,7 @@ class SinterMWPFDecoder:
     c: Optional[int] = None  # alias of `cluster_node_limit`, will override it
     timeout: Optional[float] = None
     with_progress: bool = False
-    ref_circuit: Optional[RefCircuit] = None
+    circuit: Optional[stim.Circuit] = None  # RefCircuit is not picklable
     # this parameter itself doesn't do anything to load the circuit but only check whether the circuit is indeed loaded
     pass_circuit: bool = False
 
@@ -85,10 +85,10 @@ class SinterMWPFDecoder:
 
     def with_circuit(self, circuit: stim.Circuit | None) -> "SinterMWPFDecoder":
         if circuit is None:
-            self.ref_circuit = None
+            self.circuit = None
             return self
         assert isinstance(circuit, stim.Circuit)
-        self.ref_circuit = RefCircuit.of(circuit)
+        self.circuit = circuit.copy()
         return self
 
     def compile_decoder_for_dem(
@@ -98,14 +98,16 @@ class SinterMWPFDecoder:
     ) -> "MwpfCompiledDecoder":
         if self.pass_circuit:
             assert (
-                self.ref_circuit is not None
+                self.circuit is not None
             ), "The circuit is not loaded but the flag `pass_circuit` is True"
 
         solver, predictor = construct_decoder_and_predictor(
             dem,
             decoder_type=self.decoder_type,
             config=self.config,
-            ref_circuit=self.ref_circuit,
+            ref_circuit=(
+                RefCircuit.of(self.circuit) if self.circuit is not None else None
+            ),
         )
         assert (
             dem.num_detectors == predictor.num_detectors()
@@ -135,7 +137,7 @@ class SinterMWPFDecoder:
     ) -> None:
         if self.pass_circuit:
             assert (
-                self.ref_circuit is not None
+                self.circuit is not None
             ), "The circuit is not loaded but the flag `pass_circuit` is True"
 
         dem = stim.DetectorErrorModel.from_file(dem_path)
@@ -143,7 +145,9 @@ class SinterMWPFDecoder:
             dem,
             decoder_type=self.decoder_type,
             config=self.config,
-            ref_circuit=self.ref_circuit,
+            ref_circuit=(
+                RefCircuit.of(self.circuit) if self.circuit is not None else None
+            ),
         )
         assert num_dets == predictor.num_detectors()
         assert num_obs == predictor.num_observables()

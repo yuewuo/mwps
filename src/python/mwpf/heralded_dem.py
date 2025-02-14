@@ -273,6 +273,9 @@ class HeraldedDetectorErrorModel:
         for detector_id in self.heralded_detector_indices:
             detector = self.heralded_detectors[detector_id]
             assert detector is not None
+            if detector not in self.heralded_dems:
+                heralds.append(frozendict({}))
+                continue
             sub_dem = self.heralded_dems[detector]
             heralds.append(
                 frozendict(
@@ -319,6 +322,7 @@ class HeraldedDetectorErrorModel:
         return HeraldedDemPredictor(
             fault_masks_with_p=fault_masks_with_p,
             herald_detectors=herald_detectors,
+            detector_id_to_herald_id=self.detector_id_to_herald_id,
             herald_fault_map=self.herald_fault_map,
             num_dets=self.skeleton_dem._dem.num_detectors,
             num_obs=self.skeleton_dem._dem.num_observables,
@@ -336,6 +340,7 @@ class HeraldedDemPredictor(Predictor):
 
     fault_masks_with_p: tuple[tuple[int, float], ...]
     herald_detectors: frozenset[int]
+    detector_id_to_herald_id: frozendict[int, int]
     herald_fault_map: tuple[frozendict[int, tuple[float, int]], ...]
     num_dets: int
     num_obs: int
@@ -349,7 +354,10 @@ class HeraldedDemPredictor(Predictor):
         # the heralded detectors are not passed to the decoder
         defect_vertices = detectors - self.herald_detectors
         # instead, they are passed as heralds
-        heralds = detectors & self.herald_detectors
+        heralds = [
+            self.detector_id_to_herald_id[detector_id]
+            for detector_id in detectors & self.herald_detectors
+        ]
         return mwpf.SyndromePattern(defect_vertices=defect_vertices, heralds=heralds)
 
     def prediction_of(
