@@ -149,7 +149,7 @@ def revert():
             content = f.read()
         for old, new, occurrence in replacements:
             count = content.count(new)
-            if count != occurrence:
+            if occurrence is not None and count != occurrence:
                 print(
                     f"[warning] reverting process counting error '{old}' '{new}' {occurrence} != {count}"
                 )

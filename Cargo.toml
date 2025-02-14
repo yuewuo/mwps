@@ -55,7 +55,7 @@ loose_sanity_check = [] # do not panic when check fails
 pyo3 = { version = "0.23.4", features = [
     "extension-module",
     "multiple-pymethods",
-    "abi3-py310",
+    "abi3-py39",
     "num-bigint",
     "macros",
 ], optional = true }

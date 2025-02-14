@@ -69,4 +69,4 @@ exposed `hyperion_exposed` variable in visualization tool so that user can progr
 - add more weight manipulation
 - Python user don't have to call `solver.clear` anymore
 - new SinterDecoder that is capable of handling heralded errors
-- bump minimum Python version requirement to 3.10 (for typing support and to use the latest numpy)
+- bump minimum Python version requirement to 3.9 (for typing support and to use the latest numpy)
