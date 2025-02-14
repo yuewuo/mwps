@@ -31,16 +31,12 @@ jobs: # Workflow credit to https://github.com/samuelcolvin/rtoml/blob/main/.gith
 
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - uses: actions/setup-python@v5
         with:
           python-version: '3.13'
-          cache: 'pip'
-          cache-dependency-path: '.github/requirements-dev.txt'
 
-      - name: Install Python dependencies
-        run: python -m pip install -r .github/requirements-dev.txt
-  
       - name: Install LLVM and Clang (Windows)
         if: matrix.os == 'windows'
         uses: KyleMayes/install-llvm-action@v1
@@ -146,6 +142,7 @@ jobs: # Workflow credit to https://github.com/samuelcolvin/rtoml/blob/main/.gith
     runs-on: ${{ format('{0}-latest', matrix.os) }}
 
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/checkout@v4
 
       - name: Install LLVM and Clang (Windows)
