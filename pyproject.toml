@@ -28,7 +28,9 @@ classifiers = [
     'Topic :: Software Development :: Libraries :: Python Modules',
     'Topic :: Internet',
 ]
-dependencies = ["frozendict", "frozenlist"]
+
+[project.optional-dependencies]
+stim = ["frozendict", "frozenlist", "numpy", "stim", "sinter"]
 
 [tool.maturin]
 no-default-features = true
@@ -42,3 +44,10 @@ features = [
 bindings = "pyo3"
 cargo-extra-args = "--no-default-features --features python_binding,f64_weight,embed_visualizer,qecp_integrate,loose_sanity_check"
 python-source = "src/python"
+
+[[tool.mypy.overrides]]
+allow_redefinition = true
+module = ["mwpf.*", "stim.*", "sinter.*", "mwpf_rational.*", "tqdm.*"]
+follow_untyped_imports = true
+ignore_missing_imports = true
+implicit_reexport = true

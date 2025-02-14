@@ -34,7 +34,7 @@ patches = [
             ("import mwpf\n", "import mwpf_rational\n", 1),
             ("from mwpf import", "from mwpf_rational import", 1),
             ("getattr(mwpf, decoder_type)", "getattr(mwpf_rational, decoder_type)", 1),
-            ("SinterMWPFDecoder", "SinterMWPFRationalDecoder", 3),
+            ("SinterMWPFDecoder", "SinterMWPFRationalDecoder", 4),
             ("SinterHUFDecoder", "SinterHUFRationalDecoder", 1),
             ("SinterSingleHairDecoder", "SinterSingleHairRationalDecoder", 1),
             ("MwpfCompiledDecoder", "MwpfRationalCompiledDecoder", 3),
@@ -59,11 +59,11 @@ patches = [
         "README.md",
         [
             ("pip install -U mwpf\n", "pip install -U mwpf_rational\n", 1),
-            ('decoders=["mwpf"],', 'decoders=["mwpf_rational"],', 1),
+            ('decoders = ["mwpf"],', 'decoders = ["mwpf_rational"],', 1),
             (
                 '"mwpf": SinterMWPFDecoder',
                 '"mwpf_rational": SinterMWPFRationalDecoder',
-                1,
+                2,
             ),
             ("import SinterMWPFDecoder", "import SinterMWPFRationalDecoder", 1),
             ("from mwpf import ", "from mwpf_rational import ", 2),

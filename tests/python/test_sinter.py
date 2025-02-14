@@ -68,7 +68,7 @@ def test_sinter_heralded_error():
 R 0 1
 X_ERROR(0.01) 0  # with lower probability, an error happens at 0
 X_ERROR(0.1) 1  # normally we would always guess that the actual error happens at 1
-HERALDED_PAULI_CHANNEL_1(0, 0.02, 0, 0) 0  # D0
+HERALDED_PAULI_CHANNEL_1(0.02, 0.02, 0, 0) 0  # D0
 DETECTOR rec[-1]
 MPP Z0*Z1  # D1
 DETECTOR rec[-1]
@@ -77,24 +77,26 @@ OBSERVABLE_INCLUDE(0) rec[-1]  # read qubit 0
 """
     )
     print(circuit)
-    dem = circuit.detector_error_model()
+    dem = circuit.detector_error_model(approximate_disjoint_errors=True)
     print("######### dem #########")
     print(dem)
     # without special handling, the dem includes the heralded error as regular pauli error
-    # when decoded natively, we always think that
     assert dem == stim.DetectorErrorModel(
         """
-error(0.02) D0 D1 L0  # herald detector D0 uniquely determines whether the hyperedge { D1 } occurs
+error(0.02) D0
+error(0.02) D0 D1 L0
 error(0.1) D1
 error(0.01) D1 L0
 """
     )
     decoder = mwpf.SinterDevMWPFDecoder()
     compiled_decoder = decoder.compile_decoder_for_dem(dem=dem)
+    # trigger both D0 and D1:
+    bit_packed_detection_event_data = np.packbits(
+        np.array([[1, 1]]), axis=-1, bitorder="little"
+    )
     prediction = compiled_decoder.decode_shots_bit_packed(
-        bit_packed_detection_event_data=np.packbits(
-            np.array([[1, 1]]), axis=-1, bitorder="little"
-        )
+        bit_packed_detection_event_data=bit_packed_detection_event_data
     )
     observables = np.unpackbits(
         prediction[0], count=dem.num_observables, bitorder="little"
@@ -103,4 +105,5 @@ error(0.01) D1 L0
     assert observables == [1]
 
     # now let's tell the decoder about the circuit itself so that it can extract the heralded error information
-    # decoder.circuit =
+    # decoder.with_circuit(circuit)
+    # compiled_decoder = decoder.compile_decoder_for_dem(dem=dem)

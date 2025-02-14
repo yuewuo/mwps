@@ -30,10 +30,12 @@ print(circuit_2)  # print the circuit in relative indices
 
 import stim
 from dataclasses import dataclass, field
-from typing import Iterator, Iterable, TypeAlias, Collection
+from typing import Iterator, Iterable, TypeAlias, Collection, Protocol, Sequence
 import functools
+import numpy as np
 from frozendict import frozendict
 from frozenlist import FrozenList
+import mwpf
 
 
 @dataclass(frozen=True)
@@ -450,12 +452,27 @@ class RefDetectorErrorModel:
 
     @staticmethod
     def of(
-        ref_circuit: RefCircuit, dem: stim.DetectorErrorModel | None = None
+        ref_circuit: RefCircuit | None = None,
+        dem: stim.DetectorErrorModel | None = None,
     ) -> "RefDetectorErrorModel":
         if dem is None:
+            assert ref_circuit is not None, "circuit and dem cannot be both None"
             dem = ref_circuit.circuit().detector_error_model(
                 approximate_disjoint_errors=True, flatten_loops=True
             )
+        if ref_circuit is None:
+            # create a mock ref_circuit just for the reference of detectors
+            num_detectors = dem.num_detectors
+            circuit = stim.Circuit()
+            circuit.append("R", list(range(num_detectors)))
+            circuit.append(
+                "M", list(range(num_detectors))
+            )  # some constant measurements
+            for detector_id in range(num_detectors):
+                circuit.append(
+                    "DETECTOR", [stim.target_rec(detector_id - num_detectors)]
+                )
+            ref_circuit = RefCircuit.of(circuit)
         instructions: list[RefDemInstruction] = []
         for instruction in dem.flattened():
             ref_targets: list[int | stim.DemTarget | RefDetector] = []
@@ -499,21 +516,117 @@ class RefDetectorErrorModel:
         return dem
 
     @functools.cached_property
-    def hyperedges(self) -> frozendict[frozenset[int], float]:
-        hyperedges: dict[frozenset[int], float] = {}
+    def hyperedges(self) -> tuple["DemHyperedge", ...]:
+        """
+        we don't need to put all the hyperedges in the graph. If multiple hyperedges have
+        the same detector set (incident vertices) but only differ by logical observable,
+        then we only need to add the hyperedge with the highest probability and totally
+        ignore others, as they will never be chosen in any MWPF solution anyway.
+        """
+        # detectors: (probability, observables)
+        mapping: dict[frozenset[int], tuple[float, frozenset[int]]] = {}
         for instruction in self.instructions:
             if instruction.type == "error":
                 assert (
                     len(instruction.args) == 1
                 ), "error instruction must have 1 parameter of type float"
-                error_rate = instruction.args[0]
-                hyperedge = frozenset(
-                    self.ref_circuit.detector_to_index[target]
-                    for target in instruction.targets
-                    if isinstance(target, RefDetector)
-                )
-                if hyperedge in hyperedges:
-                    hyperedges[hyperedge] = max(hyperedges[hyperedge], error_rate)
+                probability = instruction.args[0]
+                detectors: set[int] = set()
+                observables: set[int] = set()
+                for target in instruction.targets:
+                    if isinstance(target, RefDetector):
+                        detectors ^= {self.ref_circuit.detector_to_index[target]}
+                    elif (
+                        isinstance(target, stim.DemTarget)
+                        and target.is_logical_observable_id()
+                    ):
+                        observables ^= {target.val}
+                detectors = frozenset(detectors)
+                observables = frozenset(observables)
+                if detectors in mapping:
+                    old_probability, old_observables = mapping[detectors]
+                    if old_observables == observables:
+                        print(
+                            f"[warning] why would DEM report exactly the same hyperedge? "
+                            + f"detectors: {detectors}, observables: {observables}"
+                        )
+                    # choosing the most probable one
+                    if probability > old_probability:
+                        mapping[detectors] = (probability, observables)
                 else:
-                    hyperedges[hyperedge] = error_rate
-        return frozendict(hyperedges)
+                    mapping[detectors] = (probability, observables)
+        return tuple(
+            DemHyperedge(detectors, observables, probability)
+            for detectors, (probability, observables) in mapping.items()
+        )
+
+    @functools.cached_property
+    def hyperedges_detectors_set(self) -> frozenset[frozenset[int]]:
+        return frozenset(dem_hyperedge.detectors for dem_hyperedge in self.hyperedges)
+
+    @functools.cached_property
+    def _dem(self) -> stim.DetectorErrorModel:
+        return self.dem()
+
+    @functools.cached_property
+    def initializer(self) -> mwpf.SolverInitializer:
+        vertex_num = self._dem.num_detectors
+        weighted_edges = [
+            mwpf.HyperEdge(
+                dem_hyperedge.detectors,
+                probability_to_weight(dem_hyperedge.probability),
+            )
+            for dem_hyperedge in self.hyperedges
+        ]
+        return mwpf.SolverInitializer(vertex_num, weighted_edges)
+
+    @functools.cached_property
+    def predictor(self) -> "StaticDemPredictor":
+        fault_masks = [
+            sum(1 << k for k in dem_hyperedge.observables)
+            for dem_hyperedge in self.hyperedges
+        ]
+        return StaticDemPredictor(
+            fault_masks=np.array(fault_masks),
+            num_dets=self._dem.num_detectors,
+            num_obs=self._dem.num_observables,
+        )
+
+
+class Predictor(Protocol):
+    """given the syndrome and the subgraph, predict the logical observable correction"""
+
+    def __call__(self, syndrome: Sequence[int], subgraph: Sequence[int]) -> int: ...
+    def num_detectors(self) -> int: ...
+    def num_observables(self) -> int: ...
+
+
+@dataclass(frozen=True)
+class StaticDemPredictor:
+    fault_masks: np.ndarray
+    num_dets: int
+    num_obs: int
+
+    def __call__(self, _syndrome: Sequence[int], subgraph: Sequence[int]) -> int:
+        return np.bitwise_xor.reduce(self.fault_masks[subgraph])
+
+    def num_detectors(self) -> int:
+        return self.num_dets
+
+    def num_observables(self) -> int:
+        return self.num_obs
+
+
+@dataclass(frozen=True)
+class DemHyperedge:
+    detectors: frozenset[int]
+    observables: frozenset[int]
+    probability: float
+
+
+def probability_to_weight(probability: float) -> float:
+    return np.log((1 - probability) / probability)
+
+
+def weight_to_probability(weight: float) -> float:
+    return 1 / (1 + np.exp(weight))

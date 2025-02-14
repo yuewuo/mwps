@@ -23,6 +23,7 @@ from .ref_circuit import (
 import functools
 from dataclasses import dataclass
 from frozendict import frozendict
+import mwpf
 
 
 DEM_MIN_PROBABILITY = 1e-15  # below this value, DEM starts to ignore the error rate
@@ -166,7 +167,6 @@ class HeraldedDetectorErrorModel:
     def heralded_dems(
         self,
     ) -> frozendict[RefDetector, RefDetectorErrorModel]:
-        skeleton_hyperedges = self.skeleton_dem.hyperedges
         ref_dems: dict[RefDetector, RefDetectorErrorModel] = {}
         for detector in self.heralded_detectors:
             if detector is None:
@@ -205,7 +205,9 @@ class HeraldedDetectorErrorModel:
                 # if there is no hyperedge, we don't need this detector at all
                 continue
             for hyperedge in heralded_dem.hyperedges:
-                assert hyperedge in skeleton_hyperedges, (
+                assert (
+                    hyperedge.detectors in self.skeleton_dem.hyperedges_detectors_set
+                ), (
                     "bug: the skeleton graph doesn't have the hyperedge, "
                     + "this might causes issue when constructing decoders"
                 )
@@ -216,17 +218,28 @@ class HeraldedDetectorErrorModel:
     def __str__(self) -> str:
         result = "HeraldedDetectorErrorModel:"
         result += "\n    skeleton hypergraph:"
-        for hyperedge, p in self.skeleton_dem.hyperedges.items():
+        for dem_hyperedge in self.skeleton_dem.hyperedges:
             result += (
-                f"\n        {', '.join([f'D{v}' for v in sorted(hyperedge)])}: {p}"
+                f"\n        {', '.join([f'D{v}' for v in sorted(dem_hyperedge.detectors)])}: {dem_hyperedge.probability}"
+                + f" ({', '.join([f'L{v}' for v in sorted(dem_hyperedge.observables)])})"
             )
         for detector, ref_dem in self.heralded_dems.items():
             result += f"\n    heralded hypergraph on D{self.ref_circuit.detector_to_index[detector]}:"
-            for hyperedge, p in ref_dem.hyperedges.items():
+            for hyperedge in ref_dem.hyperedges:
                 result += (
-                    f"\n        {', '.join([f'D{v}' for v in sorted(hyperedge)])}: {p}"
+                    f"\n        {', '.join([f'D{v}' for v in sorted(hyperedge.detectors)])}: {hyperedge.probability}"
+                    + f" ({', '.join([f'L{v}' for v in sorted(hyperedge.observables)])})"
                 )
         return result
+
+    @functools.cached_property
+    # TODO
+    def initializer(self) -> mwpf.SolverInitializer: ...
+
+    # TODO: the correction should be chosen based on the heralded error: if certain observable achieves higher
+    # probability, we should choose the correction based on that observable; this is a dynamic behavior
+    # ideally, we should not spend too much computation in Python.
+    # How about given the subgraph object and then calculate the prediction? The subgraph should be pretty sparse
 
 
 def add_herald_detectors(circuit: stim.Circuit) -> stim.Circuit:
