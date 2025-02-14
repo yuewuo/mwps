@@ -60,6 +60,8 @@ class SinterMWPFDecoder:
     timeout: Optional[float] = None
     with_progress: bool = False
     ref_circuit: Optional[RefCircuit] = None
+    # this parameter itself doesn't do anything to load the circuit but only check whether the circuit is indeed loaded
+    pass_circuit: bool = False
 
     # record panic data and controls whether the raise the panic or simply record them
     panic_action: PanicAction = PanicAction.CATCH
@@ -94,14 +96,23 @@ class SinterMWPFDecoder:
         *,
         dem: "stim.DetectorErrorModel",
     ) -> "MwpfCompiledDecoder":
+        if self.pass_circuit:
+            assert (
+                self.ref_circuit is not None
+            ), "The circuit is not loaded but the flag `pass_circuit` is True"
+
         solver, predictor = construct_decoder_and_predictor(
             dem,
             decoder_type=self.decoder_type,
             config=self.config,
             ref_circuit=self.ref_circuit,
         )
-        assert dem.num_detectors == predictor.num_detectors()
-        assert dem.num_observables == predictor.num_observables()
+        assert (
+            dem.num_detectors == predictor.num_detectors()
+        ), "Mismatched number of detectors, are you using the corresponding circuit of dem?"
+        assert (
+            dem.num_observables == predictor.num_observables()
+        ), "Mismatched number of observables, are you using the corresponding circuit of dem?"
         return MwpfCompiledDecoder(
             solver,
             predictor,
@@ -122,6 +133,11 @@ class SinterMWPFDecoder:
         obs_predictions_b8_out_path: pathlib.Path,
         tmp_dir: pathlib.Path,
     ) -> None:
+        if self.pass_circuit:
+            assert (
+                self.ref_circuit is not None
+            ), "The circuit is not loaded but the flag `pass_circuit` is True"
+
         dem = stim.DetectorErrorModel.from_file(dem_path)
         solver, predictor = construct_decoder_and_predictor(
             dem,
@@ -147,19 +163,14 @@ class SinterMWPFDecoder:
                     )
                     if dets_bit_packed.shape != (num_det_bytes,):
                         raise IOError("Missing dets data.")
-                    defect_vertices: Sequence[int] = np.flatnonzero(  # type: ignore
-                        np.unpackbits(
-                            dets_bit_packed, count=num_dets, bitorder="little"
-                        )
-                    )
-                    syndrome = SyndromePattern(defect_vertices=defect_vertices)
+                    syndrome = predictor.syndrome_of(dets_bit_packed)
                     if solver is None:
                         prediction = 0
                     else:
                         try:
                             solver.solve(syndrome)
                             subgraph = solver.subgraph()
-                            prediction = predictor(defect_vertices, subgraph)
+                            prediction = predictor.prediction_of(syndrome, subgraph)
                         except BaseException as e:
                             self.panic_cases.append(
                                 DecoderPanic(
@@ -192,7 +203,7 @@ def construct_decoder_and_predictor(
     else:
         ref_dem = RefDetectorErrorModel.of(dem=model)
         initializer = ref_dem.initializer
-        predictor: Predictor = ref_dem.predictor
+        predictor = ref_dem.predictor
 
     if decoder_type is None:
         # default to the solver with highest accuracy
@@ -256,21 +267,14 @@ class MwpfCompiledDecoder:
             shape=(num_shots, (self.num_obs + 7) // 8), dtype=np.uint8
         )
         for shot in range(num_shots):
-            defect_vertices: Sequence[int] = np.flatnonzero(  # type: ignore
-                np.unpackbits(
-                    bit_packed_detection_event_data[shot],
-                    count=self.num_dets,
-                    bitorder="little",
-                )
-            )
-            syndrome = SyndromePattern(defect_vertices=defect_vertices)
+            syndrome = self.predictor.syndrome_of(bit_packed_detection_event_data[shot])
             if self.solver is None:
                 prediction = 0
             else:
                 try:
                     self.solver.solve(syndrome)
                     subgraph = self.solver.subgraph()
-                    prediction = self.predictor(defect_vertices, subgraph)
+                    prediction = self.predictor.prediction_of(syndrome, subgraph)
                 except BaseException as e:
                     self.panic_cases.append(
                         DecoderPanic(

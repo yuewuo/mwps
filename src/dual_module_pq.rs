@@ -401,11 +401,6 @@ where
         #[cfg(not(feature = "loose_sanity_check"))]
         initializer.sanity_check().unwrap();
 
-        #[cfg(feature = "loose_sanity_check")]
-        if let Err(error_message) = initializer.sanity_check() {
-            eprintln!("[warning] {}", error_message);
-        }
-
         // create vertices
         let vertices: Vec<VertexPtr> = (0..initializer.vertex_num)
             .map(|vertex_index| {

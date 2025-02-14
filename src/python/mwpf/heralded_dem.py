@@ -19,11 +19,15 @@ from .ref_circuit import (
     RefRec,
     RefDetector,
     RefDetectorErrorModel,
+    probability_to_weight,
+    Predictor,
 )
+from typing import Sequence
 import functools
 from dataclasses import dataclass
 from frozendict import frozendict
 import mwpf
+import numpy as np
 
 
 DEM_MIN_PROBABILITY = 1e-15  # below this value, DEM starts to ignore the error rate
@@ -110,10 +114,32 @@ class HeraldedDetectorErrorModel:
     def heralded_detectors(self) -> tuple[RefDetector | None, ...]:
         heralded_measurements = frozenset(self.heralded_measurements)
         return tuple(
-            detector
+            detector if (set(detector.targets) & heralded_measurements) else None
             for detector in self.ref_circuit.detectors
-            if set(detector.targets) & heralded_measurements
         )
+
+    @functools.cached_property
+    def heralded_detector_indices(self) -> tuple[int, ...]:
+        return tuple(
+            {
+                detector_id
+                for detector_id, detector in enumerate(self.heralded_detectors)
+                if detector is not None
+            }
+        )
+
+    @functools.cached_property
+    def detector_id_to_herald_id(self) -> frozendict[int, int]:
+        return frozendict(
+            {
+                detector_id: herald_id
+                for herald_id, detector_id in enumerate(self.heralded_detector_indices)
+            }
+        )
+
+    @functools.cached_property
+    def num_heralds(self) -> int:
+        return len(self.heralded_detector_indices)
 
     @functools.cached_property
     def skeleton_circuit(self) -> RefCircuit:
@@ -233,13 +259,121 @@ class HeraldedDetectorErrorModel:
         return result
 
     @functools.cached_property
-    # TODO
-    def initializer(self) -> mwpf.SolverInitializer: ...
+    def hyperedge_to_index(self) -> frozendict[frozenset[int], int]:
+        return frozendict(
+            {
+                dem_hyperedge.detectors: edge_index
+                for edge_index, dem_hyperedge in enumerate(self.skeleton_dem.hyperedges)
+            }
+        )
 
-    # TODO: the correction should be chosen based on the heralded error: if certain observable achieves higher
-    # probability, we should choose the correction based on that observable; this is a dynamic behavior
-    # ideally, we should not spend too much computation in Python.
-    # How about given the subgraph object and then calculate the prediction? The subgraph should be pretty sparse
+    @functools.cached_property
+    def herald_fault_map(self) -> tuple[frozendict[int, tuple[float, int]], ...]:
+        heralds: list[frozendict[int, float]] = []
+        for detector_id in self.heralded_detector_indices:
+            detector = self.heralded_detectors[detector_id]
+            assert detector is not None
+            sub_dem = self.heralded_dems[detector]
+            heralds.append(
+                frozendict(
+                    {
+                        self.hyperedge_to_index[hyperedge.detectors]: (
+                            hyperedge.probability,
+                            sum(1 << k for k in hyperedge.observables),
+                        )
+                        for hyperedge in sub_dem.hyperedges
+                    }
+                )
+            )
+        return tuple(heralds)
+
+    @functools.cached_property
+    def initializer(self) -> mwpf.SolverInitializer:
+        vertex_num = self.skeleton_dem._dem.num_detectors
+        weighted_edges = [
+            mwpf.HyperEdge(
+                dem_hyperedge.detectors,
+                probability_to_weight(dem_hyperedge.probability),
+            )
+            for dem_hyperedge in self.skeleton_dem.hyperedges
+        ]
+        heralds = [
+            {edge_index: probability_to_weight(p) for edge_index, (p, _) in dic.items()}
+            for dic in self.herald_fault_map
+        ]
+        return mwpf.SolverInitializer(vertex_num, weighted_edges, heralds=heralds)
+
+    @functools.cached_property
+    def predictor(self) -> "HeraldedDemPredictor":
+        fault_masks_with_p = tuple(
+            (sum(1 << k for k in dem_hyperedge.observables), dem_hyperedge.probability)
+            for dem_hyperedge in self.skeleton_dem.hyperedges
+        )
+        herald_detectors = frozenset(
+            {
+                detector_id
+                for detector_id, detector in enumerate(self.heralded_detectors)
+                if detector is not None
+            }
+        )
+        return HeraldedDemPredictor(
+            fault_masks_with_p=fault_masks_with_p,
+            herald_detectors=herald_detectors,
+            herald_fault_map=self.herald_fault_map,
+            num_dets=self.skeleton_dem._dem.num_detectors,
+            num_obs=self.skeleton_dem._dem.num_observables,
+        )
+
+
+@dataclass(frozen=True)
+class HeraldedDemPredictor(Predictor):
+    """
+    the correction should be chosen based on the heralded error: if certain observable achieves higher
+    probability, we should choose the correction based on that observable; this is a dynamic behavior
+    ideally, we should not spend too much computation in Python.
+    How about given the subgraph object and then calculate the prediction? The subgraph should be pretty sparse
+    """
+
+    fault_masks_with_p: tuple[tuple[int, float], ...]
+    herald_detectors: frozenset[int]
+    herald_fault_map: tuple[frozendict[int, tuple[float, int]], ...]
+    num_dets: int
+    num_obs: int
+
+    def syndrome_of(self, dets_bit_packed: np.ndarray) -> mwpf.SyndromePattern:
+        detectors: set[int] = set(
+            np.flatnonzero(
+                np.unpackbits(dets_bit_packed, count=self.num_dets, bitorder="little")
+            )
+        )
+        # the heralded detectors are not passed to the decoder
+        defect_vertices = detectors - self.herald_detectors
+        # instead, they are passed as heralds
+        heralds = detectors & self.herald_detectors
+        return mwpf.SyndromePattern(defect_vertices=defect_vertices, heralds=heralds)
+
+    def prediction_of(
+        self, syndrome: mwpf.SyndromePattern, subgraph: Sequence[int]
+    ) -> int:
+        prediction: int = 0
+        heralds: list[int] = syndrome.heralds
+        for edge_index in subgraph:
+            fault_mask, p = self.fault_masks_with_p[edge_index]
+            # also iterate over the heralded errors to see if there is a more probable logical correction
+            for herald_id in heralds:
+                if edge_index in self.herald_fault_map[herald_id]:
+                    new_p, new_fault_mask = self.herald_fault_map[herald_id][edge_index]
+                    if new_p > p:
+                        p = new_p
+                        fault_mask = new_fault_mask
+            prediction ^= fault_mask
+        return prediction
+
+    def num_detectors(self) -> int:
+        return self.num_dets
+
+    def num_observables(self) -> int:
+        return self.num_obs
 
 
 def add_herald_detectors(circuit: stim.Circuit) -> stim.Circuit:
@@ -298,10 +432,10 @@ def heralded_instruction_to_noise_instruction(
             gate_args=(0.75,),
         )
     elif instruction.name == "HERALDED_PAULI_CHANNEL_1":
-        _pI, pX, pY, pZ = instruction.gate_args
-        p_sum = pX + pY + pZ
-        if p_sum == 0:
+        pI, pX, pY, pZ = instruction.gate_args
+        if pX + pY + pZ == 0:
             return None
+        p_sum = pI + pX + pY + pZ
         return RefInstruction(
             name="PAULI_CHANNEL_1",
             targets=instruction.targets,

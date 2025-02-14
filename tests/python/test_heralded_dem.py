@@ -229,13 +229,13 @@ HeraldedDetectorErrorModel:
         D2, D3: 1.9984014443252798e-15 ()
         D3: 1.9984014443252798e-15 ()
     heralded hypergraph on D4:
-        D2: 0.22222222222222224 ()
-        D2, D3: 0.3333333333333333 ()
-        D3: 0.4444444444444445 ()
+        D2: 0.19999999999999998 ()
+        D2, D3: 0.3 ()
+        D3: 0.39999999999999997 ()
     heralded hypergraph on D5:
-        D2: 0.22222222222222224 ()
-        D2, D3: 0.3333333333333333 ()
-        D3: 0.4444444444444445 ()\
+        D2: 0.19999999999999998 ()
+        D2, D3: 0.3 ()
+        D3: 0.39999999999999997 ()\
 """
     )
 
@@ -255,6 +255,14 @@ HERALDED_ERASE(0.01) 0 2 1
 M 0 2 4\
 """
     circuit = stim.Circuit(circuit_str)
+    heralded_dem = mwpf.heralded_dem.HeraldedDetectorErrorModel.of(circuit)
+    assert len(heralded_dem.heralded_measurements) == 3
+    assert len(heralded_dem.detected_heralded_measurements) == 0  # none detected
+    assert len(heralded_dem.undetected_heralded_measurements) == 3
+    assert heralded_dem.heralded_detectors == (None, None)
+    assert heralded_dem.heralded_detector_indices == tuple()
+    assert heralded_dem.detector_id_to_herald_id == {}
+    assert heralded_dem.num_heralds == 0
     # add heralded detectors
     circuit_with_herald_detected = mwpf.heralded_dem.add_herald_detectors(circuit)
     print(circuit_with_herald_detected)
@@ -277,4 +285,17 @@ DETECTOR rec[-1]
 M 0 2 4\
 """
     )
-    heralded_dem = mwpf.heralded_dem.HeraldedDetectorErrorModel.of(circuit)
+    heralded_dem = mwpf.heralded_dem.HeraldedDetectorErrorModel.of(
+        circuit_with_herald_detected
+    )
+    assert len(heralded_dem.heralded_measurements) == 3
+    assert len(heralded_dem.detected_heralded_measurements) == 3  # all detected
+    assert len(heralded_dem.undetected_heralded_measurements) == 0
+    assert len(heralded_dem.heralded_detectors) == 5
+    assert heralded_dem.heralded_detectors[:2] == (None, None)
+    assert heralded_dem.heralded_detectors[2] != None
+    assert heralded_dem.heralded_detectors[3] != None
+    assert heralded_dem.heralded_detectors[4] != None
+    assert heralded_dem.heralded_detector_indices == (2, 3, 4)
+    assert heralded_dem.detector_id_to_herald_id == {2: 0, 3: 1, 4: 2}
+    assert heralded_dem.num_heralds == 3

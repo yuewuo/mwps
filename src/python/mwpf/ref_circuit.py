@@ -581,12 +581,12 @@ class RefDetectorErrorModel:
         return mwpf.SolverInitializer(vertex_num, weighted_edges)
 
     @functools.cached_property
-    def predictor(self) -> "StaticDemPredictor":
+    def predictor(self) -> "StaticPredictor":
         fault_masks = [
             sum(1 << k for k in dem_hyperedge.observables)
             for dem_hyperedge in self.hyperedges
         ]
-        return StaticDemPredictor(
+        return StaticPredictor(
             fault_masks=np.array(fault_masks),
             num_dets=self._dem.num_detectors,
             num_obs=self._dem.num_observables,
@@ -596,18 +596,38 @@ class RefDetectorErrorModel:
 class Predictor(Protocol):
     """given the syndrome and the subgraph, predict the logical observable correction"""
 
-    def __call__(self, syndrome: Sequence[int], subgraph: Sequence[int]) -> int: ...
+    def syndrome_of(self, dets_bit_packed: np.ndarray) -> mwpf.SyndromePattern: ...
+    def prediction_of(
+        self, syndrome: mwpf.SyndromePattern, subgraph: Sequence[int]
+    ) -> int: ...
     def num_detectors(self) -> int: ...
     def num_observables(self) -> int: ...
 
+    def get_observable_bits(
+        self, prediction: np.ndarray, shot_index: int = 0
+    ) -> list[int]:
+        return np.unpackbits(
+            prediction[shot_index], count=self.num_observables(), bitorder="little"
+        )
+
 
 @dataclass(frozen=True)
-class StaticDemPredictor:
+class StaticPredictor(Predictor):
     fault_masks: np.ndarray
     num_dets: int
     num_obs: int
 
-    def __call__(self, _syndrome: Sequence[int], subgraph: Sequence[int]) -> int:
+    def syndrome_of(self, dets_bit_packed: np.ndarray) -> mwpf.SyndromePattern:
+        defect_vertices: list[int] = list(
+            np.flatnonzero(
+                np.unpackbits(dets_bit_packed, count=self.num_dets, bitorder="little")
+            )
+        )
+        return mwpf.SyndromePattern(defect_vertices=defect_vertices)
+
+    def prediction_of(
+        self, _syndrome: mwpf.SyndromePattern, subgraph: Sequence[int]
+    ) -> int:
         return np.bitwise_xor.reduce(self.fault_masks[subgraph])
 
     def num_detectors(self) -> int:
@@ -624,7 +644,12 @@ class DemHyperedge:
     probability: float
 
 
+WEIGHT_MAX: float = 1000  # larger than np.log(1e300)
+
+
 def probability_to_weight(probability: float) -> float:
+    if probability >= 1:
+        return -WEIGHT_MAX
     return np.log((1 - probability) / probability)
 
 

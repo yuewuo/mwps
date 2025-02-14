@@ -126,7 +126,6 @@ pub trait PrimalModuleImpl {
                         .as_ref()
                         .unwrap_or_else(|| &initializer.weighted_edges[*edge_index].weight);
                     let mixed_weight = exclusive_weight_sum(original_weight, weight);
-                    println!("original weight: {original_weight}, weight: {weight}, mixed_weight: {mixed_weight}");
                     weight_updates.insert(*edge_index, mixed_weight);
                 }
             }
