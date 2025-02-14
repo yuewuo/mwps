@@ -74,7 +74,7 @@ jobs: # Workflow credit to https://github.com/samuelcolvin/rtoml/blob/main/.gith
       - name: Build Wheels
         run: python -m cibuildwheel --output-dir wheelhouse
         env:
-          CIBW_BUILD: 'cp38-*'
+          CIBW_BUILD: 'cp39-*'
           CIBW_SKIP: '*-win32 *_i686' # do not build for 32bit machines, rustc seems to complain about it
           CIBW_PLATFORM: ${{ matrix.platform || matrix.os }} # only build for specific platform
           CIBW_ENVIRONMENT_MACOS: PATH="$HOME/.cargo/bin:$PATH" MACOSX_DEPLOYMENT_TARGET=10.12
