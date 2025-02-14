@@ -39,12 +39,14 @@ debug = true
 default = ["f64_weight", "qecp_integrate", "embed_visualizer", "progress_bar"]
 f64_weight = ["float_lp"] # use f64 instead of BigRational as weight type
 rational_weight = ["slp"]
+slp = [] # placeholder feature; the src/slp dependency is always included
 python_binding = ["pyo3"] # bind to Python
 wasm_binding = ["wasm-bindgen"] # bind to wasm
 progress_bar = ["pbr"] # make pbr an optional dependency because of wasm
 colorful = [] # enable colorful output in case terminal exists
 qecp_integrate = ["qecp"] # integrate with qecp
 float_lp = ["highs"] # use floating point LP solver, which is highs
+highs = [] # placeholder feature; the src/highs dependency is always included
 incr_lp = [
 ] # solve lp problems incrementally, compatible with highs, by modifying the internal data of the probelm
 embed_visualizer = [
@@ -80,8 +82,8 @@ cfg-if = "1.0.0"
 getrandom = { version = "0.2", features = ["js"] }
 wasm-bindgen = { version = "0.2.86", optional = true }
 lazy_static = "1.4.0"
-slp = { path = "src/slp", optional = true }
-highs = { path = "src/highs", optional = true }
+slp = { path = "src/slp" }
+highs = { path = "src/highs" }
 sugar = "0.2.0"
 maplit = "1.0.2"
 qecp = { version = "0.2.5", optional = true, default-features = false, features = [
