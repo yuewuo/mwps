@@ -30,7 +30,7 @@ classifiers = [
 ]
 
 [project.optional-dependencies]
-stim = ["frozendict", "frozenlist", "numpy", "stim", "sinter"]
+stim = ["frozendict", "frozenlist", "numpy", "stim>=1.14.0", "sinter>=1.14.0"]
 
 [tool.maturin]
 no-default-features = true

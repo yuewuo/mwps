@@ -246,14 +246,14 @@ class HeraldedDetectorErrorModel:
         result += "\n    skeleton hypergraph:"
         for dem_hyperedge in self.skeleton_dem.hyperedges:
             result += (
-                f"\n        {', '.join([f'D{v}' for v in sorted(dem_hyperedge.detectors)])}: {dem_hyperedge.probability}"
+                f"\n        {', '.join([f'D{v}' for v in sorted(dem_hyperedge.detectors)])}: {dem_hyperedge.probability:.6e}"
                 + f" ({', '.join([f'L{v}' for v in sorted(dem_hyperedge.observables)])})"
             )
         for detector, ref_dem in self.heralded_dems.items():
             result += f"\n    heralded hypergraph on D{self.ref_circuit.detector_to_index[detector]}:"
             for hyperedge in ref_dem.hyperedges:
                 result += (
-                    f"\n        {', '.join([f'D{v}' for v in sorted(hyperedge.detectors)])}: {hyperedge.probability}"
+                    f"\n        {', '.join([f'D{v}' for v in sorted(hyperedge.detectors)])}: {hyperedge.probability:.6e}"
                     + f" ({', '.join([f'L{v}' for v in sorted(hyperedge.observables)])})"
                 )
         return result
