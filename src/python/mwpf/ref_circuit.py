@@ -659,8 +659,10 @@ class Predictor(Protocol):
     def get_observable_bits(
         self, prediction: np.ndarray, shot_index: int = 0
     ) -> list[int]:
-        return np.unpackbits(
-            prediction[shot_index], count=self.num_observables(), bitorder="little"
+        return list(
+            np.unpackbits(
+                prediction[shot_index], count=self.num_observables(), bitorder="little"
+            )
         )
 
 

@@ -269,7 +269,7 @@ class HeraldedDetectorErrorModel:
 
     @functools.cached_property
     def herald_fault_map(self) -> tuple[frozendict[int, tuple[float, int]], ...]:
-        heralds: list[frozendict[int, float]] = []
+        heralds: list[frozendict[int, tuple[float, int]]] = []
         for detector_id in self.heralded_detector_indices:
             detector = self.heralded_detectors[detector_id]
             assert detector is not None
@@ -413,8 +413,25 @@ def remove_herald_detectors(circuit: stim.Circuit) -> stim.Circuit:
     Remove all detectors of the heralded errors. It will only remove detectors that uniquely detects the heralded errors,
     and panic if some composite detectors involve the heralded error measurement.
     """
-    ...
-    # TODO
+    ref_circuit = RefCircuit.of(circuit)
+    new_instructions = []
+    for instruction in ref_circuit:
+        if instruction.name != "DETECTOR":
+            new_instructions.append(instruction)
+            continue
+        assert len(instruction.targets) > 0, "bug: detector without target"
+        if len(instruction.targets) > 1:
+            # check that none of these recs corresponds to an heralded instruction
+            for rec in instruction.targets:
+                assert isinstance(rec, RefRec)
+                assert not is_heralded_error(rec.instruction), ""
+            new_instructions.append(instruction)
+            continue
+        rec = instruction.targets[0]
+        assert isinstance(rec, RefRec)
+        if not is_heralded_error(rec.instruction):
+            new_instructions.append(instruction)
+    return RefCircuit.of(new_instructions).circuit()
 
 
 def is_heralded_error(instruction: RefInstruction) -> bool:
