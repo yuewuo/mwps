@@ -266,6 +266,15 @@ def add_herald_detectors(circuit: stim.Circuit) -> stim.Circuit:
     return RefCircuit.of(new_instructions).circuit()
 
 
+def remove_herald_detectors(circuit: stim.Circuit) -> stim.Circuit:
+    """
+    Remove all detectors of the heralded errors. It will only remove detectors that uniquely detects the heralded errors,
+    and panic if some composite detectors involve the heralded error measurement.
+    """
+    ...
+    # TODO
+
+
 def is_heralded_error(instruction: RefInstruction) -> bool:
     if instruction.name in ["HERALDED_ERASE", "HERALDED_PAULI_CHANNEL_1"]:
         return True

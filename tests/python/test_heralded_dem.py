@@ -76,10 +76,10 @@ logical_observable L0\
         == """\
 HeraldedDetectorErrorModel:
     skeleton hypergraph:
-        D3: 6.661338147750937e-16
-        D3, D4: 0.013333333333333326
+        D3: 6.661338147750937e-16 ()
+        D3, D4: 0.013333333333333326 ()
     heralded hypergraph on D2:
-        D3: 0.5\
+        D3: 0.5 ()\
 """
     )
 
@@ -149,15 +149,15 @@ DETECTOR abs[1] abs[0]\
         == """\
 HeraldedDetectorErrorModel:
     skeleton hypergraph:
-        D1: 0.00026661333807661436
+        D1: 0.00026661333807661436 ()
     heralded hypergraph on D2:
-        D1: 0.5
+        D1: 0.5 ()
     heralded hypergraph on D3:
-        D1: 0.5
+        D1: 0.5 ()
     heralded hypergraph on D4:
-        D1: 0.5
+        D1: 0.5 ()
     heralded hypergraph on D5:
-        D1: 0.5\
+        D1: 0.5 ()\
 """
     )
 
@@ -226,17 +226,17 @@ DETECTOR abs[2] abs[0]\
         == """\
 HeraldedDetectorErrorModel:
     skeleton hypergraph:
-        D2: 1.9984014443252798e-15
-        D2, D3: 1.9984014443252798e-15
-        D3: 1.9984014443252798e-15
+        D2: 1.9984014443252798e-15 ()
+        D2, D3: 1.9984014443252798e-15 ()
+        D3: 1.9984014443252798e-15 ()
     heralded hypergraph on D4:
-        D2: 0.22222222222222224
-        D2, D3: 0.3333333333333333
-        D3: 0.4444444444444445
+        D2: 0.22222222222222224 ()
+        D2, D3: 0.3333333333333333 ()
+        D3: 0.4444444444444445 ()
     heralded hypergraph on D5:
-        D2: 0.22222222222222224
-        D2, D3: 0.3333333333333333
-        D3: 0.4444444444444445\
+        D2: 0.22222222222222224 ()
+        D2, D3: 0.3333333333333333 ()
+        D3: 0.4444444444444445 ()\
 """
     )
 

@@ -89,7 +89,7 @@ error(0.1) D1
 error(0.01) D1 L0
 """
     )
-    decoder = mwpf.SinterDevMWPFDecoder()
+    decoder = mwpf.SinterMWPFDecoder()
     compiled_decoder = decoder.compile_decoder_for_dem(dem=dem)
     # trigger both D0 and D1:
     bit_packed_detection_event_data = np.packbits(
