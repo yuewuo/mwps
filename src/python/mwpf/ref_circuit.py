@@ -31,6 +31,7 @@ print(circuit_2)  # print the circuit in relative indices
 import stim
 from dataclasses import dataclass, field
 from typing import Iterator, Iterable, TypeAlias, Collection, Protocol, Sequence, Any
+from typing import Iterator, Iterable, TypeAlias, Collection, Protocol, Sequence, Any
 import functools
 import numpy as np
 from functools import reduce
@@ -170,7 +171,7 @@ class RefCircuit:
                 name=instruction.name,
                 targets=tuple(ref_targets),
                 gate_args=tuple(instruction.gate_args_copy()),
-                **extra_instruction_params(instruction),
+                tag=tag_of(instruction),
             )
             instructions.append(ref_instruction)
             # add the measurement to the measurement list
@@ -306,7 +307,7 @@ class RefCircuit:
                     name=instruction.name,
                     targets=relative_targets,
                     gate_args=instruction.gate_args,
-                    **extra_instruction_params(instruction),
+                    tag=tag_of(instruction),
                 )
             )
         return tuple(stim_instructions)
@@ -413,7 +414,7 @@ class RefCircuit:
                     for target in instruction.targets
                 ),
                 gate_args=instruction.gate_args,
-                **extra_instruction_params(instruction),
+                tag=tag_of(instruction),
             )
             for bias in range(instruction.num_measurements):
                 reference_rec = RefRec(
@@ -718,16 +719,8 @@ def weight_to_probability(weight: float) -> float:
     return 1 / (1 + np.exp(weight))
 
 
-def exclusive_probability(p1: float, p2: float) -> float:
-    return p1 * (1 - p2) + p2 * (1 - p1)
-
-
-# tag is introduced in stim 1.15
-HAS_TAG = hasattr(stim.CircuitInstruction, "tag")
-
-
-def extra_instruction_params(instruction: Any) -> dict[str, Any]:
-    params: dict[str, Any] = {}
-    if HAS_TAG:
-        params["tag"] = instruction.tag
-    return params
+def tag_of(instruction: Any) -> str:
+    # known error: 'stim._stim_sse2.CircuitInstruction' object has no attribute 'tag'
+    if hasattr(instruction, "tag"):
+        return instruction.tag
+    return ""

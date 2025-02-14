@@ -34,10 +34,8 @@ detector(1, 1) D3
 detector(3, 1) D4
 logical_observable L0\
 """
-    assert dem.approx_equals(
-        stim.DetectorErrorModel(dem_str),
-        atol=mwpf.heralded_dem.DEM_MIN_PROBABILITY,
-    )
+    assert dem.approx_equals(stim.DetectorErrorModel(dem_str))
+    assert str(dem) == dem_str
     # the regular dem does not contain
     heralded_dem = mwpf.heralded_dem.HeraldedDetectorErrorModel.of(circuit)
     skeleton_dem = heralded_dem.skeleton_dem.dem()
