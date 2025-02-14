@@ -1,5 +1,4 @@
 from common import *
-from mwpf.heralded_dem import *
 import stim
 
 
@@ -37,7 +36,7 @@ logical_observable L0\
 """
     assert str(dem) == dem_str
     # the regular dem does not contain
-    heralded_dem = HeraldedDetectorErrorModel.of(circuit)
+    heralded_dem = mwpf.heralded_dem.HeraldedDetectorErrorModel.of(circuit)
     skeleton_dem = heralded_dem.skeleton_dem.dem()
     print("######### skeleton dem #########")
     print(skeleton_dem)
@@ -53,7 +52,7 @@ detector(3, 1) D4
 logical_observable L0\
 """
         ),
-        atol=DEM_MIN_PROBABILITY,
+        atol=mwpf.heralded_dem.DEM_MIN_PROBABILITY,
     )
     # that skeleton edge must exist
     assert not skeleton_dem.approx_equals(
@@ -66,7 +65,7 @@ detector(3, 1) D4
 logical_observable L0\
 """
         ),
-        atol=DEM_MIN_PROBABILITY,
+        atol=mwpf.heralded_dem.DEM_MIN_PROBABILITY,
     )
 
     print("######### heralded DEM #########")
@@ -127,7 +126,7 @@ DETECTOR rec[-5]\
     print("######### original circuit #########")
     print(circuit)
     assert str(circuit) == circuit_str
-    heralded_dem = HeraldedDetectorErrorModel.of(circuit)
+    heralded_dem = mwpf.heralded_dem.HeraldedDetectorErrorModel.of(circuit)
     print("######### skeleton circuit #########")
     print(heralded_dem.skeleton_circuit)
     assert (
@@ -202,7 +201,7 @@ DETECTOR rec[-4]\
     print("######### original circuit #########")
     print(circuit)
     assert str(circuit) == circuit_str
-    heralded_dem = HeraldedDetectorErrorModel.of(circuit)
+    heralded_dem = mwpf.heralded_dem.HeraldedDetectorErrorModel.of(circuit)
     print("######### skeleton circuit #########")
     print(heralded_dem.skeleton_circuit)
     assert (
@@ -257,7 +256,7 @@ M 0 2 4\
 """
     circuit = stim.Circuit(circuit_str)
     # add heralded detectors
-    circuit_with_herald_detected = add_herald_detectors(circuit)
+    circuit_with_herald_detected = mwpf.heralded_dem.add_herald_detectors(circuit)
     print(circuit_with_herald_detected)
     assert (
         str(circuit_with_herald_detected)
@@ -278,4 +277,4 @@ DETECTOR rec[-1]
 M 0 2 4\
 """
     )
-    heralded_dem = HeraldedDetectorErrorModel.of(circuit)
+    heralded_dem = mwpf.heralded_dem.HeraldedDetectorErrorModel.of(circuit)

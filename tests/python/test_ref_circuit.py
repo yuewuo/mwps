@@ -1,5 +1,4 @@
 from common import *
-from mwpf.ref_circuit import *
 import stim
 
 
@@ -25,7 +24,7 @@ OBSERVABLE_INCLUDE(0) rec[-1]\
     print("######### original circuit #########")
     print(circuit)
     assert str(circuit) == circuit_str
-    ref_circuit = RefCircuit.of(circuit)
+    ref_circuit = mwpf.ref_circuit.RefCircuit.of(circuit)
     print("######### absolute indexed circuit #########")
     print(ref_circuit)
     assert (
@@ -136,7 +135,7 @@ DETECTOR rec[-5]\
     print("######### original circuit #########")
     print(circuit)
     assert str(circuit) == circuit_str
-    ref_circuit = RefCircuit.of(circuit)
+    ref_circuit = mwpf.ref_circuit.RefCircuit.of(circuit)
     print("######### absolute indexed circuit #########")
     print(ref_circuit)
     assert (
@@ -203,7 +202,7 @@ DETECTOR rec[-4]\
     print("######### original circuit #########")
     print(circuit)
     assert str(circuit) == circuit_str
-    ref_circuit = RefCircuit.of(circuit)
+    ref_circuit = mwpf.ref_circuit.RefCircuit.of(circuit)
     print("######### absolute indexed circuit #########")
     print(ref_circuit)
     assert (
@@ -237,8 +236,8 @@ def test_adding_circuit():
     circuit = circuit_1 + circuit_2
     print(circuit)
     assert str(circuit) == "MXX 0 1\nMZZ 2 3"
-    ref_circuit_1 = RefCircuit.of(circuit_1)
-    ref_circuit_2 = RefCircuit.of(circuit_2)
+    ref_circuit_1 = mwpf.ref_circuit.RefCircuit.of(circuit_1)
+    ref_circuit_2 = mwpf.ref_circuit.RefCircuit.of(circuit_2)
     ref_circuit = ref_circuit_1 + ref_circuit_2
     print(ref_circuit)
     assert str(ref_circuit) == "MXX 0 1\nMZZ 2 3"

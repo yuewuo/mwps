@@ -41,6 +41,20 @@ patches = [
         ],
     ),
     (
+        "src/python/mwpf/ref_circuit.py",
+        [
+            ("import mwpf\n", "import mwpf_rational\n", 1),
+            ("mwpf.", "mwpf_rational.", None),
+        ],
+    ),
+    (
+        "src/python/mwpf/heralded_dem.py",
+        [
+            ("import mwpf\n", "import mwpf_rational\n", 1),
+            ("mwpf.", "mwpf_rational.", None),
+        ],
+    ),
+    (
         "src/python/mwpf/__init__.py",
         [
             ("from .mwpf import *", "from .mwpf_rational import *", 1),
