@@ -30,7 +30,7 @@ print(circuit_2)  # print the circuit in relative indices
 
 import stim
 from dataclasses import dataclass, field
-from typing import Iterator, Iterable, TypeAlias, Collection, Protocol, Sequence
+from typing import Iterator, Iterable, TypeAlias, Collection, Protocol, Sequence, Any
 import functools
 import numpy as np
 from frozendict import frozendict
@@ -169,7 +169,7 @@ class RefCircuit:
                 name=instruction.name,
                 targets=tuple(ref_targets),
                 gate_args=tuple(instruction.gate_args_copy()),
-                tag=instruction.tag,
+                tag=tag_of(instruction),
             )
             instructions.append(ref_instruction)
             # add the measurement to the measurement list
@@ -305,7 +305,7 @@ class RefCircuit:
                     name=instruction.name,
                     targets=relative_targets,
                     gate_args=instruction.gate_args,
-                    tag=instruction.tag,
+                    tag=tag_of(instruction),
                 )
             )
         return tuple(stim_instructions)
@@ -412,7 +412,7 @@ class RefCircuit:
                     for target in instruction.targets
                 ),
                 gate_args=instruction.gate_args,
-                tag=instruction.tag,
+                tag=tag_of(instruction),
             )
             for bias in range(instruction.num_measurements):
                 reference_rec = RefRec(
@@ -710,3 +710,10 @@ def probability_to_weight(probability: float) -> float:
 
 def weight_to_probability(weight: float) -> float:
     return 1 / (1 + np.exp(weight))
+
+
+def tag_of(instruction: Any) -> str:
+    # known error: 'stim._stim_sse2.CircuitInstruction' object has no attribute 'tag'
+    if hasattr(instruction, "tag"):
+        return instruction.tag
+    return ""
