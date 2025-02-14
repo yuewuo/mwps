@@ -11,7 +11,7 @@ on:
 jobs: # Workflow credit to https://github.com/samuelcolvin/rtoml/blob/main/.github/workflows/ci.yml
 
   build_wheels:
-    name: Build wheels py3.${{ matrix.python-version }} on ${{ matrix.os }} (${{ matrix.build-feature }})
+    name: Build wheels on ${{ matrix.os }} (${{ matrix.build-feature }})
     strategy:
       fail-fast: true
       matrix:
@@ -19,8 +19,6 @@ jobs: # Workflow credit to https://github.com/samuelcolvin/rtoml/blob/main/.gith
           - ubuntu
           # - macos
           - windows
-        python-version: 
-          - '9' # py39-abi3 regardless of the version here
         include:
           - os: ubuntu
             platform: linux
@@ -72,7 +70,7 @@ jobs: # Workflow credit to https://github.com/samuelcolvin/rtoml/blob/main/.gith
       - name: Build Wheels
         run: python -m cibuildwheel --output-dir wheelhouse
         env:
-          CIBW_BUILD: 'cp3${{ matrix.python-version }}-*'
+          CIBW_BUILD: 'cp39-*'
           CIBW_SKIP: '*-win32 *_i686' # do not build for 32bit machines, rustc seems to complain about it
           CIBW_PLATFORM: ${{ matrix.platform || matrix.os }} # only build for specific platform
           CIBW_ENVIRONMENT_MACOS: PATH="$HOME/.cargo/bin:$PATH" MACOSX_DEPLOYMENT_TARGET=10.12
@@ -139,8 +137,6 @@ jobs: # Workflow credit to https://github.com/samuelcolvin/rtoml/blob/main/.gith
           - ubuntu
           # - macos
           - windows
-        python-version:
-          - '8'
     runs-on: ${{ format('{0}-latest', matrix.os) }}
 
     steps:
