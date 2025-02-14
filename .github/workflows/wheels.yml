@@ -35,7 +35,12 @@ jobs: # Workflow credit to https://github.com/samuelcolvin/rtoml/blob/main/.gith
       - uses: actions/setup-python@v5
         with:
           python-version: '3.13'
+          cache: 'pip'
+          cache-dependency-path: '.github/requirements-dev.txt'
 
+      - name: Install Python dependencies
+        run: python -m pip install -r .github/requirements-dev.txt
+  
       - name: Install LLVM and Clang (Windows)
         if: matrix.os == 'windows'
         uses: KyleMayes/install-llvm-action@v1
@@ -61,9 +66,6 @@ jobs: # Workflow credit to https://github.com/samuelcolvin/rtoml/blob/main/.gith
       - name: Build Frontend
         working-directory: ./visualize
         run: npm install --include=dev && npm run build
-
-      - name: Install Python dependencies
-        run: python -m pip install -U setuptools wheel twine cibuildwheel pytest maturin fusion_blossom==0.2.13 numpy stim sinter frozendict frozenlist
 
       - name: apply patch to build different packages
         if: matrix.build-feature != 'default'
