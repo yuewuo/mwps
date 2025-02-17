@@ -23,7 +23,7 @@ use std::collections::{BTreeSet, HashMap};
 use std::sync::Arc;
 
 // this is not effectively doing much right now due to the My (Leo's) desire for ultra performance (inlining function > branches)
-#[derive(Default, Debug, PartialEq, Eq)]
+#[derive(Default, Debug, PartialEq, Eq, Clone)]
 #[cfg_attr(feature = "python_binding", pyclass(module = "mwpf", eq, eq_int))]
 pub enum DualModuleMode {
     /// Mode 1
