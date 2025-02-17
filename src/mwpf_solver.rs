@@ -1024,6 +1024,7 @@ impl SolverBPWrapper {
         self.solver.clone()
     }
 }
+#[cfg(feature = "python_binding")]
 impl SolverBPWrapper {
     pub fn py_construct_invalid_subgraph(
         &self,
