@@ -184,7 +184,9 @@ class SinterMWPFDecoder:
                                     panic_message=traceback.format_exc(),
                                 )
                             )
-                            if self.panic_action == PanicAction.RAISE:
+                            if "<class 'KeyboardInterrupt'>" in str(e):
+                                raise e
+                            elif self.panic_action == PanicAction.RAISE:
                                 raise ValueError(panic_text_of(solver, syndrome)) from e
                             elif self.panic_action == PanicAction.CATCH:
                                 prediction = random.getrandbits(num_obs)
@@ -288,7 +290,9 @@ class MwpfCompiledDecoder:
                             panic_message=traceback.format_exc(),
                         )
                     )
-                    if self.panic_action == PanicAction.RAISE:
+                    if "<class 'KeyboardInterrupt'>" in str(e):
+                        raise e
+                    elif self.panic_action == PanicAction.RAISE:
                         raise ValueError(panic_text_of(self.solver, syndrome)) from e
                     elif self.panic_action == PanicAction.CATCH:
                         prediction = random.getrandbits(self.num_obs)
