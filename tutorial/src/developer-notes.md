@@ -74,5 +74,5 @@ rustup target add x86_64-apple-darwin  # only once
 CIBW_BUILD=cp38-* MACOSX_DEPLOYMENT_TARGET=10.12 CIBW_ARCHS_MACOS=universal2 python -m cibuildwheel --output-dir target
 
 # build source distribution
-maturin sdist
+maturin sdist --output-dir target
 ```

@@ -31,7 +31,6 @@ print(circuit_2)  # print the circuit in relative indices
 import stim
 from dataclasses import dataclass, field
 from typing import Iterator, Iterable, TypeAlias, Collection, Protocol, Sequence, Any
-from typing import Iterator, Iterable, TypeAlias, Collection, Protocol, Sequence, Any
 import functools
 import numpy as np
 from functools import reduce

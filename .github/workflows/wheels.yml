@@ -145,7 +145,6 @@ jobs: # Workflow credit to https://github.com/samuelcolvin/rtoml/blob/main/.gith
 
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/checkout@v4
 
       - name: Install LLVM and Clang (Windows)
         if: matrix.os == 'windows'
