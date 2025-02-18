@@ -7,6 +7,7 @@ from mwpf import (  # type: ignore
     HyperEdge,
     SolverInitializer,
     Solver,
+    BP,
 )
 from dataclasses import dataclass, field
 import pickle
@@ -300,3 +301,60 @@ class MwpfCompiledDecoder:
                 bitorder="little",
             )
         return predictions
+
+
+@dataclass
+class SinterBPMWPFDecoder(SinterMWPFDecoder):
+    max_iter: int = 10
+    bp_application_ratio: float = 0.625
+
+    def decode_via_files(
+        self,
+        *,
+        num_shots: int,
+        num_dets: int,
+        num_obs: int,
+        dem_path: pathlib.Path,
+        dets_b8_in_path: pathlib.Path,
+        obs_predictions_b8_out_path: pathlib.Path,
+        tmp_dir: pathlib.Path,
+    ) -> None:
+        # TODO: need better code structure to avoid writing duplicate code
+        raise NotImplemented("Not implemented for SinterBPMWPFDecoder")
+
+    def compile_decoder_for_dem(
+        self,
+        *,
+        dem: "stim.DetectorErrorModel",
+    ) -> "BPMWPFCompiledDecoder":
+        compiled_decoder = super().compile_decoder_for_dem(dem=dem)
+        return BPMWPFCompiledDecoder(
+            mwpf_decoder=compiled_decoder,
+            max_iter=self.max_iter,
+            bp_application_ratio=self.bp_application,
+        )
+
+
+@dataclass
+class BPMWPFCompiledDecoder:
+    mwpf_decoder: MwpfCompiledDecoder
+    max_iter: int = 10
+    bp_application_ratio: float = 0.625
+
+    def __post_init__(self):
+        self.bp_decoder = MwpfCompiledDecoder(
+            solver=BP(
+                self.mwpf_decoder.solver.get_solver_base(),
+                max_iter=self.max_iter,
+                bp_application_ratio=self.bp_application_ratio,
+            )
+        )
+
+    def decode_shots_bit_packed(
+        self,
+        *,
+        bit_packed_detection_event_data: "np.ndarray",
+    ) -> "np.ndarray":
+        return self.bp_decoder.decode_shots_bit_packed(
+            bit_packed_detection_event_data=bit_packed_detection_event_data
+        )
