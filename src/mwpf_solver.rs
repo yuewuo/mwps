@@ -703,7 +703,7 @@ pub enum SolverEnum {
 #[cfg_attr(feature = "python_binding", pyclass(module = "mwpf", name = "BPSolverBase"))]
 // base of all solvers
 pub struct SolverBase {
-    inner: SolverEnum,
+    pub inner: SolverEnum,
 }
 
 impl Clone for SolverBase {
@@ -729,11 +729,44 @@ pub struct SolverBPWrapper {
     pub initial_log_ratios: Vec<f64>,
 }
 
+impl SolverBPWrapper {
+    pub fn new(solver: SolverBase, max_iter: usize, bp_application_ratio: f64) -> Self {
+        let model_graph = match &solver.inner {
+            SolverEnum::SolverSerialUnionFind(x) => x.get_model_graph(),
+            SolverEnum::SolverSerialSingleHair(x) => x.get_model_graph(),
+            SolverEnum::SolverSerialJointSingleHair(x) => x.get_model_graph(),
+            SolverEnum::SolverErrorPatternLogger(_) => panic!("cannot create BP solver from error pattern logger"),
+        };
+        let vertex_num = model_graph.initializer.vertex_num;
+        let check_size = model_graph.initializer.weighted_edges.len();
+
+        let mut pcm = bp::bp::BpSparse::new(vertex_num, check_size, 0);
+        let mut initial_log_ratios = Vec::with_capacity(check_size);
+        let mut channel_probabilities = Vec::with_capacity(check_size);
+
+        for (col_index, HyperEdge { weight, vertices }) in model_graph.initializer.weighted_edges.iter().enumerate() {
+            channel_probabilities.push(p_of_weight(weight.numer()));
+            for row_index in vertices.iter() {
+                pcm.insert_entry(*row_index, col_index);
+            }
+            initial_log_ratios.push(weight.numer())
+        }
+
+        let bp_decoder = BpDecoder::new_3(pcm, channel_probabilities, max_iter).unwrap();
+        Self {
+            solver,
+            bp_decoder,
+            bp_application_ratio,
+            initial_log_ratios,
+        }
+    }
+}
+
 #[cfg(feature = "python_binding")]
 #[pymethods]
 impl SolverBPWrapper {
     #[new]
-    pub fn new(solver: SolverBase, max_iter: usize, bp_application_ratio: f64) -> Self {
+    pub fn py_new(solver: SolverBase, max_iter: usize, bp_application_ratio: f64) -> Self {
         let model_graph = match &solver.inner {
             SolverEnum::SolverSerialUnionFind(x) => x.get_model_graph(),
             SolverEnum::SolverSerialSingleHair(x) => x.get_model_graph(),
@@ -765,6 +798,7 @@ impl SolverBPWrapper {
     }
 }
 
+#[cfg(feature = "python_binding")]
 // SolverBase macros
 macro_rules! SolverBase_delegate_solver_method {
     // immutable
@@ -794,6 +828,7 @@ macro_rules! SolverBase_delegate_solver_method {
         }
     };
 }
+#[cfg(feature = "python_binding")]
 macro_rules! SolverBase_delegate_solver_field {
     // immutable
     ($field_name:ident -> $ret:ty) => {
@@ -812,6 +847,7 @@ macro_rules! SolverBase_delegate_solver_field {
     };
 }
 
+#[cfg(feature = "python_binding")]
 impl SolverBase {
     // retrieving methods
     SolverBase_delegate_solver_method!(load_syndrome(&mut self, syndrome_pattern: &SyndromePattern, visualizer: Option<&mut Visualizer>, skip_initial_duals: bool) -> ());
