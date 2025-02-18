@@ -21,11 +21,12 @@ use crate::visualize::*;
 use bp::bp::BpDecoder;
 
 use core::panic;
+use num_traits::ToPrimitive;
 use serde::{Deserialize, Serialize};
+
 use std::collections::BTreeSet;
 use std::fs::File;
-use std::io::prelude::*;
-use std::io::BufWriter;
+use std::io::{prelude::*, BufWriter};
 use std::sync::Arc;
 
 cfg_if::cfg_if! {
@@ -745,11 +746,11 @@ impl SolverBPWrapper {
         let mut channel_probabilities = Vec::with_capacity(check_size);
 
         for (col_index, HyperEdge { weight, vertices }) in model_graph.initializer.weighted_edges.iter().enumerate() {
-            channel_probabilities.push(p_of_weight(weight.numer()));
+            channel_probabilities.push(p_of_weight(weight.to_f64().unwrap()));
             for row_index in vertices.iter() {
                 pcm.insert_entry(*row_index, col_index);
             }
-            initial_log_ratios.push(weight.numer())
+            initial_log_ratios.push(weight.to_f64().unwrap())
         }
 
         let bp_decoder = BpDecoder::new_3(pcm, channel_probabilities, max_iter).unwrap();
@@ -781,11 +782,11 @@ impl SolverBPWrapper {
         let mut channel_probabilities = Vec::with_capacity(check_size);
 
         for (col_index, HyperEdge { weight, vertices }) in model_graph.initializer.weighted_edges.iter().enumerate() {
-            channel_probabilities.push(p_of_weight(weight.numer()));
+            channel_probabilities.push(p_of_weight(weight.to_f64().unwrap()));
             for row_index in vertices.iter() {
                 pcm.insert_entry(*row_index, col_index);
             }
-            initial_log_ratios.push(weight.numer())
+            initial_log_ratios.push(weight.to_f64().unwrap())
         }
 
         let bp_decoder = BpDecoder::new_3(pcm, channel_probabilities, max_iter).unwrap();
