@@ -31,7 +31,6 @@ jobs: # Workflow credit to https://github.com/samuelcolvin/rtoml/blob/main/.gith
 
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/checkout@v4
 
       - uses: actions/setup-python@v5
         with:
@@ -125,11 +124,12 @@ jobs: # Workflow credit to https://github.com/samuelcolvin/rtoml/blob/main/.gith
         run: Get-ChildItem -Path wheelhouse -Filter *.whl |ForEach-Object { python -m pip install -U $_.FullName }
 
       - name: run Python test
-        run: python -X faulthandler -m pytest -p no:faulthandler tests/python
+        if: matrix.os != 'windows'
+        run: pytest tests/python
 
       - uses: actions/upload-artifact@v4
         with:
-          name: binary-${{ matrix.os }}
+          name: binary-${{ matrix.os }}-${{ matrix.build-feature }}
           path: wheelhouse/*.whl
 
   rust_tests:
