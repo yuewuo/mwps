@@ -189,7 +189,7 @@ class SinterMWPFDecoder:
                             elif self.panic_action == PanicAction.CATCH:
                                 prediction = random.getrandbits(num_obs)
                     obs_out_f.write(
-                        prediction.to_bytes((num_obs + 7) // 8, byteorder="little")
+                        int(prediction).to_bytes((num_obs + 7) // 8, byteorder="little")
                     )
 
 
