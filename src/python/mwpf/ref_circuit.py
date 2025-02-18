@@ -577,8 +577,8 @@ class RefDetectorErrorModel:
         then we only need to add the hyperedge with the highest probability and totally
         ignore others, as they will never be chosen in any MWPF solution anyway.
         """
-        # detectors: (probability, observables)
-        mapping: dict[frozenset[int], tuple[float, frozenset[int]]] = {}
+        # detectors: dict[observables, probability]
+        duplicate_edges: dict[frozenset[int], dict[frozenset[int], float]] = {}
         for instruction in self.instructions:
             if instruction.type == "error":
                 assert (
@@ -597,18 +597,23 @@ class RefDetectorErrorModel:
                         observables ^= {target.val}
                 detectors = frozenset(detectors)
                 observables = frozenset(observables)
-                if detectors in mapping:
-                    old_probability, old_observables = mapping[detectors]
-                    if old_observables == observables:
-                        print(
-                            f"[warning] why would DEM report exactly the same hyperedge? "
-                            + f"detectors: {detectors}, observables: {observables}"
+                if detectors in duplicate_edges:
+                    if observables in duplicate_edges[detectors]:
+                        old_p = duplicate_edges[detectors][observables]
+                        duplicate_edges[detectors][observables] = exclusive_probability(
+                            old_p, probability
                         )
-                    # choosing the most probable one
-                    if probability > old_probability:
-                        mapping[detectors] = (probability, observables)
+                    else:
+                        duplicate_edges[detectors][observables] = probability
                 else:
-                    mapping[detectors] = (probability, observables)
+                    duplicate_edges[detectors] = {observables: probability}
+
+        # detectors: (probability, observables)
+        mapping: dict[frozenset[int], tuple[float, frozenset[int]]] = {}
+        for detectors, values in duplicate_edges.items():
+            # choosing the observables with the maximum probability
+            observables, probability = max(values.items(), key=lambda x: x[1])
+            mapping[detectors] = (probability, observables)
         return tuple(
             DemHyperedge(detectors, observables, probability)
             for detectors, (probability, observables) in mapping.items()
@@ -711,6 +716,10 @@ def probability_to_weight(probability: float) -> float:
 
 def weight_to_probability(weight: float) -> float:
     return 1 / (1 + np.exp(weight))
+
+
+def exclusive_probability(p1: float, p2: float) -> float:
+    return p1 * (1 - p2) + p2 * (1 - p1)
 
 
 # tag is introduced in stim 1.15
