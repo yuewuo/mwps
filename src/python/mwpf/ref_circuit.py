@@ -33,6 +33,7 @@ from dataclasses import dataclass, field
 from typing import Iterator, Iterable, TypeAlias, Collection, Protocol, Sequence, Any
 import functools
 import numpy as np
+from functools import reduce
 from frozendict import frozendict
 from frozenlist import FrozenList
 import mwpf
@@ -640,7 +641,7 @@ class RefDetectorErrorModel:
             for dem_hyperedge in self.hyperedges
         ]
         return StaticPredictor(
-            fault_masks=np.array(fault_masks),
+            fault_masks=fault_masks,
             num_dets=self._dem.num_detectors,
             num_obs=self._dem.num_observables,
         )
@@ -668,7 +669,7 @@ class Predictor(Protocol):
 
 @dataclass(frozen=True)
 class StaticPredictor(Predictor):
-    fault_masks: np.ndarray
+    fault_masks: list[int]
     num_dets: int
     num_obs: int
 
@@ -683,7 +684,7 @@ class StaticPredictor(Predictor):
     def prediction_of(
         self, _syndrome: mwpf.SyndromePattern, subgraph: Sequence[int]
     ) -> int:
-        return np.bitwise_xor.reduce(self.fault_masks[subgraph])
+        return reduce(lambda x, y: x ^ y, (self.fault_masks[i] for i in subgraph), 0)
 
     def num_detectors(self) -> int:
         return self.num_dets
