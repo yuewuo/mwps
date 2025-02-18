@@ -719,6 +719,10 @@ def weight_to_probability(weight: float) -> float:
     return 1 / (1 + np.exp(weight))
 
 
+def exclusive_probability(p1: float, p2: float) -> float:
+    return p1 * (1 - p2) + p2 * (1 - p1)
+
+
 # tag is introduced in stim 1.15
 HAS_TAG = hasattr(stim.CircuitInstruction, "tag")
 
