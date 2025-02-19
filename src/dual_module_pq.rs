@@ -237,6 +237,7 @@ impl std::fmt::Debug for EdgeWeak {
 pub type DualModulePQ = DualModulePQGeneric<FutureObstacleQueue<Rational>>;
 
 /* the actual dual module */
+#[derive(Clone)]
 pub struct DualModulePQGeneric<Queue>
 where
     Queue: FutureQueueMethods<Rational, Obstacle> + Default + std::fmt::Debug,

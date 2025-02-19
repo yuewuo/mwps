@@ -26,6 +26,7 @@ use parking_lot::Mutex;
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 
+#[derive(Clone)]
 pub struct PrimalModuleSerial {
     /// dual nodes information
     pub nodes: Vec<PrimalModuleSerialNodePtr>,
@@ -49,7 +50,7 @@ pub struct PrimalModuleSerial {
     pub cluster_weights_initialized: bool,
 }
 
-#[derive(Eq, Debug)]
+#[derive(Eq, Debug, Clone)]
 pub struct ClusterAffinity {
     pub cluster_index: NodeIndex,
     pub affinity: Affinity,

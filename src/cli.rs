@@ -3,13 +3,12 @@ use crate::matrix::*;
 use crate::mwpf_solver::*;
 use crate::util::*;
 use crate::visualize::*;
-use bp::bp::{BpDecoder, BpSparse};
+use bp::bp::BpSparse;
 use clap::builder::{StringValueParser, TypedValueParser, ValueParser};
 use clap::error::{ContextKind, ContextValue, ErrorKind};
 use clap::{Parser, Subcommand, ValueEnum};
 use more_asserts::assert_le;
 use num_traits::FromPrimitive;
-use num_traits::ToPrimitive;
 #[cfg(feature = "progress_bar")]
 use pbr::ProgressBar;
 use rand::rngs::SmallRng;
@@ -329,22 +328,23 @@ impl Cli {
                     }
                 }
 
-                let mut bp_decoder_option = None;
-                let mut initial_log_ratios_option = None;
-
-                if use_bp {
-                    let channel_probabilities = vec![p; code.edge_num()];
-                    let bp_decoder = BpDecoder::new_3(pcm, channel_probabilities, 1).unwrap();
-                    bp_decoder_option = Some(bp_decoder);
-                    initial_log_ratios_option = Some(code.get_weights().clone());
-                }
-
                 if pe != 0. {
                     code.set_erasure_probability(pe);
                 }
                 // create initializer and solver
                 let initializer = Arc::new(code.get_initializer());
                 let mut solver = solver_type.build(&initializer, &*code, solver_config.clone());
+                if use_bp {
+                    solver = match SolverBPWrapper::new(solver.solver_base(), 1, bp_application_ratio.unwrap_or(0.1))
+                        .solver
+                        .inner
+                    {
+                        SolverEnum::SolverSerialUnionFind(x) => Box::new(x) as Box<dyn SolverTrait>,
+                        SolverEnum::SolverSerialSingleHair(x) => Box::new(x) as Box<dyn SolverTrait>,
+                        SolverEnum::SolverSerialJointSingleHair(x) => Box::new(x) as Box<dyn SolverTrait>,
+                        SolverEnum::SolverErrorPatternLogger(_) => panic!("not supported"),
+                    };
+                }
                 let mut result_verifier = verifier.build(&initializer);
                 // prepare progress bar display
                 #[cfg(feature = "progress_bar")]
@@ -362,28 +362,6 @@ impl Cli {
                 // single seed mode, intended only execute a single failing round
                 if let Some(seed) = single_seed {
                     let (syndrome_pattern, error_pattern) = code.generate_random_errors(seed);
-
-                    if use_bp {
-                        let mut syndrome_array = vec![0; code.vertex_num()];
-                        for &dv in syndrome_pattern.defect_vertices.iter() {
-                            syndrome_array[dv] = 1;
-                        }
-                        let bp_decoder = bp_decoder_option.as_mut().unwrap();
-                        let initial_log_ratios = initial_log_ratios_option.as_ref().unwrap();
-                        let initial_log_ratios_ordered_float =
-                            initial_log_ratios.iter().map(|x| x.clone().to_f64().unwrap()).collect();
-
-                        bp_decoder.set_log_domain_bp(&initial_log_ratios_ordered_float);
-                        bp_decoder.decode(&syndrome_array);
-                        let llrs = bp_decoder
-                            .log_prob_ratios
-                            .clone()
-                            .into_iter()
-                            .map(|v| Weight::from_f64(v).unwrap())
-                            .collect();
-
-                        solver.update_weights(llrs, Weight::from_f64(bp_application_ratio.unwrap_or(0.5)).unwrap());
-                    }
 
                     if print_syndrome_pattern {
                         println!("syndrome_pattern: {:?}", syndrome_pattern);
@@ -422,28 +400,6 @@ impl Cli {
                     pb.as_mut().map(|pb| pb.set(round));
                     seed = if use_deterministic_seed { round } else { rng.next_u64() };
                     let (syndrome_pattern, error_pattern) = code.generate_random_errors(seed);
-
-                    if use_bp {
-                        let mut syndrome_array = vec![0; code.vertex_num()];
-                        for &dv in syndrome_pattern.defect_vertices.iter() {
-                            syndrome_array[dv] = 1;
-                        }
-                        let bp_decoder = bp_decoder_option.as_mut().unwrap();
-                        let initial_log_ratios = initial_log_ratios_option.as_ref().unwrap();
-                        let initial_log_ratios_ordered_float =
-                            initial_log_ratios.iter().map(|x| x.clone().to_f64().unwrap()).collect();
-
-                        bp_decoder.set_log_domain_bp(&initial_log_ratios_ordered_float);
-                        bp_decoder.decode(&syndrome_array);
-                        let llrs = bp_decoder
-                            .log_prob_ratios
-                            .clone()
-                            .into_iter()
-                            .map(|v| Weight::from_f64(v).unwrap())
-                            .collect();
-
-                        solver.update_weights(llrs, Weight::from_f64(bp_application_ratio.unwrap_or(0.5)).unwrap());
-                    }
 
                     if print_syndrome_pattern {
                         println!("syndrome_pattern: {:?}", syndrome_pattern);
