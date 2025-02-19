@@ -7,6 +7,7 @@ from mwpf import (  # type: ignore
     HyperEdge,
     SolverInitializer,
     Solver,
+    BP,
     BenchmarkSuite,
 )
 from dataclasses import dataclass, field
