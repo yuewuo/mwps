@@ -7,7 +7,7 @@ from mwpf import (  # type: ignore
     HyperEdge,
     SolverInitializer,
     Solver,
-    BP,
+    BenchmarkSuite,
 )
 from dataclasses import dataclass, field
 import pickle
@@ -17,6 +17,7 @@ from enum import Enum
 import random
 import numpy as np
 import stim
+from io import BufferedReader
 
 from .ref_circuit import *
 from .heralded_dem import *
@@ -68,6 +69,9 @@ class SinterMWPFDecoder:
     panic_action: PanicAction = PanicAction.CATCH
     panic_cases: list[DecoderPanic] = field(default_factory=list)
 
+    # record benchmark suite when enabled
+    benchmark_suite_filename: Optional[str] = None
+
     @property
     def _cluster_node_limit(self) -> int:
         if self.cluster_node_limit is not None:
@@ -116,6 +120,12 @@ class SinterMWPFDecoder:
         assert (
             dem.num_observables == predictor.num_observables()
         ), "Mismatched number of observables, are you using the corresponding circuit of dem?"
+
+        benchmark_suite: Optional[BenchmarkSuite] = None
+        if self.benchmark_suite_filename is not None:
+            benchmark_suite = BenchmarkSuite(solver.get_initializer())
+            solver = None
+
         return MwpfCompiledDecoder(
             solver,
             predictor,
@@ -123,6 +133,8 @@ class SinterMWPFDecoder:
             dem.num_observables,
             panic_action=self.panic_action,
             panic_cases=self.panic_cases,  # record all the panic information to the same place
+            benchmark_suite=benchmark_suite,
+            benchmark_suite_filename=self.benchmark_suite_filename,
         )
 
     def decode_via_files(
@@ -153,23 +165,21 @@ class SinterMWPFDecoder:
         assert num_dets == predictor.num_detectors()
         assert num_obs == predictor.num_observables()
 
+        benchmark_suite: Optional[BenchmarkSuite] = None
+        if self.benchmark_suite_filename is not None:
+            benchmark_suite = BenchmarkSuite(solver.get_initializer())
+            solver = None
+
         num_det_bytes = math.ceil(num_dets / 8)
         with open(dets_b8_in_path, "rb") as dets_in_f:
             with open(obs_predictions_b8_out_path, "wb") as obs_out_f:
-                if self.with_progress:
-                    from tqdm import tqdm
-
-                    pbar = tqdm(total=num_shots, desc="shots")
-                for _ in range(num_shots):
-                    if self.with_progress:
-                        pbar.update(1)
-                    dets_bit_packed = np.fromfile(
-                        dets_in_f, dtype=np.uint8, count=num_det_bytes
-                    )
-                    if dets_bit_packed.shape != (num_det_bytes,):
-                        raise IOError("Missing dets data.")
+                for dets_bit_packed in iter_det(
+                    dets_in_f, num_shots, num_det_bytes, self.with_progress
+                ):
                     syndrome = predictor.syndrome_of(dets_bit_packed)
                     if solver is None:
+                        if benchmark_suite is not None:
+                            benchmark_suite.append(syndrome)
                         prediction = 0
                     else:
                         try:
@@ -194,6 +204,28 @@ class SinterMWPFDecoder:
                     obs_out_f.write(
                         int(prediction).to_bytes((num_obs + 7) // 8, byteorder="little")
                     )
+
+        if benchmark_suite is not None:
+            benchmark_suite.save_cbor(self.benchmark_suite_filename)
+
+
+def iter_det(
+    f: BufferedReader,
+    num_shots: int,
+    num_det_bytes: int,
+    with_progress: bool = False,
+) -> Iterable[np.ndarray]:
+    if with_progress:
+        from tqdm import tqdm
+
+        pbar = tqdm(total=num_shots, desc="shots")
+    for _ in range(num_shots):
+        if with_progress:
+            pbar.update(1)
+        dets_bit_packed = np.fromfile(f, dtype=np.uint8, count=num_det_bytes)
+        if dets_bit_packed.shape != (num_det_bytes,):
+            raise IOError("Missing dets data.")
+        yield dets_bit_packed
 
 
 def construct_decoder_and_predictor(
@@ -263,6 +295,8 @@ class MwpfCompiledDecoder:
     num_obs: int
     panic_action: PanicAction = PanicAction.CATCH
     panic_cases: list[DecoderPanic] = field(default_factory=list)
+    benchmark_suite: Optional[BenchmarkSuite] = None
+    benchmark_suite_filename: Optional[str] = None
 
     def decode_shots_bit_packed(
         self,
@@ -276,6 +310,8 @@ class MwpfCompiledDecoder:
         for shot in range(num_shots):
             syndrome = self.predictor.syndrome_of(bit_packed_detection_event_data[shot])
             if self.solver is None:
+                if self.benchmark_suite is not None:
+                    self.benchmark_suite.append(syndrome)
                 prediction = 0
             else:
                 try:
@@ -304,6 +340,10 @@ class MwpfCompiledDecoder:
                 ),
                 bitorder="little",
             )
+
+        if self.benchmark_suite is not None:
+            self.benchmark_suite.save_cbor(self.benchmark_suite_filename)
+
         return predictions
 
 

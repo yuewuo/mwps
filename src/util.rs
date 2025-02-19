@@ -7,6 +7,7 @@ use crate::rand_xoshiro::rand_core::RngCore;
 #[cfg(feature = "python_binding")]
 use crate::util_py::*;
 use crate::visualize::*;
+use itertools::izip;
 use lnexp::LnExp;
 use num_traits::Zero;
 #[cfg(feature = "python_binding")]
@@ -17,6 +18,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use std::fs::File;
 use std::io::prelude::*;
+use std::io::{BufReader, BufWriter};
 use std::time::Instant;
 
 cfg_if::cfg_if! {
@@ -1076,6 +1078,7 @@ pub(crate) fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<SolverInitializer>()?;
     m.add_class::<SyndromePattern>()?;
     m.add_class::<HyperEdge>()?;
+    m.add_class::<BenchmarkSuite>()?;
     Ok(())
 }
 
@@ -1102,11 +1105,152 @@ pub fn rational_approx_ge(a: &Rational, b: &Rational) -> bool {
     (b - a) / b < Rational::from_float(1e-6).unwrap()
 }
 
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "python_binding", pyclass(module = "mwpf", get_all, set_all))]
+pub struct BenchmarkSuite {
+    pub initializer: SolverInitializer,
+    pub syndrome_patterns: Vec<SyndromePattern>,
+}
+
+impl BenchmarkSuite {
+    pub fn new(initializer: SolverInitializer, syndrome_patterns: Vec<SyndromePattern>) -> Self {
+        Self {
+            initializer,
+            syndrome_patterns,
+        }
+    }
+    pub fn save_cbor(&self, filename: &str) {
+        let file = File::create(filename).expect("Failed to create file");
+        let writer = BufWriter::new(file);
+        ciborium::ser::into_writer(&CompressedBenchmarkSuite::from(self), writer).expect("Failed to serialize data");
+    }
+    pub fn from_cbor(filename: &str) -> Self {
+        let file = File::open(filename).expect("Failed to open file");
+        let reader = BufReader::new(file);
+        let compressed: CompressedBenchmarkSuite = ciborium::de::from_reader(reader).expect("Failed to deserialize data");
+        (&compressed).into()
+    }
+    pub fn append(&mut self, syndrome: SyndromePattern) {
+        self.syndrome_patterns.push(syndrome);
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CompressedBenchmarkSuite {
+    // initializer
+    pub vertex_num: VertexNum,
+    pub weighted_edges: Vec<(Vec<VertexIndex>, Weight)>,
+    pub heralds: Vec<Vec<(EdgeIndex, Weight)>>,
+    // syndrome patterns
+    pub syndrome_defect_vertices: Vec<Vec<VertexIndex>>,
+    pub syndrome_erasures: Vec<Vec<EdgeIndex>>,
+    pub syndrome_heralds: Vec<Vec<HeraldIndex>>,
+    pub syndrome_override_weights: Vec<Option<(Vec<Weight>, Weight)>>,
+}
+
+impl From<&BenchmarkSuite> for CompressedBenchmarkSuite {
+    fn from(benchmark_suite: &BenchmarkSuite) -> Self {
+        Self {
+            vertex_num: benchmark_suite.initializer.vertex_num,
+            weighted_edges: benchmark_suite
+                .initializer
+                .weighted_edges
+                .iter()
+                .map(|hyperedge| (hyperedge.vertices.clone(), hyperedge.weight.clone()))
+                .collect(),
+            heralds: benchmark_suite.initializer.heralds.clone(),
+            syndrome_defect_vertices: benchmark_suite
+                .syndrome_patterns
+                .iter()
+                .map(|syndrome| syndrome.defect_vertices.clone())
+                .collect(),
+            syndrome_erasures: benchmark_suite
+                .syndrome_patterns
+                .iter()
+                .map(|syndrome| syndrome.erasures.clone())
+                .collect(),
+            syndrome_heralds: benchmark_suite
+                .syndrome_patterns
+                .iter()
+                .map(|syndrome| syndrome.heralds.clone())
+                .collect(),
+            syndrome_override_weights: benchmark_suite
+                .syndrome_patterns
+                .iter()
+                .map(|syndrome| syndrome.override_weights.clone())
+                .collect(),
+        }
+    }
+}
+
+impl From<&CompressedBenchmarkSuite> for BenchmarkSuite {
+    fn from(compressed_benchmark_suite: &CompressedBenchmarkSuite) -> Self {
+        let initializer = SolverInitializer {
+            vertex_num: compressed_benchmark_suite.vertex_num,
+            weighted_edges: compressed_benchmark_suite
+                .weighted_edges
+                .iter()
+                .map(|(vertices, weight)| HyperEdge {
+                    vertices: vertices.clone(),
+                    weight: weight.clone(),
+                })
+                .collect(),
+            heralds: compressed_benchmark_suite.heralds.clone(),
+        };
+        let syndrome_patterns = izip!(
+            compressed_benchmark_suite.syndrome_defect_vertices.iter(),
+            compressed_benchmark_suite.syndrome_erasures.iter(),
+            compressed_benchmark_suite.syndrome_heralds.iter(),
+            compressed_benchmark_suite.syndrome_override_weights.iter()
+        )
+        .map(|(defect_vertices, erasures, heralds, override_weights)| SyndromePattern {
+            defect_vertices: defect_vertices.clone(),
+            erasures: erasures.clone(),
+            heralds: heralds.clone(),
+            override_weights: override_weights.clone(),
+        })
+        .collect();
+        Self::new(initializer, syndrome_patterns)
+    }
+}
+
+#[cfg(feature = "python_binding")]
+#[pymethods]
+impl BenchmarkSuite {
+    #[new]
+    #[pyo3(signature = (initializer, syndrome_patterns=vec![]))]
+    fn py_new(initializer: SolverInitializer, syndrome_patterns: Vec<SyndromePattern>) -> PyResult<Self> {
+        Ok(Self::new(initializer, syndrome_patterns))
+    }
+    fn __repr__(&self) -> String {
+        format!(
+            "BenchmarkSuite {{ vertex_num: {}, edge_num: {}, shots: {} }}",
+            self.initializer.vertex_num,
+            self.initializer.weighted_edges.len(),
+            self.syndrome_patterns.len()
+        )
+    }
+    #[pyo3(name = "save_cbor")]
+    fn py_save_cbor(&self, filename: String) {
+        self.save_cbor(&filename)
+    }
+    #[staticmethod]
+    #[pyo3(name = "from_cbor")]
+    fn py_from_cbor(filename: String) -> Self {
+        Self::from_cbor(&filename)
+    }
+    #[pyo3(name = "append")]
+    fn py_append(&mut self, syndrome: SyndromePattern) {
+        self.append(syndrome)
+    }
+}
+
 #[cfg(test)]
 pub mod tests {
     use crate::example_codes::ExampleCode;
 
     use super::*;
+    use bytebuffer::ByteBuffer;
     use hashbrown::HashSet;
     use num_bigint::BigInt;
     use std::str::FromStr;
@@ -1300,5 +1444,51 @@ pub mod tests {
             &exclusive_weight_sum(&million, &million),
             &Weight::from_f64(1e6 - (2f64).ln()).unwrap()
         ));
+    }
+
+    fn cbor_length_of(data: impl Serialize) -> usize {
+        let mut buffer = ByteBuffer::new();
+        ciborium::ser::into_writer(&data, &mut buffer).unwrap();
+        let length = buffer.len();
+        // println!("buffer: {:?}", buffer.into_vec());
+        length
+    }
+
+    #[test]
+    fn test_cbor_serialization() {
+        // cargo test test_cbor_serialization -- --nocapture
+        assert_eq!(cbor_length_of(vec![1usize; 100]), 102); // 1 bytes each
+        assert_eq!(cbor_length_of(vec![23usize; 100]), 102); // 1 bytes each
+        assert_eq!(cbor_length_of(vec![24usize; 100]), 202); // 2 bytes each, not sure why 24 is the boundary
+        assert_eq!(cbor_length_of(vec![255usize; 100]), 202); // 2 bytes each
+        assert_eq!(cbor_length_of(vec![256usize; 100]), 302); // 3 bytes each
+        assert_eq!(cbor_length_of(vec![65535usize; 100]), 302); // 3 bytes each
+        assert_eq!(cbor_length_of(vec![65536usize; 100]), 502); // 5 bytes each
+
+        // also test Vec<Vec<usize>>
+        assert_eq!(cbor_length_of(vec![vec![1usize; 100]; 100]), 10202); // 1 bytes each
+        assert_eq!(cbor_length_of(vec![vec![23usize; 100]; 100]), 10202); // 1 bytes each
+        assert_eq!(cbor_length_of(vec![vec![24usize; 100]; 100]), 20202); // 2 bytes each, not sure why 24 is the boundary
+        assert_eq!(cbor_length_of(vec![vec![255usize; 100]; 100]), 20202); // 2 bytes each
+        assert_eq!(cbor_length_of(vec![vec![256usize; 100]; 100]), 30202); // 3 bytes each
+        assert_eq!(cbor_length_of(vec![vec![65535usize; 100]; 100]), 30202); // 3 bytes each
+        assert_eq!(cbor_length_of(vec![vec![65536usize; 100]; 100]), 50202); // 5 bytes each
+
+        // test Vec<float>
+        assert_eq!(cbor_length_of(vec![1f64; 100]), 302); // 3 bytes each
+        assert_eq!(cbor_length_of(vec![3.14159001001f64; 100]), 902); // 9 bytes each
+
+        // also test Vec<Vec<float>>
+        assert_eq!(cbor_length_of(vec![vec![1f64; 100]; 100]), 30202); // 3 bytes each
+        assert_eq!(cbor_length_of(vec![vec![3.14159001001f64; 100]; 100]), 90202);
+
+        // test Vec<(usize, usize)>
+        assert_eq!(cbor_length_of(vec![(1usize, 2usize); 100]), 302); // 3 bytes each
+        assert_eq!(cbor_length_of(vec![(1usize, 2usize, 3usize, 4usize); 100]), 502);
+        assert_eq!(cbor_length_of(vec![(1usize, 65535usize, 3usize, 65536usize); 100]), 1102);
+
+        // test Vec<vec![]>
+        assert_eq!(cbor_length_of(vec![Vec::<usize>::new(); 100]), 102); // 1 bytes each for empty vec
+        assert_eq!(cbor_length_of(vec![None::<usize>; 100]), 102); // 1 bytes each for null vec
     }
 }
